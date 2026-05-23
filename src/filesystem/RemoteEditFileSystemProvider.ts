@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { SftpSessionManager } from '../ssh/SftpSessionManager';
+import { withRemoteEditProgress } from '../utils/progressUtils';
 
 export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
@@ -40,12 +41,20 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
-    return await this.sessions.readFile(connectionId, remotePath);
+    return await withRemoteEditProgress(
+      'Opening remote file...',
+      async () => await this.sessions.readFile(connectionId, remotePath),
+      { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening cancelled.' }
+    );
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array, _options: { readonly create: boolean; readonly overwrite: boolean }): Promise<void> {
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
-    await this.sessions.writeFile(connectionId, remotePath, content);
+    await withRemoteEditProgress(
+      'Saving remote file...',
+      async () => await this.sessions.writeFile(connectionId, remotePath, content),
+      { cancellable: false }
+    );
     this.fireChanged(uri, vscode.FileChangeType.Changed);
   }
 

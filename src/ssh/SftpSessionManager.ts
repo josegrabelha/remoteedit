@@ -21,6 +21,11 @@ export interface ConnectOptions {
   keepAlive?: boolean;
 }
 
+export interface ConnectionCancellationToken {
+  readonly isCancellationRequested: boolean;
+  onCancellationRequested(callback: () => void): { dispose(): void };
+}
+
 export type RemoteEntryType = 'file' | 'directory' | 'link' | 'unknown';
 
 export interface RemoteEntry {
@@ -73,8 +78,12 @@ export class SftpSessionManager {
   private readonly sudoPasswords = new Map<string, string>();
   private readonly readFileCache = new Map<string, CachedReadFile>();
 
-  async connect(options: ConnectOptions): Promise<ActiveConnection> {
+  async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
     await this.disconnect(options.connectionId);
+
+    if (cancellationToken?.isCancellationRequested) {
+      throw new Error('Connection cancelled.');
+    }
 
     const client = new SftpClient(`remoteedit-${options.connectionId}`);
     const config: Record<string, unknown> = {
@@ -107,13 +116,47 @@ export class SftpSessionManager {
       config.password = options.password;
     }
 
-    await client.connect(config as any);
+    const cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
+      void this.closeClientForCancellation(client);
+    });
 
-    this.sessions.set(options.connectionId, client);
+    try {
+      await client.connect(config as any);
+
+      if (cancellationToken?.isCancellationRequested) {
+        await this.closeClientForCancellation(client);
+        throw new Error('Connection cancelled.');
+      }
+    } catch (error) {
+      cancellationSubscription?.dispose();
+      await this.closeClientForCancellation(client);
+
+      if (cancellationToken?.isCancellationRequested) {
+        throw new Error('Connection cancelled.');
+      }
+
+      throw error;
+    }
 
     const homePath = await this.safeCwd(client);
+
+    if (cancellationToken?.isCancellationRequested) {
+      cancellationSubscription?.dispose();
+      await this.closeClientForCancellation(client);
+      throw new Error('Connection cancelled.');
+    }
+
     const requestedStartPath = normalizeRemotePath(options.startPath || homePath || '/');
     const startPath = await this.resolveStartPath(client, requestedStartPath, homePath);
+
+    if (cancellationToken?.isCancellationRequested) {
+      cancellationSubscription?.dispose();
+      await this.closeClientForCancellation(client);
+      throw new Error('Connection cancelled.');
+    }
+
+    cancellationSubscription?.dispose();
+    this.sessions.set(options.connectionId, client);
 
     const connection: ActiveConnection = {
       id: options.connectionId,
@@ -128,6 +171,19 @@ export class SftpSessionManager {
 
     this.connections.set(options.connectionId, connection);
     return connection;
+  }
+
+
+  private async closeClientForCancellation(client: SftpClient): Promise<void> {
+    try {
+      await client.end();
+    } catch {
+      try {
+        (client as any).client?.destroy?.();
+      } catch {
+        // Ignore cancellation cleanup errors.
+      }
+    }
   }
 
   async disconnect(connectionId: string): Promise<void> {

@@ -3,6 +3,7 @@ import { ConnectionManager } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, RemoteEntry, SftpSessionManager } from '../ssh/SftpSessionManager';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
+import { isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress } from '../utils/progressUtils';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
 import { handleRemoteEditPanelMessage } from './RemoteEditPanelHandlers';
@@ -265,7 +266,23 @@ export class RemoteEditPanel {
     this.postBusy(true, `Connecting to ${options.host}...`);
     this.output.appendLine(`[INFO] Connecting to ${target} using ${options.authType} authentication.`);
 
-    const connection = await this.sessions.connect(options);
+    let connection;
+
+    try {
+      connection = await withRemoteEditProgress(
+        `Connecting to ${options.name || options.host}...`,
+        async token => await this.sessions.connect(options, token),
+        { delayMs: 0, cancellable: true, returnOnCancel: false, cancelMessage: 'Connection cancelled.' }
+      );
+    } catch (error) {
+      if (isRemoteEditOperationCancelled(error) || String(error instanceof Error ? error.message : error).includes('Connection cancelled')) {
+        this.postBusy(false, 'Connection cancelled.');
+        this.output.appendLine(`[INFO] Connection cancelled for ${target}.`);
+        return;
+      }
+
+      throw error;
+    }
 
     if (payload?.id) {
       await this.connectionManager.applyCredentialPreferences(connection.id, options.authType, payload || {});
@@ -418,21 +435,43 @@ export class RemoteEditPanel {
       : `Opening ${resolvedEntries.length} remote files...`);
 
     const connectionId = this.requireActiveConnectionId();
-
     const failedEntries: Array<{ path: string; error: string }> = [];
 
-    for (const entry of resolvedEntries) {
-      const uri = buildRemoteEditUri(connectionId, entry.path, this.getActiveUriAuthority());
+    try {
+      await withRemoteEditProgress(
+        resolvedEntries.length === 1 ? 'Opening remote file...' : `Opening ${resolvedEntries.length} remote files...`,
+        async token => {
+          for (const entry of resolvedEntries) {
+            throwIfCancelled(token, 'Opening cancelled.');
 
-      try {
-        await this.sessions.prepareFileForOpen(connectionId, entry.path);
-        await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
-        this.output.appendLine(`[INFO] Opened ${this.buildRemoteReference(entry.path)}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failedEntries.push({ path: entry.path, error: message });
-        this.output.appendLine(`[WARN] Failed to open ${this.buildRemoteReference(entry.path)}: ${message}`);
+            const uri = buildRemoteEditUri(connectionId, entry.path, this.getActiveUriAuthority());
+
+            try {
+              await this.sessions.prepareFileForOpen(connectionId, entry.path);
+              throwIfCancelled(token, 'Opening cancelled.');
+              await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
+              this.output.appendLine(`[INFO] Opened ${this.buildRemoteReference(entry.path)}`);
+            } catch (error) {
+              if (isRemoteEditOperationCancelled(error)) {
+                throw error;
+              }
+
+              const message = error instanceof Error ? error.message : String(error);
+              failedEntries.push({ path: entry.path, error: message });
+              this.output.appendLine(`[WARN] Failed to open ${this.buildRemoteReference(entry.path)}: ${message}`);
+            }
+          }
+        },
+        { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening cancelled.' }
+      );
+    } catch (error) {
+      if (isRemoteEditOperationCancelled(error)) {
+        this.postBusy(false, 'Opening cancelled.');
+        this.output.appendLine('[INFO] Opening remote file cancelled.');
+        return;
       }
+
+      throw error;
     }
 
     if (failedEntries.length) {
@@ -489,7 +528,25 @@ export class RemoteEditPanel {
     const normalizedPath = normalizeRemotePath(remotePath);
     const uri = buildRemoteEditUri(connectionId, normalizedPath, this.getActiveUriAuthority());
 
-    await this.sessions.prepareFileForOpen(connectionId, normalizedPath);
+    try {
+      await withRemoteEditProgress(
+        'Opening remote file...',
+        async token => {
+          await this.sessions.prepareFileForOpen(connectionId, normalizedPath);
+          throwIfCancelled(token, 'Opening cancelled.');
+        },
+        { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening cancelled.' }
+      );
+    } catch (error) {
+      if (isRemoteEditOperationCancelled(error)) {
+        this.postBusy(false, 'Opening cancelled.');
+        this.output.appendLine(`[INFO] Opening cancelled for ${this.buildRemoteReference(normalizedPath)}.`);
+        return;
+      }
+
+      throw error;
+    }
+
     await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
 
     this.output.appendLine(`[INFO] Opened ${this.buildRemoteReference(normalizedPath)}`);

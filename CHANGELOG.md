@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.3] - 2026-05-23
+
+### Added
+
+- Show a cancellable progress notification while connecting to remote servers.
+- Show cancellable delayed progress when opening remote files if the operation takes longer than 1.5 seconds.
+- Show delayed progress when saving remote files if the operation takes longer than 1.5 seconds.
+
 ## [1.0.2] - 2026-05-23
 
 ### Changed

@@ -53,6 +53,11 @@ When sudo mode is enabled, Remote Edit asks for the sudo password, validates it,
 
 Sudo mode is used for privileged file operations such as reading, saving, creating files or directories, deleting, renaming, and changing permissions.
 
+
+### Progress notifications
+
+Remote Edit shows VS Code progress notifications for longer remote operations. Connecting shows a notification immediately and can be cancelled. Opening and saving show notifications only when the operation takes longer than 1.5 seconds, avoiding unnecessary notification flicker for fast files. Opening can be cancelled from the notification. Saving is intentionally not cancellable because interrupting an in-place save could leave the remote file partially updated.
+
 ### Save behavior and file metadata
 
 When saving an existing remote file, Remote Edit writes into the existing target file instead of replacing it. This helps preserve the original file metadata, including owner, group, permissions, ACLs, and inode.

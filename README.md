@@ -60,15 +60,23 @@ Remote Edit shows VS Code progress notifications for longer remote operations. C
 
 ### Save behavior and file metadata
 
-When saving an existing remote file, Remote Edit writes into the existing target file instead of replacing it. This helps preserve the original file metadata, including owner, group, permissions, ACLs, and inode.
+When saving an existing remote file, Remote Edit writes into the existing target file instead of replacing it. This helps preserve the original file metadata, including inode, owner, group, regular permissions, and ACLs.
 
 For normal non-sudo saves, Remote Edit writes the new content in-place through SFTP. If the file does not already exist, it is created normally and the remote system applies its default ownership and permissions.
 
-When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file in the configured sudo temporary directory, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved.
+When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file in the configured sudo temporary directory, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved as much as the remote operating system allows.
+
+On Unix-like systems, special permission bits such as setuid, setgid, and sticky may be cleared by the operating system when a file is modified. This can happen even when editing directly on the server with commands such as `echo text > file`.
+
+By default, Remote Edit attempts to restore only the special permission bits that already existed before saving, when the remote system allows it. Remote Edit never adds new special permission bits to new files or to files that did not already have them. You can disable this behavior with:
+
+```json
+"remoteedit.restoreSpecialPermissionBits": false
+```
 
 Before sudo saves, Remote Edit checks available space for both the temporary directory and the target filesystem. If there is not enough space to complete the save safely, the operation is aborted before the target file is modified.
 
-If Remote Edit cannot safely save an existing file while preserving its metadata, the save is aborted instead of falling back to a replace operation that could change owner, group, or permissions.
+If Remote Edit cannot safely save an existing file while preserving its metadata, the save is aborted instead of falling back to a replace operation that could change owner, group, or permissions. If the content is saved but the original special permission bits cannot be restored, Remote Edit reports a clear save error.
 
 ### Multiple active connections
 
@@ -129,6 +137,7 @@ Remote Edit provides the following settings:
 | `remoteedit.sshKeepAliveInterval` | `30000` | SSH keepalive interval, in milliseconds, when keepalive is enabled for the connection. |
 | `remoteedit.sshKeepAliveCountMax` | `3` | Maximum unanswered SSH keepalive messages before the connection is considered lost. |
 | `remoteedit.sudoTempDirectory` | `/tmp` | Remote directory used for temporary files when sudo mode saves privileged files. The connected SSH/SFTP user must be able to write to this directory. |
+| `remoteedit.restoreSpecialPermissionBits` | `true` | Restores original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it. |
 
 SSH timeout and keepalive values are validated by Remote Edit. Invalid values entered manually in `settings.json` are ignored or clamped to the supported range.
 
@@ -152,6 +161,7 @@ Sudo passwords are not saved. They are kept only in memory for the active sessio
 - Hosts that require a TTY for sudo may not be supported by sudo mode.
 - Sudo save uses `remoteedit.sudoTempDirectory` for temporary files before writing into the final target file. The default is `/tmp`.
 - Existing files are saved in-place to preserve metadata, so saves are not atomic replace operations. If a connection or remote write fails during the final write, the file may be partially updated.
+- Unix-like systems may clear setuid, setgid, or sticky bits when a file is modified. Remote Edit can attempt to restore only the special bits that already existed before saving.
 - Remote Edit is focused on remote file browsing and editing, not full remote workspace execution.
 
 ## License

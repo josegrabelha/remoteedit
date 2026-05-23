@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.4] - 2026-05-23
+
+### Added
+
+- Add `remoteedit.restoreSpecialPermissionBits` to control whether Remote Edit restores original setuid, setgid, and sticky bits after saving existing files.
+
+### Fixed
+
+- Restore special permission bits that already existed before saving when the remote operating system clears them during an in-place write.
+- Clarify save behavior for Unix-like special permission bits in the documentation.
+
 ## [1.0.3] - 2026-05-23
 
 ### Added

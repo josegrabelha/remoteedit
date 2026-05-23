@@ -26,3 +26,10 @@ export function getStringSetting(key: string, defaultValue: string): string {
   const trimmedValue = value.trim();
   return trimmedValue || defaultValue;
 }
+
+
+export function getBooleanSetting(key: string, defaultValue: boolean): boolean {
+  const value = vscode.workspace.getConfiguration('remoteedit').get<boolean>(key, defaultValue);
+
+  return typeof value === 'boolean' ? value : defaultValue;
+}

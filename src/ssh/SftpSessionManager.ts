@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import { Readable, Writable } from 'stream';
 import SftpClient from 'ssh2-sftp-client';
 import { expandHomePath } from '../utils/localPathUtils';
-import { getNumberSetting, getStringSetting } from '../utils/settingsUtils';
+import { getBooleanSetting, getNumberSetting, getStringSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
 
 export type AuthType = 'password' | 'privateKey';
@@ -68,6 +68,11 @@ interface RemoteExecResult {
 interface CachedReadFile {
   content: Buffer;
   expiresAt: number;
+}
+
+interface SudoTargetMetadata {
+  size: number;
+  mode?: number;
 }
 
 export class SftpSessionManager {
@@ -320,9 +325,12 @@ export class SftpSessionManager {
 
     if (!this.isSudoModeEnabled(connectionId)) {
       try {
+        const originalMode = await this.getRemoteFileMode(client, normalizedPath);
+
         // Existing files must be updated in-place so owner, group,
         // permissions, ACLs, and inode are not replaced during save.
         await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer);
+        await this.restoreOriginalSpecialPermissionBitsIfNeeded(client, normalizedPath, originalMode);
       } catch (error) {
         if (!this.isMissingFileError(error)) {
           throw error;
@@ -339,8 +347,9 @@ export class SftpSessionManager {
     const sudoTempDirectory = getSudoTempDirectory();
     const tempPath = buildRemoteTempPath(connectionId, normalizedPath, sudoTempDirectory);
     const targetDirectory = dirnameRemotePath(normalizedPath);
-    const existingTargetSize = await this.getSudoTargetFileSize(connectionId, normalizedPath);
-    const requiredTargetFreeBytes = Math.max(0, buffer.length - (existingTargetSize ?? 0));
+    const existingTargetMetadata = await this.getSudoTargetMetadata(connectionId, normalizedPath);
+    const requiredTargetFreeBytes = Math.max(0, buffer.length - (existingTargetMetadata?.size ?? 0));
+    const originalMode = existingTargetMetadata?.mode;
 
     await this.prepareSudoTempDirectory(client, sudoTempDirectory);
     await this.ensureSudoSaveFreeSpace(
@@ -359,6 +368,7 @@ export class SftpSessionManager {
       // The shell redirection opens and truncates the target in-place, preserving
       // owner, group, permissions, ACLs, and inode.
       await this.runSudoCommandText(connectionId, `cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
+      await this.restoreOriginalSpecialPermissionBitsWithSudoIfNeeded(connectionId, normalizedPath, originalMode);
       this.clearReadFileCache(connectionId, normalizedPath);
     } finally {
       await this.cleanupRemoteTempFile(connectionId, tempPath);
@@ -732,6 +742,98 @@ export class SftpSessionManager {
     return cache;
   }
 
+  private async getRemoteFileMode(client: SftpClient, remotePath: string): Promise<number | undefined> {
+    const stats = await client.stat(remotePath);
+    const mode = normalizeFileMode((stats as any)?.mode);
+
+    if (mode !== undefined) {
+      return mode;
+    }
+
+    return await this.getRemoteFileModeFromDirectoryListing(client, remotePath);
+  }
+
+  private async getRemoteFileModeFromDirectoryListing(client: SftpClient, remotePath: string): Promise<number | undefined> {
+    try {
+      const parentPath = dirnameRemotePath(remotePath);
+      const name = remotePath.split('/').filter(Boolean).pop() || '';
+      const entries = await client.list(parentPath);
+      const entry = entries.find(item => item.name === name);
+      const permissions = buildPermissionString(entry as SftpClient.FileInfo);
+
+      return modeFromPermissionString(permissions);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async restoreOriginalSpecialPermissionBitsIfNeeded(
+    client: SftpClient,
+    remotePath: string,
+    originalMode: number | undefined
+  ): Promise<void> {
+    if (!shouldRestoreSpecialPermissionBits(originalMode)) {
+      return;
+    }
+
+    const currentMode = await this.getRemoteFileMode(client, remotePath);
+
+    if (currentMode === originalMode) {
+      return;
+    }
+
+    if (!hasSpecialPermissionBitsChanged(originalMode, currentMode)) {
+      return;
+    }
+
+    const chmod = (client as any).chmod;
+
+    if (typeof chmod !== 'function') {
+      throw new Error('File content was saved, but RemoteEdit could not restore the original special permission bits because the active SFTP client does not support chmod.');
+    }
+
+    try {
+      await chmod.call(client, remotePath, originalMode);
+    } catch (error) {
+      throw new Error(`File content was saved, but RemoteEdit could not restore the original special permission bits (${formatMode(originalMode)}): ${formatErrorMessage(error)}`);
+    }
+  }
+
+  private async restoreOriginalSpecialPermissionBitsWithSudoIfNeeded(
+    connectionId: string,
+    remotePath: string,
+    originalMode: number | undefined
+  ): Promise<void> {
+    if (!shouldRestoreSpecialPermissionBits(originalMode)) {
+      return;
+    }
+
+    const currentMode = await this.getSudoFileMode(connectionId, remotePath);
+
+    if (currentMode === originalMode) {
+      return;
+    }
+
+    if (!hasSpecialPermissionBitsChanged(originalMode, currentMode)) {
+      return;
+    }
+
+    const modeText = formatMode(originalMode);
+
+    try {
+      await this.runSudoCommandText(connectionId, `chmod ${shellQuote(modeText)} ${shellQuote(remotePath)}`, 30000);
+    } catch (error) {
+      throw new Error(`File content was saved, but RemoteEdit could not restore the original special permission bits (${modeText}) with sudo: ${formatErrorMessage(error)}`);
+    }
+  }
+
+  private async getSudoFileMode(connectionId: string, remotePath: string): Promise<number | undefined> {
+    const output = await this.runSudoCommandText(connectionId, `LC_ALL=C ls -ldn ${shellQuote(remotePath)}`, 15000);
+    const entry = parseLongListingLine(output.trim(), dirnameRemotePath(remotePath));
+
+    return entry ? modeFromPermissionString(entry.permissions) : undefined;
+  }
+
   private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {
     const sftp = (client as any).sftp;
 
@@ -920,7 +1022,7 @@ export class SftpSessionManager {
     return parseDfSpaceInfo(output, remotePath);
   }
 
-  private async getSudoTargetFileSize(connectionId: string, remotePath: string): Promise<number | undefined> {
+  private async getSudoTargetMetadata(connectionId: string, remotePath: string): Promise<SudoTargetMetadata | undefined> {
     try {
       const output = await this.runSudoCommandText(connectionId, `LC_ALL=C ls -ldn ${shellQuote(remotePath)}`, 15000);
       const entry = parseLongListingLine(output.trim(), dirnameRemotePath(remotePath));
@@ -928,7 +1030,10 @@ export class SftpSessionManager {
         throw new Error(`Target path is not a regular file: ${remotePath}`);
       }
 
-      return entry.size;
+      return {
+        size: entry.size,
+        mode: modeFromPermissionString(entry.permissions)
+      };
     } catch (error) {
       if (this.isMissingFileError(error)) {
         return undefined;
@@ -1150,6 +1255,66 @@ export class SftpSessionManager {
 }
 
 
+
+function shouldRestoreSpecialPermissionBits(originalMode: number | undefined): originalMode is number {
+  return Boolean(
+    getBooleanSetting('restoreSpecialPermissionBits', true) &&
+    originalMode !== undefined &&
+    hasSpecialPermissionBits(originalMode)
+  );
+}
+
+function hasSpecialPermissionBits(mode: number): boolean {
+  return (mode & 0o7000) !== 0;
+}
+
+function hasSpecialPermissionBitsChanged(originalMode: number, currentMode: number | undefined): boolean {
+  return currentMode === undefined || (originalMode & 0o7000) !== (currentMode & 0o7000);
+}
+
+function normalizeFileMode(value: unknown): number | undefined {
+  const mode = Number(value);
+
+  if (!Number.isFinite(mode) || mode < 0) {
+    return undefined;
+  }
+
+  return mode & 0o7777;
+}
+
+function modeFromPermissionString(permissions: string): number | undefined {
+  if (!/^[bcdlps-][rwxStTs-]{9}/.test(permissions)) {
+    return undefined;
+  }
+
+  let mode = 0;
+  const chars = permissions.slice(1, 10);
+
+  if (chars[0] === 'r') { mode |= 0o400; }
+  if (chars[1] === 'w') { mode |= 0o200; }
+  if (chars[2] === 'x' || chars[2] === 's') { mode |= 0o100; }
+  if (chars[2] === 's' || chars[2] === 'S') { mode |= 0o4000; }
+
+  if (chars[3] === 'r') { mode |= 0o040; }
+  if (chars[4] === 'w') { mode |= 0o020; }
+  if (chars[5] === 'x' || chars[5] === 's') { mode |= 0o010; }
+  if (chars[5] === 's' || chars[5] === 'S') { mode |= 0o2000; }
+
+  if (chars[6] === 'r') { mode |= 0o004; }
+  if (chars[7] === 'w') { mode |= 0o002; }
+  if (chars[8] === 'x' || chars[8] === 't') { mode |= 0o001; }
+  if (chars[8] === 't' || chars[8] === 'T') { mode |= 0o1000; }
+
+  return mode;
+}
+
+function formatMode(mode: number): string {
+  return (mode & 0o7777).toString(8).padStart(4, '0');
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || 'Unknown error');
+}
 
 function getSudoTempDirectory(): string {
   return normalizeRemotePath(getStringSetting('sudoTempDirectory', '/tmp'));

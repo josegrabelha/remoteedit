@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, and save remote files over SSH/SFTP directly from VS Code.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "josegrabelha",
   "license": "MIT",
   "repository": {
@@ -97,6 +97,11 @@
           "type": "string",
           "default": "/tmp",
           "description": "Remote directory used for temporary files when sudo mode saves privileged files. The connected SSH/SFTP user must be able to write to this directory."
+        },
+        "remoteedit.restoreSpecialPermissionBits": {
+          "type": "boolean",
+          "default": true,
+          "description": "Restore original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it."
         }
       }
     },

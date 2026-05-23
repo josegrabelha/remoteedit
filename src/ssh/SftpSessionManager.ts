@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import { Readable, Writable } from 'stream';
 import SftpClient from 'ssh2-sftp-client';
 import { expandHomePath } from '../utils/localPathUtils';
-import { getNumberSetting } from '../utils/settingsUtils';
+import { getNumberSetting, getStringSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
 
 export type AuthType = 'password' | 'privateKey';
@@ -280,7 +280,21 @@ export class SftpSessionManager {
       return;
     }
 
-    const tempPath = buildRemoteTempPath(connectionId, normalizedPath);
+    const sudoTempDirectory = getSudoTempDirectory();
+    const tempPath = buildRemoteTempPath(connectionId, normalizedPath, sudoTempDirectory);
+    const targetDirectory = dirnameRemotePath(normalizedPath);
+    const existingTargetSize = await this.getSudoTargetFileSize(connectionId, normalizedPath);
+    const requiredTargetFreeBytes = Math.max(0, buffer.length - (existingTargetSize ?? 0));
+
+    await this.prepareSudoTempDirectory(client, sudoTempDirectory);
+    await this.ensureSudoSaveFreeSpace(
+      client,
+      connectionId,
+      sudoTempDirectory,
+      targetDirectory,
+      buffer.length,
+      requiredTargetFreeBytes
+    );
 
     try {
       await client.put(buffer, tempPath);
@@ -781,6 +795,109 @@ export class SftpSessionManager {
     return code === 2 || code === 'ENOENT' || message.includes('no such file') || message.includes('not found');
   }
 
+  private async prepareSudoTempDirectory(client: SftpClient, tempDirectory: string): Promise<void> {
+    const quotedTempDirectory = shellQuote(tempDirectory);
+    await this.runRemoteCommandStrict(
+      client,
+      `mkdir -p ${quotedTempDirectory} && test -d ${quotedTempDirectory} && test -w ${quotedTempDirectory}`,
+      15000,
+      `Sudo temporary directory is not writable: ${tempDirectory}`
+    );
+  }
+
+  private async ensureSudoSaveFreeSpace(
+    client: SftpClient,
+    connectionId: string,
+    tempDirectory: string,
+    targetDirectory: string,
+    tempFileBytes: number,
+    requiredTargetFreeBytes: number
+  ): Promise<void> {
+    const tempSpace = await this.getRemoteSpaceInfo(client, tempDirectory);
+
+    if (requiredTargetFreeBytes <= 0) {
+      this.assertEnoughRemoteSpace(tempSpace.availableBytes, tempFileBytes, 'sudo temporary directory');
+      return;
+    }
+
+    const targetSpace = await this.getSudoRemoteSpaceInfo(connectionId, targetDirectory);
+    const sameFilesystem = tempSpace.filesystem === targetSpace.filesystem || tempSpace.mountPoint === targetSpace.mountPoint;
+
+    if (sameFilesystem) {
+      this.assertEnoughRemoteSpace(
+        tempSpace.availableBytes,
+        tempFileBytes + requiredTargetFreeBytes,
+        'sudo temporary directory and target filesystem'
+      );
+      return;
+    }
+
+    this.assertEnoughRemoteSpace(tempSpace.availableBytes, tempFileBytes, 'sudo temporary directory');
+    this.assertEnoughRemoteSpace(targetSpace.availableBytes, requiredTargetFreeBytes, 'target filesystem');
+  }
+
+  private assertEnoughRemoteSpace(availableBytes: number, requiredBytes: number, label: string): void {
+    if (requiredBytes <= 0) {
+      return;
+    }
+
+    if (availableBytes < requiredBytes) {
+      throw new Error(
+        `Not enough free space on the remote ${label}. Required ${formatBytes(requiredBytes)}, available ${formatBytes(availableBytes)}.`
+      );
+    }
+  }
+
+  private async getRemoteSpaceInfo(client: SftpClient, remotePath: string): Promise<RemoteSpaceInfo> {
+    const output = await this.runRemoteCommandStrict(
+      client,
+      `df -Pk ${shellQuote(remotePath)}`,
+      15000,
+      `Could not check free space for ${remotePath}`
+    );
+
+    return parseDfSpaceInfo(output, remotePath);
+  }
+
+  private async getSudoRemoteSpaceInfo(connectionId: string, remotePath: string): Promise<RemoteSpaceInfo> {
+    const output = await this.runSudoCommandText(connectionId, `df -Pk ${shellQuote(remotePath)}`, 15000);
+    return parseDfSpaceInfo(output, remotePath);
+  }
+
+  private async getSudoTargetFileSize(connectionId: string, remotePath: string): Promise<number | undefined> {
+    try {
+      const output = await this.runSudoCommandText(connectionId, `LC_ALL=C ls -ldn ${shellQuote(remotePath)}`, 15000);
+      const entry = parseLongListingLine(output.trim(), dirnameRemotePath(remotePath));
+      if (!entry || entry.type === 'directory') {
+        throw new Error(`Target path is not a regular file: ${remotePath}`);
+      }
+
+      return entry.size;
+    } catch (error) {
+      if (this.isMissingFileError(error)) {
+        return undefined;
+      }
+
+      throw error;
+    }
+  }
+
+  private async runRemoteCommandStrict(
+    client: SftpClient,
+    command: string,
+    timeoutMs: number,
+    errorMessage: string
+  ): Promise<string> {
+    const result = await this.executeRemoteCommand(client, command, { timeoutMs });
+
+    if (result.code !== 0) {
+      const detail = (result.stderr || result.stdout.toString('utf8')).trim();
+      throw new Error(detail ? `${errorMessage}: ${detail}` : errorMessage);
+    }
+
+    return result.stdout.toString('utf8');
+  }
+
   private async cleanupRemoteTempFile(connectionId: string, tempPath: string): Promise<void> {
     const client = this.getClient(connectionId);
 
@@ -976,6 +1093,65 @@ export class SftpSessionManager {
   }
 }
 
+
+
+function getSudoTempDirectory(): string {
+  return normalizeRemotePath(getStringSetting('sudoTempDirectory', '/tmp'));
+}
+
+interface RemoteSpaceInfo {
+  filesystem: string;
+  availableBytes: number;
+  mountPoint: string;
+}
+
+function parseDfSpaceInfo(output: string, remotePath: string): RemoteSpaceInfo {
+  const lines = output
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    throw new Error(`Could not parse free space information for ${remotePath}.`);
+  }
+
+  const dataLine = lines[lines.length - 1];
+  const columns = dataLine.split(/\s+/);
+  const percentIndex = columns.findIndex(column => /^\d+%$/.test(column));
+
+  if (percentIndex < 2) {
+    throw new Error(`Could not parse available space for ${remotePath}.`);
+  }
+
+  const availableKilobytes = Number(columns[percentIndex - 1]);
+
+  if (!Number.isFinite(availableKilobytes) || availableKilobytes < 0) {
+    throw new Error(`Could not parse available space for ${remotePath}.`);
+  }
+
+  return {
+    filesystem: columns[0] || '',
+    availableBytes: availableKilobytes * 1024,
+    mountPoint: columns.slice(percentIndex + 1).join(' ') || ''
+  };
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return 'unknown';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
 
 function sortRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {
   return entries.sort((a, b) => {

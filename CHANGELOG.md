@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2] - 2026-05-23
+
+### Changed
+
+- Add configurable sudo temporary directory through `remoteedit.sudoTempDirectory`.
+- Check free space before sudo saves for both the temporary directory and the target filesystem.
+- Improve sudo temporary file cleanup while keeping metadata-preserving save behavior.
+
 ## [1.0.1] - 2026-05-23
 
 ### Fixed

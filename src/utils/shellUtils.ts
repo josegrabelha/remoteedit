@@ -2,12 +2,20 @@ export function shellQuote(value: string): string {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-export function buildRemoteTempPath(connectionId: string, remotePath: string): string {
+export function buildRemoteTempPath(connectionId: string, remotePath: string, tempDirectory = '/tmp'): string {
   const safeConnectionId = connectionId.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40) || 'connection';
   const rawBaseName = remotePath.split('/').filter(Boolean).pop() || 'file';
   const safeBaseName = rawBaseName.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64) || 'file';
   const randomPart = Math.random().toString(36).slice(2, 10);
-  return `/tmp/.remoteedit-${safeConnectionId}-${Date.now()}-${randomPart}-${safeBaseName}.tmp`;
+  const normalizedTempDirectory = normalizeRemoteDirectory(tempDirectory);
+  return `${normalizedTempDirectory}/.remoteedit-${safeConnectionId}-${Date.now()}-${randomPart}-${safeBaseName}.tmp`;
+}
+
+function normalizeRemoteDirectory(remotePath: string): string {
+  const trimmed = String(remotePath || '/tmp').trim() || '/tmp';
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const normalized = withLeadingSlash.replace(/\/+$/g, '').replace(/\/{2,}/g, '/');
+  return normalized || '/tmp';
 }
 
 export function buildSudoErrorMessage(rawMessage: string): string {

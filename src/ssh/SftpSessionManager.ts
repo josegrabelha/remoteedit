@@ -260,9 +260,22 @@ export class SftpSessionManager {
   async writeFile(connectionId: string, remotePath: string, content: Uint8Array): Promise<void> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
+    const buffer = Buffer.from(content);
 
     if (!this.isSudoModeEnabled(connectionId)) {
-      await client.put(Buffer.from(content), normalizedPath);
+      try {
+        // Existing files must be updated in-place so owner, group,
+        // permissions, ACLs, and inode are not replaced during save.
+        await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer);
+      } catch (error) {
+        if (!this.isMissingFileError(error)) {
+          throw error;
+        }
+
+        // New files do not have metadata to preserve yet.
+        await client.put(buffer, normalizedPath);
+      }
+
       this.clearReadFileCache(connectionId, normalizedPath);
       return;
     }
@@ -270,8 +283,12 @@ export class SftpSessionManager {
     const tempPath = buildRemoteTempPath(connectionId, normalizedPath);
 
     try {
-      await client.put(Buffer.from(content), tempPath);
-      await this.runSudoCommandText(connectionId, `cp ${shellQuote(tempPath)} ${shellQuote(normalizedPath)}`, 60000);
+      await client.put(buffer, tempPath);
+
+      // Write through sudo into the existing target file instead of replacing it.
+      // The shell redirection opens and truncates the target in-place, preserving
+      // owner, group, permissions, ACLs, and inode.
+      await this.runSudoCommandText(connectionId, `cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
       this.clearReadFileCache(connectionId, normalizedPath);
     } finally {
       await this.cleanupRemoteTempFile(connectionId, tempPath);
@@ -643,6 +660,125 @@ export class SftpSessionManager {
     }
 
     return cache;
+  }
+
+  private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {
+    const sftp = (client as any).sftp;
+
+    if (!sftp || typeof sftp.open !== 'function') {
+      throw new Error('The active SFTP client does not support safe in-place writes. Save aborted to avoid changing file metadata.');
+    }
+
+    const handle = await this.rawSftpOpen(sftp, remotePath, 'r+');
+    let operationError: unknown;
+
+    try {
+      const chunkSize = 32 * 1024;
+      let offset = 0;
+
+      while (offset < content.length) {
+        const length = Math.min(chunkSize, content.length - offset);
+        await this.rawSftpWrite(sftp, handle, content, offset, length, offset);
+        offset += length;
+      }
+
+      await this.rawSftpSetSize(sftp, remotePath, handle, content.length);
+    } catch (error) {
+      operationError = error;
+      throw error;
+    } finally {
+      try {
+        await this.rawSftpClose(sftp, handle);
+      } catch (closeError) {
+        if (!operationError) {
+          throw closeError;
+        }
+      }
+    }
+  }
+
+  private async rawSftpOpen(sftp: any, remotePath: string, flags: string): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+      sftp.open(remotePath, flags, (error: Error | undefined, handle: Buffer) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(handle);
+      });
+    });
+  }
+
+  private async rawSftpWrite(
+    sftp: any,
+    handle: Buffer,
+    content: Buffer,
+    offset: number,
+    length: number,
+    position: number
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      sftp.write(handle, content, offset, length, position, (error: Error | undefined) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async rawSftpSetSize(sftp: any, remotePath: string, handle: Buffer, size: number): Promise<void> {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        sftp.fsetstat(handle, { size }, (error: Error | undefined) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+      return;
+    } catch (error) {
+      if (typeof sftp.setstat !== 'function') {
+        throw error;
+      }
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      sftp.setstat(remotePath, { size }, (error: Error | undefined) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async rawSftpClose(sftp: any, handle: Buffer): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      sftp.close(handle, (error: Error | undefined) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private isMissingFileError(error: unknown): boolean {
+    const code = (error as any)?.code;
+    const message = String((error as any)?.message || error || '').toLowerCase();
+
+    return code === 2 || code === 'ENOENT' || message.includes('no such file') || message.includes('not found');
   }
 
   private async cleanupRemoteTempFile(connectionId: string, tempPath: string): Promise<void> {

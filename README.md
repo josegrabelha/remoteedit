@@ -53,6 +53,16 @@ When sudo mode is enabled, Remote Edit asks for the sudo password, validates it,
 
 Sudo mode is used for privileged file operations such as reading, saving, creating files or directories, deleting, renaming, and changing permissions.
 
+### Save behavior and file metadata
+
+When saving an existing remote file, Remote Edit writes into the existing target file instead of replacing it. This helps preserve the original file metadata, including owner, group, permissions, ACLs, and inode.
+
+For normal non-sudo saves, Remote Edit writes the new content in-place through SFTP. If the file does not already exist, it is created normally and the remote system applies its default ownership and permissions.
+
+When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file under `/tmp`, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved.
+
+If Remote Edit cannot safely save an existing file while preserving its metadata, the save is aborted instead of falling back to a replace operation that could change owner, group, or permissions.
+
 ### Multiple active connections
 
 Open more than one remote session at the same time and switch between active connections inside the Remote Edit panel.
@@ -132,6 +142,8 @@ Sudo passwords are not saved. They are kept only in memory for the active sessio
 
 - Sudo mode requires sudo password validation through `sudo -S`.
 - Hosts that require a TTY for sudo may not be supported by sudo mode.
+- Sudo save currently uses `/tmp` for temporary files before writing into the final target file.
+- Existing files are saved in-place to preserve metadata, so saves are not atomic replace operations. If a connection or remote write fails during the final write, the file may be partially updated.
 - Remote Edit is focused on remote file browsing and editing, not full remote workspace execution.
 
 ## License

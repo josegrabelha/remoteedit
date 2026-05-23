@@ -1,0 +1,30 @@
+export interface RemoteEditPanelMessageHandlers {
+  getActiveConnectionId(): string | undefined;
+  getActivePath(): string;
+  onReady(): Promise<void>;
+  saveConnection(payload: any): Promise<void>;
+  pickPrivateKeyPath(): Promise<void>;
+  deleteConnection(payload: any): Promise<void>;
+  connect(payload: any): Promise<void>;
+  disconnect(connectionId: string): Promise<void>;
+  switchSession(connectionId: string): Promise<void>;
+  enableSudoMode(): Promise<void>;
+  disableSudoMode(connectionId: string): void;
+  listDirectory(remotePath: string): Promise<void>;
+  openParent(): Promise<void>;
+  openEntry(payload: any): Promise<void>;
+  openEntries(payload: any): Promise<void>;
+  openPath(payload: any): Promise<void>;
+  requestCreateFile(payload: any): Promise<void>;
+  requestCreateDirectory(payload: any): Promise<void>;
+  requestRenameEntry(payload: any): Promise<void>;
+  requestDeleteEntry(payload: any): Promise<void>;
+  requestDeleteEntries(payload: any): Promise<void>;
+  requestSetPermissions(payload: any): Promise<void>;
+  applyPermissions(payload: any): void;
+  cancelPermissions(): void;
+  showOutput(): void;
+  copyRemotePath(payload: any): Promise<void>;
+  log(message: string): void;
+  unknown(messageType: string): void;
+}

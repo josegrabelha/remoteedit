@@ -1,0 +1,1538 @@
+import * as vscode from 'vscode';
+
+export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RemoteEdit</title>
+  <style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); overflow: hidden; user-select: none; -webkit-user-select: none; }
+  input, textarea { user-select: text; -webkit-user-select: text; }
+  .page { height: 100vh; padding: 16px 6px; display: flex; min-width: 0; }
+  .shell { width: 100%; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .hero { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; padding-bottom: 13px; border-bottom: 1px solid var(--vscode-panel-border); flex: 0 0 auto; min-width: 0; }
+  .eyebrow { color: var(--vscode-descriptionForeground); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 7px; }
+  h1 { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 650; }
+  .description { margin: 8px 0 0; color: var(--vscode-descriptionForeground); max-width: 920px; line-height: 1.45; }
+  .session-strip { display: flex; gap: 6px; align-items: center; min-height: 30px; margin-top: 10px; overflow-x: auto; padding: 1px 0; flex: 0 0 auto; }
+  .session-label { color: var(--vscode-descriptionForeground); font-size: 12px; margin-right: 2px; white-space: nowrap; }
+  .session-tabs { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .session-tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 28px; min-height: 28px; max-width: 220px; border: 1px solid var(--vscode-tab-border, var(--vscode-panel-border)); background: var(--vscode-tab-inactiveBackground, var(--vscode-sideBar-background)); color: var(--vscode-tab-inactiveForeground, var(--vscode-foreground)); border-radius: 999px; padding: 0 6px 0 10px; cursor: pointer; white-space: nowrap; line-height: 1; font-size: 12px; }
+  .session-tab:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+  .session-tab.active { border-color: var(--vscode-panel-border); border-color: color-mix(in srgb, var(--vscode-focusBorder) 45%, var(--vscode-panel-border)); background: var(--vscode-tab-activeBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-tab-activeForeground, var(--vscode-list-activeSelectionForeground)); }
+  .session-tab.active:hover:not(:disabled) { background: var(--vscode-tab-activeBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-tab-activeForeground, var(--vscode-list-activeSelectionForeground)); }
+  .session-name { display: block; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .session-close { width: 18px; min-width: 18px; height: 18px; min-height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 -2px 0 0; border-radius: 50%; background: transparent; color: inherit; opacity: 0.82; line-height: 18px; font-size: 14px; flex: 0 0 auto; }
+  .session-close:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); opacity: 1; }
+  .session-empty { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 28px; }
+  .layout { display: grid; grid-template-columns: minmax(300px, 390px) minmax(0, 1fr); gap: 16px; margin-top: 12px; align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; }
+  .browser-column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .browser-card { flex: 1 1 auto; }
+  .browser-open-section { display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); column-gap: 14px; align-items: center; min-height: 63px; padding: 13px 14px; background: var(--vscode-editor-background); }
+  .browser-open-text { min-width: 0; }
+  .browser-open-section .card-subtitle { margin-top: 4px; }
+  .browser-title-section { padding: 13px 14px; background: var(--vscode-editor-background); }
+  .open-connections-row { display: flex; align-items: center; min-width: 0; min-height: 32px; }
+  .browser-session-strip { margin-top: 0; min-height: 32px; padding-bottom: 0; flex: 1 1 auto; min-width: 0; justify-content: flex-start; }
+  .browser-section-divider { height: 1px; background: var(--vscode-panel-border); flex: 0 0 auto; }
+  .card { border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .card-header { padding: 13px 14px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+  .card-title { font-weight: 650; margin: 0; }
+  .card-subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 4px; }
+  .card-body { padding: 14px; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
+  .browser-card .card-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 10px; min-width: 0; }
+  .full { grid-column: 1 / -1; }
+  .keepalive-row { margin-top: 8px; margin-bottom: 0; }
+  label { display: block; font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 5px; }
+  input, select { width: 100%; height: 31px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 5px 8px; border-radius: 3px; outline: none; }
+  input:focus, select:focus { border-color: var(--vscode-focusBorder); }
+  input:disabled, select:disabled { opacity: 0.68; }
+  .input-with-button { position: relative; display: flex; align-items: center; }
+  .input-with-button input { padding-right: 34px; }
+  .input-icon-button { position: absolute; top: 2px; right: 2px; width: 27px; min-width: 27px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 0 2px 2px 0; background: transparent; color: var(--vscode-input-foreground); opacity: 0.8; }
+  .input-icon-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .input-icon-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
+  .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .connection-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: center; width: 100%; min-width: 0; }
+  .connection-actions button { width: 100%; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
+  button { min-height: 31px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 6px 12px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
+  button.icon-only { min-width: 32px; width: 32px; height: 32px; min-height: 32px; padding: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+  button.icon-only svg { width: 16px; height: 16px; display: block; flex: 0 0 auto; fill: currentColor; }
+  button.profile-icon-button svg, .path-actions button.icon-only svg { width: 24px; height: 24px; }
+  button.profile-icon-button svg, button.profile-icon-button svg path { fill: currentColor; color: inherit; }
+  .tooltip-anchor { position: relative; display: inline-flex; }
+  .tooltip-anchor::after { content: attr(data-tooltip); position: absolute; top: calc(100% + 7px); left: 50%; transform: translateX(-50%); z-index: 10000; padding: 4px 7px; border-radius: 3px; background: var(--vscode-editorWidget-background); color: var(--vscode-editorWidget-foreground); border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28); font-size: 12px; line-height: 1.25; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 80ms ease; }
+  .tooltip-anchor.tooltip-above::after { top: auto; bottom: calc(100% + 7px); }
+  .tooltip-anchor:hover::after, .tooltip-anchor:focus-within::after { opacity: 1; visibility: visible; transition-delay: 500ms; }
+  button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+  button:disabled { cursor: default; opacity: 0.55; }
+  button.secondary { background: var(--vscode-button-secondaryBackground, var(--vscode-input-background)); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border: 1px solid var(--vscode-button-border, var(--vscode-input-border, var(--vscode-panel-border))); }
+  button.secondary:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+  button.secondary:disabled { background: var(--vscode-button-secondaryBackground, var(--vscode-input-background)); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border-color: var(--vscode-button-border, var(--vscode-input-border, var(--vscode-panel-border))); }
+  button.danger { background: var(--vscode-inputValidation-errorBackground, var(--vscode-button-secondaryBackground)); color: var(--vscode-inputValidation-errorForeground, var(--vscode-button-secondaryForeground)); }
+  button.danger:hover:not(:disabled) { background: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); color: var(--vscode-inputValidation-errorForeground, var(--vscode-button-foreground)); }
+  .profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: end; margin-bottom: 12px; min-width: 0; }
+  .profile-row .tooltip-anchor { align-self: end; }
+  .connection-name-row { grid-column: 1 / -1; }
+  .connection-config-divider { grid-column: 1 / -1; height: 1px; background: var(--vscode-panel-border); margin: 2px 0 4px; }
+  .divider { height: 1px; background: var(--vscode-panel-border); margin: 14px 0; }
+  .hint-list { margin: 14px 0 0; padding-left: 17px; color: var(--vscode-descriptionForeground); line-height: 1.5; font-size: 12px; }
+  .auth-block { display: none; }
+  .auth-block.visible { display: block; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--vscode-foreground); font-size: 12px; }
+  .checkbox-row input { width: auto; height: auto; margin: 0; }
+  .credential-state { margin-top: 6px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.35; }
+  .credential-state.saved { color: var(--vscode-testing-iconPassed, var(--vscode-descriptionForeground)); }
+  .credential-state.not-saved { color: var(--vscode-descriptionForeground); }
+  .browser-header { display: block; }
+  .browser-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; min-width: 0; }
+  .browser-title-text { min-width: 0; }
+  .sudo-toggle { display: inline-flex; align-items: center; align-self: flex-end; gap: 5px; margin: 0; padding-bottom: 1px; font-size: 11px; line-height: 16px; color: var(--vscode-descriptionForeground); cursor: pointer; user-select: none; white-space: nowrap; }
+  .sudo-toggle input { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+  .sudo-toggle-track { position: relative; width: 30px; height: 16px; border-radius: 999px; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease; }
+  .sudo-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--vscode-descriptionForeground); transition: transform 120ms ease, background 120ms ease; }
+  .sudo-toggle input:checked + .sudo-toggle-track { background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
+  .sudo-toggle input:checked + .sudo-toggle-track .sudo-toggle-thumb { transform: translateX(14px); background: var(--vscode-button-foreground); }
+  .sudo-toggle input:disabled + .sudo-toggle-track { opacity: 0.55; }
+  .sudo-toggle.enabled .sudo-toggle-state { color: var(--vscode-foreground); }
+  .sudo-toggle-state { min-width: 46px; text-align: right; color: var(--vscode-descriptionForeground); }
+  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 220px; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .pathbar label { margin: 0; }
+  .path-actions { display: inline-flex; gap: 8px; align-items: center; }
+  .filter-box { position: relative; width: 220px; min-width: 150px; }
+  .filter-input { width: 100%; padding-right: 28px; }
+  .filter-clear-button { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-foreground); opacity: 0; visibility: hidden; cursor: pointer; font-size: 16px; line-height: 20px; }
+  .filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .filter-clear-button:disabled { cursor: default; }
+  .table-wrap { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); flex: 1 1 auto; min-height: 220px; max-height: none; overflow: auto; border-radius: 6px; user-select: none; -webkit-user-select: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .table-wrap.privileged-session { border-color: color-mix(in srgb, #7a2f2f 62%, var(--vscode-panel-border)); box-shadow: 0 0 0 1px color-mix(in srgb, #7a2f2f 18%, transparent); }
+  table { width: 100%; min-width: 984px; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 6px 10px; line-height: 1.25; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--vscode-sideBar-background); font-weight: 600; z-index: 1; user-select: none; }
+  th.sortable { cursor: pointer; }
+  th.sortable:hover { background: var(--vscode-list-hoverBackground); }
+  th.size, td.size { text-align: right; }
+  th.permissions, td.permissions { font-family: var(--vscode-editor-font-family); }
+  .header-content { display: flex; align-items: center; min-width: 0; }
+  .header-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sort-indicator { margin-left: 5px; width: 10px; flex: 0 0 10px; color: var(--vscode-descriptionForeground); }
+  .column-resizer { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }
+  .column-resizer:hover { background: var(--vscode-focusBorder); opacity: 0.55; }
+  body.resizing-columns { cursor: col-resize; user-select: none; }
+  button.compact { min-height: 26px; padding: 4px 8px; font-size: 12px; }
+  tr.entry-row { cursor: pointer; user-select: none; -webkit-user-select: none; }
+  tr.entry-row:hover { background: var(--vscode-list-hoverBackground); }
+  tr.entry-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  tr.entry-row.selected:hover { background: var(--vscode-list-activeSelectionBackground); }
+  .entry-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .entry-icon { width: 20px; min-width: 20px; display: inline-flex; align-items: center; justify-content: center; color: var(--vscode-icon-foreground, var(--vscode-foreground)); opacity: 0.9; line-height: 0; }
+  .entry-icon svg { width: 20px; height: 20px; display: block; fill: currentColor; }
+  .entry-icon svg path { fill: currentColor; }
+  .entry-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty-state { padding: 34px 16px; text-align: center; color: var(--vscode-descriptionForeground); }
+  .context-menu { position: fixed; z-index: 100; min-width: 178px; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border)); border-radius: 4px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); display: none; }
+  .context-menu.visible { display: block; }
+  .context-menu button { width: 100%; min-height: 28px; padding: 5px 9px; text-align: left; background: transparent; color: inherit; border-radius: 3px; }
+  .context-menu button:hover:not(:disabled) { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
+  .context-menu button.danger-text { color: var(--vscode-errorForeground); }
+  .context-menu-separator { height: 1px; margin: 4px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); opacity: 0.9; }
+
+  .permission-backdrop { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
+  .permission-backdrop.visible { display: flex; }
+  .permission-dialog { width: min(620px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
+  .permission-dialog-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .permission-dialog-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
+  .permission-dialog-path { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; font-size: 12px; }
+  .permission-dialog-body { padding: 16px 18px; display: grid; gap: 16px; }
+  .permission-section { border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
+  .permission-section-title { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 600; background: var(--vscode-sideBar-background); }
+  .permission-table { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; }
+  .permission-table th, .permission-table td { padding: 8px 10px; text-align: center; border-bottom: 1px solid var(--vscode-panel-border); white-space: nowrap; }
+  .permission-table th:first-child, .permission-table td:first-child { text-align: left; width: 34%; }
+  .permission-table tbody tr:last-child td { border-bottom: 0; }
+  .permission-table th { position: static; z-index: auto; cursor: default; background: var(--vscode-sideBar-background); }
+  .permission-check { width: 16px; height: 16px; accent-color: var(--vscode-button-background); }
+  .permission-special-list { display: grid; gap: 10px; padding: 12px; }
+  .permission-special-item { display: flex; align-items: flex-start; gap: 10px; line-height: 1.35; user-select: none; }
+  .permission-mode-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; }
+  .permission-mode-row label { margin: 0; font-weight: 600; color: var(--vscode-foreground); }
+  #permissionModeInput { width: 90px; font-family: var(--vscode-editor-font-family, monospace); }
+  #permissionModeInput.invalid { border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); outline-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); }
+  .permission-current { color: var(--vscode-descriptionForeground); font-size: 12px; }
+  .permission-validation { min-height: 18px; padding: 0 12px 12px; color: var(--vscode-errorForeground); }
+  .permission-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+  .statusbar { margin-top: 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
+  .statusbar.error { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
+  .statusbar.busy { color: var(--vscode-progressBar-background, var(--vscode-foreground)); }
+  .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--vscode-panel-border); border-top-color: var(--vscode-progressBar-background, var(--vscode-foreground)); border-radius: 50%; animation: spin 0.9s linear infinite; display: none; }
+  .statusbar.busy .spinner { display: block; }
+  .muted { color: var(--vscode-descriptionForeground); }
+  .small { font-size: 12px; }
+  code { font-family: var(--vscode-editor-font-family); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout { grid-template-columns: 1fr; flex: 0 0 auto; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .browser-header { align-items: flex-start; flex-direction: column; } }
+  @media (max-height: 720px) and (min-width: 981px) { h1 { font-size: 22px; } .description, .hint-list { display: none; } .card-header, .card-body, .browser-open-section, .browser-title-section { padding: 11px 12px; } }
+  @media (max-width: 760px) { .open-connections-row { align-items: flex-start; flex-direction: column; gap: 6px; } .browser-session-strip { width: 100%; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <h1>Remote file browser</h1>
+      </div>
+    </section>
+
+    <section class="layout">
+      <aside class="card connection-card">
+        <div class="card-header">
+          <div class="card-title">Connection</div>
+          <div class="card-subtitle">Bookmarked and quick connections</div>
+        </div>
+        <div class="card-body">
+          <div class="profile-row">
+            <div>
+              <label for="profileSelect">Bookmarked connections</label>
+              <select id="profileSelect"><option value="">New unsaved connection</option></select>
+            </div>
+            <span class="tooltip-anchor tooltip-above" data-tooltip="New bookmark">
+              <button id="newProfileButton" type="button" class="secondary icon-only profile-icon-button" aria-label="New bookmark"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M240-180v-555.38q0-27.62 18.5-46.12Q277-800 304.62-800H520v40H304.62q-9.24 0-16.93 7.69-7.69 7.69-7.69 16.93V-242l200-86 200 86v-278h40v340L480-283.08 240-180Zm40-580h240-240Zm400 160v-80h-80v-40h80v-80h40v80h80v40h-80v80h-40Z" /></svg></button>
+            </span>
+            <span class="tooltip-anchor tooltip-above" data-tooltip="Save bookmark">
+              <button id="saveProfileButton" type="button" class="secondary icon-only profile-icon-button" aria-label="Save bookmark"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M684.54-600 600-684.54l27.54-28.54 57 57 141-142 28.54 28.54L684.54-600ZM240-180v-555.38q0-27.62 18.5-46.12Q277-800 304.62-800H520v40H304.62q-9.24 0-16.93 7.69-7.69 7.69-7.69 16.93V-242l200-86 200 86v-278h40v340L480-283.08 240-180Zm40-580h240-240Z" /></svg></button>
+            </span>
+            <span class="tooltip-anchor tooltip-above" data-tooltip="Remove bookmark">
+              <button id="deleteProfileButton" type="button" class="secondary icon-only profile-icon-button" aria-label="Remove bookmark" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M800-680H600v-40h200v40ZM240-180v-555.38q0-27.62 18.5-46.12Q277-800 304.62-800H520v40H304.62q-9.24 0-16.93 7.69-7.69 7.69-7.69 16.93V-242l200-86 200 86v-278h40v340L480-283.08 240-180Zm40-580h240-240Z" /></svg></button>
+            </span>
+          </div>
+
+          <div class="form-grid">
+            <div class="connection-name-row">
+              <label for="profileName">Connection name</label>
+              <input id="profileName" placeholder="App Server PROD" autocomplete="off" />
+            </div>
+            <div class="connection-config-divider" aria-hidden="true"></div>
+            <div>
+              <label for="host">Host</label>
+              <input id="host" placeholder="server.example.com" autocomplete="off" />
+              <label class="checkbox-row keepalive-row" title="Send periodic SSH keepalive messages to reduce idle disconnects."><input id="keepAlive" type="checkbox" checked /> Keep connection alive</label>
+            </div>
+            <div><label for="port">Port</label><input id="port" value="22" inputmode="numeric" /></div>
+            <div class="full"><label for="username">Username <span class="muted">(optional for bookmarks)</span></label><input id="username" placeholder="Enter now or leave blank in the bookmarked connection" autocomplete="username" /></div>
+            <div class="full"><label for="authType">Authentication</label><select id="authType"><option value="password">Password</option><option value="privateKey">Private key</option></select></div>
+            <div id="passwordBlock" class="full auth-block visible">
+              <label for="password">Password</label>
+              <input id="password" type="password" autocomplete="current-password" />
+              <label class="checkbox-row"><input id="rememberPassword" type="checkbox" /> Remember password securely</label>
+              <div id="passwordSecretState" class="credential-state not-saved">Password not saved.</div>
+            </div>
+            <div id="privateKeyBlock" class="full auth-block">
+              <label for="privateKeyPath">Private key path</label>
+              <div class="input-with-button">
+                <input id="privateKeyPath" placeholder="~/.ssh/id_rsa" autocomplete="off" />
+                <button id="privateKeyBrowseButton" class="input-icon-button" type="button" aria-label="Select private key file" title="Select private key file">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.44c.4 0 .78.16 1.06.44L8.56 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4Zm1-.01v7.51c0 .28.22.5.5.5h10a.5.5 0 0 0 .5-.5v-6A.5.5 0 0 0 13 5H8.15L6.8 3.65a.5.5 0 0 0-.36-.15H3a.5.5 0 0 0-.5.49Z" /></svg>
+                </button>
+              </div>
+            </div>
+            <div id="passphraseBlock" class="full auth-block">
+              <label for="passphrase">Passphrase</label>
+              <input id="passphrase" type="password" autocomplete="off" />
+              <label class="checkbox-row"><input id="rememberPassphrase" type="checkbox" /> Remember passphrase securely</label>
+              <div id="passphraseSecretState" class="credential-state not-saved">Passphrase not saved.</div>
+            </div>
+            <div class="full"><label for="startPath">Start path</label><input id="startPath" placeholder="/home/user" autocomplete="off" /></div>
+          </div>
+
+          <div class="button-row connection-actions">
+            <button id="showOutputButton" class="secondary">Output</button>
+            <button id="disconnectButton" class="secondary" disabled>Disconnect</button>
+            <button id="connectButton">Connect</button>
+          </div>
+        </div>
+      </aside>
+
+      <section class="browser-column">
+        <section class="card browser-card">
+          <div class="browser-open-section" aria-label="Active remote connections">
+            <div class="browser-open-text">
+              <div class="card-title">Open connections</div>
+              <div class="card-subtitle">Active remote sessions</div>
+            </div>
+            <div class="open-connections-row">
+              <div class="session-strip browser-session-strip">
+                <div id="sessionTabs" class="session-tabs"><span class="session-empty">No active connections.</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="browser-section-divider"></div>
+
+          <div class="browser-title-section">
+            <div class="browser-title-row">
+              <div class="browser-title-text">
+                <div class="card-title">Remote browser</div>
+                <div id="browserSubtitle" class="card-subtitle">Connect to a host to list remote files.</div>
+              </div>
+              <label id="sudoToggleLabel" class="sudo-toggle" title="Connect to a host to enable sudo mode">
+                <span id="sudoToggleState" class="sudo-toggle-state">Sudo Off</span>
+                <input id="sudoToggle" type="checkbox" disabled aria-label="Enable sudo mode for this connection" />
+                <span class="sudo-toggle-track" aria-hidden="true"><span class="sudo-toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+          <div class="browser-section-divider"></div>
+
+          <div class="card-body">
+          <div class="pathbar">
+            <label class="small muted" for="currentPath">Remote Path</label>
+            <input id="currentPath" value="" disabled />
+            <div class="path-actions">
+              <span class="tooltip-anchor" data-tooltip="Go">
+                <button id="goButton" class="secondary icon-only" aria-label="Go" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M683.15-460H200v-40h483.15L451.46-731.69 480-760l280 280-280 280-28.54-28.31L683.15-460Z" /></svg></button>
+              </span>
+              <span class="tooltip-anchor" data-tooltip="Parent">
+                <button id="parentButton" class="secondary icon-only" aria-label="Parent" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M460-200v-483.15L228.31-451.46 200-480l280-280 280 280-28.31 28.54L500-683.15V-200h-40Z" /></svg></button>
+              </span>
+              <span class="tooltip-anchor" data-tooltip="Refresh">
+                <button id="refreshButton" class="secondary icon-only" aria-label="Refresh" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M483.08-200q-117.25 0-198.63-81.34-81.37-81.34-81.37-198.54 0-117.2 81.37-198.66Q365.83-760 483.08-760q71.3 0 133.54 33.88 62.23 33.89 100.3 94.58V-760h40v209.23H547.69v-40h148q-31.23-59.85-87.88-94.54Q551.15-720 483.08-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h42.46Q725.08-310.15 651-255.08 576.92-200 483.08-200Z" /></svg></button>
+              </span>
+            </div>
+            <div id="filterBox" class="filter-box">
+              <input id="filterInput" class="filter-input" placeholder="Filter files..." aria-label="Filter files" disabled />
+              <button id="clearFilterButton" class="filter-clear-button" aria-label="Clear filter" disabled>×</button>
+            </div>
+          </div>
+
+
+          <div id="entriesTableWrap" class="table-wrap">
+            <table id="entriesTable">
+              <colgroup>
+                <col data-column="name" />
+                <col data-column="type" />
+                <col data-column="size" />
+                <col data-column="owner" />
+                <col data-column="group" />
+                <col data-column="permissions" />
+                <col data-column="modified" />
+              </colgroup>
+              <thead><tr>
+                <th class="sortable" data-sort-key="name" data-column="name"><span class="header-content"><span class="header-label">Name</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="name"></span></th>
+                <th class="sortable type" data-sort-key="type" data-column="type"><span class="header-content"><span class="header-label">Type</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="type"></span></th>
+                <th class="sortable size" data-sort-key="size" data-column="size"><span class="header-content"><span class="header-label">Size</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="size"></span></th>
+                <th class="sortable owner" data-sort-key="owner" data-column="owner"><span class="header-content"><span class="header-label">Owner</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="owner"></span></th>
+                <th class="sortable group" data-sort-key="group" data-column="group"><span class="header-content"><span class="header-label">Group</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="group"></span></th>
+                <th class="sortable permissions" data-sort-key="permissions" data-column="permissions"><span class="header-content"><span class="header-label">Permissions</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="permissions"></span></th>
+                <th class="sortable modified" data-sort-key="modified" data-column="modified"><span class="header-content"><span class="header-label">Modified</span><span class="sort-indicator"></span></span><span class="column-resizer" data-column="modified"></span></th>
+              </tr></thead>
+              <tbody id="entriesBody"><tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr></tbody>
+            </table>
+          </div>
+
+          <div id="status" class="statusbar"><div id="statusText" class="status-text">Ready.</div><div class="spinner" aria-hidden="true"></div></div>
+          </div>
+        </section>
+      </section>
+    </section>
+  </div>
+  </main>
+
+  <div id="entryContextMenu" class="context-menu" role="menu" aria-label="Entry actions">
+  <button id="contextOpen" type="button" role="menuitem">View/Edit</button>
+  <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextCreateFile" type="button" role="menuitem">Create new file</button>
+  <button id="contextCreateDirectory" type="button" role="menuitem">Create new directory</button>
+  <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextRename" type="button" role="menuitem">Rename</button>
+  <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
+  <div id="contextDeleteSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextDelete" type="button" role="menuitem" class="danger-text">Delete</button>
+  </div>
+
+
+  <div id="permissionBackdrop" class="permission-backdrop" aria-hidden="true">
+  <section class="permission-dialog" role="dialog" aria-modal="true" aria-labelledby="permissionDialogTitle">
+    <div class="permission-dialog-header">
+      <h2 id="permissionDialogTitle" class="permission-dialog-title">Set Permissions</h2>
+      <div id="permissionDialogPath" class="permission-dialog-path"></div>
+    </div>
+    <div class="permission-dialog-body">
+      <section class="permission-section">
+        <p class="permission-section-title">Basic permissions</p>
+        <table class="permission-table" aria-label="Basic permissions">
+          <thead>
+            <tr><th></th><th>Read</th><th>Write</th><th>Execute</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Owner</td><td><input class="permission-check" type="checkbox" data-permission="ownerRead" aria-label="Owner read"></td><td><input class="permission-check" type="checkbox" data-permission="ownerWrite" aria-label="Owner write"></td><td><input class="permission-check" type="checkbox" data-permission="ownerExecute" aria-label="Owner execute"></td></tr>
+            <tr><td>Group</td><td><input class="permission-check" type="checkbox" data-permission="groupRead" aria-label="Group read"></td><td><input class="permission-check" type="checkbox" data-permission="groupWrite" aria-label="Group write"></td><td><input class="permission-check" type="checkbox" data-permission="groupExecute" aria-label="Group execute"></td></tr>
+            <tr><td>Others</td><td><input class="permission-check" type="checkbox" data-permission="othersRead" aria-label="Others read"></td><td><input class="permission-check" type="checkbox" data-permission="othersWrite" aria-label="Others write"></td><td><input class="permission-check" type="checkbox" data-permission="othersExecute" aria-label="Others execute"></td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="permission-section">
+        <p class="permission-section-title">Special permissions</p>
+        <div class="permission-special-list">
+          <label class="permission-special-item"><input class="permission-check" type="checkbox" data-permission="setuid"> <span id="permissionSetuidLabel">Run as owner / setuid</span></label>
+          <label class="permission-special-item"><input class="permission-check" type="checkbox" data-permission="setgid"> <span id="permissionSetgidLabel">Run as group / setgid</span></label>
+          <label class="permission-special-item"><input class="permission-check" type="checkbox" data-permission="sticky"> <span id="permissionStickyLabel">Sticky bit</span></label>
+        </div>
+      </section>
+      <section class="permission-section">
+        <div class="permission-mode-row">
+          <label for="permissionModeInput">Octal</label>
+          <input id="permissionModeInput" type="text" maxlength="4" inputmode="numeric" autocomplete="off">
+          <span id="permissionCurrentText" class="permission-current"></span>
+        </div>
+        <div id="permissionValidation" class="permission-validation" role="alert"></div>
+      </section>
+    </div>
+    <div class="permission-dialog-actions">
+      <button id="permissionCancelButton" class="secondary" type="button">Cancel</button>
+      <button id="permissionApplyButton" type="button">Apply</button>
+    </div>
+  </section>
+  </div>
+
+  <script nonce="${nonce}">
+  const vscode = acquireVsCodeApi();
+
+  const profileSelect = document.getElementById('profileSelect');
+  const profileName = document.getElementById('profileName');
+  const host = document.getElementById('host');
+  const port = document.getElementById('port');
+  const username = document.getElementById('username');
+  const authType = document.getElementById('authType');
+  const password = document.getElementById('password');
+  const rememberPassword = document.getElementById('rememberPassword');
+  const passwordSecretState = document.getElementById('passwordSecretState');
+  const privateKeyPath = document.getElementById('privateKeyPath');
+  const privateKeyBrowseButton = document.getElementById('privateKeyBrowseButton');
+  const passphrase = document.getElementById('passphrase');
+  const rememberPassphrase = document.getElementById('rememberPassphrase');
+  const passphraseSecretState = document.getElementById('passphraseSecretState');
+  const startPath = document.getElementById('startPath');
+  const keepAlive = document.getElementById('keepAlive');
+  const passwordBlock = document.getElementById('passwordBlock');
+  const privateKeyBlock = document.getElementById('privateKeyBlock');
+  const passphraseBlock = document.getElementById('passphraseBlock');
+  const sessionTabs = document.getElementById('sessionTabs');
+  const currentPath = document.getElementById('currentPath');
+  const filterBox = document.getElementById('filterBox');
+  const filterInput = document.getElementById('filterInput');
+  const clearFilterButton = document.getElementById('clearFilterButton');
+  const entriesTableWrap = document.getElementById('entriesTableWrap');
+  const entriesTable = document.getElementById('entriesTable');
+  const entriesBody = document.getElementById('entriesBody');
+  const status = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+  const browserSubtitle = document.getElementById('browserSubtitle');
+  const sudoToggleLabel = document.getElementById('sudoToggleLabel');
+  const sudoToggle = document.getElementById('sudoToggle');
+  const sudoToggleState = document.getElementById('sudoToggleState');
+
+  const newProfileButton = document.getElementById('newProfileButton');
+  const saveProfileButton = document.getElementById('saveProfileButton');
+  const deleteProfileButton = document.getElementById('deleteProfileButton');
+  const connectButton = document.getElementById('connectButton');
+  const disconnectButton = document.getElementById('disconnectButton');
+  const showOutputButton = document.getElementById('showOutputButton');
+  const parentButton = document.getElementById('parentButton');
+  const refreshButton = document.getElementById('refreshButton');
+  const goButton = document.getElementById('goButton');
+  const entryContextMenu = document.getElementById('entryContextMenu');
+  const contextOpen = document.getElementById('contextOpen');
+  const contextOpenSeparator = document.getElementById('contextOpenSeparator');
+  const contextCreateFile = document.getElementById('contextCreateFile');
+  const contextCreateDirectory = document.getElementById('contextCreateDirectory');
+  const contextItemSeparator = document.getElementById('contextItemSeparator');
+  const contextSetPermissions = document.getElementById('contextSetPermissions');
+  const contextRename = document.getElementById('contextRename');
+  const contextDeleteSeparator = document.getElementById('contextDeleteSeparator');
+  const contextDelete = document.getElementById('contextDelete');
+
+  const permissionBackdrop = document.getElementById('permissionBackdrop');
+  const permissionDialogTitle = document.getElementById('permissionDialogTitle');
+  const permissionDialogPath = document.getElementById('permissionDialogPath');
+  const permissionModeInput = document.getElementById('permissionModeInput');
+  const permissionCurrentText = document.getElementById('permissionCurrentText');
+  const permissionValidation = document.getElementById('permissionValidation');
+  const permissionApplyButton = document.getElementById('permissionApplyButton');
+  const permissionCancelButton = document.getElementById('permissionCancelButton');
+  const permissionSetuidLabel = document.getElementById('permissionSetuidLabel');
+  const permissionSetgidLabel = document.getElementById('permissionSetgidLabel');
+  const permissionStickyLabel = document.getElementById('permissionStickyLabel');
+  const permissionCheckboxes = Array.from(document.querySelectorAll('#permissionBackdrop input[data-permission]'));
+
+  const SAVED_SECRET_MASK = '••••••••';
+
+  const columnOrder = ['name', 'type', 'size', 'owner', 'group', 'permissions', 'modified'];
+  const columnWidths = { name: 300, type: 86, size: 92, owner: 84, group: 84, permissions: 120, modified: 170 };
+  const minColumnWidths = { name: 150, type: 62, size: 72, owner: 64, group: 64, permissions: 90, modified: 130 };
+
+  let profiles = [];
+  let sessions = [];
+  let selectedProfileId = '';
+  let activeConnectionId = '';
+  let currentEntries = [];
+  let selectedEntryPath = '';
+  let selectedEntryPaths = new Set();
+  let selectionAnchorPath = '';
+  let filterText = '';
+  let currentSort = { key: '', direction: '' };
+  let busy = false;
+  let permissionsDialogOpen = false;
+
+  window.addEventListener('message', event => {
+    const message = event.data;
+    const payload = message.payload || {};
+
+    switch (message.type) {
+      case 'profilesLoaded':
+        profiles = payload.profiles || [];
+        renderProfiles(Object.prototype.hasOwnProperty.call(payload, 'selectedId') ? payload.selectedId : selectedProfileId);
+        break;
+      case 'connectionFormCleared':
+        selectedProfileId = '';
+        profileSelect.value = '';
+        clearForm();
+        break;
+      case 'privateKeyPathSelected':
+        if (payload.path) {
+          privateKeyPath.value = payload.path;
+        }
+        break;
+      case 'sessionsChanged':
+        sessions = payload.sessions || [];
+        activeConnectionId = payload.activeConnectionId || '';
+        renderSessionTabs();
+        updateActiveSessionUi();
+        setControls();
+        break;
+      case 'sudoModeChanged': {
+        const targetConnectionId = payload.connectionId || activeConnectionId;
+        const session = sessions.find(item => item.id === targetConnectionId);
+        if (session) {
+          session.sudoModeEnabled = Boolean(payload.enabled);
+        }
+        updateSudoToggle();
+        setControls();
+        break;
+      }
+      case 'disconnected':
+        sessions = [];
+        activeConnectionId = '';
+        currentEntries = [];
+        selectedEntryPath = '';
+        filterText = '';
+        filterInput.value = '';
+        updateFilterClearButton();
+        currentSort = { key: '', direction: '' };
+        hideContextMenu();
+        renderSessionTabs();
+        updateActiveSessionUi();
+        updateSortIndicators();
+        entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
+        currentPath.value = '';
+        setControls();
+        setStatus('No active remote connections.');
+        break;
+      case 'directoryListed':
+        if (payload.connectionId && payload.connectionId !== activeConnectionId) return;
+        currentPath.value = payload.path || '/';
+        currentEntries = payload.entries || [];
+        selectedEntryPath = '';
+        hideContextMenu();
+        renderEntries(getVisibleEntries());
+        updateActiveSessionPath(payload.path || '/');
+        break;
+      case 'status':
+        setStatus(payload.message || '');
+        break;
+      case 'busy':
+        setBusy(Boolean(payload.isBusy), payload.message || '');
+        break;
+      case 'error':
+        setBusy(false);
+        setStatus(payload.message || 'Unknown error.', true);
+        break;
+      case 'showPermissionsDialog':
+        showPermissionsDialog(payload);
+        break;
+      case 'hidePermissionsDialog':
+        hidePermissionsDialog();
+        break;
+      case 'permissionsValidationError':
+        setPermissionValidation(payload.message || 'Invalid permission mode.', false);
+        break;
+    }
+  });
+
+  window.addEventListener('DOMContentLoaded', () => {
+    vscode.postMessage({ type: 'ready' });
+    updateAuthFields();
+    setControls();
+  });
+
+  profileSelect.addEventListener('change', () => {
+    selectedProfileId = profileSelect.value;
+    if (!selectedProfileId) {
+      clearForm();
+      return;
+    }
+
+    const profile = profiles.find(item => item.id === selectedProfileId);
+    if (profile) fillForm(profile);
+  });
+
+  newProfileButton.addEventListener('click', () => {
+    selectedProfileId = '';
+    profileSelect.value = '';
+    clearForm();
+    setStatus('New quick connection.');
+  });
+
+  saveProfileButton.addEventListener('click', () => {
+    setBusy(true, 'Saving bookmarked connection...');
+    vscode.postMessage({ type: 'saveConnection', payload: collectConnectionPayload() });
+  });
+
+  deleteProfileButton.addEventListener('click', () => {
+    const profileId = profileSelect.value || selectedProfileId;
+    const profile = profiles.find(item => item.id === profileId);
+
+    if (!profileId || !profile) {
+      setStatus('Select a bookmarked connection to remove.', true);
+      return;
+    }
+
+    selectedProfileId = profileId;
+    setBusy(true, 'Removing bookmarked connection...');
+    vscode.postMessage({
+      type: 'deleteConnection',
+      payload: { id: profileId, name: profile.name || '' }
+    });
+  });
+
+  connectButton.addEventListener('click', () => {
+    setBusy(true, 'Connecting...');
+    vscode.postMessage({ type: 'connect', payload: collectConnectionPayload() });
+  });
+
+  disconnectButton.addEventListener('click', () => {
+    if (!activeConnectionId) return;
+    setBusy(true, 'Disconnecting...');
+    vscode.postMessage({ type: 'disconnect', payload: { connectionId: activeConnectionId } });
+  });
+
+  showOutputButton.addEventListener('click', () => vscode.postMessage({ type: 'showOutput' }));
+  sudoToggle.addEventListener('change', () => {
+    if (!activeConnectionId) {
+      updateSudoToggle();
+      setStatus('Connect to a host before enabling sudo mode.', true);
+      return;
+    }
+
+    if (sudoToggle.checked) {
+      sudoToggle.checked = false;
+      setBusy(true, 'Enabling sudo mode...');
+      vscode.postMessage({ type: 'enableSudoMode', payload: { connectionId: activeConnectionId } });
+      return;
+    }
+
+    setBusy(true, 'Disabling sudo mode...');
+    vscode.postMessage({ type: 'disableSudoMode', payload: { connectionId: activeConnectionId } });
+  });
+  parentButton.addEventListener('click', () => vscode.postMessage({ type: 'openParent' }));
+  refreshButton.addEventListener('click', () => listDirectory(currentPath.value));
+  goButton.addEventListener('click', () => openPath(currentPath.value));
+  authType.addEventListener('change', updateAuthFields);
+  privateKeyBrowseButton.addEventListener('click', () => vscode.postMessage({ type: 'pickPrivateKeyPath' }));
+  rememberPassword.addEventListener('change', () => { if (!rememberPassword.checked) { password.placeholder = ''; if (password.value === SAVED_SECRET_MASK) password.value = ''; } });
+  rememberPassphrase.addEventListener('change', () => { if (!rememberPassphrase.checked) { passphrase.placeholder = ''; if (passphrase.value === SAVED_SECRET_MASK) passphrase.value = ''; } });
+
+  currentPath.addEventListener('keydown', event => { if (event.key === 'Enter') openPath(currentPath.value); });
+  filterInput.addEventListener('input', () => {
+    applyFilterInput();
+  });
+
+  clearFilterButton.addEventListener('click', () => {
+    if (filterInput.disabled) return;
+    filterInput.value = '';
+    applyFilterInput();
+    filterInput.focus();
+  });
+
+  contextOpen.addEventListener('click', () => {
+    const entries = getSelectedActionEntries();
+    hideContextMenu();
+    if (entries.length) vscode.postMessage({ type: 'openEntries', payload: { entries: entries.map(actionPayload) } });
+  });
+
+  contextCreateFile.addEventListener('click', () => {
+    hideContextMenu();
+    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateFile', payload: { path: currentPath.value || '/' } });
+  });
+
+  contextCreateDirectory.addEventListener('click', () => {
+    hideContextMenu();
+    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateDirectory', payload: { path: currentPath.value || '/' } });
+  });
+
+  contextSetPermissions.addEventListener('click', () => {
+    const entry = getSelectedActionEntry();
+    hideContextMenu();
+    if (entry) vscode.postMessage({ type: 'requestSetPermissions', payload: actionPayload(entry) });
+  });
+
+  contextRename.addEventListener('click', () => {
+    const entry = getSelectedActionEntry();
+    hideContextMenu();
+    if (entry) vscode.postMessage({ type: 'requestRenameEntry', payload: actionPayload(entry) });
+  });
+
+  contextDelete.addEventListener('click', () => {
+    const entries = getSelectedActionEntries();
+    hideContextMenu();
+    if (entries.length) vscode.postMessage({ type: 'requestDeleteEntries', payload: { entries: entries.map(actionPayload) } });
+  });
+
+
+  for (const checkbox of permissionCheckboxes) {
+    checkbox.addEventListener('change', () => {
+      if (!permissionsDialogOpen) return;
+      permissionModeInput.value = calculateModeFromPermissionCheckboxes();
+      setPermissionValidation('', true);
+    });
+  }
+
+  permissionModeInput.addEventListener('input', () => {
+    const value = permissionModeInput.value.trim();
+
+    if (/^[0-7]{0,4}$/.test(value) === false) {
+      setPermissionValidation('Use only octal digits from 0 to 7.', false);
+      return;
+    }
+
+    const normalized = normalizePermissionMode(value);
+    if (!normalized) {
+      setPermissionValidation('Enter 3 or 4 octal digits, for example 644, 0755, 2775 or 1777.', false);
+      return;
+    }
+
+    updatePermissionCheckboxesFromMode(normalized);
+    setPermissionValidation('', true);
+  });
+
+  permissionModeInput.addEventListener('blur', () => {
+    const normalized = normalizePermissionMode(permissionModeInput.value.trim());
+    if (normalized) permissionModeInput.value = normalized;
+  });
+
+  permissionApplyButton.addEventListener('click', () => {
+    const normalized = normalizePermissionMode(permissionModeInput.value.trim());
+    if (!normalized) {
+      setPermissionValidation('Enter a valid octal mode before applying.', false);
+      return;
+    }
+
+    vscode.postMessage({ type: 'applyPermissions', payload: { mode: normalized } });
+  });
+
+  permissionCancelButton.addEventListener('click', () => {
+    vscode.postMessage({ type: 'cancelPermissions' });
+  });
+
+  permissionBackdrop.addEventListener('click', event => {
+    if (event.target === permissionBackdrop) {
+      vscode.postMessage({ type: 'cancelPermissions' });
+    }
+  });
+
+  function isEditableContextTarget(target) {
+    return target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+  }
+
+  document.addEventListener('contextmenu', event => {
+    if (isEditableContextTarget(event.target)) return;
+    if (event.target instanceof Element && event.target.closest('#entriesTableWrap')) return;
+    event.preventDefault();
+    hideContextMenu();
+  }, true);
+
+  document.addEventListener('click', event => {
+    if (!entryContextMenu.contains(event.target)) hideContextMenu();
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      if (permissionsDialogOpen) {
+        vscode.postMessage({ type: 'cancelPermissions' });
+        return;
+      }
+      hideContextMenu();
+    }
+  });
+
+  entriesTableWrap.addEventListener('click', event => {
+    if (event.target === entriesTableWrap) {
+      clearEntrySelection();
+      hideContextMenu();
+    }
+  });
+
+  entriesTableWrap.addEventListener('contextmenu', event => {
+    if (event.target.closest('tr.entry-row')) return;
+    event.preventDefault();
+    hideContextMenu();
+    if (event.target.closest('thead')) return;
+    clearEntrySelection();
+    showContextMenu(null, event.clientX, event.clientY);
+  });
+
+  for (const header of entriesTable.querySelectorAll('th.sortable')) {
+    header.addEventListener('click', event => {
+      if (event.target instanceof Element && event.target.closest('.column-resizer')) return;
+      cycleSort(header.dataset.sortKey || '');
+    });
+  }
+
+  for (const resizer of entriesTable.querySelectorAll('.column-resizer')) {
+    resizer.addEventListener('mousedown', startColumnResize);
+  }
+
+  applyColumnWidths();
+  updateSortIndicators();
+
+  for (const input of [profileName, host, port, username, password, privateKeyPath, passphrase, startPath]) {
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') connectButton.click(); });
+  }
+
+  function renderProfiles(preferredId) {
+    const previousId = preferredId || selectedProfileId || '';
+    profileSelect.innerHTML = '<option value="">New unsaved connection</option>';
+
+    for (const profile of profiles) {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name + ' - ' + formatProfileTarget(profile) + ' - ' + formatCredentialState(profile);
+      profileSelect.appendChild(option);
+    }
+
+    const exists = profiles.some(profile => profile.id === previousId);
+    selectedProfileId = exists ? previousId : '';
+    profileSelect.value = selectedProfileId;
+
+    if (selectedProfileId) {
+      const profile = profiles.find(item => item.id === selectedProfileId);
+      if (profile) fillForm(profile);
+    } else {
+      clearForm();
+    }
+
+    setControls();
+  }
+
+  function renderSessionTabs() {
+    if (!sessions.length) {
+      sessionTabs.innerHTML = '<span class="session-empty">No active connections.</span>';
+      return;
+    }
+
+    sessionTabs.innerHTML = '';
+
+    for (const session of sessions) {
+      const tab = document.createElement('button');
+      tab.className = 'session-tab' + (session.id === activeConnectionId ? ' active' : '');
+      tab.title = formatConnectionLabel(session.name, formatSessionTarget(session)) + ' - ' + (session.currentPath || '/');
+      tab.innerHTML = '<span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close" title="Disconnect">×</span>';
+      tab.addEventListener('click', () => {
+        if (session.id === activeConnectionId) return;
+        setBusy(true, 'Switching to ' + session.name + '...');
+        vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id } });
+      });
+
+      const close = tab.querySelector('.session-close');
+      close.addEventListener('click', event => {
+        event.stopPropagation();
+        setBusy(true, 'Disconnecting...');
+        vscode.postMessage({ type: 'disconnect', payload: { connectionId: session.id } });
+      });
+
+      sessionTabs.appendChild(tab);
+    }
+  }
+
+  function updateSudoToggle() {
+    const active = getActiveSession();
+    const enabled = Boolean(active && active.sudoModeEnabled);
+    const isRootConnection = Boolean(active && String(active.username || '').trim().toLowerCase() === 'root');
+    const isPrivilegedSession = enabled || isRootConnection;
+
+    sudoToggle.checked = enabled;
+    sudoToggleState.textContent = enabled ? 'Sudo On' : 'Sudo Off';
+    sudoToggleLabel.classList.toggle('enabled', enabled);
+    entriesTableWrap.classList.toggle('privileged-session', isPrivilegedSession);
+    sudoToggleLabel.title = !active
+      ? 'Connect to a host to enable sudo mode'
+      : enabled
+        ? 'Disable sudo mode and forget the sudo password'
+        : 'Enable sudo mode for this connection';
+  }
+
+  function updateActiveSessionUi() {
+    const active = getActiveSession();
+    if (!active) {
+      browserSubtitle.textContent = sessions.length ? 'Select an open connection tab to browse remote files.' : 'Connect to a host to list remote files.';
+      currentPath.value = '';
+      updateSudoToggle();
+      return;
+    }
+
+    browserSubtitle.textContent = formatConnectionLabel(active.name, formatSessionTarget(active));
+    if (active.currentPath) {
+      currentPath.value = active.currentPath;
+    }
+    updateSudoToggle();
+  }
+
+  function updateActiveSessionPath(path) {
+    const active = getActiveSession();
+    if (!active) return;
+    active.currentPath = path;
+    renderSessionTabs();
+  }
+
+  function getActiveSession() {
+    return sessions.find(item => item.id === activeConnectionId);
+  }
+
+  function formatProfileTarget(profile) {
+    const userPart = profile.username ? profile.username + '@' : '';
+    return userPart + profile.host + ':' + profile.port;
+  }
+
+  function formatSessionTarget(session) {
+    const userPart = session.username ? session.username + '@' : '';
+    return userPart + session.host + ':' + session.port;
+  }
+
+  function formatConnectionLabel(name, target) {
+    return '[' + name + '] ' + target;
+  }
+
+  function formatCredentialState(profile) {
+    if (profile.authType === 'privateKey') {
+      return profile.hasSavedPassphrase ? 'passphrase saved' : 'passphrase not saved';
+    }
+
+    return profile.hasSavedPassword ? 'password saved' : 'password not saved';
+  }
+
+  function updateCredentialState(profile) {
+    const hasPassword = Boolean(profile && profile.hasSavedPassword);
+    const hasPassphrase = Boolean(profile && profile.hasSavedPassphrase);
+
+    passwordSecretState.textContent = hasPassword
+      ? 'Password saved in VS Code SecretStorage. Uncheck and save/connect to forget it.'
+      : 'Password not saved. Check remember to store a new password securely.';
+    passwordSecretState.className = 'credential-state ' + (hasPassword ? 'saved' : 'not-saved');
+
+    passphraseSecretState.textContent = hasPassphrase
+      ? 'Passphrase saved in VS Code SecretStorage. Uncheck and save/connect to forget it.'
+      : 'Passphrase not saved. Check remember to store a new passphrase securely.';
+    passphraseSecretState.className = 'credential-state ' + (hasPassphrase ? 'saved' : 'not-saved');
+  }
+
+  function fillForm(profile) {
+    profileName.value = profile.name || '';
+    host.value = profile.host || '';
+    port.value = String(profile.port || 22);
+    username.value = profile.username || '';
+    authType.value = profile.authType || 'password';
+    password.value = profile.hasSavedPassword ? SAVED_SECRET_MASK : '';
+    rememberPassword.checked = Boolean(profile.hasSavedPassword);
+    privateKeyPath.value = profile.privateKeyPath || '';
+    passphrase.value = profile.hasSavedPassphrase ? SAVED_SECRET_MASK : '';
+    rememberPassphrase.checked = Boolean(profile.hasSavedPassphrase);
+    startPath.value = profile.startPath || '';
+    keepAlive.checked = profile.keepAlive !== false;
+    password.placeholder = profile.hasSavedPassword ? 'Saved password' : '';
+    passphrase.placeholder = profile.hasSavedPassphrase ? 'Saved passphrase' : '';
+    updateCredentialState(profile);
+    updateAuthFields();
+    setControls();
+  }
+
+  function clearForm() {
+    profileName.value = '';
+    host.value = '';
+    port.value = '22';
+    username.value = '';
+    authType.value = 'password';
+    password.value = '';
+    rememberPassword.checked = false;
+    password.placeholder = '';
+    privateKeyPath.value = '';
+    passphrase.value = '';
+    rememberPassphrase.checked = false;
+    passphrase.placeholder = '';
+    startPath.value = '';
+    keepAlive.checked = true;
+    updateCredentialState();
+    updateAuthFields();
+    setControls();
+  }
+
+
+
+  function showPermissionsDialog(options) {
+    permissionsDialogOpen = true;
+    hideContextMenu();
+
+    const state = options.permissionState || {};
+    const isDirectory = Boolean(options.isDirectory);
+    permissionDialogTitle.textContent = 'Set Permissions: ' + (options.entryName || 'selected item');
+    permissionDialogPath.textContent = options.remotePath || '';
+    permissionCurrentText.textContent = 'Current: ' + (options.currentPermissions || 'unknown');
+    permissionSetuidLabel.textContent = isDirectory ? 'Set user ID / usually ignored on directories' : 'Run as owner / setuid';
+    permissionSetgidLabel.textContent = isDirectory ? 'Inherit group for new files and folders / setgid' : 'Run as group / setgid';
+    permissionStickyLabel.textContent = isDirectory ? 'Restrict delete/rename to item owners / sticky' : 'Sticky bit / rarely used on files';
+
+    for (const checkbox of permissionCheckboxes) {
+      checkbox.checked = Boolean(state[checkbox.dataset.permission]);
+    }
+
+    permissionModeInput.value = normalizePermissionMode(String(options.initialMode || '').trim()) || calculateModeFromPermissionCheckboxes();
+    setPermissionValidation('', true);
+    permissionBackdrop.classList.add('visible');
+    permissionBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => permissionModeInput.focus(), 0);
+  }
+
+  function hidePermissionsDialog() {
+    permissionsDialogOpen = false;
+    permissionBackdrop.classList.remove('visible');
+    permissionBackdrop.setAttribute('aria-hidden', 'true');
+    setPermissionValidation('', true);
+  }
+
+  function calculateModeFromPermissionCheckboxes() {
+    const selected = new Set(permissionCheckboxes.filter(item => item.checked).map(item => item.dataset.permission));
+    const special = (selected.has('setuid') ? 4 : 0) + (selected.has('setgid') ? 2 : 0) + (selected.has('sticky') ? 1 : 0);
+    const owner = permissionDigit(selected, ['ownerRead', 'ownerWrite', 'ownerExecute']);
+    const group = permissionDigit(selected, ['groupRead', 'groupWrite', 'groupExecute']);
+    const others = permissionDigit(selected, ['othersRead', 'othersWrite', 'othersExecute']);
+    return String(special) + String(owner) + String(group) + String(others);
+  }
+
+  function permissionDigit(selected, keys) {
+    return (selected.has(keys[0]) ? 4 : 0) + (selected.has(keys[1]) ? 2 : 0) + (selected.has(keys[2]) ? 1 : 0);
+  }
+
+  function normalizePermissionMode(value) {
+    if (/^[0-7]{3}$/.test(value)) return '0' + value;
+    if (/^[0-7]{4}$/.test(value)) return value;
+    return '';
+  }
+
+  function updatePermissionCheckboxesFromMode(mode) {
+    const digits = mode.split('').map(item => Number(item));
+    const special = digits[0];
+    setPermissionChecked('setuid', (special & 4) !== 0);
+    setPermissionChecked('setgid', (special & 2) !== 0);
+    setPermissionChecked('sticky', (special & 1) !== 0);
+    updatePermissionGroup(['ownerRead', 'ownerWrite', 'ownerExecute'], digits[1]);
+    updatePermissionGroup(['groupRead', 'groupWrite', 'groupExecute'], digits[2]);
+    updatePermissionGroup(['othersRead', 'othersWrite', 'othersExecute'], digits[3]);
+  }
+
+  function updatePermissionGroup(keys, digit) {
+    setPermissionChecked(keys[0], (digit & 4) !== 0);
+    setPermissionChecked(keys[1], (digit & 2) !== 0);
+    setPermissionChecked(keys[2], (digit & 1) !== 0);
+  }
+
+  function setPermissionChecked(permission, checked) {
+    const checkbox = permissionCheckboxes.find(item => item.dataset.permission === permission);
+    if (checkbox) checkbox.checked = checked;
+  }
+
+  function setPermissionValidation(message, isValid) {
+    permissionValidation.textContent = message;
+    permissionModeInput.classList.toggle('invalid', !isValid);
+    permissionApplyButton.disabled = !isValid;
+  }
+
+  function collectConnectionPayload() {
+    return {
+      id: selectedProfileId || undefined,
+      name: profileName.value,
+      host: host.value,
+      port: port.value,
+      username: username.value,
+      authType: authType.value,
+      password: password.value === SAVED_SECRET_MASK ? '' : password.value,
+      rememberPassword: rememberPassword.checked,
+      privateKeyPath: privateKeyPath.value,
+      passphrase: passphrase.value === SAVED_SECRET_MASK ? '' : passphrase.value,
+      rememberPassphrase: rememberPassphrase.checked,
+      startPath: startPath.value,
+      keepAlive: keepAlive.checked
+    };
+  }
+
+  function updateAuthFields() {
+    const isPrivateKey = authType.value === 'privateKey';
+    passwordBlock.classList.toggle('visible', !isPrivateKey);
+    privateKeyBlock.classList.toggle('visible', isPrivateKey);
+    passphraseBlock.classList.toggle('visible', isPrivateKey);
+  }
+
+  function listDirectory(path) {
+    if (!activeConnectionId || busy) return;
+    setBusy(true, 'Loading ' + path + '...');
+    vscode.postMessage({ type: 'listDirectory', payload: { path } });
+  }
+
+  function openPath(path) {
+    if (!activeConnectionId || busy) return;
+    setBusy(true, 'Opening ' + path + '...');
+    vscode.postMessage({ type: 'openPath', payload: { path } });
+  }
+
+  function copyRemotePath(path) {
+    if (!activeConnectionId || busy) return;
+    vscode.postMessage({ type: 'copyRemotePath', payload: { path } });
+  }
+
+  function applyFilterInput() {
+    filterText = filterInput.value.trim().toLowerCase();
+    updateFilterClearButton();
+    const visibleEntries = getVisibleEntries();
+    const visibleEntryPaths = new Set(visibleEntries.map(entry => entry.path || entry.name));
+    selectedEntryPaths = new Set(Array.from(selectedEntryPaths).filter(entryPath => visibleEntryPaths.has(entryPath)));
+    if (selectedEntryPath && !selectedEntryPaths.has(selectedEntryPath)) {
+      selectedEntryPath = Array.from(selectedEntryPaths).pop() || '';
+    }
+    renderEntries(visibleEntries);
+  }
+
+  function updateFilterClearButton() {
+    const hasValue = Boolean(filterInput.value);
+    filterBox.classList.toggle('has-value', hasValue);
+    clearFilterButton.disabled = filterInput.disabled || !hasValue;
+  }
+
+  function renderEntries(entries) {
+    entriesBody.innerHTML = '';
+
+    if (!entries.length) {
+      const message = filterText ? 'No items match the current filter.' : 'This folder is empty.';
+      entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">' + message + '</div></td></tr>';
+      return;
+    }
+
+    for (const entry of entries) {
+      const row = document.createElement('tr');
+      const isParentEntry = entry.name === '..' && entry.type === 'directory';
+      const entryKey = entry.path || entry.name;
+      row.className = 'entry-row' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
+      row.title = entry.linkTarget ? ((entry.path || entry.name) + ' -> ' + entry.linkTarget) : (entry.path || entry.name);
+      row.dataset.entryPath = entryKey;
+      row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
+        '<td class="type">' + escapeHtml(formatEntryType(entry)) + '</td>' +
+        '<td class="size">' + (isDirectoryLike(entry) ? '' : formatSize(entry.size)) + '</td>' +
+        '<td class="owner">' + escapeHtml(formatMetadata(entry.owner)) + '</td>' +
+        '<td class="group">' + escapeHtml(formatMetadata(entry.group)) + '</td>' +
+        '<td class="permissions">' + escapeHtml(entry.permissions || '') + '</td>' +
+        '<td class="modified">' + formatDate(entry.modifyTime) + '</td>';
+
+      row.addEventListener('click', event => {
+        hideContextMenu();
+
+        if (isParentEntry) {
+          selectEntry(entryKey);
+          return;
+        }
+
+        if (event.shiftKey && selectionAnchorPath) {
+          selectEntryRange(selectionAnchorPath, entryKey);
+        } else if (event.metaKey || event.ctrlKey) {
+          toggleEntrySelection(entryKey);
+        } else {
+          selectEntry(entryKey);
+        }
+      });
+
+      row.addEventListener('dblclick', () => {
+        hideContextMenu();
+        vscode.postMessage({ type: 'openEntry', payload: entry });
+      });
+
+      row.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        hideContextMenu();
+        if (!selectedEntryPaths.has(entryKey)) {
+          selectEntry(entryKey);
+        } else {
+          selectedEntryPath = entryKey;
+        }
+        if (!isParentEntry) {
+          showContextMenu(entry, event.clientX, event.clientY);
+        }
+      });
+
+      entriesBody.appendChild(row);
+    }
+  }
+
+  function selectEntry(entryPath) {
+    selectedEntryPaths = new Set([entryPath]);
+    selectedEntryPath = entryPath;
+    selectionAnchorPath = entryPath;
+    syncSelectedRows();
+  }
+
+  function toggleEntrySelection(entryPath) {
+    if (selectedEntryPaths.has(entryPath)) {
+      selectedEntryPaths.delete(entryPath);
+      if (selectedEntryPath === entryPath) {
+        selectedEntryPath = Array.from(selectedEntryPaths).pop() || '';
+      }
+    } else {
+      selectedEntryPaths.add(entryPath);
+      selectedEntryPath = entryPath;
+      selectionAnchorPath = entryPath;
+    }
+
+    syncSelectedRows();
+  }
+
+  function selectEntryRange(anchorPath, targetPath) {
+    const visibleEntries = getVisibleEntries().filter(entry => !isParentEntry(entry));
+    const visiblePaths = visibleEntries.map(entry => entry.path || entry.name);
+    const anchorIndex = visiblePaths.indexOf(anchorPath);
+    const targetIndex = visiblePaths.indexOf(targetPath);
+
+    if (anchorIndex === -1 || targetIndex === -1) {
+      selectEntry(targetPath);
+      return;
+    }
+
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    selectedEntryPaths = new Set(visiblePaths.slice(start, end + 1));
+    selectedEntryPath = targetPath;
+    syncSelectedRows();
+  }
+
+  function syncSelectedRows() {
+    for (const row of entriesBody.querySelectorAll('tr.entry-row')) {
+      const entryPath = row.dataset.entryPath || '';
+      row.classList.toggle('selected', selectedEntryPaths.has(entryPath));
+    }
+  }
+
+  function clearEntrySelection() {
+    selectedEntryPath = '';
+    selectedEntryPaths.clear();
+    selectionAnchorPath = '';
+    syncSelectedRows();
+  }
+
+  function showContextMenu(entry, clientX, clientY) {
+    if (busy || !activeConnectionId) return;
+
+    const selectedEntries = getSelectedActionEntries();
+    setEntryContextActionsVisible(selectedEntries);
+    entryContextMenu.classList.add('visible');
+    entryContextMenu.style.left = '0px';
+    entryContextMenu.style.top = '0px';
+
+    const menuRect = entryContextMenu.getBoundingClientRect();
+    const left = Math.min(clientX, Math.max(0, window.innerWidth - menuRect.width - 8));
+    const top = Math.min(clientY, Math.max(0, window.innerHeight - menuRect.height - 8));
+    entryContextMenu.style.left = left + 'px';
+    entryContextMenu.style.top = top + 'px';
+  }
+
+  function setEntryContextActionsVisible(entries) {
+    const selectedEntries = Array.isArray(entries) ? entries : [];
+    const hasEntryActions = selectedEntries.length > 0;
+    const isSingleEntry = selectedEntries.length === 1;
+    const isSingleDirectory = isSingleEntry && getEffectiveEntryType(selectedEntries[0]) === 'directory';
+    const allFiles = hasEntryActions && selectedEntries.every(entry => getEffectiveEntryType(entry) === 'file' || entry.type === 'link');
+    const canOpen = isSingleDirectory || allFiles;
+
+    const hasItemGroup = isSingleEntry;
+    const hasDeleteGroup = hasEntryActions;
+
+    contextOpen.style.display = canOpen ? '' : 'none';
+    contextOpenSeparator.style.display = canOpen ? '' : 'none';
+    contextOpen.textContent = isSingleDirectory
+      ? 'Enter Directory'
+      : (isSingleEntry && selectedEntries[0].type === 'link' ? 'Open Link' : 'View/Edit');
+
+    contextItemSeparator.style.display = hasItemGroup ? '' : 'none';
+    contextRename.style.display = hasItemGroup ? '' : 'none';
+    contextSetPermissions.style.display = hasItemGroup ? '' : 'none';
+    contextDeleteSeparator.style.display = hasDeleteGroup ? '' : 'none';
+    contextDelete.style.display = hasDeleteGroup ? '' : 'none';
+  }
+
+  function hideContextMenu() {
+    if (entryContextMenu) entryContextMenu.classList.remove('visible');
+  }
+
+  function getSelectedActionEntries() {
+    if (busy || selectedEntryPaths.size === 0) return [];
+    return currentEntries.filter(item => selectedEntryPaths.has(item.path || item.name) && !isParentEntry(item));
+  }
+
+  function getSelectedActionEntry() {
+    const entries = getSelectedActionEntries();
+    return entries.length === 1 ? entries[0] : null;
+  }
+
+  function actionPayload(entry) {
+    return {
+      path: entry.path,
+      name: entry.name,
+      type: entry.type,
+      effectiveType: entry.effectiveType || '',
+      linkTarget: entry.linkTarget || '',
+      permissions: entry.permissions || ''
+    };
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+      return window.CSS.escape(value);
+    }
+    return String(value).replace(/"/g, '\\"');
+  }
+
+  function getVisibleEntries() {
+    const parentEntries = currentEntries.filter(isParentEntry);
+    let visibleEntries = currentEntries.filter(entry => !isParentEntry(entry));
+
+    if (filterText) {
+      visibleEntries = visibleEntries.filter(entry => String(entry.name || '').toLowerCase().includes(filterText));
+    }
+
+    if (currentSort.key && currentSort.direction) {
+      const directionMultiplier = currentSort.direction === 'asc' ? 1 : -1;
+      visibleEntries.sort((left, right) => compareEntries(left, right, currentSort.key) * directionMultiplier);
+    }
+
+    return parentEntries.concat(visibleEntries);
+  }
+
+  function isParentEntry(entry) {
+    return entry && entry.name === '..' && entry.type === 'directory';
+  }
+
+  function cycleSort(key) {
+    if (!key) return;
+
+    if (currentSort.key !== key) {
+      currentSort = { key, direction: 'asc' };
+    } else if (currentSort.direction === 'asc') {
+      currentSort = { key, direction: 'desc' };
+    } else {
+      currentSort = { key: '', direction: '' };
+    }
+
+    updateSortIndicators();
+    renderEntries(getVisibleEntries());
+  }
+
+  function updateSortIndicators() {
+    for (const header of entriesTable.querySelectorAll('th.sortable')) {
+      const indicator = header.querySelector('.sort-indicator');
+      const isActive = header.dataset.sortKey === currentSort.key && currentSort.direction;
+      header.setAttribute('aria-sort', isActive ? (currentSort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+      if (indicator) indicator.textContent = isActive ? (currentSort.direction === 'asc' ? '↑' : '↓') : '';
+    }
+  }
+
+  function compareEntries(left, right, key) {
+    if (key === 'size' || key === 'modified') {
+      return compareNumbers(sortValue(left, key), sortValue(right, key));
+    }
+
+    return compareText(sortValue(left, key), sortValue(right, key));
+  }
+
+  function sortValue(entry, key) {
+    if (key === 'modified') return Number(entry.modifyTime || 0);
+    if (key === 'size') return isDirectoryLike(entry) ? -1 : Number(entry.size || 0);
+    if (key === 'type') return formatEntryType(entry);
+    if (key === 'name') return formatEntryName(entry);
+    if (key === 'owner') return formatMetadata(entry.owner);
+    if (key === 'group') return formatMetadata(entry.group);
+    if (key === 'permissions') return entry.permissions || '';
+    return entry[key] || '';
+  }
+
+  function compareNumbers(left, right) {
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  }
+
+  function compareText(left, right) {
+    return String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  function applyColumnWidths() {
+    let totalWidth = 0;
+    for (const column of columnOrder) {
+      const width = columnWidths[column];
+      totalWidth += width;
+      const col = entriesTable.querySelector('col[data-column="' + column + '"]');
+      if (col) col.style.width = width + 'px';
+    }
+    entriesTable.style.minWidth = totalWidth + 'px';
+  }
+
+  function startColumnResize(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const column = event.currentTarget.dataset.column;
+    if (!column) return;
+
+    const startX = event.clientX;
+    const startWidth = columnWidths[column] || minColumnWidths[column] || 72;
+    document.body.classList.add('resizing-columns');
+
+    const onMouseMove = moveEvent => {
+      const minWidth = minColumnWidths[column] || 72;
+      columnWidths[column] = Math.max(minWidth, startWidth + moveEvent.clientX - startX);
+      applyColumnWidths();
+    };
+
+    const onMouseUp = () => {
+      document.body.classList.remove('resizing-columns');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  const entryIcons = {
+    file: '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M252.31-100Q222-100 201-121q-21-21-21-51.31v-615.38Q180-818 201-839q21-21 51.31-21H570l210 210v477.69Q780-142 759-121q-21 21-51.31 21H252.31ZM540-620v-180H252.31q-4.62 0-8.46 3.85-3.85 3.84-3.85 8.46v615.38q0 4.62 3.85 8.46 3.84 3.85 8.46 3.85h455.38q4.62 0 8.46-3.85 3.85-3.84 3.85-8.46V-620H540ZM240-800v180-180V-160v-640Z"/></svg>',
+    folder: '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M172.31-180Q142-180 121-201q-21-21-21-51.31v-455.38Q100-738 121-759q21-21 51.31-21h219.61l80 80h315.77Q818-700 839-679q21 21 21 51.31v375.38Q860-222 839-201q-21 21-51.31 21H172.31Z"/></svg>',
+    link: '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M323-140q-75.85 0-129.42-53.58Q140-247.15 140-323q0-36.92 13.66-70.23 13.65-33.31 39.73-59.38l127.46-126.47L363-536.92 235.54-409.85q-17.77 17.77-26.85 40.23-9.07 22.47-9.07 46.62 0 51.31 36.03 87.15Q271.69-200 323-200q24.15 0 46.92-9.08 22.77-9.07 40.54-26.84L537.31-363l42.77 42.77-127.47 126.46q-26.07 26.08-59.38 39.92Q359.92-140 323-140Zm76.31-216.92-42.39-42.77 203.77-203.77 42.77 42.77-204.15 203.77Zm239.84-23.39L597-422.69l127.46-126.85q17.39-17.38 26.16-39.34 8.76-21.97 8.76-46.12 0-51.92-35.73-88.46Q687.92-760 636-760q-24.15 0-46.62 9.08-22.46 9.07-39.84 26.46L422.69-597l-42.38-42.15 127.08-127.08q26.07-26.08 59.38-39.92Q600.08-820 637-820q75.85 0 129.11 53.77 53.27 53.77 53.27 130.23 0 36.31-13.34 69.42-13.35 33.12-39.43 59.19L639.15-380.31Z"/></svg>',
+    unknown: '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M438.62-329.23q0-67.92 15.65-104t65.35-80q38.69-34.46 58.65-62.5t19.96-63.58q0-47.15-32.11-78.38-32.12-31.23-88.43-31.23-51.38 0-80 27.53-28.61 27.54-43.46 61.47l-73-32.08q23.31-57.46 72.77-95.81 49.46-38.34 123.69-38.34 96.92 0 149.19 54.65 52.27 54.65 52.27 129.73 0 46.92-20.34 82.81-20.35 35.88-61.73 74.73-52.08 47.77-64.5 75.34-12.43 27.58-12.43 79.66h-81.53ZM477.69-100q-24.54 0-42.27-17.73-17.73-17.73-17.73-42.27 0-24.54 17.73-42.27Q453.15-220 477.69-220q24.54 0 42.27 17.73 17.73 17.73 17.73 42.27 0 24.54-17.73 42.27Q502.23-100 477.69-100Z"/></svg>'
+  };
+
+  function iconFor(entryOrType) {
+    const originalType = typeof entryOrType === 'string' ? entryOrType : entryOrType.type;
+    const type = typeof entryOrType === 'string' ? entryOrType : getEffectiveEntryType(entryOrType);
+    if (originalType === 'link') return entryIcons.link;
+    if (type === 'directory') return entryIcons.folder;
+    if (type === 'unknown') return entryIcons.unknown;
+    return entryIcons.file;
+  }
+
+  function getEffectiveEntryType(entry) {
+    if (!entry) return 'unknown';
+    if (entry.effectiveType === 'file' || entry.effectiveType === 'directory') return entry.effectiveType;
+    return entry.type || 'unknown';
+  }
+
+  function isDirectoryLike(entry) {
+    return getEffectiveEntryType(entry) === 'directory';
+  }
+
+  function formatEntryName(entry) {
+    if (entry && entry.type === 'link' && entry.linkTarget) {
+      return String(entry.name || '') + ' -> ' + String(entry.linkTarget || '');
+    }
+
+    return String(entry && entry.name ? entry.name : '');
+  }
+
+  function formatEntryType(entry) {
+    if (entry && entry.type === 'link') {
+      return 'link';
+    }
+
+    return String(entry && entry.type ? entry.type : 'unknown');
+  }
+
+  function formatSize(size) {
+    const value = Number(size || 0);
+    if (value < 1024) return value + ' B';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB';
+    if (value < 1024 * 1024 * 1024) return (value / 1024 / 1024).toFixed(1) + ' MB';
+    return (value / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  }
+
+  function formatDate(value) {
+    const timestamp = Number(value || 0);
+    if (!timestamp) return '';
+    return new Date(timestamp).toLocaleString();
+  }
+
+  function formatMetadata(value) {
+    if (value === undefined || value === null || value === '') return '';
+    return String(value);
+  }
+
+  function setBusy(isBusy, message) {
+    busy = isBusy;
+    if (busy) hideContextMenu();
+    setControls();
+    if (message) statusText.textContent = message;
+    status.className = isBusy ? 'statusbar busy' : 'statusbar';
+  }
+
+  function setStatus(message, isError = false) {
+    busy = false;
+    setControls();
+    statusText.textContent = message;
+    status.className = isError ? 'statusbar error' : 'statusbar';
+  }
+
+  function setControls() {
+    const hasProfile = Boolean(selectedProfileId || profileSelect.value);
+    const hasActiveSession = Boolean(activeConnectionId);
+    connectButton.disabled = busy;
+    saveProfileButton.disabled = busy;
+    deleteProfileButton.disabled = busy || !hasProfile;
+    newProfileButton.disabled = busy;
+    profileSelect.disabled = busy;
+    disconnectButton.disabled = busy || !hasActiveSession;
+    currentPath.disabled = busy || !hasActiveSession;
+    filterInput.disabled = busy || !hasActiveSession;
+    updateFilterClearButton();
+    parentButton.disabled = busy || !hasActiveSession;
+    refreshButton.disabled = busy || !hasActiveSession;
+    goButton.disabled = busy || !hasActiveSession;
+    sudoToggle.disabled = busy || !hasActiveSession;
+    updateSudoToggle();
+    privateKeyBrowseButton.disabled = busy;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+  </script>
+</body>
+</html>`;
+}

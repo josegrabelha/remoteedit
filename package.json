@@ -1,0 +1,135 @@
+{
+  "name": "remoteedit",
+  "displayName": "Remote Edit",
+  "description": "Browse, edit, and save remote files over SSH/SFTP directly from VS Code.",
+  "version": "1.0.0",
+  "publisher": "josegrabelha",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/josegrabelha/remoteedit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/josegrabelha/remoteedit/issues"
+  },
+  "homepage": "https://github.com/josegrabelha/remoteedit#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onFileSystem:remoteedit",
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "remoteedit.open",
+        "title": "Remote Edit: Open"
+      }
+    ],
+    "configuration": {
+      "title": "Remote Edit",
+      "properties": {
+        "remoteedit.showStatusBarButton": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the RemoteEdit button in the status bar."
+        },
+        "remoteedit.statusBarButtonStyle": {
+          "type": "string",
+          "default": "iconAndText",
+          "enum": [
+            "iconAndText",
+            "iconOnly",
+            "textOnly"
+          ],
+          "enumDescriptions": [
+            "Show both the icon and the RemoteEdit text.",
+            "Show only the RemoteEdit icon.",
+            "Show only the RemoteEdit text."
+          ],
+          "description": "Controls how the RemoteEdit status bar button is displayed."
+        },
+        "remoteedit.statusBarButtonAlignment": {
+          "type": "string",
+          "default": "left",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "enumDescriptions": [
+            "Show the RemoteEdit button on the left side of the status bar.",
+            "Show the RemoteEdit button on the right side of the status bar."
+          ],
+          "description": "Controls which side of the status bar shows the RemoteEdit button."
+        },
+        "remoteedit.statusBarButtonPriority": {
+          "type": "number",
+          "default": 100,
+          "description": "Controls the RemoteEdit status bar button priority. Higher values appear closer to the left within the selected alignment group."
+        },
+        "remoteedit.sshReadyTimeout": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Controls how long RemoteEdit waits, in milliseconds, for an SSH connection to become ready."
+        },
+        "remoteedit.sshKeepAliveInterval": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Controls the SSH keepalive interval, in milliseconds, when Keep connection alive is enabled."
+        },
+        "remoteedit.sshKeepAliveCountMax": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Controls how many unanswered SSH keepalive messages are allowed before the connection is considered lost."
+        }
+      }
+    },
+    "resourceLabelFormatters": [
+      {
+        "scheme": "remoteedit",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "tildify": false,
+          "normalizeDriveLetter": false,
+          "workspaceSuffix": "Remote Edit"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "clean": "rm -rf out"
+  },
+  "dependencies": {
+    "ssh2-sftp-client": "^12.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/ssh2-sftp-client": "^9.0.6",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.4"
+  },
+  "icon": "images/icon.png",
+  "keywords": [
+    "ssh",
+    "sftp",
+    "remote",
+    "remote edit",
+    "remote files",
+    "file browser"
+  ]
+}

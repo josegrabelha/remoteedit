@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5] - 2026-05-23
+
+### Fixed
+
+- Create new remote files through a dedicated create path instead of the save/upload path.
+- Do not pass explicit permissions when creating new remote files, allowing the remote server defaults and umask to decide the final mode.
+- Use exclusive create behavior for new files to avoid truncating an existing file by accident.
+
 ## [1.0.4] - 2026-05-23
 
 ### Added

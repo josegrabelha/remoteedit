@@ -605,7 +605,7 @@ export class RemoteEditPanel {
     if (entryKind === 'directory') {
       await this.sessions.createDirectory(connectionId, newPath);
     } else {
-      await this.sessions.writeFile(connectionId, newPath, new Uint8Array());
+      await this.sessions.createFile(connectionId, newPath);
     }
 
     this.output.appendLine(`[INFO] Created remote ${label} ${this.buildRemoteReference(newPath)}.`);

@@ -336,8 +336,13 @@ export class SftpSessionManager {
           throw error;
         }
 
-        // New files do not have metadata to preserve yet.
-        await client.put(buffer, normalizedPath);
+        // New files must be created by the remote server without an explicit mode
+        // so the connected user's default permissions and umask are respected.
+        await this.createRemoteFileWithServerDefaults(client, normalizedPath);
+
+        if (buffer.length > 0) {
+          await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer);
+        }
       }
 
       this.clearReadFileCache(connectionId, normalizedPath);
@@ -364,11 +369,18 @@ export class SftpSessionManager {
     try {
       await client.put(buffer, tempPath);
 
-      // Write through sudo into the existing target file instead of replacing it.
-      // The shell redirection opens and truncates the target in-place, preserving
-      // owner, group, permissions, ACLs, and inode.
-      await this.runSudoCommandText(connectionId, `cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
-      await this.restoreOriginalSpecialPermissionBitsWithSudoIfNeeded(connectionId, normalizedPath, originalMode);
+      if (existingTargetMetadata) {
+        // Write through sudo into the existing target file instead of replacing it.
+        // The shell redirection opens and truncates the target in-place, preserving
+        // owner, group, permissions, ACLs, and inode.
+        await this.runSudoCommandText(connectionId, `cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
+        await this.restoreOriginalSpecialPermissionBitsWithSudoIfNeeded(connectionId, normalizedPath, originalMode);
+      } else {
+        // New sudo-created files must use the remote sudo context defaults.
+        // set -C keeps the create operation exclusive so an existing file is not truncated.
+        await this.runSudoCommandText(connectionId, `set -C; cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
+      }
+
       this.clearReadFileCache(connectionId, normalizedPath);
     } finally {
       await this.cleanupRemoteTempFile(connectionId, tempPath);
@@ -417,6 +429,22 @@ export class SftpSessionManager {
       modifyTime: entry.modifyTime,
       accessTime: entry.accessTime
     };
+  }
+
+  async createFile(connectionId: string, remotePath: string): Promise<void> {
+    const client = this.getClient(connectionId);
+    const normalizedPath = normalizeRemotePath(remotePath);
+
+    if (this.isSudoModeEnabled(connectionId)) {
+      // Create the file through the remote sudo shell without chmod/mode.
+      // set -C makes the redirection fail if the path already exists.
+      await this.runSudoCommandText(connectionId, `set -C; : > ${shellQuote(normalizedPath)}`, 30000);
+      this.clearReadFileCache(connectionId, normalizedPath);
+      return;
+    }
+
+    await this.createRemoteFileWithServerDefaults(client, normalizedPath);
+    this.clearReadFileCache(connectionId, normalizedPath);
   }
 
   async createDirectory(connectionId: string, remotePath: string): Promise<void> {
@@ -832,6 +860,22 @@ export class SftpSessionManager {
     const entry = parseLongListingLine(output.trim(), dirnameRemotePath(remotePath));
 
     return entry ? modeFromPermissionString(entry.permissions) : undefined;
+  }
+
+  private async createRemoteFileWithServerDefaults(client: SftpClient, remotePath: string): Promise<void> {
+    const sftp = (client as any).sftp;
+
+    if (!sftp || typeof sftp.open !== 'function') {
+      throw new Error('The active SFTP client does not support creating files without explicit permissions. Create file aborted.');
+    }
+
+    const handle = await this.rawSftpOpen(sftp, remotePath, 'wx');
+
+    try {
+      await this.rawSftpClose(sftp, handle);
+    } catch (error) {
+      throw error;
+    }
   }
 
   private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {

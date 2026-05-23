@@ -62,9 +62,9 @@ Remote Edit shows VS Code progress notifications for longer remote operations. C
 
 When saving an existing remote file, Remote Edit writes into the existing target file instead of replacing it. This helps preserve the original file metadata, including inode, owner, group, regular permissions, and ACLs.
 
-For normal non-sudo saves, Remote Edit writes the new content in-place through SFTP. If the file does not already exist, it is created normally and the remote system applies its default ownership and permissions.
+For normal non-sudo saves, Remote Edit writes the new content in-place through SFTP. If the file does not already exist, Remote Edit creates it through the remote SFTP server without passing an explicit permission mode, so the connected user's server defaults and umask decide the final permissions.
 
-When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file in the configured sudo temporary directory, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved as much as the remote operating system allows.
+When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file in the configured sudo temporary directory, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved as much as the remote operating system allows. New files created with sudo mode use the remote sudo context defaults and umask; Remote Edit does not apply chmod after creation.
 
 On Unix-like systems, special permission bits such as setuid, setgid, and sticky may be cleared by the operating system when a file is modified. This can happen even when editing directly on the server with commands such as `echo text > file`.
 
@@ -161,6 +161,7 @@ Sudo passwords are not saved. They are kept only in memory for the active sessio
 - Hosts that require a TTY for sudo may not be supported by sudo mode.
 - Sudo save uses `remoteedit.sudoTempDirectory` for temporary files before writing into the final target file. The default is `/tmp`.
 - Existing files are saved in-place to preserve metadata, so saves are not atomic replace operations. If a connection or remote write fails during the final write, the file may be partially updated.
+- New files are created using the remote server defaults and umask. Remote Edit does not force a permission mode for newly created files.
 - Unix-like systems may clear setuid, setgid, or sticky bits when a file is modified. Remote Edit can attempt to restore only the special bits that already existed before saving.
 - Remote Edit is focused on remote file browsing and editing, not full remote workspace execution.
 

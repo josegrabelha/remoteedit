@@ -31,6 +31,8 @@ The file browser shows useful metadata such as type, size, owner, group, permiss
 
 Open remote files in the native VS Code editor and save changes back to the remote host using the normal save shortcut.
 
+Remote Edit reads remote files through streams when supported by the SFTP server. This improves cancellation behavior while opening files and avoids relying on a single direct file download call.
+
 Remote Edit validates file access before opening the editor, so permission errors are reported without leaving a hanging editor tab.
 
 ### Save bookmarked connections
@@ -56,15 +58,15 @@ Sudo mode is used for privileged file operations such as reading, saving, creati
 
 ### Progress notifications
 
-Remote Edit shows VS Code progress notifications for longer remote operations. Connecting shows a notification immediately and can be cancelled. Opening and saving show notifications only when the operation takes longer than 1.5 seconds, avoiding unnecessary notification flicker for fast files. Opening can be cancelled from the notification. Saving is intentionally not cancellable because interrupting an in-place save could leave the remote file partially updated.
+Remote Edit shows VS Code progress notifications for longer remote operations. Connecting shows a notification immediately and can be cancelled. Opening and saving show notifications only when the operation takes longer than 1.5 seconds, avoiding unnecessary notification flicker for fast files. Opening can be cancelled from the notification; when stream reads are supported, Remote Edit also stops the active read stream. Saving is intentionally not cancellable because interrupting an in-place save could leave the remote file partially updated.
 
 ### Save behavior and file metadata
 
 When saving an existing remote file, Remote Edit writes into the existing target file instead of replacing it. This helps preserve the original file metadata, including inode, owner, group, regular permissions, and ACLs.
 
-For normal non-sudo saves, Remote Edit writes the new content in-place through SFTP. If the file does not already exist, Remote Edit creates it through the remote SFTP server without passing an explicit permission mode, so the connected user's server defaults and umask decide the final permissions.
+For normal non-sudo saves, Remote Edit writes the new content in-place through SFTP in chunks. If the file does not already exist, Remote Edit creates it through the remote SFTP server without passing an explicit permission mode, so the connected user's server defaults and umask decide the final permissions.
 
-When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file in the configured sudo temporary directory, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved as much as the remote operating system allows. New files created with sudo mode use the remote sudo context defaults and umask; Remote Edit does not apply chmod after creation.
+When sudo mode is enabled, Remote Edit first uploads the new content to a temporary file in the configured sudo temporary directory using chunked writes, then uses sudo to write that content into the existing target file. The target file is not replaced, so its metadata is preserved as much as the remote operating system allows. New files created with sudo mode use the remote sudo context defaults and umask; Remote Edit does not apply chmod after creation.
 
 On Unix-like systems, special permission bits such as setuid, setgid, and sticky may be cleared by the operating system when a file is modified. This can happen even when editing directly on the server with commands such as `echo text > file`.
 
@@ -159,8 +161,8 @@ Sudo passwords are not saved. They are kept only in memory for the active sessio
 
 - Sudo mode requires sudo password validation through `sudo -S`.
 - Hosts that require a TTY for sudo may not be supported by sudo mode.
-- Sudo save uses `remoteedit.sudoTempDirectory` for temporary files before writing into the final target file. The default is `/tmp`.
-- Existing files are saved in-place to preserve metadata, so saves are not atomic replace operations. If a connection or remote write fails during the final write, the file may be partially updated.
+- Sudo save uses `remoteedit.sudoTempDirectory` for temporary files before writing into the final target file. The temporary upload is written in chunks, and the default temporary directory is `/tmp`.
+- Existing files are saved in-place and in chunks to preserve metadata, so saves are not atomic replace operations. If a connection or remote write fails during the final write, the file may be partially updated.
 - New files are created using the remote server defaults and umask. Remote Edit does not force a permission mode for newly created files.
 - Unix-like systems may clear setuid, setgid, or sticky bits when a file is modified. Remote Edit can attempt to restore only the special bits that already existed before saving.
 - Remote Edit is focused on remote file browsing and editing, not full remote workspace execution.

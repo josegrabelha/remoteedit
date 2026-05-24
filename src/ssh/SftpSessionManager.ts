@@ -56,6 +56,7 @@ export interface ActiveConnection {
 interface RemoteExecOptions {
   input?: string;
   timeoutMs?: number;
+  cancellationToken?: ConnectionCancellationToken;
 }
 
 interface RemoteExecResult {
@@ -278,7 +279,7 @@ export class SftpSessionManager {
     });
   }
 
-  async readFile(connectionId: string, remotePath: string): Promise<Buffer> {
+  async readFile(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
     const normalizedPath = normalizeRemotePath(remotePath);
     const cacheKey = this.buildReadFileCacheKey(connectionId, normalizedPath);
     const cached = this.readFileCache.get(cacheKey);
@@ -290,14 +291,14 @@ export class SftpSessionManager {
       }
     }
 
-    return await this.readRemoteFile(connectionId, normalizedPath);
+    return await this.readRemoteFile(connectionId, normalizedPath, cancellationToken);
   }
 
-  private async readRemoteFile(connectionId: string, normalizedPath: string): Promise<Buffer> {
+  private async readRemoteFile(connectionId: string, normalizedPath: string, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
     const client = this.getClient(connectionId);
 
     if (this.isSudoModeEnabled(connectionId)) {
-      return await this.runSudoCommandBuffer(connectionId, `cat ${shellQuote(normalizedPath)}`, 60000);
+      return await this.runSudoCommandBuffer(connectionId, `cat ${shellQuote(normalizedPath)}`, 60000, cancellationToken);
     }
 
     try {
@@ -309,13 +310,7 @@ export class SftpSessionManager {
       // Ignore stat errors here. The actual read will report permission or missing-file errors.
     }
 
-    const data = await client.get(normalizedPath);
-
-    try {
-      return await toBuffer(data, normalizedPath);
-    } catch {
-      return await readRemoteFileToBuffer(client, normalizedPath);
-    }
+    return await readRemoteFileToBuffer(client, normalizedPath, cancellationToken);
   }
 
   async writeFile(connectionId: string, remotePath: string, content: Uint8Array): Promise<void> {
@@ -367,7 +362,7 @@ export class SftpSessionManager {
     );
 
     try {
-      await client.put(buffer, tempPath);
+      await this.uploadBufferToNewRemoteFileInChunks(client, tempPath, buffer);
 
       if (existingTargetMetadata) {
         // Write through sudo into the existing target file instead of replacing it.
@@ -878,6 +873,47 @@ export class SftpSessionManager {
     }
   }
 
+
+  private async uploadBufferToNewRemoteFileInChunks(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {
+    const sftp = (client as any).sftp;
+
+    if (!sftp || typeof sftp.open !== 'function') {
+      throw new Error('The active SFTP client does not support chunked uploads without explicit permissions. Save aborted.');
+    }
+
+    // Create the temporary file without passing a mode/permission attribute so
+    // the remote server applies its own defaults and umask. Then write the
+    // content in chunks instead of using a single buffer upload call.
+    const handle = await this.rawSftpOpen(sftp, remotePath, 'wx');
+    let operationError: unknown;
+
+    try {
+      await this.writeBufferToOpenRemoteFile(sftp, handle, content);
+    } catch (error) {
+      operationError = error;
+      throw error;
+    } finally {
+      try {
+        await this.rawSftpClose(sftp, handle);
+      } catch (closeError) {
+        if (!operationError) {
+          throw closeError;
+        }
+      }
+    }
+  }
+
+  private async writeBufferToOpenRemoteFile(sftp: any, handle: Buffer, content: Buffer): Promise<void> {
+    const chunkSize = 64 * 1024;
+    let offset = 0;
+
+    while (offset < content.length) {
+      const length = Math.min(chunkSize, content.length - offset);
+      await this.rawSftpWrite(sftp, handle, content, offset, length, offset);
+      offset += length;
+    }
+  }
+
   private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {
     const sftp = (client as any).sftp;
 
@@ -889,15 +925,7 @@ export class SftpSessionManager {
     let operationError: unknown;
 
     try {
-      const chunkSize = 32 * 1024;
-      let offset = 0;
-
-      while (offset < content.length) {
-        const length = Math.min(chunkSize, content.length - offset);
-        await this.rawSftpWrite(sftp, handle, content, offset, length, offset);
-        offset += length;
-      }
-
+      await this.writeBufferToOpenRemoteFile(sftp, handle, content);
       await this.rawSftpSetSize(sftp, remotePath, handle, content.length);
     } catch (error) {
       operationError = error;
@@ -1130,17 +1158,17 @@ export class SftpSessionManager {
     });
   }
 
-  private async runSudoCommandText(connectionId: string, command: string, timeoutMs = 30000): Promise<string> {
-    const result = await this.runSudoCommand(connectionId, command, timeoutMs);
+  private async runSudoCommandText(connectionId: string, command: string, timeoutMs = 30000, cancellationToken?: ConnectionCancellationToken): Promise<string> {
+    const result = await this.runSudoCommand(connectionId, command, timeoutMs, cancellationToken);
     return result.stdout.toString('utf8');
   }
 
-  private async runSudoCommandBuffer(connectionId: string, command: string, timeoutMs = 30000): Promise<Buffer> {
-    const result = await this.runSudoCommand(connectionId, command, timeoutMs);
+  private async runSudoCommandBuffer(connectionId: string, command: string, timeoutMs = 30000, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
+    const result = await this.runSudoCommand(connectionId, command, timeoutMs, cancellationToken);
     return result.stdout;
   }
 
-  private async runSudoCommand(connectionId: string, command: string, timeoutMs: number): Promise<RemoteExecResult> {
+  private async runSudoCommand(connectionId: string, command: string, timeoutMs: number, cancellationToken?: ConnectionCancellationToken): Promise<RemoteExecResult> {
     const password = this.sudoPasswords.get(connectionId);
 
     if (!password) {
@@ -1150,7 +1178,8 @@ export class SftpSessionManager {
     const client = this.getClient(connectionId);
     const result = await this.executeRemoteCommand(client, `sudo -S -p '' sh -c ${shellQuote(command)}`, {
       input: `${password}\n`,
-      timeoutMs
+      timeoutMs,
+      cancellationToken
     });
 
     if (result.code !== 0) {
@@ -1180,6 +1209,7 @@ export class SftpSessionManager {
 
         settled = true;
         clearTimeout(timer);
+        cancellationDisposable?.dispose();
         callback();
       };
 
@@ -1191,6 +1221,21 @@ export class SftpSessionManager {
         }
         settle(() => reject(new Error(`Remote command timed out after ${options.timeoutMs || 30000} ms.`)));
       }, options.timeoutMs || 30000);
+
+      const cancellationDisposable = options.cancellationToken?.onCancellationRequested(() => {
+        try {
+          remoteStream?.close?.();
+        } catch {
+          // Ignore stream close errors when a command is cancelled.
+        }
+        settle(() => reject(new Error('Operation cancelled.')));
+      });
+
+      if (options.cancellationToken?.isCancellationRequested) {
+        cancellationDisposable?.dispose();
+        settle(() => reject(new Error('Operation cancelled.')));
+        return;
+      }
 
       try {
         sshClient.exec(command, (error: Error | undefined, stream: any) => {
@@ -1604,11 +1649,80 @@ async function readableToBuffer(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function readRemoteFileToBuffer(client: SftpClient, remotePath: string): Promise<Buffer> {
+async function readRemoteFileToBuffer(
+  client: SftpClient,
+  remotePath: string,
+  cancellationToken?: ConnectionCancellationToken
+): Promise<Buffer> {
+  throwIfOperationCancelled(cancellationToken);
+
+  const sftp = (client as any).sftp;
+
+  if (sftp && typeof sftp.createReadStream === 'function') {
+    return await readRemoteFileStreamToBuffer(sftp.createReadStream(remotePath), cancellationToken);
+  }
+
+  const chunks: Buffer[] = [];
+  let sink: Writable | undefined;
+
+  const operation = new Promise<Buffer>((resolve, reject) => {
+    sink = new Writable({
+      write(chunk, _encoding, callback) {
+        if (cancellationToken?.isCancellationRequested) {
+          callback(new Error('Operation cancelled.'));
+          return;
+        }
+
+        if (Buffer.isBuffer(chunk)) {
+          chunks.push(chunk);
+        } else if (chunk instanceof Uint8Array) {
+          chunks.push(Buffer.from(chunk));
+        } else {
+          chunks.push(Buffer.from(String(chunk)));
+        }
+
+        callback();
+      }
+    });
+
+    client.get(remotePath, sink as any)
+      .then(() => {
+        throwIfOperationCancelled(cancellationToken);
+        resolve(Buffer.concat(chunks));
+      })
+      .catch(reject);
+  });
+
+  const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
+    try {
+      sink?.destroy(new Error('Operation cancelled.'));
+    } catch {
+      // Ignore sink destroy errors while cancelling read.
+    }
+  });
+
+  try {
+    return await operation;
+  } finally {
+    cancellationDisposable?.dispose();
+  }
+}
+
+async function readRemoteFileStreamToBuffer(stream: Readable, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
   const chunks: Buffer[] = [];
 
-  const sink = new Writable({
-    write(chunk, _encoding, callback) {
+  const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
+    try {
+      stream.destroy(new Error('Operation cancelled.'));
+    } catch {
+      // Ignore stream destroy errors while cancelling read.
+    }
+  });
+
+  try {
+    for await (const chunk of stream) {
+      throwIfOperationCancelled(cancellationToken);
+
       if (Buffer.isBuffer(chunk)) {
         chunks.push(chunk);
       } else if (chunk instanceof Uint8Array) {
@@ -1616,13 +1730,19 @@ async function readRemoteFileToBuffer(client: SftpClient, remotePath: string): P
       } else {
         chunks.push(Buffer.from(String(chunk)));
       }
-
-      callback();
     }
-  });
 
-  await client.get(remotePath, sink as any);
-  return Buffer.concat(chunks);
+    throwIfOperationCancelled(cancellationToken);
+    return Buffer.concat(chunks);
+  } finally {
+    cancellationDisposable?.dispose();
+  }
+}
+
+function throwIfOperationCancelled(cancellationToken?: ConnectionCancellationToken): void {
+  if (cancellationToken?.isCancellationRequested) {
+    throw new Error('Operation cancelled.');
+  }
 }
 
 function getOwnerFromFileInfo(item: SftpClient.FileInfo): number | string {

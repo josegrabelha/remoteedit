@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.6] - 2026-05-24
+
+### Changed
+
+- Read remote files through streams to improve opening cancellation and memory behavior.
+- Make cancellable remote file opening stop the active read stream when supported by the SFTP server.
+- Keep save behavior metadata-safe by writing existing files in chunks/in-place without using a local temporary file.
+- Upload sudo save temporary files in chunks instead of using a single buffer upload call.
+
 ## [1.0.5] - 2026-05-23
 
 ### Fixed

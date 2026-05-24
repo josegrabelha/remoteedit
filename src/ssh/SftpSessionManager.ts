@@ -4,6 +4,10 @@ import SftpClient from 'ssh2-sftp-client';
 import { expandHomePath } from '../utils/localPathUtils';
 import { getBooleanSetting, getNumberSetting, getStringSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
+import type { RemoteEditProgressReporter } from '../utils/progressUtils';
+
+const SUDO_READ_IDLE_TIMEOUT_MS = 60000;
+const SUDO_SAVE_APPLY_TIMEOUT_MS = 300000;
 
 export type AuthType = 'password' | 'privateKey';
 
@@ -56,7 +60,13 @@ export interface ActiveConnection {
 interface RemoteExecOptions {
   input?: string;
   timeoutMs?: number;
+  idleTimeoutMs?: number;
   cancellationToken?: ConnectionCancellationToken;
+  stdoutProgress?: {
+    label: string;
+    progress?: RemoteEditProgressReporter;
+    totalBytes?: number;
+  };
 }
 
 interface RemoteExecResult {
@@ -270,16 +280,16 @@ export class SftpSessionManager {
     return sortRemoteEntries(parseLongListing(listing, normalizedPath));
   }
 
-  async prepareFileForOpen(connectionId: string, remotePath: string): Promise<void> {
+  async prepareFileForOpen(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<void> {
     const normalizedPath = normalizeRemotePath(remotePath);
-    const content = await this.readRemoteFile(connectionId, normalizedPath);
+    const content = await this.readRemoteFile(connectionId, normalizedPath, cancellationToken, progress);
     this.readFileCache.set(this.buildReadFileCacheKey(connectionId, normalizedPath), {
       content,
       expiresAt: Date.now() + 30000
     });
   }
 
-  async readFile(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
+  async readFile(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<Buffer> {
     const normalizedPath = normalizeRemotePath(remotePath);
     const cacheKey = this.buildReadFileCacheKey(connectionId, normalizedPath);
     const cached = this.readFileCache.get(cacheKey);
@@ -291,14 +301,15 @@ export class SftpSessionManager {
       }
     }
 
-    return await this.readRemoteFile(connectionId, normalizedPath, cancellationToken);
+    return await this.readRemoteFile(connectionId, normalizedPath, cancellationToken, progress);
   }
 
-  private async readRemoteFile(connectionId: string, normalizedPath: string, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
+  private async readRemoteFile(connectionId: string, normalizedPath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<Buffer> {
     const client = this.getClient(connectionId);
 
     if (this.isSudoModeEnabled(connectionId)) {
-      return await this.runSudoCommandBuffer(connectionId, `cat ${shellQuote(normalizedPath)}`, 60000, cancellationToken);
+      const metadata = await this.getSudoTargetMetadata(connectionId, normalizedPath);
+      return await this.runSudoCommandBuffer(connectionId, `cat ${shellQuote(normalizedPath)}`, SUDO_READ_IDLE_TIMEOUT_MS, cancellationToken, progress, metadata?.size, true);
     }
 
     try {
@@ -310,10 +321,12 @@ export class SftpSessionManager {
       // Ignore stat errors here. The actual read will report permission or missing-file errors.
     }
 
-    return await readRemoteFileToBuffer(client, normalizedPath, cancellationToken);
+    const stats = await client.stat(normalizedPath).catch(() => undefined as any);
+    const totalBytes = Number((stats as any)?.size || 0);
+    return await readRemoteFileToBuffer(client, normalizedPath, cancellationToken, progress, totalBytes);
   }
 
-  async writeFile(connectionId: string, remotePath: string, content: Uint8Array): Promise<void> {
+  async writeFile(connectionId: string, remotePath: string, content: Uint8Array, progress?: RemoteEditProgressReporter): Promise<void> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
     const buffer = Buffer.from(content);
@@ -324,7 +337,7 @@ export class SftpSessionManager {
 
         // Existing files must be updated in-place so owner, group,
         // permissions, ACLs, and inode are not replaced during save.
-        await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer);
+        await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress);
         await this.restoreOriginalSpecialPermissionBitsIfNeeded(client, normalizedPath, originalMode);
       } catch (error) {
         if (!this.isMissingFileError(error)) {
@@ -336,7 +349,7 @@ export class SftpSessionManager {
         await this.createRemoteFileWithServerDefaults(client, normalizedPath);
 
         if (buffer.length > 0) {
-          await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer);
+          await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress);
         }
       }
 
@@ -362,18 +375,20 @@ export class SftpSessionManager {
     );
 
     try {
-      await this.uploadBufferToNewRemoteFileInChunks(client, tempPath, buffer);
+      await this.uploadBufferToNewRemoteFileInChunks(client, tempPath, buffer, progress);
 
       if (existingTargetMetadata) {
         // Write through sudo into the existing target file instead of replacing it.
         // The shell redirection opens and truncates the target in-place, preserving
         // owner, group, permissions, ACLs, and inode.
-        await this.runSudoCommandText(connectionId, `cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
+        await this.runSudoCommandText(connectionId, `cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, SUDO_SAVE_APPLY_TIMEOUT_MS);
+        progress?.reportMessage('Saving remote file...');
         await this.restoreOriginalSpecialPermissionBitsWithSudoIfNeeded(connectionId, normalizedPath, originalMode);
       } else {
         // New sudo-created files must use the remote sudo context defaults.
         // set -C keeps the create operation exclusive so an existing file is not truncated.
-        await this.runSudoCommandText(connectionId, `set -C; cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, 60000);
+        progress?.reportMessage('Saving remote file...');
+        await this.runSudoCommandText(connectionId, `set -C; cat ${shellQuote(tempPath)} > ${shellQuote(normalizedPath)}`, SUDO_SAVE_APPLY_TIMEOUT_MS);
       }
 
       this.clearReadFileCache(connectionId, normalizedPath);
@@ -874,7 +889,7 @@ export class SftpSessionManager {
   }
 
 
-  private async uploadBufferToNewRemoteFileInChunks(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {
+  private async uploadBufferToNewRemoteFileInChunks(client: SftpClient, remotePath: string, content: Buffer, progress?: RemoteEditProgressReporter): Promise<void> {
     const sftp = (client as any).sftp;
 
     if (!sftp || typeof sftp.open !== 'function') {
@@ -888,7 +903,7 @@ export class SftpSessionManager {
     let operationError: unknown;
 
     try {
-      await this.writeBufferToOpenRemoteFile(sftp, handle, content);
+      await this.writeBufferToOpenRemoteFile(sftp, handle, content, progress);
     } catch (error) {
       operationError = error;
       throw error;
@@ -903,7 +918,7 @@ export class SftpSessionManager {
     }
   }
 
-  private async writeBufferToOpenRemoteFile(sftp: any, handle: Buffer, content: Buffer): Promise<void> {
+  private async writeBufferToOpenRemoteFile(sftp: any, handle: Buffer, content: Buffer, progress?: RemoteEditProgressReporter): Promise<void> {
     const chunkSize = 64 * 1024;
     let offset = 0;
 
@@ -911,10 +926,11 @@ export class SftpSessionManager {
       const length = Math.min(chunkSize, content.length - offset);
       await this.rawSftpWrite(sftp, handle, content, offset, length, offset);
       offset += length;
+      progress?.reportBytes('Saving remote file...', offset, content.length);
     }
   }
 
-  private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer): Promise<void> {
+  private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer, progress?: RemoteEditProgressReporter): Promise<void> {
     const sftp = (client as any).sftp;
 
     if (!sftp || typeof sftp.open !== 'function') {
@@ -925,7 +941,7 @@ export class SftpSessionManager {
     let operationError: unknown;
 
     try {
-      await this.writeBufferToOpenRemoteFile(sftp, handle, content);
+      await this.writeBufferToOpenRemoteFile(sftp, handle, content, progress);
       await this.rawSftpSetSize(sftp, remotePath, handle, content.length);
     } catch (error) {
       operationError = error;
@@ -1163,12 +1179,28 @@ export class SftpSessionManager {
     return result.stdout.toString('utf8');
   }
 
-  private async runSudoCommandBuffer(connectionId: string, command: string, timeoutMs = 30000, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
-    const result = await this.runSudoCommand(connectionId, command, timeoutMs, cancellationToken);
+  private async runSudoCommandBuffer(
+    connectionId: string,
+    command: string,
+    timeoutMs = 30000,
+    cancellationToken?: ConnectionCancellationToken,
+    progress?: RemoteEditProgressReporter,
+    totalBytes?: number,
+    useIdleTimeout = false
+  ): Promise<Buffer> {
+    const result = await this.runSudoCommand(connectionId, command, timeoutMs, cancellationToken, progress, totalBytes, useIdleTimeout);
     return result.stdout;
   }
 
-  private async runSudoCommand(connectionId: string, command: string, timeoutMs: number, cancellationToken?: ConnectionCancellationToken): Promise<RemoteExecResult> {
+  private async runSudoCommand(
+    connectionId: string,
+    command: string,
+    timeoutMs: number,
+    cancellationToken?: ConnectionCancellationToken,
+    progress?: RemoteEditProgressReporter,
+    totalBytes?: number,
+    useIdleTimeout = false
+  ): Promise<RemoteExecResult> {
     const password = this.sudoPasswords.get(connectionId);
 
     if (!password) {
@@ -1178,8 +1210,10 @@ export class SftpSessionManager {
     const client = this.getClient(connectionId);
     const result = await this.executeRemoteCommand(client, `sudo -S -p '' sh -c ${shellQuote(command)}`, {
       input: `${password}\n`,
-      timeoutMs,
-      cancellationToken
+      timeoutMs: useIdleTimeout ? undefined : timeoutMs,
+      idleTimeoutMs: useIdleTimeout ? timeoutMs : undefined,
+      cancellationToken,
+      stdoutProgress: progress ? { label: 'Opening remote file...', progress, totalBytes } : undefined
     });
 
     if (result.code !== 0) {
@@ -1202,6 +1236,10 @@ export class SftpSessionManager {
       let settled = false;
       let remoteStream: any;
 
+      const commandTimeoutMs = options.idleTimeoutMs || options.timeoutMs || 30000;
+      const usesIdleTimeout = Number(options.idleTimeoutMs || 0) > 0;
+      let timer: NodeJS.Timeout;
+
       const settle = (callback: () => void) => {
         if (settled) {
           return;
@@ -1213,14 +1251,30 @@ export class SftpSessionManager {
         callback();
       };
 
-      const timer = setTimeout(() => {
+      const startTimer = () => setTimeout(() => {
         try {
           remoteStream?.close?.();
         } catch {
           // Ignore stream close errors when a command times out.
         }
-        settle(() => reject(new Error(`Remote command timed out after ${options.timeoutMs || 30000} ms.`)));
-      }, options.timeoutMs || 30000);
+
+        const message = usesIdleTimeout
+          ? `Remote command timed out after ${commandTimeoutMs} ms without output.`
+          : `Remote command timed out after ${commandTimeoutMs} ms.`;
+
+        settle(() => reject(new Error(message)));
+      }, commandTimeoutMs);
+
+      const resetIdleTimer = () => {
+        if (!usesIdleTimeout || settled) {
+          return;
+        }
+
+        clearTimeout(timer);
+        timer = startTimer();
+      };
+
+      timer = startTimer();
 
       const cancellationDisposable = options.cancellationToken?.onCancellationRequested(() => {
         try {
@@ -1251,11 +1305,25 @@ export class SftpSessionManager {
 
           remoteStream = stream;
 
+          let stdoutTransferredBytes = 0;
+
           stream.on('data', (data: Buffer | string) => {
-            stdoutChunks.push(Buffer.isBuffer(data) ? data : Buffer.from(String(data)));
+            resetIdleTimer();
+            const chunk = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+            stdoutChunks.push(chunk);
+
+            if (options.stdoutProgress?.progress && Number(options.stdoutProgress.totalBytes || 0) > 0) {
+              stdoutTransferredBytes += chunk.length;
+              options.stdoutProgress.progress.reportBytes(
+                options.stdoutProgress.label,
+                stdoutTransferredBytes,
+                Number(options.stdoutProgress.totalBytes || 0)
+              );
+            }
           });
 
           stream.stderr?.on?.('data', (data: Buffer | string) => {
+            resetIdleTimer();
             stderrChunks.push(Buffer.isBuffer(data) ? data : Buffer.from(String(data)));
           });
 
@@ -1652,17 +1720,20 @@ async function readableToBuffer(stream: Readable): Promise<Buffer> {
 async function readRemoteFileToBuffer(
   client: SftpClient,
   remotePath: string,
-  cancellationToken?: ConnectionCancellationToken
+  cancellationToken?: ConnectionCancellationToken,
+  progress?: RemoteEditProgressReporter,
+  totalBytes?: number
 ): Promise<Buffer> {
   throwIfOperationCancelled(cancellationToken);
 
   const sftp = (client as any).sftp;
 
   if (sftp && typeof sftp.createReadStream === 'function') {
-    return await readRemoteFileStreamToBuffer(sftp.createReadStream(remotePath), cancellationToken);
+    return await readRemoteFileStreamToBuffer(sftp.createReadStream(remotePath), cancellationToken, progress, totalBytes);
   }
 
   const chunks: Buffer[] = [];
+  let transferredBytes = 0;
   let sink: Writable | undefined;
 
   const operation = new Promise<Buffer>((resolve, reject) => {
@@ -1673,12 +1744,17 @@ async function readRemoteFileToBuffer(
           return;
         }
 
-        if (Buffer.isBuffer(chunk)) {
-          chunks.push(chunk);
-        } else if (chunk instanceof Uint8Array) {
-          chunks.push(Buffer.from(chunk));
-        } else {
-          chunks.push(Buffer.from(String(chunk)));
+        const bufferChunk = Buffer.isBuffer(chunk)
+          ? chunk
+          : chunk instanceof Uint8Array
+            ? Buffer.from(chunk)
+            : Buffer.from(String(chunk));
+
+        chunks.push(bufferChunk);
+
+        if (progress && Number(totalBytes || 0) > 0) {
+          transferredBytes += bufferChunk.length;
+          progress.reportBytes('Opening remote file...', transferredBytes, Number(totalBytes || 0));
         }
 
         callback();
@@ -1708,8 +1784,14 @@ async function readRemoteFileToBuffer(
   }
 }
 
-async function readRemoteFileStreamToBuffer(stream: Readable, cancellationToken?: ConnectionCancellationToken): Promise<Buffer> {
+async function readRemoteFileStreamToBuffer(
+  stream: Readable,
+  cancellationToken?: ConnectionCancellationToken,
+  progress?: RemoteEditProgressReporter,
+  totalBytes?: number
+): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let transferredBytes = 0;
 
   const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
     try {
@@ -1723,12 +1805,17 @@ async function readRemoteFileStreamToBuffer(stream: Readable, cancellationToken?
     for await (const chunk of stream) {
       throwIfOperationCancelled(cancellationToken);
 
-      if (Buffer.isBuffer(chunk)) {
-        chunks.push(chunk);
-      } else if (chunk instanceof Uint8Array) {
-        chunks.push(Buffer.from(chunk));
-      } else {
-        chunks.push(Buffer.from(String(chunk)));
+      const bufferChunk = Buffer.isBuffer(chunk)
+        ? chunk
+        : chunk instanceof Uint8Array
+          ? Buffer.from(chunk)
+          : Buffer.from(String(chunk));
+
+      chunks.push(bufferChunk);
+
+      if (progress && Number(totalBytes || 0) > 0) {
+        transferredBytes += bufferChunk.length;
+        progress.reportBytes('Opening remote file...', transferredBytes, Number(totalBytes || 0));
       }
     }
 

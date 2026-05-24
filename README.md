@@ -58,7 +58,7 @@ Sudo mode is used for privileged file operations such as reading, saving, creati
 
 ### Progress notifications
 
-Remote Edit shows VS Code progress notifications for longer remote operations. Connecting shows a notification immediately and can be cancelled. Opening and saving show notifications only when the operation takes longer than 1.5 seconds, avoiding unnecessary notification flicker for fast files. Opening can be cancelled from the notification; when stream reads are supported, Remote Edit also stops the active read stream. Saving is intentionally not cancellable because interrupting an in-place save could leave the remote file partially updated.
+Remote Edit shows VS Code progress notifications for longer remote operations. Connecting shows a notification immediately and can be cancelled. Opening and saving show notifications only when the operation takes longer than 1 second, avoiding unnecessary notification flicker for fast files. For streamed file operations, the notification displays transferred bytes, total size, and percentage. Opening can be cancelled from the notification; when stream reads are supported, Remote Edit also stops the active read stream. Saving is intentionally not cancellable because interrupting an in-place save could leave the remote file partially updated.
 
 ### Save behavior and file metadata
 

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export const PROGRESS_NOTIFICATION_DELAY_MS = 1500;
+export const PROGRESS_NOTIFICATION_DELAY_MS = 1000;
 
 export class RemoteEditOperationCancelledError extends Error {
   constructor(message = 'Operation cancelled.') {
@@ -16,6 +16,63 @@ export interface RemoteEditProgressOptions {
   cancelMessage?: string;
 }
 
+export interface RemoteEditProgressReporter {
+  reportMessage(message: string): void;
+  reportBytes(label: string, transferredBytes: number, totalBytes: number): void;
+}
+
+class DelayedRemoteEditProgressReporter implements RemoteEditProgressReporter {
+  private progress?: vscode.Progress<{ increment?: number; message?: string }>;
+  private latestMessage = '';
+  private latestPercent = 0;
+  private deliveredPercent = 0;
+
+  bind(progress: vscode.Progress<{ increment?: number; message?: string }>): void {
+    this.progress = progress;
+
+    if (this.latestMessage || this.latestPercent > 0) {
+      this.progress.report({
+        increment: Math.max(0, this.latestPercent - this.deliveredPercent),
+        message: this.latestMessage || undefined
+      });
+      this.deliveredPercent = this.latestPercent;
+    }
+  }
+
+  reportMessage(message: string): void {
+    this.latestMessage = message;
+    this.progress?.report({ message });
+  }
+
+  reportBytes(label: string, transferredBytes: number, totalBytes: number): void {
+    if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+      this.reportMessage(label);
+      return;
+    }
+
+    const safeTransferred = Math.max(0, Math.min(transferredBytes, totalBytes));
+    const percent = Math.max(0, Math.min(100, Math.floor((safeTransferred / totalBytes) * 100)));
+    const message = `${formatBytes(safeTransferred)} of ${formatBytes(totalBytes)} (${percent}%)`;
+
+    this.latestMessage = message;
+    this.latestPercent = percent;
+
+    if (!this.progress) {
+      return;
+    }
+
+    const increment = percent - this.deliveredPercent;
+
+    if (increment > 0) {
+      this.progress.report({ increment, message });
+      this.deliveredPercent = percent;
+      return;
+    }
+
+    this.progress.report({ message });
+  }
+}
+
 export function isRemoteEditOperationCancelled(error: unknown): boolean {
   return error instanceof RemoteEditOperationCancelledError
     || (error instanceof Error && error.name === 'RemoteEditOperationCancelledError');
@@ -29,7 +86,7 @@ export function throwIfCancelled(token: vscode.CancellationToken, message = 'Ope
 
 export async function withRemoteEditProgress<T>(
   title: string,
-  task: (token: vscode.CancellationToken) => Promise<T>,
+  task: (token: vscode.CancellationToken, progress: RemoteEditProgressReporter) => Promise<T>,
   options: RemoteEditProgressOptions = {}
 ): Promise<T> {
   const delayMs = Math.max(0, options.delayMs ?? PROGRESS_NOTIFICATION_DELAY_MS);
@@ -37,7 +94,8 @@ export async function withRemoteEditProgress<T>(
   const returnOnCancel = options.returnOnCancel === true;
   const cancelMessage = options.cancelMessage || 'Operation cancelled.';
   const source = new vscode.CancellationTokenSource();
-  const operation = Promise.resolve().then(() => task(source.token));
+  const reporter = new DelayedRemoteEditProgressReporter();
+  const operation = Promise.resolve().then(() => task(source.token, reporter));
 
   if (delayMs > 0) {
     const first = await Promise.race([
@@ -66,7 +124,9 @@ export async function withRemoteEditProgress<T>(
         title,
         cancellable
       },
-      async (_progress, progressToken) => {
+      async (progress, progressToken) => {
+        reporter.bind(progress);
+
         const progressCancellation = progressToken.onCancellationRequested(() => {
           source.cancel();
         });
@@ -91,6 +151,23 @@ export async function withRemoteEditProgress<T>(
   } finally {
     source.dispose();
   }
+}
+
+export function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return 'unknown';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function delay(ms: number): Promise<void> {

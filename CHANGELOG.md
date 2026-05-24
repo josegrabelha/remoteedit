@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.7] - 2026-05-24
+
+### Added
+
+- Show byte-based progress for remote file transfers that take longer than 1 second.
+- Display transferred bytes, total size, and percentage while opening and saving streamed remote files.
+- Fix sudo file open timeout for larger or slower reads.
+- Increase sudo save timeout to avoid failures on slower filesystems.
+
 ## [1.0.6] - 2026-05-24
 
 ### Changed

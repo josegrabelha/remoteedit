@@ -440,14 +440,14 @@ export class RemoteEditPanel {
     try {
       await withRemoteEditProgress(
         resolvedEntries.length === 1 ? 'Opening remote file...' : `Opening ${resolvedEntries.length} remote files...`,
-        async token => {
+        async (token, progress) => {
           for (const entry of resolvedEntries) {
             throwIfCancelled(token, 'Opening cancelled.');
 
             const uri = buildRemoteEditUri(connectionId, entry.path, this.getActiveUriAuthority());
 
             try {
-              await this.sessions.prepareFileForOpen(connectionId, entry.path);
+              await this.sessions.prepareFileForOpen(connectionId, entry.path, token, progress);
               throwIfCancelled(token, 'Opening cancelled.');
               await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
               this.output.appendLine(`[INFO] Opened ${this.buildRemoteReference(entry.path)}`);
@@ -531,8 +531,8 @@ export class RemoteEditPanel {
     try {
       await withRemoteEditProgress(
         'Opening remote file...',
-        async token => {
-          await this.sessions.prepareFileForOpen(connectionId, normalizedPath);
+        async (token, progress) => {
+          await this.sessions.prepareFileForOpen(connectionId, normalizedPath, token, progress);
           throwIfCancelled(token, 'Opening cancelled.');
         },
         { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening cancelled.' }

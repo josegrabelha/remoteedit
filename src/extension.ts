@@ -3,6 +3,7 @@ import { ConnectionManager } from './connection/ConnectionManager';
 import { RemoteEditFileSystemProvider } from './filesystem/RemoteEditFileSystemProvider';
 import { RemoteEditPanel } from './panel/RemoteEditPanel';
 import { SftpSessionManager } from './ssh/SftpSessionManager';
+import { appendOutputLog } from './utils/outputLogger';
 
 type StatusBarButtonStyle = 'iconAndText' | 'iconOnly' | 'textOnly';
 type StatusBarButtonAlignment = 'left' | 'right';
@@ -21,7 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('RemoteEdit');
   const sessions = new SftpSessionManager();
   const connectionManager = new ConnectionManager(context);
-  const fileSystemProvider = new RemoteEditFileSystemProvider(sessions);
+  const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);
   let statusBarButton: StatusBarButtonState | undefined;
 
   const disposeStatusBarButton = (): void => {
@@ -60,7 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
     statusBarButton.item.show();
   };
 
-  output.appendLine('[INFO] RemoteEdit activated.');
+  appendOutputLog(output, 'INFO', 'RemoteEdit activated.');
   updateStatusBarButton();
 
   context.subscriptions.push(

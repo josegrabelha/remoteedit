@@ -21,6 +21,18 @@ export async function tryHandleFileActionMessage(
     case RemoteEditIncomingMessageType.RequestDeleteEntries:
       await handlers.requestDeleteEntries(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestUploadEntries:
+      await handlers.requestUploadEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RequestDownloadEntries:
+      await handlers.requestDownloadEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CancelTransfer:
+      await handlers.cancelTransfer();
+      return true;
+    case RemoteEditIncomingMessageType.RemoveQueuedTransfer:
+      handlers.removeQueuedTransfer(message.payload);
+      return true;
     default:
       return false;
   }

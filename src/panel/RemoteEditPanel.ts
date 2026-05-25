@@ -1,9 +1,13 @@
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, RemoteEntry, SftpSessionManager } from '../ssh/SftpSessionManager';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
-import { isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress } from '../utils/progressUtils';
+import { formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
+import { appendOutputLog, type OutputLogDetails } from '../utils/outputLogger';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
 import { handleRemoteEditPanelMessage } from './RemoteEditPanelHandlers';
@@ -11,10 +15,76 @@ import { RemoteEditIncomingMessageType, RemoteEditOutboundMessageType, type Remo
 import { RemoteEditPanelState } from './RemoteEditPanelState';
 import { calculateModeFromPermissionState, parsePermissionString, type SetPermissionsPanelOptions } from './RemoteEditPermissions';
 
+
+type TransferConflictDecision = 'overwrite' | 'skip' | 'cancel';
+
+interface TransferConflictState {
+  overwriteAll: boolean;
+  skipAll: boolean;
+}
+
+interface UploadTransferItem {
+  kind: 'file' | 'directory';
+  localPath: string;
+  remotePath: string;
+  relativePath: string;
+  size: number;
+}
+
+interface DownloadTransferItem {
+  kind: 'file' | 'directory';
+  remotePath: string;
+  localPath: string;
+  relativePath: string;
+  size: number;
+}
+
+interface TransferSummary {
+  transferredFiles: number;
+  skippedItems: string[];
+  failedItems: string[];
+}
+
+interface AggregateTransferState {
+  completedBytes: number;
+  totalBytes: number;
+}
+
+interface QueuedTransferJob {
+  id: string;
+  operation: 'Upload' | 'Download';
+  connectionId: string;
+  title: string;
+  from: string;
+  to: string;
+  progress: string;
+  run: () => Promise<void>;
+}
+
+interface TransferQueueItemSnapshot {
+  id: string;
+  operation: 'Upload' | 'Download';
+  title: string;
+  from: string;
+  to: string;
+  status: 'Preparing' | 'Running' | 'Waiting' | 'Cancelling';
+  progress: string;
+  canCancel: boolean;
+}
+
 export class RemoteEditPanel {
   private static currentPanel: RemoteEditPanel | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly state = new RemoteEditPanelState();
+  private activeTransferCancellationSource: vscode.CancellationTokenSource | undefined;
+  private activeTransferConnectionId: string | undefined;
+  private activeTransferJob: QueuedTransferJob | undefined;
+  private activeTransferCancelling = false;
+  private readonly transferQueue: QueuedTransferJob[] = [];
+  private runningTransfers = 0;
+  private readonly maxConcurrentTransfers = 1;
+  private activeConnectionCancellationSource: vscode.CancellationTokenSource | undefined;
+  private readonly transferCancelStatusBarItem: vscode.StatusBarItem;
   private pendingPermissionsDialogResolve: ((mode?: string) => void) | undefined;
 
   static open(
@@ -56,6 +126,16 @@ export class RemoteEditPanel {
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.panel.webview.onDidReceiveMessage(message => this.handleMessage(message), null, this.disposables);
+
+    this.transferCancelStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1000);
+    this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
+    this.transferCancelStatusBarItem.tooltip = 'Cancel the active RemoteEdit transfer';
+    this.transferCancelStatusBarItem.command = 'remoteedit.cancelTransfer';
+
+    this.disposables.push(
+      this.transferCancelStatusBarItem,
+      vscode.commands.registerCommand('remoteedit.cancelTransfer', () => this.cancelActiveTransfer())
+    );
   }
 
   private async handleMessage(message: RemoteEditWebviewMessage): Promise<void> {
@@ -66,11 +146,13 @@ export class RemoteEditPanel {
         onReady: async () => {
           await this.sendProfiles();
           await this.restoreActiveSession();
+          this.postTransferQueueState();
         },
         saveConnection: payload => this.saveConnection(payload),
         pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
         deleteConnection: payload => this.deleteConnection(payload),
         connect: payload => this.connect(payload),
+        cancelConnection: () => this.cancelConnection(),
         disconnect: connectionId => this.disconnect(connectionId),
         switchSession: connectionId => this.switchSession(connectionId),
         enableSudoMode: () => this.enableSudoMode(),
@@ -85,20 +167,25 @@ export class RemoteEditPanel {
         requestRenameEntry: payload => this.requestRenameEntry(payload),
         requestDeleteEntry: payload => this.requestDeleteEntry(payload),
         requestDeleteEntries: payload => this.requestDeleteEntries(payload),
+        requestUploadEntries: payload => this.requestUploadEntries(payload),
+        requestDownloadEntries: payload => this.requestDownloadEntries(payload),
+        cancelTransfer: () => this.cancelActiveTransfer(),
+        removeQueuedTransfer: payload => this.removeQueuedTransfer(payload),
         requestSetPermissions: payload => this.requestSetPermissions(payload),
         applyPermissions: payload => this.applyPermissionsFromDialog(payload),
         cancelPermissions: () => this.cancelPermissionsDialog(),
         showOutput: () => this.output.show(true),
         copyRemotePath: payload => this.copyRemotePath(payload),
-        log: logMessage => this.output.appendLine(logMessage),
+        copyStatus: payload => this.copyStatus(payload),
+        log: logMessage => this.logDebug(logMessage),
         unknown: messageType => this.postError(`Unknown webview message: ${messageType}`)
       });
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
       const friendlyMessage = this.formatError(message.type, message.payload, messageText);
-      this.output.appendLine(`[ERROR] ${friendlyMessage}`);
+      this.logError(friendlyMessage);
       if (friendlyMessage !== messageText) {
-        this.output.appendLine(`[ERROR] Details: ${messageText}`);
+        this.logError('Error details.', { Details: messageText });
       }
       this.postError(friendlyMessage);
     }
@@ -175,13 +262,13 @@ export class RemoteEditPanel {
       await this.sessions.enableSudoMode(connectionId, password);
       this.postMessage(RemoteEditOutboundMessageType.SudoModeChanged, { connectionId, enabled: true });
       this.postBusy(false, 'Sudo mode enabled for this session.');
-      this.output.appendLine(`[INFO] Sudo mode enabled for ${connectionId}.`);
+      this.logInfo('Sudo mode enabled.', { Connection: connectionId });
     } catch (error) {
       this.sessions.disableSudoMode(connectionId);
       const message = error instanceof Error ? error.message : String(error);
       this.postMessage(RemoteEditOutboundMessageType.SudoModeChanged, { connectionId, enabled: false });
       this.postBusy(false, message || 'Could not enable sudo mode.');
-      this.output.appendLine(`[WARN] Could not enable sudo mode for ${connectionId}: ${message}`);
+      this.logWarn('Could not enable sudo mode.', { Connection: connectionId, Details: message });
     }
   }
 
@@ -195,7 +282,7 @@ export class RemoteEditPanel {
     this.sessions.disableSudoMode(connectionId);
     this.postMessage(RemoteEditOutboundMessageType.SudoModeChanged, { connectionId, enabled: false });
     this.postBusy(false, 'Sudo mode disabled.');
-    this.output.appendLine(`[INFO] Sudo mode disabled for ${connectionId}.`);
+    this.logInfo('Sudo mode disabled.', { Connection: connectionId });
   }
 
   private async saveConnection(payload: any): Promise<void> {
@@ -203,7 +290,7 @@ export class RemoteEditPanel {
     const profile = await this.connectionManager.saveProfile(payload || {});
     await this.sendProfiles(profile.id);
     this.postBusy(false, `Saved bookmarked connection: ${profile.name}.`);
-    this.output.appendLine(`[INFO] Saved bookmarked connection '${profile.name}' (${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}).`);
+    this.logInfo('Saved bookmarked connection.', { Name: profile.name, Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}` });
   }
 
   private async pickPrivateKeyPath(): Promise<void> {
@@ -256,32 +343,49 @@ export class RemoteEditPanel {
     await this.sendProfiles('');
     this.postMessage(RemoteEditOutboundMessageType.ConnectionFormCleared, {});
     this.postBusy(false, `Removed bookmarked connection: ${profile.name}.`);
-    this.output.appendLine(`[INFO] Removed bookmarked connection '${profile.name}' (${profileId}).`);
+    this.logInfo('Removed bookmarked connection.', { Name: profile.name, ProfileId: profileId });
   }
 
   private async connect(payload: any): Promise<void> {
     const options = await this.connectionManager.buildConnectOptions(payload || {});
     const target = `${options.username}@${options.host}:${options.port}`;
 
-    this.postBusy(true, `Connecting to ${options.host}...`);
-    this.output.appendLine(`[INFO] Connecting to ${target} using ${options.authType} authentication.`);
+    if (this.activeConnectionCancellationSource) {
+      this.postStatus('A connection attempt is already in progress.');
+      return;
+    }
+
+    const cancellationSource = new vscode.CancellationTokenSource();
+    this.activeConnectionCancellationSource = cancellationSource;
+
+    this.postBusy(true, `Connecting to ${options.name || options.host}...`, 'connection', 'Cancel');
+    this.logInfo('Connecting to remote host.', { Target: target, Authentication: options.authType });
 
     let connection;
 
     try {
-      connection = await withRemoteEditProgress(
-        `Connecting to ${options.name || options.host}...`,
-        async token => await this.sessions.connect(options, token),
-        { delayMs: 0, cancellable: true, returnOnCancel: false, cancelMessage: 'Connection cancelled.' }
-      );
+      connection = await this.sessions.connect(options, cancellationSource.token);
     } catch (error) {
-      if (isRemoteEditOperationCancelled(error) || String(error instanceof Error ? error.message : error).includes('Connection cancelled')) {
+      if (isRemoteEditOperationCancelled(error)
+        || cancellationSource.token.isCancellationRequested
+        || String(error instanceof Error ? error.message : error).includes('Connection cancelled')) {
         this.postBusy(false, 'Connection cancelled.');
-        this.output.appendLine(`[INFO] Connection cancelled for ${target}.`);
+        this.logInfo('Connection cancelled.', { Target: target });
         return;
       }
 
       throw error;
+    } finally {
+      if (this.activeConnectionCancellationSource === cancellationSource) {
+        this.activeConnectionCancellationSource = undefined;
+      }
+      cancellationSource.dispose();
+    }
+
+    if (cancellationSource.token.isCancellationRequested) {
+      this.postBusy(false, 'Connection cancelled.');
+      this.logInfo('Connection cancelled.', { Target: target });
+      return;
     }
 
     if (payload?.id) {
@@ -295,7 +399,20 @@ export class RemoteEditPanel {
 
     this.sendSessions();
     await this.listDirectory(connection.startPath);
+    this.logInfo('Connected to remote host.', { Connection: connection.id, Target: target, StartPath: connection.startPath });
     this.postBusy(false, 'Connected.');
+  }
+
+  private async cancelConnection(): Promise<void> {
+    const source = this.activeConnectionCancellationSource;
+
+    if (!source) {
+      this.postStatus('No connection attempt is in progress.');
+      return;
+    }
+
+    this.postBusy(true, 'Cancelling connection...');
+    source.cancel();
   }
 
   private async disconnect(connectionId: string): Promise<void> {
@@ -305,8 +422,18 @@ export class RemoteEditPanel {
     }
 
     const connection = this.sessions.getConnection(connectionId);
+    const removedQueuedTransfers = this.clearQueuedTransfersForConnection(connectionId);
+
+    if (this.activeTransferConnectionId === connectionId) {
+      this.activeTransferCancellationSource?.cancel();
+    }
+
     this.postBusy(true, 'Disconnecting...');
     await this.sessions.disconnect(connectionId);
+
+    if (removedQueuedTransfers > 0) {
+      this.postStatus(`${removedQueuedTransfers} queued transfer(s) removed for disconnected session.`);
+    }
     this.state.deleteConnectionPath(connectionId);
     this.sessions.disableSudoMode(connectionId);
 
@@ -325,7 +452,7 @@ export class RemoteEditPanel {
     }
 
     this.postBusy(false, 'Disconnected.');
-    this.output.appendLine(`[INFO] Disconnected ${connectionId}.`);
+    this.logInfo('Disconnected from remote host.', { Connection: connectionId });
   }
 
   private async switchSession(connectionId: string): Promise<void> {
@@ -354,6 +481,7 @@ export class RemoteEditPanel {
     });
     this.sendSessions();
 
+    this.logInfo('Listed remote directory.', { Connection: connectionId, Path: normalizedPath, Items: entries.length });
     this.postBusy(false, `Listed ${entries.length} item(s).`);
   }
 
@@ -450,7 +578,7 @@ export class RemoteEditPanel {
               await this.sessions.prepareFileForOpen(connectionId, entry.path, token, progress);
               throwIfCancelled(token, 'Opening cancelled.');
               await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
-              this.output.appendLine(`[INFO] Opened ${this.buildRemoteReference(entry.path)}`);
+              this.logInfo('Opened remote file.', { Path: this.buildRemoteReference(entry.path) });
             } catch (error) {
               if (isRemoteEditOperationCancelled(error)) {
                 throw error;
@@ -458,7 +586,7 @@ export class RemoteEditPanel {
 
               const message = error instanceof Error ? error.message : String(error);
               failedEntries.push({ path: entry.path, error: message });
-              this.output.appendLine(`[WARN] Failed to open ${this.buildRemoteReference(entry.path)}: ${message}`);
+              this.logWarn('Failed to open remote file.', { Path: this.buildRemoteReference(entry.path), Details: message });
             }
           }
         },
@@ -467,7 +595,7 @@ export class RemoteEditPanel {
     } catch (error) {
       if (isRemoteEditOperationCancelled(error)) {
         this.postBusy(false, 'Opening cancelled.');
-        this.output.appendLine('[INFO] Opening remote file cancelled.');
+        this.logInfo('Opening remote file cancelled.');
         return;
       }
 
@@ -540,7 +668,7 @@ export class RemoteEditPanel {
     } catch (error) {
       if (isRemoteEditOperationCancelled(error)) {
         this.postBusy(false, 'Opening cancelled.');
-        this.output.appendLine(`[INFO] Opening cancelled for ${this.buildRemoteReference(normalizedPath)}.`);
+        this.logInfo('Opening remote file cancelled.', { Path: this.buildRemoteReference(normalizedPath) });
         return;
       }
 
@@ -549,7 +677,7 @@ export class RemoteEditPanel {
 
     await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
 
-    this.output.appendLine(`[INFO] Opened ${this.buildRemoteReference(normalizedPath)}`);
+    this.logInfo('Opened remote file.', { Path: this.buildRemoteReference(normalizedPath) });
     this.postBusy(false, `Opened ${normalizedPath}.`);
   }
 
@@ -560,6 +688,18 @@ export class RemoteEditPanel {
     const remoteReference = this.buildRemoteReference(remotePath);
     await vscode.env.clipboard.writeText(remoteReference);
     this.postStatus(`Copied remote path: ${remotePath}`);
+  }
+
+  private async copyStatus(payload: any): Promise<void> {
+    const text = String(payload?.text || '').trim();
+
+    if (!text) {
+      this.postStatusCopyFeedback('Nothing to copy');
+      return;
+    }
+
+    await vscode.env.clipboard.writeText(text);
+    this.postStatusCopyFeedback('Copied');
   }
 
   private async requestCreateEntry(_payload: any, entryKind: 'file' | 'directory'): Promise<void> {
@@ -608,7 +748,7 @@ export class RemoteEditPanel {
       await this.sessions.createFile(connectionId, newPath);
     }
 
-    this.output.appendLine(`[INFO] Created remote ${label} ${this.buildRemoteReference(newPath)}.`);
+    this.logInfo(`Created remote ${label}.`, { Path: this.buildRemoteReference(newPath) });
     await this.listDirectory(targetDirectory);
     this.postBusy(false, `Created ${trimmedName}.`);
   }
@@ -666,7 +806,7 @@ export class RemoteEditPanel {
 
     this.postBusy(true, `Renaming ${currentName}...`);
     await this.sessions.rename(connectionId, remotePath, newPath);
-    this.output.appendLine(`[INFO] Renamed ${this.buildRemoteReference(remotePath)} to ${this.buildRemoteReference(newPath)}.`);
+    this.logInfo('Renamed remote item.', { From: this.buildRemoteReference(remotePath), To: this.buildRemoteReference(newPath) });
     await this.listDirectory(parentPath);
     this.postBusy(false, `Renamed to ${trimmedName}.`);
   }
@@ -696,7 +836,7 @@ export class RemoteEditPanel {
     const parentPath = dirnameRemotePath(remotePath);
     this.postBusy(true, `Deleting ${entryName}...`);
     await this.sessions.delete(connectionId, remotePath);
-    this.output.appendLine(`[INFO] Deleted ${this.buildRemoteReference(remotePath)}.`);
+    this.logInfo('Deleted remote item.', { Path: this.buildRemoteReference(remotePath) });
     await this.listDirectory(parentPath);
     this.postBusy(false, `Deleted ${entryName}.`);
   }
@@ -737,11 +877,912 @@ export class RemoteEditPanel {
 
     for (const entry of entries) {
       await this.sessions.delete(connectionId, entry.path);
-      this.output.appendLine(`[INFO] Deleted ${this.buildRemoteReference(entry.path)}.`);
+      this.logInfo('Deleted remote item.', { Path: this.buildRemoteReference(entry.path) });
     }
 
     await this.listDirectory(this.getActivePath());
     this.postBusy(false, `Deleted ${entries.length} items.`);
+  }
+
+
+  private async requestUploadEntries(_payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const targetDirectory = normalizeRemotePath(this.getActivePath());
+
+    const selectedUris = await vscode.window.showOpenDialog({
+      title: 'RemoteEdit: Upload Files or Folders',
+      openLabel: 'Upload',
+      canSelectFiles: true,
+      canSelectFolders: true,
+      canSelectMany: true
+    });
+
+    if (!selectedUris?.length) {
+      this.logInfo('Upload selection cancelled.');
+      this.postStatus('Upload cancelled.');
+      return;
+    }
+
+    this.enqueueTransferJob({
+      id: this.createTransferJobId(),
+      operation: 'Upload',
+      connectionId,
+      title: this.buildSelectedLocalItemsLabel(selectedUris),
+      from: this.buildUploadQueueSourceLabel(selectedUris),
+      to: this.buildUploadQueueTargetLabel(selectedUris, targetDirectory),
+      progress: '--',
+      run: () => this.runUploadTransfer(connectionId, targetDirectory, selectedUris)
+    });
+  }
+
+  private async runUploadTransfer(connectionId: string, targetDirectory: string, selectedUris: readonly vscode.Uri[]): Promise<void> {
+    this.postStatus('Preparing upload...');
+    this.setActiveTransferProgress('Preparing upload...');
+
+    const summary: TransferSummary = { transferredFiles: 0, skippedItems: [], failedItems: [] };
+    const items = await this.collectUploadTransferItems(selectedUris, targetDirectory, summary);
+
+    if (!items.length) {
+      this.logActiveTransferEvent('Upload', 'Upload finished with no uploadable files.', { SkippedItems: summary.skippedItems.length });
+      this.postStatus(summary.skippedItems.length ? 'No uploadable files found. Some items were skipped.' : 'No uploadable files found.');
+      await this.showTransferSummary('Upload', summary);
+      return;
+    }
+
+    try {
+      await this.prepareUploadConflicts(connectionId, items, summary);
+    } catch (error) {
+      if (this.formatTransferError(error) === 'Upload cancelled.') {
+        this.logActiveTransferEvent('Upload', 'Upload cancelled during conflict resolution.', { SkippedItems: summary.skippedItems.length });
+        this.postStatus('Upload cancelled.');
+        return;
+      }
+      throw error;
+    }
+
+    const remainingItems = items.filter(item => !summary.skippedItems.includes(item.relativePath));
+
+    if (!remainingItems.length) {
+      this.logActiveTransferEvent('Upload', 'Upload skipped.', { SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
+      this.postStatus('Upload skipped.');
+      await this.showTransferSummary('Upload', summary);
+      return;
+    }
+
+    const uploadFileItems = remainingItems.filter(item => item.kind === 'file');
+    const totalBytes = uploadFileItems.reduce((sum, item) => sum + item.size, 0);
+    const aggregateState: AggregateTransferState = { completedBytes: 0, totalBytes };
+
+    let uploadCancelled = false;
+    this.postStatus('Uploading...');
+    const transferCancellationSource = this.beginManualTransfer('Upload', connectionId);
+    this.setActiveTransferProgress('Starting upload...');
+
+    try {
+      await withRemoteEditProgress(
+        'Uploading...',
+        async (token, progress) => {
+          for (const item of remainingItems.filter(item => item.kind === 'directory')) {
+            throwIfCancelled(token, 'Upload cancelled.');
+
+            try {
+              await this.sessions.createDirectory(connectionId, item.remotePath);
+            } catch (error) {
+              summary.failedItems.push(`${item.relativePath}: ${this.formatTransferError(error)}`);
+            }
+          }
+
+          for (const [index, item] of uploadFileItems.entries()) {
+            const progressDetail = this.buildTransferProgressDetail(item.relativePath, index + 1, uploadFileItems.length);
+            throwIfCancelled(token, 'Upload cancelled.');
+
+            try {
+              await this.sessions.createDirectory(connectionId, dirnameRemotePath(item.remotePath));
+              throwIfCancelled(token, 'Upload cancelled.');
+              const content = await fs.readFile(item.localPath);
+              throwIfCancelled(token, 'Upload cancelled.');
+              await this.sessions.writeFile(
+                connectionId,
+                item.remotePath,
+                content,
+                this.createAggregateProgress(progress, 'Uploading...', aggregateState, item.size, progressDetail),
+                token
+              );
+              throwIfCancelled(token, 'Upload cancelled.');
+              aggregateState.completedBytes += item.size;
+              progress.reportBytes('Uploading...', aggregateState.completedBytes, aggregateState.totalBytes, progressDetail);
+              summary.transferredFiles += 1;
+            } catch (error) {
+              if (isRemoteEditOperationCancelled(error)) {
+                throw error;
+              }
+              summary.failedItems.push(`${item.relativePath}: ${this.formatTransferError(error)}`);
+            }
+          }
+        },
+        {
+          cancellable: true,
+          returnOnCancel: true,
+          cancelMessage: 'Upload cancelled.',
+          cancellationSource: transferCancellationSource
+        }
+      ).catch(error => {
+        if (isRemoteEditOperationCancelled(error)) {
+          uploadCancelled = true;
+          this.logActiveTransferEvent('Upload', 'Upload cancelled.', { TransferredFiles: summary.transferredFiles, SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
+          return;
+        }
+        throw error;
+      });
+    } finally {
+      this.endManualTransfer(transferCancellationSource);
+      await this.listDirectory(targetDirectory);
+    }
+
+    if (uploadCancelled) {
+      this.postStatus('Upload cancelled.');
+      await this.showTransferSummary('Upload', summary);
+      return;
+    }
+
+    this.logActiveTransferEvent('Upload', 'Upload completed.', { TransferredFiles: summary.transferredFiles, SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
+    this.postStatus(`Uploaded ${summary.transferredFiles} file(s).`);
+    await this.showTransferSummary('Upload', summary);
+  }
+
+  private async requestDownloadEntries(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const rawEntries = Array.isArray(payload?.entries) ? payload.entries : [];
+    const entries = rawEntries
+      .map((entry: any) => ({
+        name: String(entry?.name || ''),
+        type: String(entry?.type || ''),
+        effectiveType: String(entry?.effectiveType || ''),
+        path: entry?.path ? normalizeRemotePath(String(entry.path)) : ''
+      }))
+      .filter((entry: any) => Boolean(entry.path) && entry.name !== '..');
+
+    if (!entries.length) {
+      throw new Error('Select one or more remote files or folders to download.');
+    }
+
+    const targetFolders = await vscode.window.showOpenDialog({
+      title: 'RemoteEdit: Select Download Folder',
+      openLabel: 'Download Here',
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false
+    });
+
+    const targetFolder = targetFolders?.[0]?.fsPath;
+
+    if (!targetFolder) {
+      this.logInfo('Download folder selection cancelled.');
+      this.postStatus('Download cancelled.');
+      return;
+    }
+
+    this.enqueueTransferJob({
+      id: this.createTransferJobId(),
+      operation: 'Download',
+      connectionId,
+      title: this.buildSelectedRemoteItemsLabel(entries),
+      from: this.buildDownloadQueueSourceLabel(entries),
+      to: this.buildDownloadQueueTargetLabel(entries, targetFolder),
+      progress: '--',
+      run: () => this.runDownloadTransfer(connectionId, entries, targetFolder)
+    });
+  }
+
+  private async runDownloadTransfer(
+    connectionId: string,
+    entries: Array<{ name: string; type: string; effectiveType: string; path: string }>,
+    targetFolder: string
+  ): Promise<void> {
+    this.postStatus('Preparing download...');
+    this.setActiveTransferProgress('Preparing download...');
+
+    const summary: TransferSummary = { transferredFiles: 0, skippedItems: [], failedItems: [] };
+    const items: DownloadTransferItem[] = [];
+
+    for (const entry of entries) {
+      await this.collectDownloadTransferItems(connectionId, entry, targetFolder, summary, items);
+    }
+
+    if (!items.length) {
+      this.logActiveTransferEvent('Download', 'Download finished with no downloadable files.', { SkippedItems: summary.skippedItems.length });
+      this.postStatus(summary.skippedItems.length ? 'No downloadable files found. Some items were skipped.' : 'No downloadable files found.');
+      await this.showTransferSummary('Download', summary);
+      return;
+    }
+
+    try {
+      await this.prepareDownloadConflicts(items, summary);
+    } catch (error) {
+      if (this.formatTransferError(error) === 'Download cancelled.') {
+        this.logActiveTransferEvent('Download', 'Download cancelled during conflict resolution.', { SkippedItems: summary.skippedItems.length });
+        this.postStatus('Download cancelled.');
+        return;
+      }
+      throw error;
+    }
+
+    const remainingItems = items.filter(item => !summary.skippedItems.includes(item.relativePath));
+
+    if (!remainingItems.length) {
+      this.logActiveTransferEvent('Download', 'Download skipped.', { SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
+      this.postStatus('Download skipped.');
+      await this.showTransferSummary('Download', summary);
+      return;
+    }
+
+    const downloadFileItems = remainingItems.filter(item => item.kind === 'file');
+    const totalBytes = downloadFileItems.reduce((sum, item) => sum + item.size, 0);
+    const aggregateState: AggregateTransferState = { completedBytes: 0, totalBytes };
+
+    let downloadCancelled = false;
+    this.postStatus('Downloading...');
+    const transferCancellationSource = this.beginManualTransfer('Download', connectionId);
+    this.setActiveTransferProgress('Starting download...');
+
+    try {
+      await withRemoteEditProgress(
+        'Downloading...',
+        async (token, progress) => {
+          for (const item of remainingItems.filter(item => item.kind === 'directory')) {
+            try {
+              await fs.mkdir(item.localPath, { recursive: true });
+            } catch (error) {
+              summary.failedItems.push(`${item.relativePath}: ${this.formatTransferError(error)}`);
+            }
+          }
+
+          for (const [index, item] of downloadFileItems.entries()) {
+            const progressDetail = this.buildTransferProgressDetail(item.relativePath, index + 1, downloadFileItems.length);
+            throwIfCancelled(token, 'Download cancelled.');
+
+            try {
+              await fs.mkdir(path.dirname(item.localPath), { recursive: true });
+              const content = await this.sessions.readFile(
+                connectionId,
+                item.remotePath,
+                token,
+                this.createAggregateProgress(progress, 'Downloading...', aggregateState, item.size, progressDetail)
+              );
+              await this.writeLocalFileSafely(item.localPath, content);
+              aggregateState.completedBytes += item.size;
+              progress.reportBytes('Downloading...', aggregateState.completedBytes, aggregateState.totalBytes, progressDetail);
+              summary.transferredFiles += 1;
+            } catch (error) {
+              if (isRemoteEditOperationCancelled(error)) {
+                throw error;
+              }
+              summary.failedItems.push(`${item.relativePath}: ${this.formatTransferError(error)}`);
+            }
+          }
+        },
+        {
+          cancellable: true,
+          returnOnCancel: true,
+          cancelMessage: 'Download cancelled.',
+          cancellationSource: transferCancellationSource
+        }
+      ).catch(error => {
+        if (isRemoteEditOperationCancelled(error)) {
+          downloadCancelled = true;
+          this.logActiveTransferEvent('Download', 'Download cancelled.', { TransferredFiles: summary.transferredFiles, SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
+          return;
+        }
+        throw error;
+      });
+    } finally {
+      this.endManualTransfer(transferCancellationSource);
+    }
+
+    if (downloadCancelled) {
+      this.postStatus('Download cancelled.');
+      await this.showTransferSummary('Download', summary);
+      return;
+    }
+
+    this.logActiveTransferEvent('Download', 'Download completed.', { TransferredFiles: summary.transferredFiles, SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
+    this.postStatus(`Downloaded ${summary.transferredFiles} file(s).`);
+    await this.showTransferSummary('Download', summary);
+  }
+
+  private async collectUploadTransferItems(
+    selectedUris: readonly vscode.Uri[],
+    targetDirectory: string,
+    summary: TransferSummary
+  ): Promise<UploadTransferItem[]> {
+    const items: UploadTransferItem[] = [];
+
+    for (const uri of selectedUris) {
+      const localPath = uri.fsPath;
+      const baseName = path.basename(localPath);
+      await this.collectUploadPath(localPath, baseName, targetDirectory, summary, items);
+    }
+
+    return items;
+  }
+
+  private async collectUploadPath(
+    localPath: string,
+    relativePath: string,
+    targetDirectory: string,
+    summary: TransferSummary,
+    items: UploadTransferItem[]
+  ): Promise<void> {
+    const stats = await fs.lstat(localPath);
+
+    if (stats.isSymbolicLink()) {
+      summary.skippedItems.push(`${relativePath}: skipped symbolic link`);
+      return;
+    }
+
+    const remotePath = this.joinRemoteRelativePath(targetDirectory, relativePath);
+
+    if (stats.isDirectory()) {
+      items.push({ kind: 'directory', localPath, remotePath, relativePath, size: 0 });
+      const children = await fs.readdir(localPath);
+      for (const child of children) {
+        await this.collectUploadPath(path.join(localPath, child), path.posix.join(this.toPosixRelativePath(relativePath), child), targetDirectory, summary, items);
+      }
+      return;
+    }
+
+    if (stats.isFile()) {
+      items.push({ kind: 'file', localPath, remotePath, relativePath: this.toPosixRelativePath(relativePath), size: Number(stats.size || 0) });
+      return;
+    }
+
+    summary.skippedItems.push(`${relativePath}: skipped unsupported local item`);
+  }
+
+  private async collectDownloadTransferItems(
+    connectionId: string,
+    entry: { name: string; type: string; effectiveType?: string; path: string },
+    targetFolder: string,
+    summary: TransferSummary,
+    items: DownloadTransferItem[]
+  ): Promise<void> {
+    const relativePath = this.toPosixRelativePath(entry.name || path.posix.basename(entry.path));
+    await this.collectDownloadPath(connectionId, entry.path, relativePath, targetFolder, entry.type, entry.effectiveType, summary, items);
+  }
+
+  private async collectDownloadPath(
+    connectionId: string,
+    remotePath: string,
+    relativePath: string,
+    targetFolder: string,
+    entryType: string | undefined,
+    effectiveType: string | undefined,
+    summary: TransferSummary,
+    items: DownloadTransferItem[]
+  ): Promise<void> {
+    if (entryType === 'link') {
+      summary.skippedItems.push(`${relativePath}: skipped symbolic link`);
+      return;
+    }
+
+    const resolvedType = effectiveType === 'file' || effectiveType === 'directory'
+      ? effectiveType
+      : entryType === 'file' || entryType === 'directory'
+        ? entryType
+        : (await this.sessions.stat(connectionId, remotePath)).type;
+
+    const localPath = path.join(targetFolder, ...this.toPosixRelativePath(relativePath).split('/').filter(Boolean));
+
+    if (resolvedType === 'directory') {
+      items.push({ kind: 'directory', remotePath, localPath, relativePath: this.toPosixRelativePath(relativePath), size: 0 });
+      const children = await this.sessions.listDirectory(connectionId, remotePath);
+      for (const child of children) {
+        if (child.name === '..') {
+          continue;
+        }
+        await this.collectDownloadPath(
+          connectionId,
+          child.path,
+          path.posix.join(this.toPosixRelativePath(relativePath), child.name),
+          targetFolder,
+          child.type,
+          child.effectiveType,
+          summary,
+          items
+        );
+      }
+      return;
+    }
+
+    if (resolvedType === 'file') {
+      const stats = await this.sessions.stat(connectionId, remotePath);
+      items.push({ kind: 'file', remotePath, localPath, relativePath: this.toPosixRelativePath(relativePath), size: Number(stats.size || 0) });
+      return;
+    }
+
+    summary.skippedItems.push(`${relativePath}: skipped unsupported remote item`);
+  }
+
+  private async prepareUploadConflicts(connectionId: string, items: UploadTransferItem[], summary: TransferSummary): Promise<void> {
+    const conflictState: TransferConflictState = { overwriteAll: false, skipAll: false };
+    const fileItems = items.filter(item => item.kind === 'file');
+    const hasMultipleFiles = fileItems.length > 1;
+
+    for (const item of fileItems) {
+      let stats: Awaited<ReturnType<SftpSessionManager['stat']>> | undefined;
+      try {
+        stats = await this.sessions.stat(connectionId, item.remotePath);
+      } catch {
+        continue;
+      }
+
+      if (stats.type === 'directory') {
+        summary.skippedItems.push(`${item.relativePath}: skipped because a remote directory already exists at the target path`);
+        continue;
+      }
+
+      const decision = await this.resolveTransferConflict('Upload', item.relativePath, hasMultipleFiles, conflictState);
+      if (decision === 'cancel') {
+        throw new Error('Upload cancelled.');
+      }
+      if (decision === 'skip') {
+        summary.skippedItems.push(item.relativePath);
+      }
+    }
+  }
+
+  private async prepareDownloadConflicts(items: DownloadTransferItem[], summary: TransferSummary): Promise<void> {
+    const conflictState: TransferConflictState = { overwriteAll: false, skipAll: false };
+    const fileItems = items.filter(item => item.kind === 'file');
+    const hasMultipleFiles = fileItems.length > 1;
+
+    for (const item of fileItems) {
+      try {
+        const stats = await fs.stat(item.localPath);
+        if (stats.isDirectory()) {
+          summary.skippedItems.push(`${item.relativePath}: skipped because a local directory already exists at the target path`);
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      const decision = await this.resolveTransferConflict('Download', item.relativePath, hasMultipleFiles, conflictState);
+      if (decision === 'cancel') {
+        throw new Error('Download cancelled.');
+      }
+      if (decision === 'skip') {
+        summary.skippedItems.push(item.relativePath);
+      }
+    }
+  }
+
+  private async resolveTransferConflict(
+    operation: 'Upload' | 'Download',
+    relativePath: string,
+    hasMultipleFiles: boolean,
+    state: TransferConflictState
+  ): Promise<TransferConflictDecision> {
+    if (state.overwriteAll) {
+      return 'overwrite';
+    }
+
+    if (state.skipAll) {
+      return 'skip';
+    }
+
+    const choices = hasMultipleFiles
+      ? ['Overwrite', 'Skip', 'Overwrite All', 'Skip All', 'Cancel']
+      : ['Overwrite', 'Cancel'];
+    this.logActiveTransferEvent(operation, `${operation} conflict detected.`, { Item: relativePath });
+    const selected = await vscode.window.showWarningMessage(
+      `${operation} conflict: '${relativePath}' already exists. Choose how RemoteEdit should handle this file.`,
+      ...choices
+    );
+
+    if (selected === 'Overwrite') {
+      this.logActiveTransferEvent(operation, `${operation} conflict decision: overwrite.`, { Item: relativePath });
+      return 'overwrite';
+    }
+    if (selected === 'Skip') {
+      this.logActiveTransferEvent(operation, `${operation} conflict decision: skip.`, { Item: relativePath });
+      return 'skip';
+    }
+    if (selected === 'Overwrite All') {
+      state.overwriteAll = true;
+      this.logActiveTransferEvent(operation, `${operation} conflict decision: overwrite all.`, { Item: relativePath });
+      return 'overwrite';
+    }
+    if (selected === 'Skip All') {
+      state.skipAll = true;
+      this.logActiveTransferEvent(operation, `${operation} conflict decision: skip all.`, { Item: relativePath });
+      return 'skip';
+    }
+    if (selected === 'Cancel') {
+      this.logActiveTransferEvent(operation, `${operation} conflict decision: cancel.`, { Item: relativePath });
+      return 'cancel';
+    }
+
+    this.logActiveTransferEvent(operation, `${operation} conflict decision: cancel.`, { Item: relativePath });
+    return 'cancel';
+  }
+
+  private createAggregateProgress(
+    progress: RemoteEditProgressReporter,
+    label: string,
+    state: AggregateTransferState,
+    itemBytes: number,
+    detail?: string
+  ): RemoteEditProgressReporter {
+    return {
+      reportMessage: () => {
+        const message = detail ? `${detail} - ${label}` : label;
+        this.setActiveTransferProgress(message);
+        progress.reportMessage(message);
+      },
+      reportBytes: (_label: string, transferredBytes: number) => {
+        const aggregateTransferredBytes = state.completedBytes + Math.min(transferredBytes, itemBytes);
+        this.setActiveTransferProgress(this.formatTransferProgressMessage(label, aggregateTransferredBytes, state.totalBytes, detail));
+        progress.reportBytes(label, aggregateTransferredBytes, state.totalBytes, detail);
+      }
+    };
+  }
+
+  private formatTransferProgressMessage(label: string, transferredBytes: number, totalBytes: number, detail?: string): string {
+    if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+      return label;
+    }
+
+    const safeTransferred = Math.max(0, Math.min(transferredBytes, totalBytes));
+    const percent = Math.max(0, Math.min(100, Math.floor((safeTransferred / totalBytes) * 100)));
+    const transferMessage = `${formatBytes(safeTransferred)} of ${formatBytes(totalBytes)} (${percent}%)`;
+    return detail ? `${detail} - ${transferMessage}` : transferMessage;
+  }
+
+  private buildTransferProgressDetail(relativePath: string, currentFile: number, totalFiles: number): string {
+    const fileLabel = this.truncateTransferProgressLabel(relativePath || 'file');
+
+    if (totalFiles > 1) {
+      return `${currentFile}/${totalFiles}: ${fileLabel}`;
+    }
+
+    return fileLabel;
+  }
+
+  private truncateTransferProgressLabel(label: string, maxLength = 42): string {
+    const normalizedLabel = label.replace(/\\/g, '/');
+
+    if (normalizedLabel.length <= maxLength) {
+      return normalizedLabel;
+    }
+
+    const keepStart = Math.max(8, Math.floor((maxLength - 3) / 2));
+    const keepEnd = Math.max(8, maxLength - keepStart - 3);
+    return `${normalizedLabel.slice(0, keepStart)}...${normalizedLabel.slice(-keepEnd)}`;
+  }
+
+  private buildSelectedLocalItemsLabel(selectedUris: readonly vscode.Uri[]): string {
+    if (selectedUris.length === 1) {
+      return path.basename(selectedUris[0].fsPath) || 'Selected item';
+    }
+
+    return `${selectedUris.length} selected items`;
+  }
+
+  private buildSelectedRemoteItemsLabel(entries: Array<{ name: string; path: string }>): string {
+    if (entries.length === 1) {
+      return entries[0].name || path.posix.basename(entries[0].path) || 'Selected item';
+    }
+
+    return `${entries.length} selected items`;
+  }
+
+  private buildUploadQueueSourceLabel(selectedUris: readonly vscode.Uri[]): string {
+    if (selectedUris.length === 1) {
+      return selectedUris[0].fsPath;
+    }
+
+    return `${selectedUris.length} selected items`;
+  }
+
+  private buildUploadQueueTargetLabel(selectedUris: readonly vscode.Uri[], targetDirectory: string): string {
+    if (selectedUris.length === 1) {
+      return this.joinRemoteRelativePath(targetDirectory, path.basename(selectedUris[0].fsPath));
+    }
+
+    return targetDirectory;
+  }
+
+  private buildDownloadQueueSourceLabel(entries: Array<{ name: string; path: string }>): string {
+    if (entries.length === 1) {
+      return entries[0].path;
+    }
+
+    return `${entries.length} selected items`;
+  }
+
+  private buildDownloadQueueTargetLabel(entries: Array<{ name: string; path: string }>, targetFolder: string): string {
+    if (entries.length === 1) {
+      const fileName = entries[0].name || path.posix.basename(entries[0].path);
+      return path.join(targetFolder, fileName);
+    }
+
+    return targetFolder;
+  }
+
+  private createTransferJobId(): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  private enqueueTransferJob(job: QueuedTransferJob): void {
+    const willWait = this.runningTransfers >= this.maxConcurrentTransfers;
+    this.transferQueue.push(job);
+    this.postTransferQueueState();
+
+    if (!willWait) {
+      void this.processTransferQueue();
+      return;
+    }
+
+    const queuedCount = this.transferQueue.length;
+    const message = `${job.operation} queued. It will start after the current transfer.`;
+    this.logTransferEvent(job, `${job.operation} queued.`, { Pending: queuedCount });
+    this.postStatus(`${message} ${this.formatQueuedTransferCount(queuedCount)}`);
+    void vscode.window.showInformationMessage(message);
+    this.updateActiveTransferStatusBarItem();
+  }
+
+  private async processTransferQueue(): Promise<void> {
+    while (this.runningTransfers < this.maxConcurrentTransfers && this.transferQueue.length) {
+      const job = this.transferQueue.shift();
+
+      if (!job) {
+        return;
+      }
+
+      if (!this.sessions.getConnection(job.connectionId)) {
+        this.logTransferEvent(job, `${job.operation} skipped because the connection is no longer active.`);
+        this.postStatus(`${job.operation} skipped because the connection is no longer active.`);
+        this.postTransferQueueState();
+        continue;
+      }
+
+      this.runningTransfers += 1;
+      this.activeTransferJob = job;
+      this.activeTransferJob.progress = 'Preparing...';
+      this.activeTransferCancelling = false;
+      this.updateActiveTransferStatusBarItem();
+      this.postTransferQueueState();
+      this.logTransferEvent(job, `${job.operation} started.`);
+
+      try {
+        await job.run();
+      } catch (error) {
+        if (isRemoteEditOperationCancelled(error)) {
+          this.logTransferEvent(job, `${job.operation} cancelled.`);
+          this.postStatus(`${job.operation} cancelled.`);
+        } else {
+          const details = this.formatTransferError(error);
+          this.logTransferEvent(job, `${job.operation} failed.`, { Details: details });
+          this.postStatus(`${job.operation} failed.`);
+          this.postError(`Could not complete ${job.operation.toLowerCase()}. Details: ${details}`);
+        }
+      } finally {
+        this.runningTransfers = Math.max(0, this.runningTransfers - 1);
+        if (this.activeTransferJob?.id === job.id) {
+          this.activeTransferJob = undefined;
+        }
+        this.activeTransferCancelling = false;
+        this.updateActiveTransferStatusBarItem();
+        this.postTransferQueueState();
+      }
+    }
+  }
+
+  private formatQueuedTransferCount(count = this.transferQueue.length): string {
+    return count === 1 ? '1 queued' : `${count} queued`;
+  }
+
+  private updateActiveTransferStatusBarItem(): void {
+    if (!this.activeTransferCancellationSource) {
+      return;
+    }
+
+    const queuedSuffix = this.transferQueue.length ? ` (${this.formatQueuedTransferCount()})` : '';
+    this.transferCancelStatusBarItem.text = `$(x) Cancel Transfer${queuedSuffix}`;
+  }
+
+  private clearQueuedTransfersForConnection(connectionId: string): number {
+    const initialLength = this.transferQueue.length;
+
+    for (let index = this.transferQueue.length - 1; index >= 0; index -= 1) {
+      if (this.transferQueue[index].connectionId === connectionId) {
+        this.transferQueue.splice(index, 1);
+      }
+    }
+
+    this.updateActiveTransferStatusBarItem();
+    const removedCount = initialLength - this.transferQueue.length;
+    if (removedCount > 0) {
+      this.logInfo('Queued transfers removed for disconnected session.', { Connection: connectionId, Removed: removedCount });
+      this.postTransferQueueState();
+    }
+    return removedCount;
+  }
+
+  private clearAllQueuedTransfers(): void {
+    const removedCount = this.transferQueue.length;
+    this.transferQueue.splice(0, this.transferQueue.length);
+    this.updateActiveTransferStatusBarItem();
+    if (removedCount > 0) {
+      this.logInfo('Queued transfers cleared.', { Removed: removedCount });
+      this.postTransferQueueState();
+    }
+  }
+
+  private beginManualTransfer(operation: 'Upload' | 'Download', connectionId: string): vscode.CancellationTokenSource {
+    this.endManualTransfer();
+
+    const source = new vscode.CancellationTokenSource();
+    this.activeTransferCancellationSource = source;
+    this.activeTransferConnectionId = connectionId;
+    this.activeTransferCancelling = false;
+    this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
+    this.transferCancelStatusBarItem.tooltip = `Cancel the active ${operation.toLowerCase()} transfer`;
+    this.updateActiveTransferStatusBarItem();
+    this.transferCancelStatusBarItem.show();
+    this.postTransferQueueState();
+
+    return source;
+  }
+
+  private endManualTransfer(source?: vscode.CancellationTokenSource): void {
+    if (source && this.activeTransferCancellationSource !== source) {
+      source.dispose();
+      return;
+    }
+
+    const activeSource = this.activeTransferCancellationSource;
+    this.activeTransferCancellationSource = undefined;
+    this.activeTransferConnectionId = undefined;
+    this.activeTransferCancelling = false;
+    this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
+    this.transferCancelStatusBarItem.hide();
+    activeSource?.dispose();
+    this.postTransferQueueState();
+  }
+
+  private async cancelActiveTransfer(): Promise<void> {
+    if (!this.activeTransferCancellationSource) {
+      this.postStatus('No file transfer is currently running.');
+      return;
+    }
+
+    this.activeTransferCancelling = true;
+    if (this.activeTransferJob) {
+      this.logTransferEvent(this.activeTransferJob, `${this.activeTransferJob.operation} cancellation requested.`);
+    }
+    this.setActiveTransferProgress('Cancelling...');
+    this.postTransferQueueState();
+    this.activeTransferCancellationSource.cancel();
+  }
+
+  private removeQueuedTransfer(payload: any): void {
+    const transferId = String(payload?.transferId || '').trim();
+
+    if (!transferId) {
+      this.postStatus('Select a queued transfer to remove.');
+      return;
+    }
+
+    const transferIndex = this.transferQueue.findIndex(item => item.id === transferId);
+
+    if (transferIndex === -1) {
+      this.postStatus('Queued transfer not found. It may have already started.');
+      this.postTransferQueueState();
+      return;
+    }
+
+    const [removedTransfer] = this.transferQueue.splice(transferIndex, 1);
+    this.logTransferEvent(removedTransfer, `${removedTransfer.operation} removed from queue.`);
+    this.postStatus(`${removedTransfer.operation} removed from queue.`);
+    this.updateActiveTransferStatusBarItem();
+    this.postTransferQueueState();
+  }
+
+  private postTransferQueueState(): void {
+    const current = this.activeTransferJob
+      ? this.buildTransferQueueItemSnapshot(
+        this.activeTransferJob,
+        this.activeTransferCancelling ? 'Cancelling' : (this.activeTransferCancellationSource ? 'Running' : 'Preparing'),
+        Boolean(this.activeTransferCancellationSource && !this.activeTransferCancelling)
+      )
+      : undefined;
+
+    this.postMessage(RemoteEditOutboundMessageType.TransferQueueChanged, {
+      current,
+      pending: this.transferQueue.map(job => this.buildTransferQueueItemSnapshot(job, 'Waiting', false))
+    });
+  }
+
+  private buildTransferQueueItemSnapshot(
+    job: QueuedTransferJob,
+    status: TransferQueueItemSnapshot['status'],
+    canCancel: boolean
+  ): TransferQueueItemSnapshot {
+    return {
+      id: job.id,
+      operation: job.operation,
+      title: job.title,
+      from: job.from,
+      to: job.to,
+      status,
+      progress: status === 'Waiting' ? '--' : (job.progress || ''),
+      canCancel
+    };
+  }
+
+  private setActiveTransferProgress(progress: string): void {
+    if (!this.activeTransferJob) {
+      return;
+    }
+
+    this.activeTransferJob.progress = progress;
+    this.postTransferQueueState();
+  }
+
+  private async writeLocalFileSafely(localPath: string, content: Buffer): Promise<void> {
+    const parentDirectory = path.dirname(localPath);
+    const tempName = `.${path.basename(localPath)}.remoteedit-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`;
+    const tempPath = path.join(parentDirectory, tempName);
+
+    try {
+      await fs.writeFile(tempPath, content);
+      await fs.rename(tempPath, localPath);
+    } catch (error) {
+      try {
+        await fs.rm(tempPath, { force: true });
+      } catch {
+        // Ignore cleanup errors for local temporary files.
+      }
+      throw error;
+    }
+  }
+
+  private async showTransferSummary(operation: 'Upload' | 'Download', summary: TransferSummary): Promise<void> {
+    const details: string[] = [];
+
+    if (summary.skippedItems.length) {
+      details.push(`Skipped:\n${summary.skippedItems.slice(0, 20).join('\n')}${summary.skippedItems.length > 20 ? '\n...' : ''}`);
+    }
+
+    if (summary.failedItems.length) {
+      details.push(`Failed:\n${summary.failedItems.slice(0, 20).join('\n')}${summary.failedItems.length > 20 ? '\n...' : ''}`);
+    }
+
+    if (!details.length) {
+      return;
+    }
+
+    await vscode.window.showWarningMessage(
+      `${operation} completed with ${summary.skippedItems.length} skipped item(s) and ${summary.failedItems.length} failed item(s).`,
+      { modal: false, detail: details.join('\n\n') }
+    );
+  }
+
+  private joinRemoteRelativePath(baseRemotePath: string, relativePath: string): string {
+    return this.toPosixRelativePath(relativePath).split('/').filter(Boolean).reduce(
+      (current, part) => joinRemotePath(current, part),
+      normalizeRemotePath(baseRemotePath)
+    );
+  }
+
+  private toPosixRelativePath(value: string): string {
+    return String(value || '').split(path.sep).join('/').replace(/^\/+/, '');
+  }
+
+  private formatTransferError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async requestSetPermissions(payload: any): Promise<void> {
@@ -775,7 +1816,7 @@ export class RemoteEditPanel {
 
     this.postBusy(true, `Setting permissions ${selectedMode} on ${entryName}...`);
     await this.sessions.chmod(connectionId, remotePath, selectedMode);
-    this.output.appendLine(`[INFO] Set permissions ${selectedMode} on ${this.buildRemoteReference(remotePath)}.`);
+    this.logInfo('Set remote permissions.', { Mode: selectedMode, Path: this.buildRemoteReference(remotePath) });
     await this.listDirectory(this.getActivePath());
     this.postBusy(false, `Permissions set to ${selectedMode}.`);
   }
@@ -915,6 +1956,14 @@ export class RemoteEditPanel {
       return `Could not delete remote entry: ${entryPath}. Details: ${details}`;
     }
 
+    if (messageType === RemoteEditIncomingMessageType.RequestUploadEntries) {
+      return `Could not upload selected item(s). Details: ${details}`;
+    }
+
+    if (messageType === RemoteEditIncomingMessageType.RequestDownloadEntries) {
+      return `Could not download selected item(s). Details: ${details}`;
+    }
+
     if (messageType === RemoteEditIncomingMessageType.RequestSetPermissions) {
       const entryPath = payload?.path ? normalizeRemotePath(String(payload.path)) : 'selected entry';
       return `Could not set permissions on remote entry: ${entryPath}. Details: ${details}`;
@@ -923,12 +1972,59 @@ export class RemoteEditPanel {
     return details;
   }
 
+  private logInfo(message: string, details?: OutputLogDetails): void {
+    appendOutputLog(this.output, 'INFO', message, details);
+  }
+
+  private logWarn(message: string, details?: OutputLogDetails): void {
+    appendOutputLog(this.output, 'WARN', message, details);
+  }
+
+  private logError(message: string, details?: OutputLogDetails): void {
+    appendOutputLog(this.output, 'ERROR', message, details);
+  }
+
+  private logDebug(message: string, details?: OutputLogDetails): void {
+    appendOutputLog(this.output, 'DEBUG', message, details);
+  }
+
+  private logTransferEvent(job: QueuedTransferJob, message: string, details?: OutputLogDetails): void {
+    this.logInfo(message, {
+      Operation: job.operation,
+      Title: job.title,
+      From: job.from,
+      To: job.to,
+      Connection: job.connectionId,
+      ...details
+    });
+  }
+
+  private logActiveTransferEvent(operation: 'Upload' | 'Download', message: string, details?: OutputLogDetails): void {
+    if (this.activeTransferJob?.operation === operation) {
+      this.logTransferEvent(this.activeTransferJob, message, details);
+      return;
+    }
+
+    this.logInfo(message, { Operation: operation, ...details });
+  }
+
   private postStatus(message: string): void {
     this.postMessage(RemoteEditOutboundMessageType.Status, { message });
   }
 
-  private postBusy(isBusy: boolean, message: string): void {
-    this.postMessage(RemoteEditOutboundMessageType.Busy, { isBusy, message });
+  private postStatusCopyFeedback(message: string): void {
+    this.postMessage(RemoteEditOutboundMessageType.StatusCopyFeedback, { message });
+  }
+
+  private postBusy(isBusy: boolean, message: string, cancelAction: boolean | 'transfer' | 'connection' = false, cancelLabel?: string): void {
+    const action = cancelAction === true ? 'transfer' : (cancelAction || '');
+    this.postMessage(RemoteEditOutboundMessageType.Busy, {
+      isBusy,
+      message,
+      canCancelTransfer: action === 'transfer',
+      cancelAction: action,
+      cancelLabel: cancelLabel || (action === 'transfer' ? 'Cancel Transfer' : 'Cancel')
+    });
   }
 
   private postError(message: string): void {
@@ -941,6 +2037,8 @@ export class RemoteEditPanel {
 
   private dispose(): void {
     this.cancelPermissionsDialog();
+    this.clearAllQueuedTransfers();
+    this.endManualTransfer();
     RemoteEditPanel.currentPanel = undefined;
 
     for (const disposable of this.disposables) {

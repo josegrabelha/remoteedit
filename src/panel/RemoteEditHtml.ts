@@ -67,9 +67,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   button.profile-icon-button svg, .path-actions button.icon-only svg { width: 24px; height: 24px; }
   button.profile-icon-button svg, button.profile-icon-button svg path { fill: currentColor; color: inherit; }
   .tooltip-anchor { position: relative; display: inline-flex; }
-  .tooltip-anchor::after { content: attr(data-tooltip); position: absolute; top: calc(100% + 7px); left: 50%; transform: translateX(-50%); z-index: 10000; padding: 4px 7px; border-radius: 3px; background: var(--vscode-editorWidget-background); color: var(--vscode-editorWidget-foreground); border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28); font-size: 12px; line-height: 1.25; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 80ms ease; }
-  .tooltip-anchor.tooltip-above::after { top: auto; bottom: calc(100% + 7px); }
-  .tooltip-anchor:hover::after, .tooltip-anchor:focus-within::after { opacity: 1; visibility: visible; transition-delay: 500ms; }
+  .has-tooltip { position: relative; }
+  .webview-tooltip { position: fixed; z-index: 10000; max-width: min(360px, calc(100vw - 24px)); padding: 4px 7px; border-radius: 3px; background: var(--vscode-editorWidget-background); color: var(--vscode-editorWidget-foreground); border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28); font-size: 12px; line-height: 1.25; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(2px); transition: opacity 80ms ease, transform 80ms ease; }
+  .webview-tooltip.visible { opacity: 1; visibility: visible; transform: translateY(0); }
   button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
   button:disabled { cursor: default; opacity: 0.55; }
   button.secondary { background: var(--vscode-button-secondaryBackground, var(--vscode-input-background)); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border: 1px solid var(--vscode-button-border, var(--vscode-input-border, var(--vscode-panel-border))); }
@@ -78,7 +78,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   button.danger { background: var(--vscode-inputValidation-errorBackground, var(--vscode-button-secondaryBackground)); color: var(--vscode-inputValidation-errorForeground, var(--vscode-button-secondaryForeground)); }
   button.danger:hover:not(:disabled) { background: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); color: var(--vscode-inputValidation-errorForeground, var(--vscode-button-foreground)); }
   .profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: end; margin-bottom: 12px; min-width: 0; }
-  .profile-row .tooltip-anchor { align-self: end; }
+  .profile-row .tooltip-anchor, .profile-row .has-tooltip { align-self: end; }
   .connection-name-row { grid-column: 1 / -1; }
   .connection-config-divider { grid-column: 1 / -1; height: 1px; background: var(--vscode-panel-border); margin: 2px 0 4px; }
   .divider { height: 1px; background: var(--vscode-panel-border); margin: 14px 0; }
@@ -102,10 +102,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .sudo-toggle input:disabled + .sudo-toggle-track { opacity: 0.55; }
   .sudo-toggle.enabled .sudo-toggle-state { color: var(--vscode-foreground); }
   .sudo-toggle-state { min-width: 46px; text-align: right; color: var(--vscode-descriptionForeground); }
-  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 220px; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 180px; gap: 8px; align-items: center; margin-bottom: 10px; }
   .pathbar label { margin: 0; }
   .path-actions { display: inline-flex; gap: 8px; align-items: center; }
-  .filter-box { position: relative; width: 220px; min-width: 150px; }
+  .toolbar-separator { width: 1px; height: 24px; background: var(--vscode-panel-border); margin: 0 2px; flex: 0 0 auto; }
+  .transfer-queue-button { position: relative; }
+  .transfer-queue-count { position: absolute; top: -5px; right: -5px; display: none; align-items: center; justify-content: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--vscode-badge-background, var(--vscode-button-background)); color: var(--vscode-badge-foreground, var(--vscode-button-foreground)); font-size: 10px; font-weight: 650; line-height: 15px; box-shadow: 0 0 0 1px var(--vscode-editor-background); }
+  .transfer-queue-button.has-pending .transfer-queue-count { display: inline-flex; }
+  .filter-box { position: relative; width: 180px; min-width: 140px; }
   .filter-input { width: 100%; padding-right: 28px; }
   .filter-clear-button { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-foreground); opacity: 0; visibility: hidden; cursor: pointer; font-size: 16px; line-height: 20px; }
   .filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
@@ -144,6 +148,30 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .context-menu button.danger-text { color: var(--vscode-errorForeground); }
   .context-menu-separator { height: 1px; margin: 4px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); opacity: 0.9; }
 
+
+  .transfer-queue-backdrop { position: fixed; inset: 0; z-index: 220; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
+  .transfer-queue-backdrop.visible { display: flex; }
+  .transfer-queue-dialog { width: min(620px, 100%); max-height: min(720px, calc(100vh - 48px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
+  .transfer-queue-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .transfer-queue-title { margin: 0; font-size: 17px; font-weight: 650; }
+  .transfer-queue-close { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; background: transparent; color: inherit; border: 0; font-size: 18px; line-height: 28px; }
+  .transfer-queue-close:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .transfer-queue-body { overflow: auto; padding: 14px 16px 16px; display: grid; gap: 14px; }
+  .transfer-queue-section { border: 1px solid var(--vscode-panel-border); border-radius: 7px; overflow: hidden; background: var(--vscode-editor-background); }
+  .transfer-queue-section-title { margin: 0; padding: 9px 11px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); font-weight: 600; }
+  .transfer-queue-items { display: grid; gap: 0; }
+  .transfer-queue-empty { padding: 18px 12px; color: var(--vscode-descriptionForeground); text-align: center; }
+  .transfer-queue-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .transfer-queue-item:last-child { border-bottom: 0; }
+  .transfer-queue-item-main { display: grid; gap: 4px; min-width: 0; }
+  .transfer-queue-item-title { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 600; }
+  .transfer-queue-icon { width: 18px; min-width: 18px; text-align: center; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+  .transfer-queue-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-queue-detail, .transfer-queue-status, .transfer-queue-progress { color: var(--vscode-descriptionForeground); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-queue-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .transfer-queue-actions button { min-height: 27px; padding: 4px 9px; }
+  .transfer-queue-footer { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
+
   .permission-backdrop { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .permission-backdrop.visible { display: flex; }
   .permission-dialog { width: min(620px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
@@ -168,11 +196,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .permission-current { color: var(--vscode-descriptionForeground); font-size: 12px; }
   .permission-validation { min-height: 18px; padding: 0 12px 12px; color: var(--vscode-errorForeground); }
   .permission-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
-  .statusbar { margin-top: 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
+  .statusbar { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
   .statusbar.error { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
   .statusbar.busy { color: var(--vscode-progressBar-background, var(--vscode-foreground)); }
+  .status-main { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
   .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .spinner { width: 14px; height: 14px; border: 2px solid var(--vscode-panel-border); border-top-color: var(--vscode-progressBar-background, var(--vscode-foreground)); border-radius: 50%; animation: spin 0.9s linear infinite; display: none; }
+  .status-action-button { min-height: 26px; height: 26px; padding: 3px 8px; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid var(--vscode-panel-border); background: transparent; color: inherit; opacity: 0.9; }
+  .status-action-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); border-color: var(--vscode-focusBorder, var(--vscode-button-border, var(--vscode-panel-border))); }
+  .status-action-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .status-cancel-button { display: none; padding: 4px 9px; }
+  .statusbar.cancelable .status-cancel-button { display: inline-flex; }
+  .status-copy-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+  .status-copy-button { width: 28px; min-width: 28px; padding: 3px; }
+  .status-copy-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
+  .status-copy-feedback { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 60; padding: 4px 8px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 4px; background: var(--vscode-editorWidget-background, var(--vscode-notifications-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-notifications-foreground)); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28); font-size: 12px; line-height: 1.2; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 120ms ease, transform 120ms ease; }
+  .status-copy-feedback.visible { opacity: 1; transform: translateY(0); }
+  .spinner { width: 14px; min-width: 14px; height: 14px; border: 2px solid var(--vscode-panel-border); border-top-color: var(--vscode-progressBar-background, var(--vscode-foreground)); border-radius: 50%; animation: spin 0.9s linear infinite; display: none; flex: 0 0 auto; }
   .statusbar.busy .spinner { display: block; }
   .muted { color: var(--vscode-descriptionForeground); }
   .small { font-size: 12px; }
@@ -224,10 +263,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             <div>
               <label for="host">Host</label>
               <input id="host" placeholder="server.example.com" autocomplete="off" />
-              <label class="checkbox-row keepalive-row" title="Send periodic SSH keepalive messages to reduce idle disconnects."><input id="keepAlive" type="checkbox" checked /> Keep connection alive</label>
+              <label class="checkbox-row keepalive-row has-tooltip" data-tooltip="Send periodic SSH keepalive messages to reduce idle disconnects."><input id="keepAlive" type="checkbox" checked /> Keep connection alive</label>
             </div>
             <div><label for="port">Port</label><input id="port" value="22" inputmode="numeric" /></div>
-            <div class="full"><label for="username">Username <span class="muted">(optional for bookmarks)</span></label><input id="username" placeholder="Enter now or leave blank in the bookmarked connection" autocomplete="username" /></div>
+            <div class="full"><label for="username">Username</label><input id="username" placeholder="Enter now or leave blank in the bookmarked connection" autocomplete="username" /></div>
             <div class="full"><label for="authType">Authentication</label><select id="authType"><option value="password">Password</option><option value="privateKey">Private key</option></select></div>
             <div id="passwordBlock" class="full auth-block visible">
               <label for="password">Password</label>
@@ -239,7 +278,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <label for="privateKeyPath">Private key path</label>
               <div class="input-with-button">
                 <input id="privateKeyPath" placeholder="~/.ssh/id_rsa" autocomplete="off" />
-                <button id="privateKeyBrowseButton" class="input-icon-button" type="button" aria-label="Select private key file" title="Select private key file">
+                <button id="privateKeyBrowseButton" class="input-icon-button has-tooltip" type="button" aria-label="Select private key file" data-tooltip="Select private key file">
                   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.44c.4 0 .78.16 1.06.44L8.56 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4Zm1-.01v7.51c0 .28.22.5.5.5h10a.5.5 0 0 0 .5-.5v-6A.5.5 0 0 0 13 5H8.15L6.8 3.65a.5.5 0 0 0-.36-.15H3a.5.5 0 0 0-.5.49Z" /></svg>
                 </button>
               </div>
@@ -282,7 +321,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
                 <div class="card-title">Remote browser</div>
                 <div id="browserSubtitle" class="card-subtitle">Connect to a host to list remote files.</div>
               </div>
-              <label id="sudoToggleLabel" class="sudo-toggle" title="Connect to a host to enable sudo mode">
+              <label id="sudoToggleLabel" class="sudo-toggle has-tooltip" data-tooltip="Connect to a host to enable sudo mode">
                 <span id="sudoToggleState" class="sudo-toggle-state">Sudo Off</span>
                 <input id="sudoToggle" type="checkbox" disabled aria-label="Enable sudo mode for this connection" />
                 <span class="sudo-toggle-track" aria-hidden="true"><span class="sudo-toggle-thumb"></span></span>
@@ -305,10 +344,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <span class="tooltip-anchor" data-tooltip="Refresh">
                 <button id="refreshButton" class="secondary icon-only" aria-label="Refresh" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M483.08-200q-117.25 0-198.63-81.34-81.37-81.34-81.37-198.54 0-117.2 81.37-198.66Q365.83-760 483.08-760q71.3 0 133.54 33.88 62.23 33.89 100.3 94.58V-760h40v209.23H547.69v-40h148q-31.23-59.85-87.88-94.54Q551.15-720 483.08-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h42.46Q725.08-310.15 651-255.08 576.92-200 483.08-200Z" /></svg></button>
               </span>
+              <span class="toolbar-separator" aria-hidden="true"></span>
+              <span class="tooltip-anchor" data-tooltip="Upload files or folders">
+                <button id="uploadButton" class="secondary icon-only" aria-label="Upload files or folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm200-160v-370L342-572l-28-28 166-166 166 166-28 28-118-118v370h-40Z" /></svg></button>
+              </span>
+              <span class="tooltip-anchor" data-tooltip="Download selected files or folders">
+                <button id="downloadButton" class="secondary icon-only" aria-label="Download selected files or folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm220-146L314-472l28-28 118 118v-370h40v370l118-118 28 28-166 166Z" /></svg></button>
+              </span>
+              <span id="transferQueueTooltip" class="tooltip-anchor" data-tooltip="Transfer Queue">
+                <button id="transferQueueButton" class="secondary icon-only transfer-queue-button" type="button" aria-label="Transfer Queue" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M220-260v-40h520v40H220Zm0-200v-40h520v40H220Zm0-200v-40h520v40H220Z" /></svg><span id="transferQueueCount" class="transfer-queue-count" aria-hidden="true">0</span></button>
+              </span>
+              <span class="toolbar-separator" aria-hidden="true"></span>
             </div>
             <div id="filterBox" class="filter-box">
               <input id="filterInput" class="filter-input" placeholder="Filter files..." aria-label="Filter files" disabled />
-              <button id="clearFilterButton" class="filter-clear-button" aria-label="Clear filter" disabled>×</button>
+              <button id="clearFilterButton" class="filter-clear-button has-tooltip" aria-label="Clear filter" data-tooltip="Clear filter" disabled>×</button>
             </div>
           </div>
 
@@ -337,7 +387,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </table>
           </div>
 
-          <div id="status" class="statusbar"><div id="statusText" class="status-text">Ready.</div><div class="spinner" aria-hidden="true"></div></div>
+          <div id="status" class="statusbar"><div class="status-main"><div id="statusText" class="status-text">Ready.</div><div class="spinner" aria-hidden="true"></div></div><button id="statusCancelButton" class="status-action-button status-cancel-button has-tooltip" type="button" data-tooltip="Cancel current operation">Cancel Transfer</button><div class="status-copy-wrap"><button id="statusCopyButton" class="status-action-button status-copy-button has-tooltip tooltip-above" type="button" aria-label="Copy status" data-tooltip="Copy status"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg></button><div id="statusCopyFeedback" class="status-copy-feedback" role="status" aria-live="polite">Copied</div></div></div>
           </div>
         </section>
       </section>
@@ -345,11 +395,38 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   </div>
   </main>
 
+  <div id="webviewTooltip" class="webview-tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <div id="transferQueueModal" class="transfer-queue-backdrop" role="dialog" aria-modal="true" aria-labelledby="transferQueueTitle" aria-hidden="true">
+    <div class="transfer-queue-dialog">
+      <div class="transfer-queue-header">
+        <h2 id="transferQueueTitle" class="transfer-queue-title">Transfer Queue</h2>
+        <button id="transferQueueCloseButton" class="transfer-queue-close has-tooltip" type="button" aria-label="Close Transfer Queue" data-tooltip="Close">×</button>
+      </div>
+      <div class="transfer-queue-body">
+        <section class="transfer-queue-section" aria-labelledby="transferQueueCurrentTitle">
+          <h3 id="transferQueueCurrentTitle" class="transfer-queue-section-title">Current transfer</h3>
+          <div id="transferQueueCurrent" class="transfer-queue-items"></div>
+        </section>
+        <section class="transfer-queue-section" aria-labelledby="transferQueuePendingTitle">
+          <h3 id="transferQueuePendingTitle" class="transfer-queue-section-title">Pending transfers</h3>
+          <div id="transferQueuePending" class="transfer-queue-items"></div>
+        </section>
+      </div>
+      <div class="transfer-queue-footer">
+        <button id="transferQueueFooterCloseButton" class="secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="entryContextMenu" class="context-menu" role="menu" aria-label="Entry actions">
   <button id="contextOpen" type="button" role="menuitem">View/Edit</button>
   <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextCreateFile" type="button" role="menuitem">Create new file</button>
   <button id="contextCreateDirectory" type="button" role="menuitem">Create new directory</button>
+  <div id="contextTransferSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextUpload" type="button" role="menuitem">Upload...</button>
+  <button id="contextDownload" type="button" role="menuitem">Download...</button>
   <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextRename" type="button" role="menuitem">Rename</button>
   <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
@@ -434,6 +511,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const entriesBody = document.getElementById('entriesBody');
   const status = document.getElementById('status');
   const statusText = document.getElementById('statusText');
+  const statusCancelButton = document.getElementById('statusCancelButton');
+  const statusCopyButton = document.getElementById('statusCopyButton');
+  const statusCopyFeedback = document.getElementById('statusCopyFeedback');
+  const webviewTooltip = document.getElementById('webviewTooltip');
   const browserSubtitle = document.getElementById('browserSubtitle');
   const sudoToggleLabel = document.getElementById('sudoToggleLabel');
   const sudoToggle = document.getElementById('sudoToggle');
@@ -447,12 +528,25 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const showOutputButton = document.getElementById('showOutputButton');
   const parentButton = document.getElementById('parentButton');
   const refreshButton = document.getElementById('refreshButton');
+  const uploadButton = document.getElementById('uploadButton');
+  const downloadButton = document.getElementById('downloadButton');
+  const transferQueueButton = document.getElementById('transferQueueButton');
+  const transferQueueTooltip = document.getElementById('transferQueueTooltip');
+  const transferQueueCount = document.getElementById('transferQueueCount');
+  const transferQueueModal = document.getElementById('transferQueueModal');
+  const transferQueueCloseButton = document.getElementById('transferQueueCloseButton');
+  const transferQueueFooterCloseButton = document.getElementById('transferQueueFooterCloseButton');
+  const transferQueueCurrent = document.getElementById('transferQueueCurrent');
+  const transferQueuePending = document.getElementById('transferQueuePending');
   const goButton = document.getElementById('goButton');
   const entryContextMenu = document.getElementById('entryContextMenu');
   const contextOpen = document.getElementById('contextOpen');
   const contextOpenSeparator = document.getElementById('contextOpenSeparator');
   const contextCreateFile = document.getElementById('contextCreateFile');
   const contextCreateDirectory = document.getElementById('contextCreateDirectory');
+  const contextTransferSeparator = document.getElementById('contextTransferSeparator');
+  const contextUpload = document.getElementById('contextUpload');
+  const contextDownload = document.getElementById('contextDownload');
   const contextItemSeparator = document.getElementById('contextItemSeparator');
   const contextSetPermissions = document.getElementById('contextSetPermissions');
   const contextRename = document.getElementById('contextRename');
@@ -489,7 +583,96 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let filterText = '';
   let currentSort = { key: '', direction: '' };
   let busy = false;
+  let statusCancelAction = '';
+  let statusCopyFeedbackTimer = 0;
   let permissionsDialogOpen = false;
+  let transferQueueState = { current: null, pending: [] };
+  let transferQueueModalOpen = false;
+
+  let activeTooltipTarget = null;
+  let tooltipTimer = 0;
+
+  function hideWebviewTooltip() {
+    if (tooltipTimer) {
+      clearTimeout(tooltipTimer);
+      tooltipTimer = 0;
+    }
+    activeTooltipTarget = null;
+    if (!webviewTooltip) return;
+    webviewTooltip.classList.remove('visible');
+    webviewTooltip.setAttribute('aria-hidden', 'true');
+  }
+
+  function positionWebviewTooltip(target, preferAbove = false) {
+    if (!webviewTooltip || !target) return;
+
+    const gap = 7;
+    const margin = 8;
+    const rect = target.getBoundingClientRect();
+    const tooltipRect = webviewTooltip.getBoundingClientRect();
+    let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+    left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+
+    let top = preferAbove ? (rect.top - tooltipRect.height - gap) : (rect.bottom + gap);
+    if (top < margin) top = rect.bottom + gap;
+    if (top + tooltipRect.height > window.innerHeight - margin) top = rect.top - tooltipRect.height - gap;
+    top = Math.max(margin, Math.min(top, window.innerHeight - tooltipRect.height - margin));
+
+    webviewTooltip.style.left = Math.round(left) + 'px';
+    webviewTooltip.style.top = Math.round(top) + 'px';
+  }
+
+  function showWebviewTooltip(target) {
+    if (!webviewTooltip || !target) return;
+    const text = String(target.getAttribute('data-tooltip') || '').trim();
+    if (!text) return;
+
+    if (tooltipTimer) clearTimeout(tooltipTimer);
+    activeTooltipTarget = target;
+    webviewTooltip.textContent = text;
+    webviewTooltip.setAttribute('aria-hidden', 'false');
+    webviewTooltip.classList.remove('visible');
+    webviewTooltip.style.left = '0px';
+    webviewTooltip.style.top = '0px';
+
+    tooltipTimer = window.setTimeout(() => {
+      if (activeTooltipTarget !== target) return;
+      const preferAbove = target.classList.contains('tooltip-above') || target.getAttribute('data-tooltip-position') === 'above';
+      positionWebviewTooltip(target, preferAbove);
+      webviewTooltip.classList.add('visible');
+    }, 500);
+  }
+
+  function getTooltipTarget(eventTarget) {
+    return eventTarget && eventTarget.closest ? eventTarget.closest('[data-tooltip]') : null;
+  }
+
+  document.addEventListener('mouseover', event => {
+    const target = getTooltipTarget(event.target);
+    if (!target || target === activeTooltipTarget) return;
+    showWebviewTooltip(target);
+  });
+
+  document.addEventListener('mouseout', event => {
+    const target = getTooltipTarget(event.target);
+    if (!target || target !== activeTooltipTarget) return;
+    const related = event.relatedTarget;
+    if (related && target.contains(related)) return;
+    hideWebviewTooltip();
+  });
+
+  document.addEventListener('focusin', event => {
+    const target = getTooltipTarget(event.target);
+    if (target) showWebviewTooltip(target);
+  });
+
+  document.addEventListener('focusout', event => {
+    const target = getTooltipTarget(event.target);
+    if (target && target === activeTooltipTarget) hideWebviewTooltip();
+  });
+
+  window.addEventListener('scroll', hideWebviewTooltip, true);
+  window.addEventListener('resize', hideWebviewTooltip);
 
   window.addEventListener('message', event => {
     const message = event.data;
@@ -550,6 +733,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         currentPath.value = payload.path || '/';
         currentEntries = payload.entries || [];
         selectedEntryPath = '';
+        selectedEntryPaths.clear();
+        selectionAnchorPath = '';
         hideContextMenu();
         renderEntries(getVisibleEntries());
         updateActiveSessionPath(payload.path || '/');
@@ -557,8 +742,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'status':
         setStatus(payload.message || '');
         break;
+      case 'statusCopyFeedback':
+        showStatusCopyFeedback(payload.message || 'Copied');
+        break;
       case 'busy':
-        setBusy(Boolean(payload.isBusy), payload.message || '');
+        setBusy(Boolean(payload.isBusy), payload.message || '', payload.cancelAction || (payload.canCancelTransfer ? 'transfer' : ''), payload.cancelLabel || 'Cancel');
+        break;
+      case 'transferQueueChanged':
+        updateTransferQueueState(payload);
         break;
       case 'error':
         setBusy(false);
@@ -653,6 +844,35 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
   parentButton.addEventListener('click', () => vscode.postMessage({ type: 'openParent' }));
   refreshButton.addEventListener('click', () => listDirectory(currentPath.value));
+  uploadButton.addEventListener('click', () => { if (activeConnectionId && canStartTransferAction()) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } }); });
+  downloadButton.addEventListener('click', () => { const entries = getSelectedActionEntries(); if (entries.length && canStartTransferAction()) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } }); });
+  transferQueueButton.addEventListener('click', showTransferQueueModal);
+  transferQueueCloseButton.addEventListener('click', hideTransferQueueModal);
+  transferQueueFooterCloseButton.addEventListener('click', hideTransferQueueModal);
+  transferQueueModal.addEventListener('click', event => { if (event.target === transferQueueModal) hideTransferQueueModal(); });
+  transferQueueCurrent.addEventListener('click', event => {
+    const button = event.target && event.target.closest ? event.target.closest('[data-transfer-action]') : null;
+    if (!button || button.dataset.transferAction !== 'cancel-current') return;
+    vscode.postMessage({ type: 'cancelTransfer' });
+  });
+  transferQueuePending.addEventListener('click', event => {
+    const button = event.target && event.target.closest ? event.target.closest('[data-transfer-action]') : null;
+    if (!button || button.dataset.transferAction !== 'remove-pending') return;
+    vscode.postMessage({ type: 'removeQueuedTransfer', payload: { transferId: button.dataset.transferId || '' } });
+  });
+  statusCancelButton.addEventListener('click', () => {
+    if (statusCancelAction === 'connection') {
+      vscode.postMessage({ type: 'cancelConnection' });
+      return;
+    }
+
+    if (statusCancelAction === 'transfer') {
+      vscode.postMessage({ type: 'cancelTransfer' });
+    }
+  });
+  statusCopyButton.addEventListener('click', () => {
+    vscode.postMessage({ type: 'copyStatus', payload: { text: getStatusCopyText() } });
+  });
   goButton.addEventListener('click', () => openPath(currentPath.value));
   authType.addEventListener('change', updateAuthFields);
   privateKeyBrowseButton.addEventListener('click', () => vscode.postMessage({ type: 'pickPrivateKeyPath' }));
@@ -660,6 +880,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   rememberPassphrase.addEventListener('change', () => { if (!rememberPassphrase.checked) { passphrase.placeholder = ''; if (passphrase.value === SAVED_SECRET_MASK) passphrase.value = ''; } });
 
   currentPath.addEventListener('keydown', event => { if (event.key === 'Enter') openPath(currentPath.value); });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && transferQueueModalOpen) {
+      hideTransferQueueModal();
+    }
+  });
   filterInput.addEventListener('input', () => {
     applyFilterInput();
   });
@@ -685,6 +910,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   contextCreateDirectory.addEventListener('click', () => {
     hideContextMenu();
     if (activeConnectionId) vscode.postMessage({ type: 'requestCreateDirectory', payload: { path: currentPath.value || '/' } });
+  });
+
+  contextUpload.addEventListener('click', () => {
+    hideContextMenu();
+    if (activeConnectionId) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } });
+  });
+
+  contextDownload.addEventListener('click', () => {
+    const entries = getSelectedActionEntries();
+    hideContextMenu();
+    if (entries.length) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } });
   });
 
   contextSetPermissions.addEventListener('click', () => {
@@ -851,9 +1087,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     for (const session of sessions) {
       const tab = document.createElement('button');
-      tab.className = 'session-tab' + (session.id === activeConnectionId ? ' active' : '');
-      tab.title = formatConnectionLabel(session.name, formatSessionTarget(session)) + ' - ' + (session.currentPath || '/');
-      tab.innerHTML = '<span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close" title="Disconnect">×</span>';
+      tab.className = 'session-tab has-tooltip tooltip-above' + (session.id === activeConnectionId ? ' active' : '');
+      tab.dataset.tooltip = formatConnectionLabel(session.name, formatSessionTarget(session)) + ' - ' + (session.currentPath || '/');
+      tab.innerHTML = '<span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect">×</span>';
       tab.addEventListener('click', () => {
         if (session.id === activeConnectionId) return;
         setBusy(true, 'Switching to ' + session.name + '...');
@@ -881,7 +1117,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     sudoToggleState.textContent = enabled ? 'Sudo On' : 'Sudo Off';
     sudoToggleLabel.classList.toggle('enabled', enabled);
     entriesTableWrap.classList.toggle('privileged-session', isPrivilegedSession);
-    sudoToggleLabel.title = !active
+    sudoToggleLabel.dataset.tooltip = !active
       ? 'Connect to a host to enable sudo mode'
       : enabled
         ? 'Disable sudo mode and forget the sudo password'
@@ -1145,8 +1381,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const row = document.createElement('tr');
       const isParentEntry = entry.name === '..' && entry.type === 'directory';
       const entryKey = entry.path || entry.name;
-      row.className = 'entry-row' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
-      row.title = entry.linkTarget ? ((entry.path || entry.name) + ' -> ' + entry.linkTarget) : (entry.path || entry.name);
+      row.className = 'entry-row has-tooltip' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
+      row.dataset.tooltip = entry.linkTarget ? ((entry.path || entry.name) + ' -> ' + entry.linkTarget) : (entry.path || entry.name);
       row.dataset.entryPath = entryKey;
       row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
         '<td class="type">' + escapeHtml(formatEntryType(entry)) + '</td>' +
@@ -1241,6 +1477,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const entryPath = row.dataset.entryPath || '';
       row.classList.toggle('selected', selectedEntryPaths.has(entryPath));
     }
+    updateTransferButtons();
   }
 
   function clearEntrySelection() {
@@ -1277,6 +1514,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const hasItemGroup = isSingleEntry;
     const hasDeleteGroup = hasEntryActions;
 
+    contextTransferSeparator.style.display = activeConnectionId ? '' : 'none';
+    contextUpload.style.display = activeConnectionId ? '' : 'none';
+    contextDownload.style.display = hasEntryActions ? '' : 'none';
+
     contextOpen.style.display = canOpen ? '' : 'none';
     contextOpenSeparator.style.display = canOpen ? '' : 'none';
     contextOpen.textContent = isSingleDirectory
@@ -1295,7 +1536,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function getSelectedActionEntries() {
-    if (busy || selectedEntryPaths.size === 0) return [];
+    if (!canStartTransferAction() || selectedEntryPaths.size === 0) return [];
     return currentEntries.filter(item => selectedEntryPaths.has(item.path || item.name) && !isParentEntry(item));
   }
 
@@ -1494,19 +1735,164 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return String(value);
   }
 
-  function setBusy(isBusy, message) {
+  function showStatusCopyFeedback(message) {
+    if (!statusCopyFeedback) return;
+    statusCopyFeedback.textContent = message || 'Copied';
+    statusCopyFeedback.classList.add('visible');
+    if (statusCopyFeedbackTimer) window.clearTimeout(statusCopyFeedbackTimer);
+    statusCopyFeedbackTimer = window.setTimeout(() => {
+      statusCopyFeedback.classList.remove('visible');
+      statusCopyFeedbackTimer = 0;
+    }, 1400);
+  }
+
+  function updateTransferQueueState(payload) {
+    transferQueueState = {
+      current: payload && payload.current ? payload.current : null,
+      pending: Array.isArray(payload && payload.pending) ? payload.pending : []
+    };
+    renderTransferQueueButton();
+    if (transferQueueModalOpen) renderTransferQueueModal();
+  }
+
+  function renderTransferQueueButton() {
+    const pendingCount = transferQueueState.pending.length;
+    const hasTransfers = Boolean(transferQueueState.current) || pendingCount > 0;
+
+    if (transferQueueCount) {
+      transferQueueCount.textContent = String(pendingCount);
+    }
+
+    if (transferQueueButton) {
+      transferQueueButton.classList.toggle('has-pending', pendingCount > 0);
+      transferQueueButton.disabled = !hasTransfers;
+      transferQueueButton.setAttribute('aria-label', pendingCount > 0 ? ('Transfer Queue, ' + pendingCount + ' pending') : 'Transfer Queue');
+    }
+
+    if (transferQueueTooltip) {
+      transferQueueTooltip.dataset.tooltip = pendingCount > 0
+        ? ('Transfer Queue - ' + pendingCount + ' pending')
+        : (hasTransfers ? 'Transfer Queue - current transfer' : 'Transfer Queue');
+    }
+  }
+
+  function showTransferQueueModal() {
+    transferQueueModalOpen = true;
+    renderTransferQueueModal();
+    transferQueueModal.classList.add('visible');
+    transferQueueModal.setAttribute('aria-hidden', 'false');
+    hideWebviewTooltip();
+  }
+
+  function hideTransferQueueModal() {
+    transferQueueModalOpen = false;
+    transferQueueModal.classList.remove('visible');
+    transferQueueModal.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderTransferQueueModal() {
+    renderCurrentTransferQueueItem();
+    renderPendingTransferQueueItems();
+  }
+
+  function renderCurrentTransferQueueItem() {
+    if (!transferQueueCurrent) return;
+
+    const current = transferQueueState.current;
+
+    if (!current) {
+      transferQueueCurrent.innerHTML = '<div class="transfer-queue-empty">No active transfer.</div>';
+      return;
+    }
+
+    transferQueueCurrent.innerHTML = renderTransferQueueItem(current, {
+      action: current.canCancel ? 'cancel-current' : '',
+      actionLabel: current.status === 'Cancelling' ? 'Cancelling...' : 'Cancel',
+      disabled: !current.canCancel
+    });
+  }
+
+  function renderPendingTransferQueueItems() {
+    if (!transferQueuePending) return;
+
+    const pending = transferQueueState.pending || [];
+
+    if (!pending.length) {
+      transferQueuePending.innerHTML = '<div class="transfer-queue-empty">No pending transfers.</div>';
+      return;
+    }
+
+    transferQueuePending.innerHTML = pending.map(item => renderTransferQueueItem(item, {
+      action: 'remove-pending',
+      actionLabel: 'Remove',
+      disabled: false
+    })).join('');
+  }
+
+  function renderTransferQueueItem(item, actionOptions) {
+    const operation = item.operation === 'Upload' ? 'Upload' : 'Download';
+    const icon = item.operation === 'Upload' ? '↑' : '↓';
+    const status = item.status === 'Waiting' ? 'Queued' : (item.status || 'Waiting');
+    const progress = item.progress || (status === 'Queued' ? '--' : '');
+    const from = item.from || '';
+    const to = item.to || '';
+    const action = actionOptions && actionOptions.action ? actionOptions.action : '';
+    const actionLabel = actionOptions && actionOptions.actionLabel ? actionOptions.actionLabel : '';
+    const disabled = actionOptions && actionOptions.disabled;
+    const actionHtml = action
+      ? '<button class="secondary" type="button" data-transfer-action="' + escapeHtml(action) + '" data-transfer-id="' + escapeHtml(item.id || '') + '"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(actionLabel) + '</button>'
+      : '';
+
+    return '<div class="transfer-queue-item">' +
+      '<div class="transfer-queue-item-main">' +
+      '<div class="transfer-queue-item-title"><span class="transfer-queue-icon" aria-hidden="true">' + icon + '</span><span class="transfer-queue-name">' + escapeHtml(operation) + '</span></div>' +
+      '<div class="transfer-queue-detail">From: ' + escapeHtml(from) + '</div>' +
+      '<div class="transfer-queue-detail">To: ' + escapeHtml(to) + '</div>' +
+      '<div class="transfer-queue-status">Status: ' + escapeHtml(formatTransferQueueSentence(status)) + '</div>' +
+      '<div class="transfer-queue-progress">Progress: ' + escapeHtml(formatTransferQueueSentence(progress)) + '</div>' +
+      '</div>' +
+      '<div class="transfer-queue-actions">' + actionHtml + '</div>' +
+      '</div>';
+  }
+
+  function formatTransferQueueSentence(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (text === '--') return text;
+    return /[.!?…]$/.test(text) ? text : text + '.';
+  }
+
+  function getStatusCopyText() {
+    return String(statusText && statusText.textContent ? statusText.textContent : '').trim();
+  }
+
+  function setBusy(isBusy, message, cancelAction = '', cancelLabel = 'Cancel') {
     busy = isBusy;
+    statusCancelAction = isBusy ? String(cancelAction || '') : '';
     if (busy) hideContextMenu();
     setControls();
     if (message) statusText.textContent = message;
-    status.className = isBusy ? 'statusbar busy' : 'statusbar';
+    if (statusCancelButton) {
+      statusCancelButton.textContent = cancelLabel || 'Cancel';
+      statusCancelButton.dataset.tooltip = cancelLabel || 'Cancel';
+    }
+    status.className = isBusy ? ('statusbar busy' + (statusCancelAction ? ' cancelable' : '')) : 'statusbar';
   }
 
   function setStatus(message, isError = false) {
     busy = false;
+    statusCancelAction = '';
     setControls();
     statusText.textContent = message;
+    if (statusCancelButton) {
+      statusCancelButton.textContent = 'Cancel';
+      statusCancelButton.dataset.tooltip = 'Cancel';
+    }
     status.className = isError ? 'statusbar error' : 'statusbar';
+  }
+
+  function canStartTransferAction() {
+    return !busy || statusCancelAction === 'transfer';
   }
 
   function setControls() {
@@ -1521,12 +1907,23 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     currentPath.disabled = busy || !hasActiveSession;
     filterInput.disabled = busy || !hasActiveSession;
     updateFilterClearButton();
+    updateTransferButtons();
+    renderTransferQueueButton();
     parentButton.disabled = busy || !hasActiveSession;
     refreshButton.disabled = busy || !hasActiveSession;
+    uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;
     goButton.disabled = busy || !hasActiveSession;
     sudoToggle.disabled = busy || !hasActiveSession;
     updateSudoToggle();
     privateKeyBrowseButton.disabled = busy;
+  }
+
+  function updateTransferButtons() {
+    const hasActiveSession = Boolean(activeConnectionId);
+    if (uploadButton) uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;
+    if (downloadButton) downloadButton.disabled = !canStartTransferAction() || !hasActiveSession || getSelectedActionEntries().length === 0;
+    renderTransferQueueButton();
+    if (statusCancelButton) statusCancelButton.disabled = !statusCancelAction;
   }
 
   function escapeHtml(value) {

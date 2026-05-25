@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
 import { SftpSessionManager } from '../ssh/SftpSessionManager';
 import { withRemoteEditProgress } from '../utils/progressUtils';
+import { appendOutputLog } from '../utils/outputLogger';
 
 export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
 
   readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this.emitter.event;
 
-  constructor(private readonly sessions: SftpSessionManager) {}
+  constructor(private readonly sessions: SftpSessionManager, private readonly output?: vscode.OutputChannel) {}
 
   watch(_uri: vscode.Uri, _options: { readonly recursive: boolean; readonly excludes: readonly string[] }): vscode.Disposable {
     // Remote file watching is not implemented yet.
@@ -36,6 +37,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   async createDirectory(uri: vscode.Uri): Promise<void> {
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
     await this.sessions.createDirectory(connectionId, remotePath);
+    this.logInfo('Remote directory created.', { Connection: connectionId, Path: remotePath });
     this.fireChanged(uri, vscode.FileChangeType.Created);
   }
 
@@ -55,12 +57,14 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
       async (_token, progress) => await this.sessions.writeFile(connectionId, remotePath, content, progress),
       { cancellable: false }
     );
+    this.logInfo('Remote file saved.', { Connection: connectionId, Path: remotePath, Bytes: content.byteLength });
     this.fireChanged(uri, vscode.FileChangeType.Changed);
   }
 
   async delete(uri: vscode.Uri, _options: { readonly recursive: boolean }): Promise<void> {
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
     await this.sessions.delete(connectionId, remotePath);
+    this.logInfo('Remote item deleted from editor workspace.', { Connection: connectionId, Path: remotePath });
     this.fireChanged(uri, vscode.FileChangeType.Deleted);
   }
 
@@ -73,8 +77,17 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     await this.sessions.rename(oldInfo.connectionId, oldInfo.remotePath, newInfo.remotePath);
+    this.logInfo('Remote item renamed from editor workspace.', { Connection: oldInfo.connectionId, From: oldInfo.remotePath, To: newInfo.remotePath });
     this.fireChanged(oldUri, vscode.FileChangeType.Deleted);
     this.fireChanged(newUri, vscode.FileChangeType.Created);
+  }
+
+  private logInfo(message: string, details?: Record<string, string | number | boolean | undefined | null>): void {
+    if (!this.output) {
+      return;
+    }
+
+    appendOutputLog(this.output, 'INFO', message, details);
   }
 
   private fireChanged(uri: vscode.Uri, type: vscode.FileChangeType): void {

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0] - 2026-05-25
+
+### Added
+
+## 1.1.0
+
+- Added Transfer Queue support for uploads and downloads.
+- Improved transfer details, progress formatting, and Output Channel logging.
+- Improved browser toolbar layout and transfer queue UI.
+
 ## [1.0.7] - 2026-05-24
 
 ### Added

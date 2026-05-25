@@ -24,6 +24,9 @@ export async function tryHandleBrowserMessage(
     case RemoteEditIncomingMessageType.CopyRemotePath:
       await handlers.copyRemotePath(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.CopyStatus:
+      await handlers.copyStatus(message.payload);
+      return true;
     default:
       return false;
   }

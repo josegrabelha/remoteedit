@@ -21,6 +21,9 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.Connect:
       await handlers.connect(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.CancelConnection:
+      await handlers.cancelConnection();
+      return true;
     case RemoteEditIncomingMessageType.Disconnect:
       await handlers.disconnect(String(message.payload?.connectionId || handlers.getActiveConnectionId() || ''));
       return true;

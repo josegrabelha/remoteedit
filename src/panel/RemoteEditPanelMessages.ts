@@ -4,6 +4,7 @@ export const RemoteEditIncomingMessageType = {
   PickPrivateKeyPath: 'pickPrivateKeyPath',
   DeleteConnection: 'deleteConnection',
   Connect: 'connect',
+  CancelConnection: 'cancelConnection',
   Disconnect: 'disconnect',
   SwitchSession: 'switchSession',
   EnableSudoMode: 'enableSudoMode',
@@ -18,11 +19,16 @@ export const RemoteEditIncomingMessageType = {
   RequestRenameEntry: 'requestRenameEntry',
   RequestDeleteEntry: 'requestDeleteEntry',
   RequestDeleteEntries: 'requestDeleteEntries',
+  RequestUploadEntries: 'requestUploadEntries',
+  RequestDownloadEntries: 'requestDownloadEntries',
+  CancelTransfer: 'cancelTransfer',
+  RemoveQueuedTransfer: 'removeQueuedTransfer',
   RequestSetPermissions: 'requestSetPermissions',
   ApplyPermissions: 'applyPermissions',
   CancelPermissions: 'cancelPermissions',
   ShowOutput: 'showOutput',
   CopyRemotePath: 'copyRemotePath',
+  CopyStatus: 'copyStatus',
   Log: 'log'
 } as const;
 
@@ -39,6 +45,8 @@ export const RemoteEditOutboundMessageType = {
   PermissionsValidationError: 'permissionsValidationError',
   Status: 'status',
   Busy: 'busy',
+  StatusCopyFeedback: 'statusCopyFeedback',
+  TransferQueueChanged: 'transferQueueChanged',
   Error: 'error'
 } as const;
 

@@ -14,11 +14,13 @@ export interface RemoteEditProgressOptions {
   cancellable?: boolean;
   returnOnCancel?: boolean;
   cancelMessage?: string;
+  confirmCancellation?: () => Promise<boolean>;
+  cancellationSource?: vscode.CancellationTokenSource;
 }
 
 export interface RemoteEditProgressReporter {
   reportMessage(message: string): void;
-  reportBytes(label: string, transferredBytes: number, totalBytes: number): void;
+  reportBytes(label: string, transferredBytes: number, totalBytes: number, detail?: string): void;
 }
 
 class DelayedRemoteEditProgressReporter implements RemoteEditProgressReporter {
@@ -44,7 +46,7 @@ class DelayedRemoteEditProgressReporter implements RemoteEditProgressReporter {
     this.progress?.report({ message });
   }
 
-  reportBytes(label: string, transferredBytes: number, totalBytes: number): void {
+  reportBytes(label: string, transferredBytes: number, totalBytes: number, detail?: string): void {
     if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
       this.reportMessage(label);
       return;
@@ -52,7 +54,8 @@ class DelayedRemoteEditProgressReporter implements RemoteEditProgressReporter {
 
     const safeTransferred = Math.max(0, Math.min(transferredBytes, totalBytes));
     const percent = Math.max(0, Math.min(100, Math.floor((safeTransferred / totalBytes) * 100)));
-    const message = `${formatBytes(safeTransferred)} of ${formatBytes(totalBytes)} (${percent}%)`;
+    const transferMessage = `${formatBytes(safeTransferred)} of ${formatBytes(totalBytes)} (${percent}%)`;
+    const message = detail ? `${detail} - ${transferMessage}` : transferMessage;
 
     this.latestMessage = message;
     this.latestPercent = percent;
@@ -93,7 +96,9 @@ export async function withRemoteEditProgress<T>(
   const cancellable = options.cancellable === true;
   const returnOnCancel = options.returnOnCancel === true;
   const cancelMessage = options.cancelMessage || 'Operation cancelled.';
-  const source = new vscode.CancellationTokenSource();
+  const confirmCancellation = options.confirmCancellation;
+  const ownsCancellationSource = !options.cancellationSource;
+  const source = options.cancellationSource ?? new vscode.CancellationTokenSource();
   const reporter = new DelayedRemoteEditProgressReporter();
   const operation = Promise.resolve().then(() => task(source.token, reporter));
 
@@ -107,12 +112,16 @@ export async function withRemoteEditProgress<T>(
     ]);
 
     if (first.kind === 'result') {
-      source.dispose();
+      if (ownsCancellationSource) {
+        source.dispose();
+      }
       return first.value;
     }
 
     if (first.kind === 'error') {
-      source.dispose();
+      if (ownsCancellationSource) {
+        source.dispose();
+      }
       throw first.error;
     }
   }
@@ -127,8 +136,28 @@ export async function withRemoteEditProgress<T>(
       async (progress, progressToken) => {
         reporter.bind(progress);
 
+        let cancellationConfirmationInProgress = false;
         const progressCancellation = progressToken.onCancellationRequested(() => {
-          source.cancel();
+          if (!confirmCancellation) {
+            source.cancel();
+            return;
+          }
+
+          if (cancellationConfirmationInProgress || source.token.isCancellationRequested) {
+            return;
+          }
+
+          cancellationConfirmationInProgress = true;
+          confirmCancellation()
+            .then(confirmed => {
+              if (confirmed) {
+                source.cancel();
+              }
+            })
+            .catch(() => undefined)
+            .finally(() => {
+              cancellationConfirmationInProgress = false;
+            });
         });
 
         try {
@@ -149,7 +178,9 @@ export async function withRemoteEditProgress<T>(
       }
     );
   } finally {
-    source.dispose();
+    if (ownsCancellationSource) {
+      source.dispose();
+    }
   }
 }
 

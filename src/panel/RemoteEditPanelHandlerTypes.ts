@@ -6,6 +6,7 @@ export interface RemoteEditPanelMessageHandlers {
   pickPrivateKeyPath(): Promise<void>;
   deleteConnection(payload: any): Promise<void>;
   connect(payload: any): Promise<void>;
+  cancelConnection(): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
   switchSession(connectionId: string): Promise<void>;
   enableSudoMode(): Promise<void>;
@@ -20,11 +21,16 @@ export interface RemoteEditPanelMessageHandlers {
   requestRenameEntry(payload: any): Promise<void>;
   requestDeleteEntry(payload: any): Promise<void>;
   requestDeleteEntries(payload: any): Promise<void>;
+  requestUploadEntries(payload: any): Promise<void>;
+  requestDownloadEntries(payload: any): Promise<void>;
+  cancelTransfer(): Promise<void>;
+  removeQueuedTransfer(payload: any): void;
   requestSetPermissions(payload: any): Promise<void>;
   applyPermissions(payload: any): void;
   cancelPermissions(): void;
   showOutput(): void;
   copyRemotePath(payload: any): Promise<void>;
+  copyStatus(payload: any): Promise<void>;
   log(message: string): void;
   unknown(messageType: string): void;
 }

@@ -4,7 +4,7 @@ import SftpClient from 'ssh2-sftp-client';
 import { expandHomePath } from '../utils/localPathUtils';
 import { getBooleanSetting, getNumberSetting, getStringSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
-import type { RemoteEditProgressReporter } from '../utils/progressUtils';
+import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 
 const SUDO_READ_IDLE_TIMEOUT_MS = 60000;
 const SUDO_SAVE_APPLY_TIMEOUT_MS = 300000;
@@ -326,7 +326,7 @@ export class SftpSessionManager {
     return await readRemoteFileToBuffer(client, normalizedPath, cancellationToken, progress, totalBytes);
   }
 
-  async writeFile(connectionId: string, remotePath: string, content: Uint8Array, progress?: RemoteEditProgressReporter): Promise<void> {
+  async writeFile(connectionId: string, remotePath: string, content: Uint8Array, progress?: RemoteEditProgressReporter, cancellationToken?: ConnectionCancellationToken): Promise<void> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
     const buffer = Buffer.from(content);
@@ -337,7 +337,7 @@ export class SftpSessionManager {
 
         // Existing files must be updated in-place so owner, group,
         // permissions, ACLs, and inode are not replaced during save.
-        await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress);
+        await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress, cancellationToken);
         await this.restoreOriginalSpecialPermissionBitsIfNeeded(client, normalizedPath, originalMode);
       } catch (error) {
         if (!this.isMissingFileError(error)) {
@@ -349,7 +349,7 @@ export class SftpSessionManager {
         await this.createRemoteFileWithServerDefaults(client, normalizedPath);
 
         if (buffer.length > 0) {
-          await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress);
+          await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress, cancellationToken);
         }
       }
 
@@ -375,7 +375,7 @@ export class SftpSessionManager {
     );
 
     try {
-      await this.uploadBufferToNewRemoteFileInChunks(client, tempPath, buffer, progress);
+      await this.uploadBufferToNewRemoteFileInChunks(client, tempPath, buffer, progress, cancellationToken);
 
       if (existingTargetMetadata) {
         // Write through sudo into the existing target file instead of replacing it.
@@ -889,7 +889,7 @@ export class SftpSessionManager {
   }
 
 
-  private async uploadBufferToNewRemoteFileInChunks(client: SftpClient, remotePath: string, content: Buffer, progress?: RemoteEditProgressReporter): Promise<void> {
+  private async uploadBufferToNewRemoteFileInChunks(client: SftpClient, remotePath: string, content: Buffer, progress?: RemoteEditProgressReporter, cancellationToken?: ConnectionCancellationToken): Promise<void> {
     const sftp = (client as any).sftp;
 
     if (!sftp || typeof sftp.open !== 'function') {
@@ -903,7 +903,7 @@ export class SftpSessionManager {
     let operationError: unknown;
 
     try {
-      await this.writeBufferToOpenRemoteFile(sftp, handle, content, progress);
+      await this.writeBufferToOpenRemoteFile(sftp, handle, content, progress, cancellationToken);
     } catch (error) {
       operationError = error;
       throw error;
@@ -918,19 +918,21 @@ export class SftpSessionManager {
     }
   }
 
-  private async writeBufferToOpenRemoteFile(sftp: any, handle: Buffer, content: Buffer, progress?: RemoteEditProgressReporter): Promise<void> {
+  private async writeBufferToOpenRemoteFile(sftp: any, handle: Buffer, content: Buffer, progress?: RemoteEditProgressReporter, cancellationToken?: ConnectionCancellationToken): Promise<void> {
     const chunkSize = 64 * 1024;
     let offset = 0;
 
     while (offset < content.length) {
+      throwIfOperationCancelled(cancellationToken);
       const length = Math.min(chunkSize, content.length - offset);
       await this.rawSftpWrite(sftp, handle, content, offset, length, offset);
+      throwIfOperationCancelled(cancellationToken);
       offset += length;
       progress?.reportBytes('Saving remote file...', offset, content.length);
     }
   }
 
-  private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer, progress?: RemoteEditProgressReporter): Promise<void> {
+  private async writeExistingRemoteFileInPlace(client: SftpClient, remotePath: string, content: Buffer, progress?: RemoteEditProgressReporter, cancellationToken?: ConnectionCancellationToken): Promise<void> {
     const sftp = (client as any).sftp;
 
     if (!sftp || typeof sftp.open !== 'function') {
@@ -941,7 +943,7 @@ export class SftpSessionManager {
     let operationError: unknown;
 
     try {
-      await this.writeBufferToOpenRemoteFile(sftp, handle, content, progress);
+      await this.writeBufferToOpenRemoteFile(sftp, handle, content, progress, cancellationToken);
       await this.rawSftpSetSize(sftp, remotePath, handle, content.length);
     } catch (error) {
       operationError = error;
@@ -1828,7 +1830,7 @@ async function readRemoteFileStreamToBuffer(
 
 function throwIfOperationCancelled(cancellationToken?: ConnectionCancellationToken): void {
   if (cancellationToken?.isCancellationRequested) {
-    throw new Error('Operation cancelled.');
+    throw new RemoteEditOperationCancelledError('Operation cancelled.');
   }
 }
 

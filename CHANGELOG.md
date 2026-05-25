@@ -1,5 +1,14 @@
 # Changelog
 
+
+## [1.1.1] - 2026-05-25
+
+### Fixed
+
+- Guard WebView updates after the Remote Edit panel is closed.
+- Recreate the Remote Edit panel correctly after the previous WebView has been disposed.
+- Preserve active and queued transfers when the Remote Edit panel is closed and reopened.
+
 ## [1.1.0] - 2026-05-25
 
 ### Added

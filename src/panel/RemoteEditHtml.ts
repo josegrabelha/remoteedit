@@ -1757,23 +1757,29 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   function renderTransferQueueButton() {
     const pendingCount = transferQueueState.pending.length;
-    const hasTransfers = Boolean(transferQueueState.current) || pendingCount > 0;
+    const runningCount = transferQueueState.current ? 1 : 0;
+    const transferCount = runningCount + pendingCount;
+    const hasTransfers = transferCount > 0;
 
     if (transferQueueCount) {
-      transferQueueCount.textContent = String(pendingCount);
+      transferQueueCount.textContent = String(transferCount);
     }
 
     if (transferQueueButton) {
-      transferQueueButton.classList.toggle('has-pending', pendingCount > 0);
+      transferQueueButton.classList.toggle('has-pending', transferCount > 0);
       transferQueueButton.disabled = !hasTransfers;
-      transferQueueButton.setAttribute('aria-label', pendingCount > 0 ? ('Transfer Queue, ' + pendingCount + ' pending') : 'Transfer Queue');
+      transferQueueButton.setAttribute('aria-label', hasTransfers ? ('Transfer Queue, ' + formatTransferCount(transferCount)) : 'Transfer Queue');
     }
 
     if (transferQueueTooltip) {
-      transferQueueTooltip.dataset.tooltip = pendingCount > 0
-        ? ('Transfer Queue - ' + pendingCount + ' pending')
-        : (hasTransfers ? 'Transfer Queue - current transfer' : 'Transfer Queue');
+      transferQueueTooltip.dataset.tooltip = hasTransfers
+        ? ('Transfer Queue - ' + formatTransferCount(transferCount) + (pendingCount > 0 ? ' (' + pendingCount + ' queued)' : ''))
+        : 'Transfer Queue';
     }
+  }
+
+  function formatTransferCount(count) {
+    return count + ' ' + (count === 1 ? 'transfer' : 'transfers');
   }
 
   function showTransferQueueModal() {
@@ -1846,6 +1852,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return '<div class="transfer-queue-item">' +
       '<div class="transfer-queue-item-main">' +
       '<div class="transfer-queue-item-title"><span class="transfer-queue-icon" aria-hidden="true">' + icon + '</span><span class="transfer-queue-name">' + escapeHtml(operation) + '</span></div>' +
+      '<div class="transfer-queue-detail">Connection: ' + escapeHtml(item.connection || '') + '</div>' +
       '<div class="transfer-queue-detail">From: ' + escapeHtml(from) + '</div>' +
       '<div class="transfer-queue-detail">To: ' + escapeHtml(to) + '</div>' +
       '<div class="transfer-queue-status">Status: ' + escapeHtml(formatTransferQueueSentence(status)) + '</div>' +

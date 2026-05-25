@@ -54,6 +54,7 @@ interface QueuedTransferJob {
   id: string;
   operation: 'Upload' | 'Download';
   connectionId: string;
+  connectionLabel: string;
   title: string;
   from: string;
   to: string;
@@ -65,6 +66,7 @@ interface TransferQueueItemSnapshot {
   id: string;
   operation: 'Upload' | 'Download';
   title: string;
+  connection: string;
   from: string;
   to: string;
   status: 'Preparing' | 'Running' | 'Waiting' | 'Cancelling';
@@ -74,7 +76,10 @@ interface TransferQueueItemSnapshot {
 
 export class RemoteEditPanel {
   private static currentPanel: RemoteEditPanel | undefined;
+  private panel: vscode.WebviewPanel | undefined;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly panelDisposables: vscode.Disposable[] = [];
+  private isDisposed = false;
   private readonly state = new RemoteEditPanelState();
   private activeTransferCancellationSource: vscode.CancellationTokenSource | undefined;
   private activeTransferConnectionId: string | undefined;
@@ -94,10 +99,26 @@ export class RemoteEditPanel {
     output: vscode.OutputChannel
   ): void {
     if (RemoteEditPanel.currentPanel) {
-      RemoteEditPanel.currentPanel.panel.reveal(vscode.ViewColumn.Active);
+      if (RemoteEditPanel.currentPanel.panel && !RemoteEditPanel.currentPanel.isDisposed) {
+        RemoteEditPanel.currentPanel.panel.reveal(vscode.ViewColumn.Active);
+        return;
+      }
+
+      const panel = RemoteEditPanel.createWebviewPanel();
+      RemoteEditPanel.currentPanel.attachPanel(panel);
       return;
     }
 
+    RemoteEditPanel.currentPanel = new RemoteEditPanel(
+      RemoteEditPanel.createWebviewPanel(),
+      context,
+      sessions,
+      connectionManager,
+      output
+    );
+  }
+
+  private static createWebviewPanel(): vscode.WebviewPanel {
     const panel = vscode.window.createWebviewPanel(
       'remoteedit.home',
       'RemoteEdit',
@@ -109,23 +130,17 @@ export class RemoteEditPanel {
     );
 
     panel.iconPath = new vscode.ThemeIcon('remote-explorer');
-
-    RemoteEditPanel.currentPanel = new RemoteEditPanel(panel, context, sessions, connectionManager, output);
+    return panel;
   }
 
   private constructor(
-    private readonly panel: vscode.WebviewPanel,
+    panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
     private readonly sessions: SftpSessionManager,
     private readonly connectionManager: ConnectionManager,
     private readonly output: vscode.OutputChannel
   ) {
     this.state.initializeFromSessions(this.sessions.listConnections());
-
-    this.panel.webview.html = this.renderHtml(this.panel.webview);
-
-    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
-    this.panel.webview.onDidReceiveMessage(message => this.handleMessage(message), null, this.disposables);
 
     this.transferCancelStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1000);
     this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
@@ -136,6 +151,31 @@ export class RemoteEditPanel {
       this.transferCancelStatusBarItem,
       vscode.commands.registerCommand('remoteedit.cancelTransfer', () => this.cancelActiveTransfer())
     );
+
+    this.attachPanel(panel);
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel): void {
+    this.disposePanelDisposables();
+    this.panel = panel;
+    this.isDisposed = false;
+    this.panel.webview.html = this.renderHtml(this.panel.webview);
+
+    this.panel.onDidDispose(() => this.handlePanelDisposed(), null, this.panelDisposables);
+    this.panel.webview.onDidReceiveMessage(message => this.handleMessage(message), null, this.panelDisposables);
+  }
+
+  private handlePanelDisposed(): void {
+    this.isDisposed = true;
+    this.panel = undefined;
+    this.disposePanelDisposables();
+    this.resolvePendingPermissionsDialog();
+  }
+
+  private disposePanelDisposables(): void {
+    while (this.panelDisposables.length) {
+      this.panelDisposables.pop()?.dispose();
+    }
   }
 
   private async handleMessage(message: RemoteEditWebviewMessage): Promise<void> {
@@ -907,6 +947,7 @@ export class RemoteEditPanel {
       id: this.createTransferJobId(),
       operation: 'Upload',
       connectionId,
+      connectionLabel: this.buildTransferConnectionLabel(connectionId),
       title: this.buildSelectedLocalItemsLabel(selectedUris),
       from: this.buildUploadQueueSourceLabel(selectedUris),
       to: this.buildUploadQueueTargetLabel(selectedUris, targetDirectory),
@@ -1066,6 +1107,7 @@ export class RemoteEditPanel {
       id: this.createTransferJobId(),
       operation: 'Download',
       connectionId,
+      connectionLabel: this.buildTransferConnectionLabel(connectionId),
       title: this.buildSelectedRemoteItemsLabel(entries),
       from: this.buildDownloadQueueSourceLabel(entries),
       to: this.buildDownloadQueueTargetLabel(entries, targetFolder),
@@ -1514,6 +1556,22 @@ export class RemoteEditPanel {
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
+  private buildTransferConnectionLabel(connectionId: string): string {
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      return connectionId;
+    }
+
+    const endpoint = `${connection.username}@${connection.host}`;
+
+    if (!connection.name || connection.name === endpoint) {
+      return endpoint;
+    }
+
+    return `${connection.name} (${endpoint})`;
+  }
+
   private enqueueTransferJob(job: QueuedTransferJob): void {
     const willWait = this.runningTransfers >= this.maxConcurrentTransfers;
     this.transferQueue.push(job);
@@ -1714,6 +1772,7 @@ export class RemoteEditPanel {
       id: job.id,
       operation: job.operation,
       title: job.title,
+      connection: job.connectionLabel,
       from: job.from,
       to: job.to,
       status,
@@ -1855,6 +1914,17 @@ export class RemoteEditPanel {
     this.finishPermissionsDialog(undefined);
   }
 
+  private resolvePendingPermissionsDialog(): void {
+    const resolve = this.pendingPermissionsDialogResolve;
+
+    if (!resolve) {
+      return;
+    }
+
+    this.pendingPermissionsDialogResolve = undefined;
+    resolve(undefined);
+  }
+
   private finishPermissionsDialog(mode?: string): void {
     const resolve = this.pendingPermissionsDialogResolve;
 
@@ -1914,7 +1984,9 @@ export class RemoteEditPanel {
   }
 
   private updatePanelTitle(): void {
-    this.panel.title = 'RemoteEdit';
+    if (this.panel) {
+      this.panel.title = 'RemoteEdit';
+    }
   }
 
   private formatError(messageType: string, payload: any, details: string): string {
@@ -2032,17 +2104,30 @@ export class RemoteEditPanel {
   }
 
   private postMessage(type: RemoteEditOutboundMessageType, payload: any): void {
-    void this.panel.webview.postMessage({ type, payload });
+    if (this.isDisposed || !this.panel) {
+      return;
+    }
+
+    void this.panel.webview.postMessage({ type, payload }).then(
+      undefined,
+      error => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logDebug('Ignored WebView update after panel disposal.', { Details: message });
+      }
+    );
   }
 
-  private dispose(): void {
-    this.cancelPermissionsDialog();
-    this.clearAllQueuedTransfers();
-    this.endManualTransfer();
+  dispose(): void {
+    this.isDisposed = true;
     RemoteEditPanel.currentPanel = undefined;
 
-    for (const disposable of this.disposables) {
-      disposable.dispose();
+    this.resolvePendingPermissionsDialog();
+    this.clearAllQueuedTransfers();
+    this.endManualTransfer();
+    this.disposePanelDisposables();
+
+    while (this.disposables.length) {
+      this.disposables.pop()?.dispose();
     }
   }
 

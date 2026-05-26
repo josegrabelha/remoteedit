@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.2] - 2026-05-25
+
+### Added
+- Added Completed transfers to the Transfer Queue modal, scoped to active connection sessions.
+- Added transfer queue timestamps using `YYYY-MM-DD HH:mm:ss` format.
+
+### Fixed
+- Centered status bar action buttons and the private key path browse button.
+- Added vertical scrolling inside the Transfer Queue modal for long transfer histories.
 
 ## [1.1.1] - 2026-05-25
 

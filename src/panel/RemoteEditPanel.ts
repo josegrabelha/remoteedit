@@ -17,6 +17,7 @@ import { calculateModeFromPermissionState, parsePermissionString, type SetPermis
 
 
 type TransferConflictDecision = 'overwrite' | 'skip' | 'cancel';
+type TransferCompletionStatus = 'Completed' | 'Cancelled' | 'Failed';
 
 interface TransferConflictState {
   overwriteAll: boolean;
@@ -59,7 +60,9 @@ interface QueuedTransferJob {
   from: string;
   to: string;
   progress: string;
-  run: () => Promise<void>;
+  queuedAt?: string;
+  startedAt?: string;
+  run: () => Promise<TransferCompletionStatus>;
 }
 
 interface TransferQueueItemSnapshot {
@@ -69,9 +72,13 @@ interface TransferQueueItemSnapshot {
   connection: string;
   from: string;
   to: string;
-  status: 'Preparing' | 'Running' | 'Waiting' | 'Cancelling';
+  connectionId: string;
+  status: 'Preparing' | 'Running' | 'Waiting' | 'Cancelling' | TransferCompletionStatus;
   progress: string;
   canCancel: boolean;
+  queuedAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 export class RemoteEditPanel {
@@ -86,6 +93,8 @@ export class RemoteEditPanel {
   private activeTransferJob: QueuedTransferJob | undefined;
   private activeTransferCancelling = false;
   private readonly transferQueue: QueuedTransferJob[] = [];
+  private readonly completedTransfers: TransferQueueItemSnapshot[] = [];
+  private readonly maxCompletedTransfersPerConnection = 50;
   private runningTransfers = 0;
   private readonly maxConcurrentTransfers = 1;
   private activeConnectionCancellationSource: vscode.CancellationTokenSource | undefined;
@@ -463,6 +472,7 @@ export class RemoteEditPanel {
 
     const connection = this.sessions.getConnection(connectionId);
     const removedQueuedTransfers = this.clearQueuedTransfersForConnection(connectionId);
+    this.clearCompletedTransfersForConnection(connectionId);
 
     if (this.activeTransferConnectionId === connectionId) {
       this.activeTransferCancellationSource?.cancel();
@@ -956,7 +966,7 @@ export class RemoteEditPanel {
     });
   }
 
-  private async runUploadTransfer(connectionId: string, targetDirectory: string, selectedUris: readonly vscode.Uri[]): Promise<void> {
+  private async runUploadTransfer(connectionId: string, targetDirectory: string, selectedUris: readonly vscode.Uri[]): Promise<TransferCompletionStatus> {
     this.postStatus('Preparing upload...');
     this.setActiveTransferProgress('Preparing upload...');
 
@@ -967,7 +977,7 @@ export class RemoteEditPanel {
       this.logActiveTransferEvent('Upload', 'Upload finished with no uploadable files.', { SkippedItems: summary.skippedItems.length });
       this.postStatus(summary.skippedItems.length ? 'No uploadable files found. Some items were skipped.' : 'No uploadable files found.');
       await this.showTransferSummary('Upload', summary);
-      return;
+      return 'Completed';
     }
 
     try {
@@ -976,7 +986,7 @@ export class RemoteEditPanel {
       if (this.formatTransferError(error) === 'Upload cancelled.') {
         this.logActiveTransferEvent('Upload', 'Upload cancelled during conflict resolution.', { SkippedItems: summary.skippedItems.length });
         this.postStatus('Upload cancelled.');
-        return;
+        return 'Cancelled';
       }
       throw error;
     }
@@ -987,7 +997,7 @@ export class RemoteEditPanel {
       this.logActiveTransferEvent('Upload', 'Upload skipped.', { SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
       this.postStatus('Upload skipped.');
       await this.showTransferSummary('Upload', summary);
-      return;
+      return 'Completed';
     }
 
     const uploadFileItems = remainingItems.filter(item => item.kind === 'file');
@@ -1063,12 +1073,13 @@ export class RemoteEditPanel {
     if (uploadCancelled) {
       this.postStatus('Upload cancelled.');
       await this.showTransferSummary('Upload', summary);
-      return;
+      return 'Cancelled';
     }
 
     this.logActiveTransferEvent('Upload', 'Upload completed.', { TransferredFiles: summary.transferredFiles, SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
     this.postStatus(`Uploaded ${summary.transferredFiles} file(s).`);
     await this.showTransferSummary('Upload', summary);
+    return 'Completed';
   }
 
   private async requestDownloadEntries(payload: any): Promise<void> {
@@ -1120,7 +1131,7 @@ export class RemoteEditPanel {
     connectionId: string,
     entries: Array<{ name: string; type: string; effectiveType: string; path: string }>,
     targetFolder: string
-  ): Promise<void> {
+  ): Promise<TransferCompletionStatus> {
     this.postStatus('Preparing download...');
     this.setActiveTransferProgress('Preparing download...');
 
@@ -1135,7 +1146,7 @@ export class RemoteEditPanel {
       this.logActiveTransferEvent('Download', 'Download finished with no downloadable files.', { SkippedItems: summary.skippedItems.length });
       this.postStatus(summary.skippedItems.length ? 'No downloadable files found. Some items were skipped.' : 'No downloadable files found.');
       await this.showTransferSummary('Download', summary);
-      return;
+      return 'Completed';
     }
 
     try {
@@ -1144,7 +1155,7 @@ export class RemoteEditPanel {
       if (this.formatTransferError(error) === 'Download cancelled.') {
         this.logActiveTransferEvent('Download', 'Download cancelled during conflict resolution.', { SkippedItems: summary.skippedItems.length });
         this.postStatus('Download cancelled.');
-        return;
+        return 'Cancelled';
       }
       throw error;
     }
@@ -1155,7 +1166,7 @@ export class RemoteEditPanel {
       this.logActiveTransferEvent('Download', 'Download skipped.', { SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
       this.postStatus('Download skipped.');
       await this.showTransferSummary('Download', summary);
-      return;
+      return 'Completed';
     }
 
     const downloadFileItems = remainingItems.filter(item => item.kind === 'file');
@@ -1224,12 +1235,13 @@ export class RemoteEditPanel {
     if (downloadCancelled) {
       this.postStatus('Download cancelled.');
       await this.showTransferSummary('Download', summary);
-      return;
+      return 'Cancelled';
     }
 
     this.logActiveTransferEvent('Download', 'Download completed.', { TransferredFiles: summary.transferredFiles, SkippedItems: summary.skippedItems.length, FailedItems: summary.failedItems.length });
     this.postStatus(`Downloaded ${summary.transferredFiles} file(s).`);
     await this.showTransferSummary('Download', summary);
+    return 'Completed';
   }
 
   private async collectUploadTransferItems(
@@ -1573,6 +1585,8 @@ export class RemoteEditPanel {
   }
 
   private enqueueTransferJob(job: QueuedTransferJob): void {
+    job.queuedAt = job.queuedAt || this.formatLocalDateTime(new Date());
+
     const willWait = this.runningTransfers >= this.maxConcurrentTransfers;
     this.transferQueue.push(job);
     this.postTransferQueueState();
@@ -1606,6 +1620,7 @@ export class RemoteEditPanel {
       }
 
       this.runningTransfers += 1;
+      job.startedAt = this.formatLocalDateTime(new Date());
       this.activeTransferJob = job;
       this.activeTransferJob.progress = 'Preparing...';
       this.activeTransferCancelling = false;
@@ -1614,16 +1629,19 @@ export class RemoteEditPanel {
       this.logTransferEvent(job, `${job.operation} started.`);
 
       try {
-        await job.run();
+        const completionStatus = await job.run();
+        this.addCompletedTransfer(job, completionStatus);
       } catch (error) {
         if (isRemoteEditOperationCancelled(error)) {
           this.logTransferEvent(job, `${job.operation} cancelled.`);
           this.postStatus(`${job.operation} cancelled.`);
+          this.addCompletedTransfer(job, 'Cancelled');
         } else {
           const details = this.formatTransferError(error);
           this.logTransferEvent(job, `${job.operation} failed.`, { Details: details });
           this.postStatus(`${job.operation} failed.`);
           this.postError(`Could not complete ${job.operation.toLowerCase()}. Details: ${details}`);
+          this.addCompletedTransfer(job, 'Failed');
         }
       } finally {
         this.runningTransfers = Math.max(0, this.runningTransfers - 1);
@@ -1676,6 +1694,50 @@ export class RemoteEditPanel {
       this.logInfo('Queued transfers cleared.', { Removed: removedCount });
       this.postTransferQueueState();
     }
+  }
+
+  private addCompletedTransfer(job: QueuedTransferJob, status: TransferCompletionStatus): void {
+    if (!this.sessions.hasConnection(job.connectionId)) {
+      return;
+    }
+
+    const completedTransfer = this.buildTransferQueueItemSnapshot(job, status, false);
+    completedTransfer.progress = status;
+    completedTransfer.finishedAt = this.formatLocalDateTime(new Date());
+    this.completedTransfers.push(completedTransfer);
+    this.trimCompletedTransfersForConnection(job.connectionId);
+    this.postTransferQueueState();
+  }
+
+  private trimCompletedTransfersForConnection(connectionId: string): void {
+    let transferCount = 0;
+
+    for (let index = this.completedTransfers.length - 1; index >= 0; index -= 1) {
+      if (this.completedTransfers[index].connectionId !== connectionId) {
+        continue;
+      }
+
+      transferCount += 1;
+
+      if (transferCount > this.maxCompletedTransfersPerConnection) {
+        this.completedTransfers.splice(index, 1);
+      }
+    }
+  }
+
+  private clearCompletedTransfersForConnection(connectionId: string): void {
+    for (let index = this.completedTransfers.length - 1; index >= 0; index -= 1) {
+      if (this.completedTransfers[index].connectionId === connectionId) {
+        this.completedTransfers.splice(index, 1);
+      }
+    }
+
+    this.postTransferQueueState();
+  }
+
+  private clearAllCompletedTransfers(): void {
+    this.completedTransfers.splice(0, this.completedTransfers.length);
+    this.postTransferQueueState();
   }
 
   private beginManualTransfer(operation: 'Upload' | 'Download', connectionId: string): vscode.CancellationTokenSource {
@@ -1759,7 +1821,8 @@ export class RemoteEditPanel {
 
     this.postMessage(RemoteEditOutboundMessageType.TransferQueueChanged, {
       current,
-      pending: this.transferQueue.map(job => this.buildTransferQueueItemSnapshot(job, 'Waiting', false))
+      pending: this.transferQueue.map(job => this.buildTransferQueueItemSnapshot(job, 'Waiting', false)),
+      completed: this.completedTransfers.filter(item => this.sessions.hasConnection(item.connectionId))
     });
   }
 
@@ -1772,13 +1835,22 @@ export class RemoteEditPanel {
       id: job.id,
       operation: job.operation,
       title: job.title,
+      connectionId: job.connectionId,
       connection: job.connectionLabel,
       from: job.from,
       to: job.to,
       status,
       progress: status === 'Waiting' ? '--' : (job.progress || ''),
-      canCancel
+      canCancel,
+      queuedAt: job.queuedAt,
+      startedAt: job.startedAt
     };
+  }
+
+  private formatLocalDateTime(date: Date): string {
+    const pad = (value: number): string => value.toString().padStart(2, '0');
+
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   }
 
   private setActiveTransferProgress(progress: string): void {
@@ -2123,6 +2195,7 @@ export class RemoteEditPanel {
 
     this.resolvePendingPermissionsDialog();
     this.clearAllQueuedTransfers();
+    this.clearAllCompletedTransfers();
     this.endManualTransfer();
     this.disposePanelDisposables();
 

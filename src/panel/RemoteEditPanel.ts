@@ -211,6 +211,8 @@ export class RemoteEditPanel {
         openEntry: payload => this.openEntry(payload),
         openEntries: payload => this.openEntries(payload),
         openPath: payload => this.openPath(payload),
+        addRemotePathFavorite: payload => this.addRemotePathFavorite(payload),
+        removeRemotePathFavorite: payload => this.removeRemotePathFavorite(payload),
         requestCreateFile: payload => this.requestCreateEntry(payload, 'file'),
         requestCreateDirectory: payload => this.requestCreateEntry(payload, 'directory'),
         requestRenameEntry: payload => this.requestRenameEntry(payload),
@@ -699,6 +701,26 @@ export class RemoteEditPanel {
     }
 
     await this.openFile(remotePath);
+  }
+
+  private async addRemotePathFavorite(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const remotePath = normalizeRemotePath(String(payload?.path || this.getActivePath() || '').trim());
+
+    await this.connectionManager.addFavoriteRemotePath(connectionId, remotePath);
+    await this.sendProfiles(connectionId);
+    this.postStatus(`Added remote path favorite: ${remotePath}.`);
+    this.logInfo('Added remote path favorite.', { Connection: connectionId, Path: remotePath });
+  }
+
+  private async removeRemotePathFavorite(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const remotePath = normalizeRemotePath(String(payload?.path || this.getActivePath() || '').trim());
+
+    await this.connectionManager.removeFavoriteRemotePath(connectionId, remotePath);
+    await this.sendProfiles(connectionId);
+    this.postStatus(`Removed remote path favorite: ${remotePath}.`);
+    this.logInfo('Removed remote path favorite.', { Connection: connectionId, Path: remotePath });
   }
 
   private async openFile(remotePath: string): Promise<void> {

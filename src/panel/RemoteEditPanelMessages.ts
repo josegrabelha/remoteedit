@@ -14,6 +14,8 @@ export const RemoteEditIncomingMessageType = {
   OpenEntry: 'openEntry',
   OpenEntries: 'openEntries',
   OpenPath: 'openPath',
+  AddRemotePathFavorite: 'addRemotePathFavorite',
+  RemoveRemotePathFavorite: 'removeRemotePathFavorite',
   RequestCreateFile: 'requestCreateFile',
   RequestCreateDirectory: 'requestCreateDirectory',
   RequestRenameEntry: 'requestRenameEntry',

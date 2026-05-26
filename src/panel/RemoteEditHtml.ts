@@ -30,7 +30,27 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .session-close { width: 18px; min-width: 18px; height: 18px; min-height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 -2px 0 0; border-radius: 50%; background: transparent; color: inherit; opacity: 0.82; line-height: 18px; font-size: 14px; flex: 0 0 auto; }
   .session-close:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); opacity: 1; }
   .session-empty { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 28px; }
-  .layout { display: grid; grid-template-columns: minmax(300px, 390px) minmax(0, 1fr); gap: 16px; margin-top: 12px; align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; }
+  .layout { position: relative; display: grid; grid-template-columns: minmax(300px, 390px) minmax(0, 1fr); gap: 16px; margin-top: 12px; align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; }
+  .layout.connection-collapsed { grid-template-columns: 0px minmax(0, 1fr); gap: 0; }
+  .layout.connection-collapsed .connection-card { opacity: 0; transform: translateX(-12px); pointer-events: none; border-color: transparent; }
+  .connection-panel-handle { width: 20px; min-width: 20px; height: 48px; min-height: 48px; pointer-events: none; }
+  .connection-panel-handle .tooltip-anchor { display: block; width: 20px; height: 48px; pointer-events: auto; }
+  .connection-panel-handle .panel-toggle-button { width: 20px; min-width: 20px; height: 48px; min-height: 48px; padding: 0; background: var(--vscode-sideBar-background); color: var(--vscode-descriptionForeground); opacity: 0.68; box-shadow: 0 1px 3px rgb(0 0 0 / 14%); }
+  .connection-panel-handle .panel-toggle-button:hover:not(:disabled) { color: var(--vscode-foreground); opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .connection-panel-handle .panel-toggle-button svg { width: 14px; height: 14px; }
+  .connection-rail { position: fixed; left: 0; top: var(--connection-rail-top, 150px); z-index: 50; opacity: 0; transform: translateX(-6px); }
+  .connection-rail .tooltip-anchor { pointer-events: none; }
+  .layout.connection-collapsed .connection-rail { opacity: 1; transform: translateX(0); }
+  .layout.connection-collapsed .connection-rail .tooltip-anchor { pointer-events: auto; }
+  .connection-rail .panel-toggle-button { border-left: 0; border-radius: 0 5px 5px 0; }
+  .connection-collapse-handle { position: absolute; right: 0; top: 8px; z-index: 30; }
+  .connection-collapse-handle .panel-toggle-button { border-right: 0; border-radius: 5px 0 0 5px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .layout.connection-transition-ready { transition: grid-template-columns 180ms ease-out, gap 180ms ease-out; }
+    .layout.connection-transition-ready .connection-card { transition: opacity 140ms ease-out, transform 180ms ease-out, border-color 140ms ease-out; }
+    .layout.connection-transition-ready .connection-panel-handle { transition: opacity 140ms ease-out, transform 180ms ease-out; }
+    .layout.connection-transition-ready .connection-panel-handle .panel-toggle-button { transition: opacity 140ms ease-out, background-color 140ms ease-out, color 140ms ease-out; }
+  }
   .browser-column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .browser-card { flex: 1 1 auto; }
   .browser-open-section { display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); column-gap: 14px; align-items: center; min-height: 63px; padding: 13px 14px; background: var(--vscode-editor-background); }
@@ -41,7 +61,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .browser-session-strip { margin-top: 0; min-height: 32px; padding-bottom: 0; flex: 1 1 auto; min-width: 0; justify-content: flex-start; }
   .browser-section-divider { height: 1px; background: var(--vscode-panel-border); flex: 0 0 auto; }
   .card { border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .connection-card { position: relative; opacity: 1; transform: translateX(0); }
   .card-header { padding: 13px 14px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+  .connection-card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; min-height: 63px; padding-right: 36px; }
+  .connection-card-title-text { min-width: 0; }
+  .panel-toggle-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 4px; border-radius: 3px; flex: 0 0 auto; }
+  .panel-toggle-button svg { width: 16px; height: 16px; }
+  .browser-open-text-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .card-title { font-weight: 650; margin: 0; }
   .card-subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 4px; }
   .card-body { padding: 14px; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
@@ -103,8 +129,28 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .sudo-toggle input:disabled + .sudo-toggle-track { opacity: 0.55; }
   .sudo-toggle.enabled .sudo-toggle-state { color: var(--vscode-foreground); }
   .sudo-toggle-state { min-width: 46px; text-align: right; color: var(--vscode-descriptionForeground); }
-  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 180px; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 180px; gap: 8px; align-items: center; margin-bottom: 10px; flex: 0 0 auto; }
   .pathbar label { margin: 0; }
+  .remote-path-box { position: relative; min-width: 0; }
+  .remote-path-box input { padding-right: 66px; }
+  .remote-path-favorite-buttons { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; gap: 1px; height: 27px; }
+  .remote-path-favorite-button { width: 30px; min-width: 30px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: transparent; color: var(--vscode-input-foreground); opacity: 0.82; line-height: 1; }
+  .remote-path-favorite-button svg { width: 25px; height: 25px; display: block; fill: currentColor; stroke: none; pointer-events: none; }
+  .remote-path-favorite-button .filled-star-icon { display: none; }
+  .remote-path-favorite-button.active .star-icon { display: none; }
+  .remote-path-favorite-button.active .filled-star-icon { display: block; }
+  .remote-path-favorite-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .remote-path-favorite-button.active { opacity: 1; }
+  .remote-path-favorite-button:disabled { cursor: default; opacity: 0.42; }
+  .remote-path-favorites-popover { position: absolute; top: calc(100% + 4px); right: 0; z-index: 90; display: none; width: min(520px, 100%); max-height: 240px; overflow-y: auto; overflow-x: hidden; padding: 6px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+  .remote-path-favorites-popover.visible { display: block; }
+  .remote-path-favorites-title { padding: 4px 7px 6px; font-size: 12px; font-weight: 650; color: var(--vscode-descriptionForeground); }
+  .remote-path-favorites-empty { padding: 8px 7px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.35; }
+  .remote-path-favorite-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+  .remote-path-favorite-path { min-height: 28px; padding: 5px 7px; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-path-favorite-path:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+  .remote-path-favorite-remove { width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground); font-size: 16px; line-height: 1; }
+  .remote-path-favorite-remove:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); color: var(--vscode-errorForeground, var(--vscode-foreground)); }
   .path-actions { display: inline-flex; gap: 8px; align-items: center; }
   .toolbar-separator { width: 1px; height: 24px; background: var(--vscode-panel-border); margin: 0 2px; flex: 0 0 auto; }
   .transfer-queue-button { position: relative; }
@@ -116,7 +162,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
   .filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .filter-clear-button:disabled { cursor: default; }
-  .table-wrap { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); flex: 1 1 auto; min-height: 220px; max-height: none; overflow: auto; border-radius: 6px; user-select: none; -webkit-user-select: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .table-wrap { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); flex: 1 1 0; min-height: 0; max-height: none; overflow: auto; scrollbar-gutter: stable; border-radius: 6px; user-select: none; -webkit-user-select: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
   .table-wrap.privileged-session { border-color: color-mix(in srgb, #7a2f2f 62%, var(--vscode-panel-border)); box-shadow: 0 0 0 1px color-mix(in srgb, #7a2f2f 18%, transparent); }
   table { width: 100%; min-width: 984px; border-collapse: collapse; table-layout: fixed; }
   th, td { padding: 6px 10px; line-height: 1.25; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -199,7 +245,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .permission-current { color: var(--vscode-descriptionForeground); font-size: 12px; }
   .permission-validation { min-height: 18px; padding: 0 12px 12px; color: var(--vscode-errorForeground); }
   .permission-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
-  .statusbar { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
+  .statusbar { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; flex: 0 0 auto; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
   .statusbar.error { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
   .statusbar.busy { color: var(--vscode-progressBar-background, var(--vscode-foreground)); }
   .status-main { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
@@ -220,7 +266,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .small { font-size: 12px; }
   code { font-family: var(--vscode-editor-font-family); }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout { grid-template-columns: 1fr; flex: 0 0 auto; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .browser-header { align-items: flex-start; flex-direction: column; } }
+  @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout, .layout.connection-collapsed { grid-template-columns: 1fr; flex: 0 0 auto; } .connection-rail { left: 0; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .browser-header { align-items: flex-start; flex-direction: column; } }
   @media (max-height: 720px) and (min-width: 981px) { h1 { font-size: 22px; } .description, .hint-list { display: none; } .card-header, .card-body, .browser-open-section, .browser-title-section { padding: 11px 12px; } }
   @media (max-width: 760px) { .open-connections-row { align-items: flex-start; flex-direction: column; gap: 6px; } .browser-session-strip { width: 100%; } }
   </style>
@@ -234,11 +280,20 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       </div>
     </section>
 
-    <section class="layout">
+    <section id="mainLayout" class="layout">
       <aside class="card connection-card">
-        <div class="card-header">
-          <div class="card-title">Connection</div>
-          <div class="card-subtitle">Bookmarked and quick connections</div>
+        <div class="card-header connection-card-header">
+          <div class="connection-card-title-text">
+            <div class="card-title">Connection</div>
+            <div class="card-subtitle">Bookmarked and quick connections</div>
+          </div>
+        </div>
+        <div class="connection-panel-handle connection-collapse-handle" aria-label="Connection panel expanded">
+          <span class="tooltip-anchor tooltip-above" data-tooltip="Hide connection panel">
+            <button id="hideConnectionPanelButton" type="button" class="secondary icon-only panel-toggle-button" aria-label="Hide connection panel">
+              <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M560-240 320-480l240-240 28 28-212 212 212 212-28 28Z" /></svg>
+            </button>
+          </span>
         </div>
         <div class="card-body">
           <div class="profile-row">
@@ -303,12 +358,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         </div>
       </aside>
 
+      <aside class="connection-panel-handle connection-rail" aria-label="Connection panel collapsed">
+        <span class="tooltip-anchor" data-tooltip="Show connection panel">
+          <button id="showConnectionPanelButton" type="button" class="secondary icon-only panel-toggle-button" aria-label="Show connection panel">
+            <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="m400-240-28-28 212-212-212-212 28-28 240 240-240 240Z" /></svg>
+          </button>
+        </span>
+      </aside>
+
       <section class="browser-column">
         <section class="card browser-card">
           <div class="browser-open-section" aria-label="Active remote connections">
-            <div class="browser-open-text">
-              <div class="card-title">Open connections</div>
-              <div class="card-subtitle">Active remote sessions</div>
+            <div class="browser-open-text-row">
+              <div class="browser-open-text">
+                <div class="card-title">Open connections</div>
+                <div class="card-subtitle">Active remote sessions</div>
+              </div>
             </div>
             <div class="open-connections-row">
               <div class="session-strip browser-session-strip">
@@ -336,7 +401,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           <div class="card-body">
           <div class="pathbar">
             <label class="small muted" for="currentPath">Remote Path</label>
-            <input id="currentPath" value="" disabled />
+            <div id="remotePathBox" class="remote-path-box">
+              <input id="currentPath" value="" disabled />
+              <div class="remote-path-favorite-buttons" aria-hidden="false">
+                <button id="togglePathFavoriteButton" class="remote-path-favorite-button" type="button" aria-label="Add remote path favorite" data-tooltip="Save this connection to use remote path favorites" disabled>
+                  <svg class="star-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="m354-287 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143Zm-61 83.92 49.62-212.54-164.93-142.84 217.23-18.85L480-777.69l85.08 200.38 217.23 18.85-164.93 142.84L667-203.08 480-315.92 293-203.08ZM480-470Z" /></svg>
+                  <svg class="filled-star-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="m293-203.08 49.62-212.54-164.93-142.84 217.23-18.85L480-777.69l85.08 200.38 217.23 18.85-164.93 142.84L667-203.08 480-315.92 293-203.08Z" /></svg>
+                </button>
+                <button id="pathFavoritesButton" class="remote-path-favorite-button" type="button" aria-label="Show remote path favorites" data-tooltip="Save this connection to use remote path favorites" disabled>
+                  <svg class="hotel-class-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="m620.31-395.38 138.92-120 57.69 5.38-149.84 129.15 44.31 195.47-48.93-29.7-42.15-180.3ZM544-631.23l-38.92-91.85 22.15-54.61 63.54 150.84-46.77-4.38ZM294-287l126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143Zm-61 83.92 49.62-212.54-164.93-142.84 217.23-18.85L420-777.69l85.08 200.38 217.23 18.85-164.93 142.84L607-203.08 420-315.92 233-203.08Zm187-257.69Z" /></svg>
+                </button>
+              </div>
+              <div id="pathFavoritesPopover" class="remote-path-favorites-popover" aria-hidden="true">
+                <div class="remote-path-favorites-title">Favorite remote paths</div>
+                <div id="pathFavoritesList"></div>
+              </div>
+            </div>
             <div class="path-actions">
               <span class="tooltip-anchor" data-tooltip="Go">
                 <button id="goButton" class="secondary icon-only" aria-label="Go" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M683.15-460H200v-40h483.15L451.46-731.69 480-760l280 280-280 280-28.54-28.31L683.15-460Z" /></svg></button>
@@ -355,7 +435,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
                 <button id="downloadButton" class="secondary icon-only" aria-label="Download selected files or folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm220-146L314-472l28-28 118 118v-370h40v370l118-118 28 28-166 166Z" /></svg></button>
               </span>
               <span id="transferQueueTooltip" class="tooltip-anchor" data-tooltip="Transfer Queue">
-                <button id="transferQueueButton" class="secondary icon-only transfer-queue-button" type="button" aria-label="Transfer Queue" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M220-260v-40h520v40H220Zm0-200v-40h520v40H220Zm0-200v-40h520v40H220Z" /></svg><span id="transferQueueCount" class="transfer-queue-count" aria-hidden="true">0</span></button>
+                <button id="transferQueueButton" class="secondary icon-only transfer-queue-button" type="button" aria-label="Transfer Queue"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M340-596.38h40v359.3l83.54-83.54 28.77 28.31L360-160 227.69-292.31l28.77-28.31L340-237.08v-359.3ZM620-421h-40v-302.38l-84 84-28.31-28.31L600-800l132.31 132.31L704-639.38l-84-84V-421Z" /></svg><span id="transferQueueCount" class="transfer-queue-count" aria-hidden="true">0</span></button>
               </span>
               <span class="toolbar-separator" aria-hidden="true"></span>
             </div>
@@ -489,6 +569,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
 
+  const mainLayout = document.getElementById('mainLayout');
+  const hideConnectionPanelButton = document.getElementById('hideConnectionPanelButton');
+  const showConnectionPanelButton = document.getElementById('showConnectionPanelButton');
+  const connectionRail = document.querySelector('.connection-rail');
+  const connectionCard = document.querySelector('.connection-card');
   const profileSelect = document.getElementById('profileSelect');
   const profileName = document.getElementById('profileName');
   const host = document.getElementById('host');
@@ -510,6 +595,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const passphraseBlock = document.getElementById('passphraseBlock');
   const sessionTabs = document.getElementById('sessionTabs');
   const currentPath = document.getElementById('currentPath');
+  const remotePathBox = document.getElementById('remotePathBox');
+  const togglePathFavoriteButton = document.getElementById('togglePathFavoriteButton');
+  const pathFavoritesButton = document.getElementById('pathFavoritesButton');
+  const pathFavoritesPopover = document.getElementById('pathFavoritesPopover');
+  const pathFavoritesList = document.getElementById('pathFavoritesList');
   const filterBox = document.getElementById('filterBox');
   const filterInput = document.getElementById('filterInput');
   const clearFilterButton = document.getElementById('clearFilterButton');
@@ -596,6 +686,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let permissionsDialogOpen = false;
   let transferQueueState = { current: null, pending: [], completed: [] };
   let transferQueueModalOpen = false;
+  let pathFavoritesOpen = false;
+  let connectionPanelCollapsed = Boolean((vscode.getState() || {}).connectionPanelCollapsed);
 
   let activeTooltipTarget = null;
   let tooltipTimer = 0;
@@ -690,6 +782,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'profilesLoaded':
         profiles = payload.profiles || [];
         renderProfiles(Object.prototype.hasOwnProperty.call(payload, 'selectedId') ? payload.selectedId : selectedProfileId);
+        updatePathFavoriteControls();
+        if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
       case 'connectionFormCleared':
         selectedProfileId = '';
@@ -707,6 +801,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         renderSessionTabs();
         updateActiveSessionUi();
         setControls();
+        if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
       case 'sudoModeChanged': {
         const targetConnectionId = payload.connectionId || activeConnectionId;
@@ -728,6 +823,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         updateFilterClearButton();
         currentSort = { key: '', direction: '' };
         hideContextMenu();
+        hidePathFavoritesPopover();
         renderSessionTabs();
         updateActiveSessionUi();
         updateSortIndicators();
@@ -746,6 +842,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         hideContextMenu();
         renderEntries(getVisibleEntries());
         updateActiveSessionPath(payload.path || '/');
+        updatePathFavoriteControls();
+        if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
       case 'status':
         setStatus(payload.message || '');
@@ -777,6 +875,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   window.addEventListener('DOMContentLoaded', () => {
     vscode.postMessage({ type: 'ready' });
+    updateConnectionPanelLayout();
+    requestAnimationFrame(() => {
+      if (mainLayout) mainLayout.classList.add('connection-transition-ready');
+    });
     updateAuthFields();
     setControls();
   });
@@ -833,6 +935,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   showOutputButton.addEventListener('click', () => vscode.postMessage({ type: 'showOutput' }));
+  hideConnectionPanelButton.addEventListener('click', () => setConnectionPanelCollapsed(true));
+  showConnectionPanelButton.addEventListener('click', () => setConnectionPanelCollapsed(false));
+  window.addEventListener('resize', updateConnectionRailPosition);
   sudoToggle.addEventListener('change', () => {
     if (!activeConnectionId) {
       updateSudoToggle();
@@ -882,6 +987,39 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     vscode.postMessage({ type: 'copyStatus', payload: { text: getStatusCopyText() } });
   });
   goButton.addEventListener('click', () => openPath(currentPath.value));
+  togglePathFavoriteButton.addEventListener('click', () => {
+    if (togglePathFavoriteButton.disabled) return;
+    const path = normalizeUiRemotePath(currentPath.value || '/');
+    vscode.postMessage({
+      type: isCurrentPathFavorite() ? 'removeRemotePathFavorite' : 'addRemotePathFavorite',
+      payload: { connectionId: activeConnectionId, path }
+    });
+  });
+  pathFavoritesButton.addEventListener('click', event => {
+    event.stopPropagation();
+    if (pathFavoritesButton.disabled) return;
+    if (pathFavoritesOpen) {
+      hidePathFavoritesPopover();
+    } else {
+      showPathFavoritesPopover();
+    }
+  });
+  pathFavoritesList.addEventListener('click', event => {
+    const target = event.target && event.target.closest ? event.target.closest('[data-favorite-path]') : null;
+    if (!target) return;
+
+    const path = target.dataset.favoritePath || '';
+    if (!path) return;
+
+    if (target.dataset.favoriteAction === 'remove') {
+      vscode.postMessage({ type: 'removeRemotePathFavorite', payload: { connectionId: activeConnectionId, path } });
+      return;
+    }
+
+    hidePathFavoritesPopover();
+    openPath(path);
+  });
+  currentPath.addEventListener('input', updatePathFavoriteControls);
   authType.addEventListener('change', updateAuthFields);
   privateKeyBrowseButton.addEventListener('click', () => vscode.postMessage({ type: 'pickPrivateKeyPath' }));
   rememberPassword.addEventListener('change', () => { if (!rememberPassword.checked) { password.placeholder = ''; if (password.value === SAVED_SECRET_MASK) password.value = ''; } });
@@ -1014,6 +1152,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   document.addEventListener('click', event => {
     if (!entryContextMenu.contains(event.target)) hideContextMenu();
+    if (remotePathBox && !remotePathBox.contains(event.target)) hidePathFavoritesPopover();
   });
 
   document.addEventListener('keydown', event => {
@@ -1023,6 +1162,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         return;
       }
       hideContextMenu();
+      hidePathFavoritesPopover();
     }
   });
 
@@ -1058,6 +1198,41 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   for (const input of [profileName, host, port, username, password, privateKeyPath, passphrase, startPath]) {
     input.addEventListener('keydown', event => { if (event.key === 'Enter') connectButton.click(); });
+  }
+
+  function updateConnectionRailPosition() {
+    if (!mainLayout || !connectionRail || !connectionPanelCollapsed) return;
+    const layoutRect = mainLayout.getBoundingClientRect();
+    connectionRail.style.top = Math.max(8, Math.round(layoutRect.top + 8)) + 'px';
+  }
+
+  function updateConnectionPanelLayout() {
+    if (!mainLayout) return;
+    mainLayout.classList.toggle('connection-collapsed', connectionPanelCollapsed);
+    if (connectionCard) {
+      connectionCard.toggleAttribute('inert', connectionPanelCollapsed);
+      connectionCard.setAttribute('aria-hidden', String(connectionPanelCollapsed));
+    }
+    if (connectionRail) {
+      connectionRail.toggleAttribute('inert', !connectionPanelCollapsed);
+      connectionRail.setAttribute('aria-hidden', String(!connectionPanelCollapsed));
+    }
+    if (hideConnectionPanelButton) {
+      hideConnectionPanelButton.setAttribute('aria-expanded', String(!connectionPanelCollapsed));
+      hideConnectionPanelButton.tabIndex = connectionPanelCollapsed ? -1 : 0;
+    }
+    if (showConnectionPanelButton) {
+      showConnectionPanelButton.setAttribute('aria-expanded', String(!connectionPanelCollapsed));
+      showConnectionPanelButton.tabIndex = connectionPanelCollapsed ? 0 : -1;
+    }
+    updateConnectionRailPosition();
+  }
+
+  function setConnectionPanelCollapsed(collapsed) {
+    connectionPanelCollapsed = Boolean(collapsed);
+    updateConnectionPanelLayout();
+    hideWebviewTooltip();
+    vscode.setState(Object.assign({}, vscode.getState() || {}, { connectionPanelCollapsed: connectionPanelCollapsed }));
   }
 
   function renderProfiles(preferredId) {
@@ -1314,6 +1489,95 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     permissionValidation.textContent = message;
     permissionModeInput.classList.toggle('invalid', !isValid);
     permissionApplyButton.disabled = !isValid;
+  }
+
+  function getActiveProfile() {
+    return profiles.find(profile => profile.id === activeConnectionId) || null;
+  }
+
+  function getFavoriteRemotePaths() {
+    const activeProfile = getActiveProfile();
+    return activeProfile && Array.isArray(activeProfile.favoriteRemotePaths) ? activeProfile.favoriteRemotePaths : [];
+  }
+
+  function normalizeUiRemotePath(value) {
+    let trimmed = String(value || '').trim().split('\\\\').join('/');
+    while (trimmed.indexOf('//') !== -1) trimmed = trimmed.split('//').join('/');
+    if (!trimmed) return '/';
+    return trimmed.charAt(0) === '/' ? trimmed : '/' + trimmed;
+  }
+
+  function isCurrentPathFavorite() {
+    const current = normalizeUiRemotePath(currentPath.value || '/');
+    return getFavoriteRemotePaths().includes(current);
+  }
+
+  function updatePathFavoriteControls() {
+    if (!togglePathFavoriteButton || !pathFavoritesButton) return;
+
+    const hasActiveSession = Boolean(activeConnectionId);
+    const hasSavedConnection = Boolean(getActiveProfile());
+    const current = normalizeUiRemotePath(currentPath.value || '/');
+    const isFavorite = hasSavedConnection && getFavoriteRemotePaths().includes(current);
+    const disabled = busy || !hasActiveSession || !hasSavedConnection;
+    const unavailableMessage = !hasActiveSession
+      ? 'Connect to a saved connection to use remote path favorites'
+      : 'Save this connection to use remote path favorites';
+
+    togglePathFavoriteButton.disabled = disabled;
+    togglePathFavoriteButton.classList.toggle('active', isFavorite);
+    togglePathFavoriteButton.setAttribute('aria-label', isFavorite ? 'Remove remote path favorite' : 'Add remote path favorite');
+    togglePathFavoriteButton.dataset.tooltip = disabled
+      ? unavailableMessage
+      : (isFavorite ? 'Remove from favorite remote paths' : 'Add to favorite remote paths');
+
+    pathFavoritesButton.disabled = disabled;
+    pathFavoritesButton.dataset.tooltip = disabled ? unavailableMessage : 'Show favorite remote paths';
+
+    if (disabled) {
+      hidePathFavoritesPopover();
+    }
+  }
+
+  function showPathFavoritesPopover() {
+    pathFavoritesOpen = true;
+    renderPathFavoritesPopover();
+    pathFavoritesPopover.classList.add('visible');
+    pathFavoritesPopover.setAttribute('aria-hidden', 'false');
+    hideWebviewTooltip();
+  }
+
+  function hidePathFavoritesPopover() {
+    pathFavoritesOpen = false;
+    if (!pathFavoritesPopover) return;
+    pathFavoritesPopover.classList.remove('visible');
+    pathFavoritesPopover.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderPathFavoritesPopover() {
+    if (!pathFavoritesList) return;
+
+    const activeProfile = getActiveProfile();
+
+    if (!activeProfile) {
+      pathFavoritesList.innerHTML = '<div class="remote-path-favorites-empty">Save this connection to use remote path favorites.</div>';
+      return;
+    }
+
+    const favoriteRemotePaths = getFavoriteRemotePaths();
+
+    if (!favoriteRemotePaths.length) {
+      pathFavoritesList.innerHTML = '<div class="remote-path-favorites-empty">No favorite remote paths for this connection.</div>';
+      return;
+    }
+
+    pathFavoritesList.innerHTML = favoriteRemotePaths.map(path => {
+      const escapedPath = escapeHtml(path);
+      return '<div class="remote-path-favorite-item">' +
+        '<button type="button" class="remote-path-favorite-path" data-favorite-path="' + escapedPath + '" title="' + escapedPath + '">' + escapedPath + '</button>' +
+        '<button type="button" class="remote-path-favorite-remove" data-favorite-action="remove" data-favorite-path="' + escapedPath + '" aria-label="Remove ' + escapedPath + '">×</button>' +
+        '</div>';
+    }).join('');
   }
 
   function collectConnectionPayload() {
@@ -1770,6 +2034,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const completedCount = transferQueueState.completed.length;
     const transferCount = runningCount + pendingCount;
     const hasTransfers = transferCount > 0 || completedCount > 0;
+    const hasActiveSession = Boolean(activeConnectionId);
 
     if (transferQueueCount) {
       transferQueueCount.textContent = String(transferCount);
@@ -1777,14 +2042,23 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     if (transferQueueButton) {
       transferQueueButton.classList.toggle('has-pending', transferCount > 0);
-      transferQueueButton.disabled = !hasTransfers;
-      transferQueueButton.setAttribute('aria-label', hasTransfers ? ('Transfer Queue, ' + formatTransferQueueTooltip(transferCount, completedCount, pendingCount)) : 'Transfer Queue');
+      transferQueueButton.disabled = !hasActiveSession;
+      transferQueueButton.setAttribute(
+        'aria-label',
+        !hasActiveSession
+          ? 'Transfer Queue, connect to a host first'
+          : hasTransfers
+            ? ('Transfer Queue, ' + formatTransferQueueTooltip(transferCount, completedCount, pendingCount))
+            : 'Transfer Queue, no transfers'
+      );
     }
 
     if (transferQueueTooltip) {
-      transferQueueTooltip.dataset.tooltip = hasTransfers
-        ? ('Transfer Queue - ' + formatTransferQueueTooltip(transferCount, completedCount, pendingCount))
-        : 'Transfer Queue';
+      transferQueueTooltip.dataset.tooltip = !hasActiveSession
+        ? 'Connect to a host to view Transfer Queue'
+        : hasTransfers
+          ? ('Transfer Queue - ' + formatTransferQueueTooltip(transferCount, completedCount, pendingCount))
+          : 'Transfer Queue - No transfers';
     }
   }
 
@@ -1977,6 +2251,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateFilterClearButton();
     updateTransferButtons();
     renderTransferQueueButton();
+    updatePathFavoriteControls();
     parentButton.disabled = busy || !hasActiveSession;
     refreshButton.disabled = busy || !hasActiveSession;
     uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;

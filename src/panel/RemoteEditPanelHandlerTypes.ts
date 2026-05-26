@@ -16,6 +16,8 @@ export interface RemoteEditPanelMessageHandlers {
   openEntry(payload: any): Promise<void>;
   openEntries(payload: any): Promise<void>;
   openPath(payload: any): Promise<void>;
+  addRemotePathFavorite(payload: any): Promise<void>;
+  removeRemotePathFavorite(payload: any): Promise<void>;
   requestCreateFile(payload: any): Promise<void>;
   requestCreateDirectory(payload: any): Promise<void>;
   requestRenameEntry(payload: any): Promise<void>;

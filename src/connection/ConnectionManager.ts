@@ -15,6 +15,7 @@ export interface ConnectionProfile {
   hasSavedPassword?: boolean;
   hasSavedPassphrase?: boolean;
   keepAlive: boolean;
+  favoriteRemotePaths?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -97,6 +98,7 @@ export class ConnectionManager {
       startPath,
       privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
       keepAlive,
+      favoriteRemotePaths: normalizeFavoriteRemotePaths(existing?.favoriteRemotePaths || []),
       createdAt: existing?.createdAt || now,
       updatedAt: now
     };
@@ -116,6 +118,15 @@ export class ConnectionManager {
     };
   }
 
+
+  async addFavoriteRemotePath(profileId: string, remotePath: string): Promise<ConnectionProfile> {
+    return this.updateFavoriteRemotePath(profileId, remotePath, true);
+  }
+
+  async removeFavoriteRemotePath(profileId: string, remotePath: string): Promise<ConnectionProfile> {
+    return this.updateFavoriteRemotePath(profileId, remotePath, false);
+  }
+
   async deleteProfile(profileId: string): Promise<void> {
     const profiles = await this.listProfiles();
     const nextProfiles = profiles.filter(profile => profile.id !== profileId);
@@ -123,6 +134,55 @@ export class ConnectionManager {
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
     await this.context.secrets.delete(secretKey(profileId, 'password'));
     await this.context.secrets.delete(secretKey(profileId, 'passphrase'));
+  }
+
+  private async updateFavoriteRemotePath(profileId: string, remotePath: string, shouldAdd: boolean): Promise<ConnectionProfile> {
+    const normalizedPath = normalizeFavoriteRemotePath(remotePath);
+
+    if (!normalizedPath) {
+      throw new Error('Remote path is required.');
+    }
+
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    let updatedProfile: ConnectionProfile | undefined;
+
+    const nextProfiles = storedProfiles.map(storedProfile => {
+      const profile = this.normalizeStoredProfile(storedProfile);
+
+      if (profile.id !== profileId) {
+        return profile;
+      }
+
+      const favoriteRemotePaths = normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []);
+      const existingIndex = favoriteRemotePaths.indexOf(normalizedPath);
+
+      if (shouldAdd && existingIndex === -1) {
+        favoriteRemotePaths.push(normalizedPath);
+      }
+
+      if (!shouldAdd && existingIndex !== -1) {
+        favoriteRemotePaths.splice(existingIndex, 1);
+      }
+
+      updatedProfile = {
+        ...profile,
+        favoriteRemotePaths,
+        updatedAt: Date.now()
+      };
+
+      return updatedProfile;
+    });
+
+    if (!updatedProfile) {
+      throw new Error('Save this connection to use remote path favorites.');
+    }
+
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    return {
+      ...updatedProfile,
+      hasSavedPassword: Boolean(await this.context.secrets.get(secretKey(updatedProfile.id, 'password'))),
+      hasSavedPassphrase: Boolean(await this.context.secrets.get(secretKey(updatedProfile.id, 'passphrase')))
+    };
   }
 
   async buildConnectOptions(input: ConnectionProfileInput): Promise<ConnectOptions> {
@@ -222,10 +282,35 @@ export class ConnectionManager {
       authType: normalizeAuthType(profile.authType),
       startPath: profile.startPath || '',
       keepAlive: profile.keepAlive !== false,
+      favoriteRemotePaths: normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []),
       createdAt: Number(profile.createdAt || Date.now()),
       updatedAt: Number(profile.updatedAt || Date.now())
     };
   }
+}
+
+function normalizeFavoriteRemotePaths(values: string[]): string[] {
+  const favoriteRemotePaths: string[] = [];
+
+  for (const value of values || []) {
+    const normalizedPath = normalizeFavoriteRemotePath(value);
+
+    if (normalizedPath && !favoriteRemotePaths.includes(normalizedPath)) {
+      favoriteRemotePaths.push(normalizedPath);
+    }
+  }
+
+  return favoriteRemotePaths;
+}
+
+function normalizeFavoriteRemotePath(value: string): string {
+  const trimmed = String(value || '').trim().replace(/\\/g, '/').replace(/\/+/g, '/');
+
+  if (!trimmed) {
+    return '';
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 }
 
 function normalizePort(value: number | string | undefined): number {

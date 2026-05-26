@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0] - 2026-05-26
+
+### Added
+- Added favorite Remote Path support for saved connections.
+- Added a collapsible Connection panel with floating side handles.
+
 ## [1.1.2] - 2026-05-25
 
 ### Added

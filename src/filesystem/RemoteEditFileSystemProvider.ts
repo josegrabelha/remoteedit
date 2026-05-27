@@ -43,11 +43,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
-    return await withRemoteEditProgress(
-      'Opening remote file...',
-      async (token, progress) => await this.sessions.readFile(connectionId, remotePath, token, progress),
-      { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening cancelled.' }
-    );
+    return await this.sessions.readFile(connectionId, remotePath);
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array, _options: { readonly create: boolean; readonly overwrite: boolean }): Promise<void> {

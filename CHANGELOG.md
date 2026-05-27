@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.1] - 2026-05-27
+
+### Changed
+- Make background file reads silent so VS Code automatic reloads do not show the opening progress notification.
+
 ## [1.2.0] - 2026-05-26
 
 ### Added

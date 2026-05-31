@@ -535,6 +535,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     </section>
   </div>
 
+  <div id="checksumsBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="checksumsTitle" aria-hidden="true">
+    <section class="file-properties-dialog">
+      <div class="file-properties-header">
+        <h2 id="checksumsTitle" class="file-properties-title">Checksums</h2>
+        <div id="checksumsPath" class="file-properties-path"></div>
+      </div>
+      <div class="file-properties-body">
+        <div id="checksumsGrid" class="file-properties-grid"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="checksumsCopySha256Button" type="button" class="secondary">Copy SHA-256</button>
+        <button id="checksumsCopyMd5Button" type="button" class="secondary">Copy MD5</button>
+        <button id="checksumsCopyAllButton" type="button" class="secondary">Copy All</button>
+        <button id="checksumsCloseButton" type="button">Close</button>
+      </div>
+    </section>
+  </div>
+
   <div id="entryContextMenu" class="context-menu" role="menu" aria-label="Entry actions">
   <button id="contextOpen" type="button" role="menuitem">View/Edit</button>
   <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
@@ -550,6 +568,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <button id="contextRename" type="button" role="menuitem">Rename</button>
   <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
   <button id="contextFileProperties" type="button" role="menuitem">File Properties</button>
+  <button id="contextCalculateChecksums" type="button" role="menuitem">Calculate Checksums...</button>
   <div id="contextDeleteSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextDelete" type="button" role="menuitem" class="danger-text">Delete</button>
   </div>
@@ -682,6 +701,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const contextMakeCopy = document.getElementById('contextMakeCopy');
   const contextSetPermissions = document.getElementById('contextSetPermissions');
   const contextFileProperties = document.getElementById('contextFileProperties');
+  const contextCalculateChecksums = document.getElementById('contextCalculateChecksums');
   const contextRename = document.getElementById('contextRename');
   const contextDeleteSeparator = document.getElementById('contextDeleteSeparator');
   const contextDelete = document.getElementById('contextDelete');
@@ -694,6 +714,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const filePropertiesGrid = document.getElementById('filePropertiesGrid');
   const filePropertiesCopyPathButton = document.getElementById('filePropertiesCopyPathButton');
   const filePropertiesCloseButton = document.getElementById('filePropertiesCloseButton');
+  const checksumsBackdrop = document.getElementById('checksumsBackdrop');
+  const checksumsPath = document.getElementById('checksumsPath');
+  const checksumsGrid = document.getElementById('checksumsGrid');
+  const checksumsCopySha256Button = document.getElementById('checksumsCopySha256Button');
+  const checksumsCopyMd5Button = document.getElementById('checksumsCopyMd5Button');
+  const checksumsCopyAllButton = document.getElementById('checksumsCopyAllButton');
+  const checksumsCloseButton = document.getElementById('checksumsCloseButton');
 
   const permissionBackdrop = document.getElementById('permissionBackdrop');
   const permissionDialogTitle = document.getElementById('permissionDialogTitle');
@@ -729,6 +756,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let statusCopyFeedbackTimer = 0;
   let filePropertiesDialogOpen = false;
   let filePropertiesRemotePath = '';
+  let checksumsDialogOpen = false;
+  let checksumsCopyState = { sha256: '', md5: '', all: '' };
   let permissionsDialogOpen = false;
   let transferQueueState = { current: null, pending: [], completed: [] };
   let transferQueueModalOpen = false;
@@ -870,6 +899,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         currentSort = { key: '', direction: '' };
         hideContextMenu();
         hideFilePropertiesDialog();
+        hideChecksumsDialog();
         hidePathFavoritesPopover();
         renderSessionTabs();
         updateActiveSessionUi();
@@ -907,6 +937,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'error':
         setBusy(false);
         setStatus(payload.message || 'Unknown error.', true);
+        break;
+      case 'showChecksumsDialog':
+        showChecksumsDialog(payload);
         break;
       case 'showPermissionsDialog':
         showPermissionsDialog(payload);
@@ -1074,6 +1107,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   currentPath.addEventListener('keydown', event => { if (event.key === 'Enter') openPath(currentPath.value); });
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && checksumsDialogOpen) {
+      hideChecksumsDialog();
+      return;
+    }
     if (event.key === 'Escape' && filePropertiesDialogOpen) {
       hideFilePropertiesDialog();
       return;
@@ -1137,6 +1174,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (entry) showFilePropertiesDialog(entry);
   });
 
+  contextCalculateChecksums.addEventListener('click', () => {
+    const entry = getSelectedActionEntry();
+    hideContextMenu();
+    if (entry) vscode.postMessage({ type: 'requestCalculateChecksums', payload: actionPayload(entry) });
+  });
+
   filePropertiesCloseButton.addEventListener('click', () => {
     hideFilePropertiesDialog();
   });
@@ -1148,6 +1191,28 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   filePropertiesBackdrop.addEventListener('mousedown', event => {
     if (event.target === filePropertiesBackdrop) {
       hideFilePropertiesDialog();
+    }
+  });
+
+  checksumsCloseButton.addEventListener('click', () => {
+    hideChecksumsDialog();
+  });
+
+  checksumsCopySha256Button.addEventListener('click', () => {
+    copyChecksumValue(checksumsCopyState.sha256, 'Copied SHA-256');
+  });
+
+  checksumsCopyMd5Button.addEventListener('click', () => {
+    copyChecksumValue(checksumsCopyState.md5, 'Copied MD5');
+  });
+
+  checksumsCopyAllButton.addEventListener('click', () => {
+    copyChecksumValue(checksumsCopyState.all, 'Copied checksums');
+  });
+
+  checksumsBackdrop.addEventListener('mousedown', event => {
+    if (event.target === checksumsBackdrop) {
+      hideChecksumsDialog();
     }
   });
 
@@ -1573,6 +1638,52 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     filePropertiesBackdrop.setAttribute('aria-hidden', 'true');
   }
 
+  function showChecksumsDialog(payload) {
+    checksumsDialogOpen = true;
+    const remotePath = payload.remotePath || '';
+    checksumsCopyState = {
+      sha256: payload.sha256Value || '',
+      md5: payload.md5Value || '',
+      all: payload.copyAllText || ''
+    };
+
+    checksumsPath.textContent = remotePath;
+
+    const rows = [
+      ['Remote file', remotePath || '—'],
+      ['Size', payload.size || '—'],
+      ['Modified', payload.modified || '—'],
+      ['SHA-256', payload.sha256 || 'Not available'],
+      ['MD5', payload.md5 || 'Not available']
+    ];
+
+    checksumsGrid.innerHTML = rows.map(row => {
+      return '<div class="file-properties-label">' + escapeHtml(row[0]) + '</div>'
+        + '<div class="file-properties-value">' + escapeHtml(row[1] || '—') + '</div>';
+    }).join('');
+
+    checksumsCopySha256Button.disabled = !checksumsCopyState.sha256;
+    checksumsCopyMd5Button.disabled = !checksumsCopyState.md5;
+    checksumsCopyAllButton.disabled = !checksumsCopyState.all;
+    checksumsBackdrop.classList.add('visible');
+    checksumsBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => checksumsCloseButton.focus(), 0);
+  }
+
+  function hideChecksumsDialog() {
+    if (!checksumsBackdrop) return;
+    checksumsDialogOpen = false;
+    checksumsCopyState = { sha256: '', md5: '', all: '' };
+    checksumsBackdrop.classList.remove('visible');
+    checksumsBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function copyChecksumValue(text, message) {
+    const value = String(text || '').trim();
+    if (!value) return;
+    vscode.postMessage({ type: 'copyStatus', payload: { text: value, message } });
+  }
+
   function formatPropertyType(entry) {
     if (!entry) return 'Unknown';
     if (entry.type === 'link') {
@@ -1994,6 +2105,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     const hasItemGroup = isSingleEntry;
     const canMakeCopy = isSingleEntry && selectedEntries[0].type === 'file';
+    const canCalculateChecksums = canMakeCopy;
     const hasDeleteGroup = hasEntryActions;
 
     contextTransferSeparator.style.display = activeConnectionId ? '' : 'none';
@@ -2011,6 +2123,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     contextRename.style.display = hasItemGroup ? '' : 'none';
     contextSetPermissions.style.display = hasItemGroup ? '' : 'none';
     contextFileProperties.style.display = hasItemGroup ? '' : 'none';
+    contextCalculateChecksums.style.display = canCalculateChecksums ? '' : 'none';
     contextDeleteSeparator.style.display = hasDeleteGroup ? '' : 'none';
     contextDelete.style.display = hasDeleteGroup ? '' : 'none';
     contextRefreshSeparator.style.display = activeConnectionId ? '' : 'none';

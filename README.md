@@ -15,6 +15,7 @@ With Remote Edit, you can:
 - browse remote directories over SSH/SFTP
 - open and edit remote files directly in VS Code
 - upload and download files or folders
+- make copies, inspect properties, and calculate server-side checksums for remote files
 - save frequently used SSH connections as bookmarks
 - work with privileged files using sudo mode
 

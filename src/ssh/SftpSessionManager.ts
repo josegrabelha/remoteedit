@@ -46,6 +46,25 @@ export interface RemoteEntry {
   path: string;
 }
 
+
+export interface RemoteChecksumValue {
+  algorithm: 'SHA-256' | 'MD5';
+  value?: string;
+  command?: string;
+  error?: string;
+}
+
+export interface RemoteChecksumSummary {
+  sha256: RemoteChecksumValue;
+  md5: RemoteChecksumValue;
+}
+
+interface ChecksumCommandAttempt {
+  label: string;
+  command: (quotedPath: string) => string;
+  length: number;
+}
+
 export interface ActiveConnection {
   id: string;
   name: string;
@@ -546,6 +565,106 @@ export class SftpSessionManager {
       : `if [ -e ${target} ] || [ -L ${target} ]; then echo 'Target already exists.' >&2; exit 17; fi;`;
 
     return `if [ ! -f ${source} ]; then echo 'Source is not a regular file.' >&2; exit 22; fi; ${targetGuard} cp -p ${source} ${target}`;
+  }
+
+
+  async calculateChecksums(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken): Promise<RemoteChecksumSummary> {
+    const normalizedPath = normalizeRemotePath(remotePath);
+
+    return {
+      sha256: await this.calculateChecksum(connectionId, normalizedPath, 'SHA-256', this.buildSha256ChecksumAttempts(), cancellationToken),
+      md5: await this.calculateChecksum(connectionId, normalizedPath, 'MD5', this.buildMd5ChecksumAttempts(), cancellationToken)
+    };
+  }
+
+  private buildSha256ChecksumAttempts(): ChecksumCommandAttempt[] {
+    return [
+      { label: 'sha256sum', command: quotedPath => `sha256sum ${quotedPath}`, length: 64 },
+      { label: 'shasum -a 256', command: quotedPath => `shasum -a 256 ${quotedPath}`, length: 64 },
+      { label: 'csum -h SHA256', command: quotedPath => `csum -h SHA256 ${quotedPath}`, length: 64 },
+      { label: 'digest -a sha256', command: quotedPath => `digest -a sha256 ${quotedPath}`, length: 64 },
+      { label: 'openssl dgst -sha256', command: quotedPath => `openssl dgst -sha256 ${quotedPath}`, length: 64 }
+    ];
+  }
+
+  private buildMd5ChecksumAttempts(): ChecksumCommandAttempt[] {
+    return [
+      { label: 'md5sum', command: quotedPath => `md5sum ${quotedPath}`, length: 32 },
+      { label: 'md5', command: quotedPath => `md5 ${quotedPath}`, length: 32 },
+      { label: 'csum -h MD5', command: quotedPath => `csum -h MD5 ${quotedPath}`, length: 32 },
+      { label: 'digest -a md5', command: quotedPath => `digest -a md5 ${quotedPath}`, length: 32 },
+      { label: 'openssl dgst -md5', command: quotedPath => `openssl dgst -md5 ${quotedPath}`, length: 32 }
+    ];
+  }
+
+  private async calculateChecksum(
+    connectionId: string,
+    normalizedPath: string,
+    algorithm: 'SHA-256' | 'MD5',
+    attempts: ChecksumCommandAttempt[],
+    cancellationToken?: ConnectionCancellationToken
+  ): Promise<RemoteChecksumValue> {
+    const quotedPath = shellQuote(normalizedPath);
+    const errors: string[] = [];
+
+    for (const attempt of attempts) {
+      if (cancellationToken?.isCancellationRequested) {
+        throw new RemoteEditOperationCancelledError('Checksum calculation cancelled.');
+      }
+
+      try {
+        const output = await this.runChecksumCommand(connectionId, attempt.command(quotedPath), cancellationToken);
+        const checksum = this.extractChecksum(output, attempt.length);
+
+        if (checksum) {
+          return { algorithm, value: checksum, command: attempt.label };
+        }
+
+        if (output.trim()) {
+          errors.push(`${attempt.label}: ${output.trim().split(/\r?\n/)[0]}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (message.toLowerCase().includes('cancelled')) {
+          throw new RemoteEditOperationCancelledError('Checksum calculation cancelled.');
+        }
+
+        if (message.trim()) {
+          errors.push(`${attempt.label}: ${message.trim().split(/\r?\n/)[0]}`);
+        }
+      }
+    }
+
+    const permissionError = errors.find(item => /permission denied|not permitted|access denied/i.test(item));
+    return {
+      algorithm,
+      error: permissionError ? 'Permission denied.' : 'Not available. No supported server-side command returned a checksum.'
+    };
+  }
+
+  private async runChecksumCommand(connectionId: string, command: string, cancellationToken?: ConnectionCancellationToken): Promise<string> {
+    const timeoutMs = 300000;
+
+    if (this.isSudoModeEnabled(connectionId)) {
+      return await this.runSudoCommandText(connectionId, command, timeoutMs, cancellationToken);
+    }
+
+    const client = this.getClient(connectionId);
+    const result = await this.executeRemoteCommand(client, command, { timeoutMs, cancellationToken });
+    const output = `${result.stdout.toString('utf8')}\n${result.stderr}`.trim();
+
+    if (result.code !== 0) {
+      throw new Error(output || `Remote checksum command failed with exit code ${result.code}.`);
+    }
+
+    return output;
+  }
+
+  private extractChecksum(output: string, length: number): string | undefined {
+    const pattern = new RegExp(`\\b[0-9a-fA-F]{${length}}\\b`);
+    const match = String(output || '').match(pattern);
+    return match ? match[0].toLowerCase() : undefined;
   }
 
   async chmod(connectionId: string, remotePath: string, mode: string | number): Promise<void> {

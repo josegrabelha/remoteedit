@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
-import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, RemoteEntry, SftpSessionManager } from '../ssh/SftpSessionManager';
+import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, RemoteEntry, SftpSessionManager, type RemoteChecksumSummary, type RemoteChecksumValue } from '../ssh/SftpSessionManager';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
 import { formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { appendOutputLog, type OutputLogDetails } from '../utils/outputLogger';
@@ -249,6 +249,7 @@ export class RemoteEditPanel {
         requestCreateFile: payload => this.requestCreateEntry(payload, 'file'),
         requestCreateDirectory: payload => this.requestCreateEntry(payload, 'directory'),
         requestMakeCopy: payload => this.requestMakeCopy(payload),
+        requestCalculateChecksums: payload => this.requestCalculateChecksums(payload),
         requestRenameEntry: payload => this.requestRenameEntry(payload),
         requestDeleteEntry: payload => this.requestDeleteEntry(payload),
         requestDeleteEntries: payload => this.requestDeleteEntries(payload),
@@ -798,6 +799,7 @@ export class RemoteEditPanel {
 
   private async copyStatus(payload: any): Promise<void> {
     const text = String(payload?.text || '').trim();
+    const feedback = String(payload?.message || 'Copied').trim() || 'Copied';
 
     if (!text) {
       this.postStatusCopyFeedback('Nothing to copy');
@@ -805,7 +807,7 @@ export class RemoteEditPanel {
     }
 
     await vscode.env.clipboard.writeText(text);
-    this.postStatusCopyFeedback('Copied');
+    this.postStatusCopyFeedback(feedback);
   }
 
   private async requestCreateEntry(_payload: any, entryKind: 'file' | 'directory'): Promise<void> {
@@ -957,6 +959,93 @@ export class RemoteEditPanel {
     this.logInfo('Copied remote file.', { From: this.buildRemoteReference(remotePath), To: this.buildRemoteReference(newPath) });
     await this.listDirectory(parentPath);
     this.postBusy(false, `Copied to ${trimmedName}.`);
+  }
+
+
+  private async requestCalculateChecksums(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const remotePath = normalizeRemotePath(String(payload?.path || ''));
+    const entryType = String(payload?.type || 'item');
+    const entryName = String(payload?.name || remotePath.split('/').filter(Boolean).pop() || '').trim();
+
+    if (!remotePath || remotePath === '/' || !entryName || entryName === '..' || entryType !== 'file') {
+      throw new Error('Select a single remote file to calculate checksums.');
+    }
+
+    const stats = await this.sessions.stat(connectionId, remotePath);
+    this.postBusy(true, `Calculating checksums for ${entryName}...`);
+
+    try {
+      const result = await withRemoteEditProgress(
+        'Calculating remote checksums...',
+        async (token, progress) => {
+          progress.reportMessage('Calculating SHA-256 and MD5 on the server...');
+          const checksums = await this.sessions.calculateChecksums(connectionId, remotePath, token);
+          throwIfCancelled(token, 'Checksum calculation cancelled.');
+          return checksums;
+        },
+        { cancellable: true, returnOnCancel: true, cancelMessage: 'Checksum calculation cancelled.' }
+      );
+
+      await this.showChecksumsResult(remotePath, stats.size, stats.modifyTime, result);
+
+      this.logInfo('Calculated remote file checksums.', {
+        Path: this.buildRemoteReference(remotePath),
+        SHA256: result.sha256.value || result.sha256.error || 'Not available',
+        MD5: result.md5.value || result.md5.error || 'Not available'
+      });
+      this.postBusy(false, `Calculated checksums for ${entryName}.`);
+    } catch (error) {
+      if (isRemoteEditOperationCancelled(error)) {
+        this.postBusy(false, 'Checksum calculation cancelled.');
+        return;
+      }
+
+      this.postBusy(false, 'Checksum calculation failed.');
+      throw error;
+    }
+  }
+
+  private async showChecksumsResult(remotePath: string, size: number, modifyTime: number, result: RemoteChecksumSummary): Promise<void> {
+    this.postMessage(RemoteEditOutboundMessageType.ShowChecksumsDialog, {
+      remotePath,
+      size: formatBytes(size),
+      modified: this.formatTimestampForDialog(modifyTime),
+      sha256: this.formatChecksumLine(result.sha256),
+      md5: this.formatChecksumLine(result.md5),
+      sha256Value: result.sha256.value || '',
+      md5Value: result.md5.value || '',
+      copyAllText: this.buildChecksumsCopyText(remotePath, result)
+    });
+  }
+
+  private formatChecksumLine(checksum: RemoteChecksumValue): string {
+    if (checksum.value) {
+      return checksum.command ? `${checksum.value} (${checksum.command})` : checksum.value;
+    }
+
+    return checksum.error || 'Not available';
+  }
+
+  private buildChecksumsCopyText(remotePath: string, result: RemoteChecksumSummary): string {
+    const lines = [`Remote file: ${remotePath}`];
+
+    if (result.sha256.value) {
+      lines.push(`SHA-256: ${result.sha256.value}`);
+    }
+    if (result.md5.value) {
+      lines.push(`MD5: ${result.md5.value}`);
+    }
+
+    return lines.length > 1 ? lines.join('\n') : '';
+  }
+
+  private formatTimestampForDialog(value: number): string {
+    if (!Number.isFinite(value) || value <= 0) {
+      return 'unknown';
+    }
+
+    return new Date(value).toLocaleString();
   }
 
   private async tryStatRemotePath(connectionId: string, remotePath: string): Promise<{ type: 'file' | 'directory' | 'unknown'; size: number; modifyTime: number; accessTime: number } | undefined> {
@@ -2266,6 +2355,11 @@ export class RemoteEditPanel {
     if (messageType === RemoteEditIncomingMessageType.RequestMakeCopy) {
       const entryPath = payload?.path ? normalizeRemotePath(String(payload.path)) : 'selected entry';
       return `Could not make a copy of remote file: ${entryPath}. Details: ${details}`;
+    }
+
+    if (messageType === RemoteEditIncomingMessageType.RequestCalculateChecksums) {
+      const entryPath = payload?.path ? normalizeRemotePath(String(payload.path)) : 'selected entry';
+      return `Could not calculate checksums for remote file: ${entryPath}. Details: ${details}`;
     }
 
     if (messageType === RemoteEditIncomingMessageType.RequestDeleteEntry) {

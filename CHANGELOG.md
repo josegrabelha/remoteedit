@@ -7,6 +7,7 @@
 - Added **Make a Copy...** for single remote files from the browser context menu.
 - Added **Refresh** to the remote browser context menu for selected items and empty list space.
 - Added **File Properties** for single remote items from the browser context menu.
+- Added **Calculate Checksums...** for single remote files using server-side SHA-256 and MD5 commands.
 
 ## [1.2.1] - 2026-05-27
 

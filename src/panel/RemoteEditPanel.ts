@@ -240,6 +240,7 @@ export class RemoteEditPanel {
         enableSudoMode: () => this.enableSudoMode(),
         disableSudoMode: connectionId => this.disableSudoMode(connectionId),
         listDirectory: remotePath => this.listDirectory(remotePath),
+        requestBreadcrumbDirectories: payload => this.requestBreadcrumbDirectories(payload),
         openParent: () => this.listDirectory(dirnameRemotePath(this.getActivePath())),
         openEntry: payload => this.openEntry(payload),
         openEntries: payload => this.openEntries(payload),
@@ -570,6 +571,43 @@ export class RemoteEditPanel {
 
     this.logInfo('Listed remote directory.', { Connection: connectionId, Path: normalizedPath, Items: entries.length });
     this.postBusy(false, `Listed ${entries.length} item(s).`);
+  }
+
+  private async requestBreadcrumbDirectories(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const requestId = String(payload?.requestId || '');
+    const normalizedPath = normalizeRemotePath(String(payload?.path || this.getActivePath() || '/'));
+
+    try {
+      const entries = await this.sessions.listDirectory(connectionId, normalizedPath);
+      const directories = entries
+        .filter(entry => entry.name !== '..' && (entry.effectiveType || entry.type) === 'directory')
+        .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' }))
+        .map(entry => ({
+          name: entry.name,
+          path: entry.path,
+          permissions: entry.permissions || '',
+          owner: String(entry.owner || ''),
+          group: String(entry.group || '')
+        }));
+
+      this.postMessage(RemoteEditOutboundMessageType.BreadcrumbDirectoriesListed, {
+        connectionId,
+        requestId,
+        path: normalizedPath,
+        directories
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.postMessage(RemoteEditOutboundMessageType.BreadcrumbDirectoriesListed, {
+        connectionId,
+        requestId,
+        path: normalizedPath,
+        directories: [],
+        error: message || 'Could not list remote directories.'
+      });
+      this.logWarn('Could not list breadcrumb directories.', { Connection: connectionId, Path: normalizedPath, Error: message });
+    }
   }
 
   private buildParentEntry(currentPath: string): RemoteEntry {

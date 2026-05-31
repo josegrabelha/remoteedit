@@ -129,10 +129,35 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .sudo-toggle input:disabled + .sudo-toggle-track { opacity: 0.55; }
   .sudo-toggle.enabled .sudo-toggle-state { color: var(--vscode-foreground); }
   .sudo-toggle-state { min-width: 46px; text-align: right; color: var(--vscode-descriptionForeground); }
-  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 180px; gap: 8px; align-items: center; margin-bottom: 10px; flex: 0 0 auto; }
+  .pathbar { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto 180px; gap: 8px; align-items: center; margin-bottom: 8px; flex: 0 0 auto; }
   .pathbar label { margin: 0; }
   .remote-path-box { position: relative; min-width: 0; }
   .remote-path-box input { padding-right: 66px; }
+  .remote-path-box.path-breadcrumb-mode input, .remote-path-box.path-breadcrumb-mode input:disabled { color: transparent !important; caret-color: transparent; }
+  .remote-path-box.path-breadcrumb-mode input::selection { background: transparent; color: transparent; }
+  .remote-path-inline-breadcrumb { position: absolute; z-index: 1; top: 1px; bottom: 1px; left: 5px; right: 66px; display: none; align-items: center; gap: 4px; padding: 0 3px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 28px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; cursor: text; }
+  .remote-path-inline-breadcrumb::-webkit-scrollbar { display: none; }
+  .remote-path-box.path-breadcrumb-mode .remote-path-inline-breadcrumb { display: flex; }
+  .remote-path-inline-breadcrumb button { min-height: 22px; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-foreground); font-size: 12px; line-height: 22px; white-space: nowrap; cursor: pointer; }
+  .remote-path-inline-breadcrumb button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .remote-path-inline-breadcrumb button.current { font-weight: 600; cursor: default; }
+  .remote-path-breadcrumb-separator { flex: 0 0 24px; width: 24px; height: 24px; min-width: 24px; min-height: 24px; padding: 0; margin: 0 -1px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground); opacity: 0.82; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; vertical-align: middle; }
+  .remote-path-breadcrumb-separator:hover:not(:disabled), .remote-path-breadcrumb-separator.open { opacity: 1; color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .remote-path-breadcrumb-separator-icon { width: 14px; height: 14px; display: block; transform-origin: 50% 50%; transition: transform 120ms ease-out; pointer-events: none; }
+  .remote-path-breadcrumb-separator-icon path { fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
+  .remote-path-breadcrumb-separator.open .remote-path-breadcrumb-separator-icon { transform: rotate(90deg); }
+  .remote-path-breadcrumb-segment { display: inline-flex; align-items: center; min-width: 0; border-radius: 3px; }
+  .remote-path-breadcrumb-segment:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .remote-path-breadcrumb-segment .breadcrumb-part-button { border-radius: 3px; }
+  .remote-path-dropdown { position: absolute; z-index: 120; top: calc(100% + 4px); left: 0; display: none; width: min(380px, calc(100vw - 56px)); max-height: 280px; overflow-y: auto; overflow-x: hidden; padding: 6px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+  .remote-path-dropdown.visible { display: block; }
+  .remote-path-dropdown-title { padding: 4px 7px 6px; font-size: 12px; font-weight: 650; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-path-dropdown-state { padding: 8px 7px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.35; }
+  .remote-path-dropdown-state.error { color: var(--vscode-errorForeground, var(--vscode-inputValidation-errorForeground)); }
+  .remote-path-dropdown-item { width: 100%; min-height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 5px 7px; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
+  .remote-path-dropdown-item:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+  .remote-path-dropdown-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-path-dropdown-meta { color: var(--vscode-descriptionForeground); opacity: 0.72; font-size: 11px; white-space: nowrap; }
   .remote-path-favorite-buttons { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; gap: 1px; height: 27px; }
   .remote-path-favorite-button { width: 30px; min-width: 30px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: transparent; color: var(--vscode-input-foreground); opacity: 0.82; line-height: 1; }
   .remote-path-favorite-button svg { width: 25px; height: 25px; display: block; fill: currentColor; stroke: none; pointer-events: none; }
@@ -416,6 +441,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             <label class="small muted" for="currentPath">Remote Path</label>
             <div id="remotePathBox" class="remote-path-box">
               <input id="currentPath" value="" disabled />
+              <div id="remotePathBreadcrumb" class="remote-path-inline-breadcrumb" aria-label="Remote path breadcrumb"></div>
+              <div id="remotePathDropdown" class="remote-path-dropdown" aria-hidden="true"></div>
               <div class="remote-path-favorite-buttons" aria-hidden="false">
                 <button id="togglePathFavoriteButton" class="remote-path-favorite-button" type="button" aria-label="Add remote path favorite" data-tooltip="Save this connection to use remote path favorites" disabled>
                   <svg class="star-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="m354-287 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143Zm-61 83.92 49.62-212.54-164.93-142.84 217.23-18.85L480-777.69l85.08 200.38 217.23 18.85-164.93 142.84L667-203.08 480-315.92 293-203.08ZM480-470Z" /></svg>
@@ -457,7 +484,6 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <button id="clearFilterButton" class="filter-clear-button has-tooltip" aria-label="Clear filter" data-tooltip="Clear filter" disabled>×</button>
             </div>
           </div>
-
 
           <div id="entriesTableWrap" class="table-wrap">
             <table id="entriesTable">
@@ -648,6 +674,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const sessionTabs = document.getElementById('sessionTabs');
   const currentPath = document.getElementById('currentPath');
   const remotePathBox = document.getElementById('remotePathBox');
+  const remotePathBreadcrumb = document.getElementById('remotePathBreadcrumb');
+  const remotePathDropdown = document.getElementById('remotePathDropdown');
   const togglePathFavoriteButton = document.getElementById('togglePathFavoriteButton');
   const pathFavoritesButton = document.getElementById('pathFavoritesButton');
   const pathFavoritesPopover = document.getElementById('pathFavoritesPopover');
@@ -749,6 +777,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let selectedEntryPath = '';
   let selectedEntryPaths = new Set();
   let selectionAnchorPath = '';
+  let remotePathEditing = false;
+  let breadcrumbDropdownState = { open: false, path: '', requestId: '', anchorPath: '' };
   let filterText = '';
   let currentSort = { key: '', direction: '' };
   let busy = false;
@@ -847,7 +877,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   window.addEventListener('scroll', hideWebviewTooltip, true);
-  window.addEventListener('resize', hideWebviewTooltip);
+  window.addEventListener('resize', () => {
+    hideWebviewTooltip();
+    hideRemotePathDropdown();
+  });
 
   window.addEventListener('message', event => {
     const message = event.data;
@@ -901,17 +934,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         hideFilePropertiesDialog();
         hideChecksumsDialog();
         hidePathFavoritesPopover();
+        hideRemotePathDropdown();
         renderSessionTabs();
         updateActiveSessionUi();
         updateSortIndicators();
         entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
         currentPath.value = '';
+        exitRemotePathEditMode({ reset: false, keepFocus: true });
         setControls();
         setStatus('No active remote connections.');
         break;
       case 'directoryListed':
         if (payload.connectionId && payload.connectionId !== activeConnectionId) return;
         currentPath.value = payload.path || '/';
+        exitRemotePathEditMode({ reset: false, keepFocus: true });
+        hideRemotePathDropdown();
         currentEntries = payload.entries || [];
         selectedEntryPath = '';
         selectedEntryPaths.clear();
@@ -921,6 +958,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         updateActiveSessionPath(payload.path || '/');
         updatePathFavoriteControls();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
+        break;
+      case 'breadcrumbDirectoriesListed':
+        handleBreadcrumbDirectoriesListed(payload);
         break;
       case 'status':
         setStatus(payload.message || '');
@@ -1099,13 +1139,84 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     hidePathFavoritesPopover();
     openPath(path);
   });
-  currentPath.addEventListener('input', updatePathFavoriteControls);
+  remotePathBox.addEventListener('click', event => {
+    if (!activeConnectionId || busy || currentPath.disabled) return;
+    if (event.target && event.target.closest && event.target.closest('.remote-path-favorite-buttons, .remote-path-favorites-popover, .remote-path-dropdown, [data-breadcrumb-path], [data-breadcrumb-toggle]')) return;
+    if (!remotePathEditing) enterRemotePathEditMode({ select: true });
+  });
+
+  remotePathBreadcrumb.addEventListener('click', event => {
+    const toggle = event.target && event.target.closest ? event.target.closest('[data-breadcrumb-toggle]') : null;
+    if (toggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (busy) return;
+      openRemotePathDropdown(toggle.dataset.breadcrumbToggle || '/', toggle);
+      return;
+    }
+
+    const target = event.target && event.target.closest ? event.target.closest('[data-breadcrumb-path]') : null;
+    if (!target) {
+      enterRemotePathEditMode({ select: true });
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (busy) return;
+
+    const path = target.dataset.breadcrumbPath || '/';
+    if (path === normalizeUiRemotePath(currentPath.value || '/')) return;
+    listDirectory(path);
+  });
+
+  remotePathDropdown.addEventListener('click', event => {
+    const target = event.target && event.target.closest ? event.target.closest('[data-dropdown-directory-path]') : null;
+    if (!target) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const path = target.dataset.dropdownDirectoryPath || '';
+    if (!path || busy) return;
+
+    hideRemotePathDropdown();
+    listDirectory(path);
+  });
+
+  document.addEventListener('click', event => {
+    if (!breadcrumbDropdownState.open) return;
+    if (event.target && event.target.closest && event.target.closest('#remotePathBox')) return;
+    hideRemotePathDropdown();
+  });
+
+  currentPath.addEventListener('focus', () => {
+    if (!currentPath.disabled && !remotePathEditing) enterRemotePathEditMode({ select: false });
+  });
+
+  currentPath.addEventListener('blur', () => {
+    if (remotePathEditing) exitRemotePathEditMode({ reset: true });
+  });
+
+  currentPath.addEventListener('input', () => {
+    updatePathFavoriteControls();
+    updateRemotePathBreadcrumb();
+  });
   authType.addEventListener('change', updateAuthFields);
   privateKeyBrowseButton.addEventListener('click', () => vscode.postMessage({ type: 'pickPrivateKeyPath' }));
   rememberPassword.addEventListener('change', () => { if (!rememberPassword.checked) { password.placeholder = ''; if (password.value === SAVED_SECRET_MASK) password.value = ''; } });
   rememberPassphrase.addEventListener('change', () => { if (!rememberPassphrase.checked) { passphrase.placeholder = ''; if (passphrase.value === SAVED_SECRET_MASK) passphrase.value = ''; } });
 
-  currentPath.addEventListener('keydown', event => { if (event.key === 'Enter') openPath(currentPath.value); });
+  currentPath.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const path = currentPath.value;
+      exitRemotePathEditMode({ reset: false });
+      openPath(path);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      exitRemotePathEditMode({ reset: true });
+    }
+  });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && checksumsDialogOpen) {
       hideChecksumsDialog();
@@ -1459,6 +1570,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (!active) {
       browserSubtitle.textContent = sessions.length ? 'Select an open connection tab to browse remote files.' : 'Connect to a host to list remote files.';
       currentPath.value = '';
+      updateRemotePathBreadcrumb();
       updateSudoToggle();
       return;
     }
@@ -1467,6 +1579,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (active.currentPath) {
       currentPath.value = active.currentPath;
     }
+    updateRemotePathBreadcrumb();
     updateSudoToggle();
   }
 
@@ -1475,6 +1588,223 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (!active) return;
     active.currentPath = path;
     renderSessionTabs();
+  }
+
+  function enterRemotePathEditMode(options = {}) {
+    if (!activeConnectionId || busy || currentPath.disabled) return;
+    hideRemotePathDropdown();
+    remotePathEditing = true;
+    remotePathBox.classList.remove('path-breadcrumb-mode');
+    remotePathBox.classList.add('path-edit-mode');
+    if (document.activeElement !== currentPath) currentPath.focus();
+    if (options.select) currentPath.select();
+  }
+
+  function exitRemotePathEditMode(options = {}) {
+    if (options.reset) {
+      const active = getActiveSession();
+      currentPath.value = active && active.currentPath ? active.currentPath : (activeConnectionId ? '/' : '');
+    }
+
+    remotePathEditing = false;
+    remotePathBox.classList.remove('path-edit-mode');
+    updateRemotePathBreadcrumb();
+
+    if (!options.keepFocus && document.activeElement === currentPath) {
+      currentPath.blur();
+    }
+  }
+
+  function updateRemotePathBreadcrumb() {
+    if (!remotePathBreadcrumb) return;
+
+    const hasActiveSession = Boolean(activeConnectionId);
+    const normalizedPath = normalizeUiRemotePath(currentPath.value || '/');
+    remotePathBreadcrumb.innerHTML = '';
+    remotePathBox.classList.toggle('path-breadcrumb-mode', hasActiveSession && !remotePathEditing);
+    remotePathBox.classList.toggle('path-edit-mode', hasActiveSession && remotePathEditing);
+
+    if (!hasActiveSession) {
+      return;
+    }
+
+    const parts = getBreadcrumbParts(normalizedPath);
+
+    parts.forEach((part, index) => {
+      if (index > 0) {
+        const parentPart = parts[index - 1];
+        const separator = document.createElement('button');
+        separator.type = 'button';
+        separator.className = 'remote-path-breadcrumb-separator' + (breadcrumbDropdownState.open && breadcrumbDropdownState.path === parentPart.path ? ' open' : '');
+        const separatorIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        separatorIcon.classList.add('remote-path-breadcrumb-separator-icon');
+        separatorIcon.setAttribute('viewBox', '0 0 16 16');
+        separatorIcon.setAttribute('aria-hidden', 'true');
+        separatorIcon.setAttribute('focusable', 'false');
+        const separatorPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        separatorPath.setAttribute('d', 'M6 4l4 4-4 4');
+        separatorIcon.appendChild(separatorPath);
+        separator.appendChild(separatorIcon);
+        separator.dataset.breadcrumbToggle = parentPart.path;
+        separator.title = 'Show folders under ' + parentPart.path;
+        separator.setAttribute('aria-label', 'Show folders under ' + parentPart.path);
+        remotePathBreadcrumb.appendChild(separator);
+      }
+
+      const segment = document.createElement('span');
+      segment.className = 'remote-path-breadcrumb-segment';
+      segment.dataset.breadcrumbSegmentPath = part.path;
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = part.label;
+      button.dataset.breadcrumbPath = part.path;
+      button.title = part.path;
+      button.className = 'breadcrumb-part-button' + (part.path === normalizedPath ? ' current' : '');
+      button.setAttribute('aria-current', part.path === normalizedPath ? 'page' : 'false');
+      segment.appendChild(button);
+
+      remotePathBreadcrumb.appendChild(segment);
+    });
+
+    requestAnimationFrame(() => {
+      remotePathBreadcrumb.scrollLeft = remotePathBreadcrumb.scrollWidth;
+    });
+  }
+
+  function openRemotePathDropdown(path, anchor) {
+    if (!remotePathDropdown || !activeConnectionId) return;
+
+    const normalizedPath = normalizeUiRemotePath(path || '/');
+    if (breadcrumbDropdownState.open && breadcrumbDropdownState.path === normalizedPath) {
+      hideRemotePathDropdown();
+      return;
+    }
+
+    const requestId = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+    breadcrumbDropdownState = { open: true, path: normalizedPath, requestId, anchorPath: normalizedPath };
+    updateRemotePathBreadcrumb();
+    positionRemotePathDropdown(anchor);
+    renderRemotePathDropdown('loading', normalizedPath);
+
+    vscode.postMessage({
+      type: 'requestBreadcrumbDirectories',
+      payload: { path: normalizedPath, requestId }
+    });
+  }
+
+  function hideRemotePathDropdown() {
+    if (!remotePathDropdown) return;
+    if (!breadcrumbDropdownState.open && !remotePathDropdown.classList.contains('visible')) return;
+    breadcrumbDropdownState = { open: false, path: '', requestId: '', anchorPath: '' };
+    remotePathDropdown.classList.remove('visible');
+    remotePathDropdown.setAttribute('aria-hidden', 'true');
+    remotePathDropdown.innerHTML = '';
+    updateRemotePathBreadcrumb();
+  }
+
+  function positionRemotePathDropdown(anchor) {
+    if (!remotePathDropdown || !remotePathBox || !anchor) return;
+    const boxRect = remotePathBox.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    const dropdownWidth = Math.min(380, Math.max(260, window.innerWidth - 56));
+    let left = Math.round(anchorRect.left - boxRect.left);
+    left = Math.max(0, Math.min(left, Math.max(0, boxRect.width - dropdownWidth)));
+    remotePathDropdown.style.width = dropdownWidth + 'px';
+    remotePathDropdown.style.left = left + 'px';
+  }
+
+  function renderRemotePathDropdown(state, path, directories, errorMessage) {
+    if (!remotePathDropdown) return;
+
+    remotePathDropdown.innerHTML = '';
+    remotePathDropdown.classList.add('visible');
+    remotePathDropdown.setAttribute('aria-hidden', 'false');
+
+    const title = document.createElement('div');
+    title.className = 'remote-path-dropdown-title';
+    title.textContent = path || '/';
+    title.title = path || '/';
+    remotePathDropdown.appendChild(title);
+
+    if (state === 'loading') {
+      const loading = document.createElement('div');
+      loading.className = 'remote-path-dropdown-state';
+      loading.textContent = 'Loading directories...';
+      remotePathDropdown.appendChild(loading);
+      return;
+    }
+
+    if (state === 'error') {
+      const error = document.createElement('div');
+      error.className = 'remote-path-dropdown-state error';
+      error.textContent = errorMessage || 'Could not list directories.';
+      remotePathDropdown.appendChild(error);
+      return;
+    }
+
+    const items = Array.isArray(directories) ? directories : [];
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'remote-path-dropdown-state';
+      empty.textContent = 'No directories found.';
+      remotePathDropdown.appendChild(empty);
+      return;
+    }
+
+    items.forEach(item => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'remote-path-dropdown-item';
+      button.dataset.dropdownDirectoryPath = item.path || '';
+      button.title = item.path || item.name || '';
+
+      const name = document.createElement('span');
+      name.className = 'remote-path-dropdown-name';
+      name.textContent = item.name || item.path || '';
+      button.appendChild(name);
+
+      const meta = document.createElement('span');
+      meta.className = 'remote-path-dropdown-meta';
+      const ownerGroup = [item.owner, item.group].filter(Boolean).join(':');
+      meta.textContent = [item.permissions, ownerGroup].filter(Boolean).join(' · ');
+      button.appendChild(meta);
+
+      remotePathDropdown.appendChild(button);
+    });
+  }
+
+  function handleBreadcrumbDirectoriesListed(payload) {
+    if (!payload || payload.connectionId !== activeConnectionId) return;
+    if (!breadcrumbDropdownState.open || payload.requestId !== breadcrumbDropdownState.requestId) return;
+
+    const path = normalizeUiRemotePath(payload.path || '/');
+    if (path !== breadcrumbDropdownState.path) return;
+
+    if (payload.error) {
+      renderRemotePathDropdown('error', path, [], payload.error);
+      return;
+    }
+
+    renderRemotePathDropdown('ready', path, payload.directories || []);
+  }
+
+  function getBreadcrumbParts(path) {
+    const normalizedPath = normalizeUiRemotePath(path || '/');
+    if (normalizedPath === '/') {
+      return [{ label: '/', path: '/' }];
+    }
+
+    const segments = normalizedPath.split('/').filter(Boolean);
+    const parts = [{ label: '/', path: '/' }];
+    let current = '';
+
+    for (const segment of segments) {
+      current += '/' + segment;
+      parts.push({ label: segment, path: current });
+    }
+
+    return parts;
   }
 
   function getActiveSession() {
@@ -2574,11 +2904,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     profileSelect.disabled = busy;
     disconnectButton.disabled = busy || !hasActiveSession;
     currentPath.disabled = busy || !hasActiveSession;
+    if (currentPath.disabled && remotePathEditing) {
+      exitRemotePathEditMode({ reset: true, keepFocus: true });
+    }
+    updateRemotePathBreadcrumb();
     filterInput.disabled = busy || !hasActiveSession;
     updateFilterClearButton();
     updateTransferButtons();
     renderTransferQueueButton();
     updatePathFavoriteControls();
+    updateRemotePathBreadcrumb();
     parentButton.disabled = busy || !hasActiveSession;
     refreshButton.disabled = busy || !hasActiveSession;
     uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;

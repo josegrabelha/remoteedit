@@ -9,6 +9,9 @@ export async function tryHandleBrowserMessage(
     case RemoteEditIncomingMessageType.ListDirectory:
       await handlers.listDirectory(String(message.payload?.path || handlers.getActivePath()));
       return true;
+    case RemoteEditIncomingMessageType.RequestBreadcrumbDirectories:
+      await handlers.requestBreadcrumbDirectories(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.OpenParent:
       await handlers.openParent();
       return true;

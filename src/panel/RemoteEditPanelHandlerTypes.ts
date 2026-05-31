@@ -12,6 +12,7 @@ export interface RemoteEditPanelMessageHandlers {
   enableSudoMode(): Promise<void>;
   disableSudoMode(connectionId: string): void;
   listDirectory(remotePath: string): Promise<void>;
+  requestBreadcrumbDirectories(payload: any): Promise<void>;
   openParent(): Promise<void>;
   openEntry(payload: any): Promise<void>;
   openEntries(payload: any): Promise<void>;

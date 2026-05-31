@@ -1,5 +1,12 @@
 # Changelog
 
+
+## [1.3.0] - 2026-05-30
+
+### Added
+- Added **Make a Copy...** for single remote files from the browser context menu.
+- Suggest copy names like `index_copy.html` and `archive_copy.tar.gz`, automatically incrementing to avoid existing names.
+
 ## [1.2.1] - 2026-05-27
 
 ### Changed

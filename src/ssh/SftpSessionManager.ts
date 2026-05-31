@@ -516,6 +516,38 @@ export class SftpSessionManager {
     this.clearReadFileCache(connectionId, normalizedNewPath);
   }
 
+  async copyFile(connectionId: string, sourcePath: string, targetPath: string, overwrite = false, cancellationToken?: ConnectionCancellationToken): Promise<void> {
+    const client = this.getClient(connectionId);
+    const normalizedSourcePath = normalizeRemotePath(sourcePath);
+    const normalizedTargetPath = normalizeRemotePath(targetPath);
+    const command = this.buildCopyFileCommand(normalizedSourcePath, normalizedTargetPath, overwrite);
+
+    if (this.isSudoModeEnabled(connectionId)) {
+      await this.runSudoCommandText(connectionId, command, 300000, cancellationToken);
+      this.clearReadFileCache(connectionId, normalizedTargetPath);
+      return;
+    }
+
+    const result = await this.executeRemoteCommand(client, command, { timeoutMs: 300000, cancellationToken });
+
+    if (result.code !== 0) {
+      const message = (result.stderr || result.stdout.toString('utf8') || `Remote copy failed with exit code ${result.code}.`).trim();
+      throw new Error(message);
+    }
+
+    this.clearReadFileCache(connectionId, normalizedTargetPath);
+  }
+
+  private buildCopyFileCommand(sourcePath: string, targetPath: string, overwrite: boolean): string {
+    const source = shellQuote(sourcePath);
+    const target = shellQuote(targetPath);
+    const targetGuard = overwrite
+      ? `if [ -d ${target} ] && [ ! -L ${target} ]; then echo 'Target is a directory.' >&2; exit 21; fi; if [ -L ${target} ]; then echo 'Target is a symbolic link.' >&2; exit 21; fi;`
+      : `if [ -e ${target} ] || [ -L ${target} ]; then echo 'Target already exists.' >&2; exit 17; fi;`;
+
+    return `if [ ! -f ${source} ]; then echo 'Source is not a regular file.' >&2; exit 22; fi; ${targetGuard} cp -p ${source} ${target}`;
+  }
+
   async chmod(connectionId: string, remotePath: string, mode: string | number): Promise<void> {
     const client = this.getClient(connectionId);
     const modeText = typeof mode === 'number' ? mode.toString(8) : String(mode).trim();

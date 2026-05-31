@@ -20,6 +20,7 @@ export interface RemoteEditPanelMessageHandlers {
   removeRemotePathFavorite(payload: any): Promise<void>;
   requestCreateFile(payload: any): Promise<void>;
   requestCreateDirectory(payload: any): Promise<void>;
+  requestMakeCopy(payload: any): Promise<void>;
   requestRenameEntry(payload: any): Promise<void>;
   requestDeleteEntry(payload: any): Promise<void>;
   requestDeleteEntries(payload: any): Promise<void>;

@@ -12,6 +12,9 @@ export async function tryHandleFileActionMessage(
     case RemoteEditIncomingMessageType.RequestCreateDirectory:
       await handlers.requestCreateDirectory(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestMakeCopy:
+      await handlers.requestMakeCopy(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.RequestRenameEntry:
       await handlers.requestRenameEntry(message.payload);
       return true;

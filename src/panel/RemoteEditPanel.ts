@@ -81,6 +81,39 @@ interface TransferQueueItemSnapshot {
   finishedAt?: string;
 }
 
+const COMPOUND_FILE_EXTENSIONS = [
+  '.tar.gz',
+  '.tar.bz2',
+  '.tar.xz',
+  '.tar.Z',
+  '.tar.lz',
+  '.tar.lzma',
+  '.tar.zst'
+];
+
+function buildCopyFileName(fileName: string, copyIndex: number): string {
+  const suffix = `_copy${copyIndex <= 1 ? '' : copyIndex}`;
+  const lowerName = fileName.toLowerCase();
+  const compoundExtension = COMPOUND_FILE_EXTENSIONS.find(extension => lowerName.endsWith(extension.toLowerCase()));
+
+  if (compoundExtension) {
+    const originalExtension = fileName.slice(fileName.length - compoundExtension.length);
+    const baseName = fileName.slice(0, fileName.length - compoundExtension.length);
+    return `${baseName}${suffix}${originalExtension}`;
+  }
+
+  const lastDotIndex = fileName.lastIndexOf('.');
+  const hasSimpleExtension = lastDotIndex > 0;
+
+  if (!hasSimpleExtension) {
+    return `${fileName}${suffix}`;
+  }
+
+  const baseName = fileName.slice(0, lastDotIndex);
+  const extension = fileName.slice(lastDotIndex);
+  return `${baseName}${suffix}${extension}`;
+}
+
 export class RemoteEditPanel {
   private static currentPanel: RemoteEditPanel | undefined;
   private panel: vscode.WebviewPanel | undefined;
@@ -215,6 +248,7 @@ export class RemoteEditPanel {
         removeRemotePathFavorite: payload => this.removeRemotePathFavorite(payload),
         requestCreateFile: payload => this.requestCreateEntry(payload, 'file'),
         requestCreateDirectory: payload => this.requestCreateEntry(payload, 'directory'),
+        requestMakeCopy: payload => this.requestMakeCopy(payload),
         requestRenameEntry: payload => this.requestRenameEntry(payload),
         requestDeleteEntry: payload => this.requestDeleteEntry(payload),
         requestDeleteEntries: payload => this.requestDeleteEntries(payload),
@@ -833,6 +867,118 @@ export class RemoteEditPanel {
     }
 
     throw new Error(`A remote ${label} already exists at ${remotePath}.`);
+  }
+
+  private async requestMakeCopy(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const remotePath = normalizeRemotePath(String(payload?.path || ''));
+    const entryType = String(payload?.type || 'item');
+    const currentName = String(payload?.name || remotePath.split('/').filter(Boolean).pop() || '').trim();
+
+    if (!remotePath || remotePath === '/' || !currentName || currentName === '..' || entryType !== 'file') {
+      throw new Error('Select a single remote file to make a copy.');
+    }
+
+    const parentPath = dirnameRemotePath(remotePath);
+    const defaultName = await this.buildAvailableCopyName(connectionId, parentPath, currentName);
+
+    const copyName = await vscode.window.showInputBox({
+      title: 'RemoteEdit: Make a Copy',
+      prompt: 'Enter the name for the remote file copy.',
+      value: defaultName,
+      valueSelection: [0, defaultName.length],
+      validateInput: value => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return 'The copy name cannot be empty.';
+        }
+        if (trimmed === '.' || trimmed === '..') {
+          return "The copy name cannot be '.' or '..'.";
+        }
+        if (trimmed.includes('/') || trimmed.includes('\\')) {
+          return 'The copy name must not contain path separators.';
+        }
+        if (trimmed === currentName) {
+          return 'The copy name must be different from the original file name.';
+        }
+        return undefined;
+      }
+    });
+
+    if (copyName === undefined) {
+      this.postStatus('Make a copy cancelled.');
+      return;
+    }
+
+    const trimmedName = copyName.trim();
+    const newPath = joinRemotePath(parentPath, trimmedName);
+    const existingTarget = await this.tryStatRemotePath(connectionId, newPath);
+    let overwrite = false;
+
+    if (existingTarget) {
+      if (existingTarget.type !== 'file') {
+        throw new Error(`A remote ${existingTarget.type} already exists at ${newPath}. Choose another name.`);
+      }
+
+      const confirmation = await vscode.window.showWarningMessage(
+        `Overwrite remote file '${trimmedName}'?`,
+        { modal: true, detail: newPath },
+        'Overwrite'
+      );
+
+      if (confirmation !== 'Overwrite') {
+        this.postStatus('Make a copy cancelled.');
+        return;
+      }
+
+      overwrite = true;
+    }
+
+    this.postBusy(true, `Copying ${currentName}...`);
+
+    try {
+      await withRemoteEditProgress(
+        'Copying remote file...',
+        async token => {
+          await this.sessions.copyFile(connectionId, remotePath, newPath, overwrite, token);
+        },
+        { cancellable: true, returnOnCancel: true, cancelMessage: 'Copy cancelled.' }
+      );
+    } catch (error) {
+      if (isRemoteEditOperationCancelled(error)) {
+        this.postBusy(false, 'Copy cancelled.');
+        return;
+      }
+
+      this.postBusy(false, 'Copy failed.');
+      throw error;
+    }
+
+    this.logInfo('Copied remote file.', { From: this.buildRemoteReference(remotePath), To: this.buildRemoteReference(newPath) });
+    await this.listDirectory(parentPath);
+    this.postBusy(false, `Copied to ${trimmedName}.`);
+  }
+
+  private async tryStatRemotePath(connectionId: string, remotePath: string): Promise<{ type: 'file' | 'directory' | 'unknown'; size: number; modifyTime: number; accessTime: number } | undefined> {
+    try {
+      return await this.sessions.stat(connectionId, remotePath);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async buildAvailableCopyName(connectionId: string, parentPath: string, fileName: string): Promise<string> {
+    for (let index = 1; index <= 999; index += 1) {
+      const candidate = buildCopyFileName(fileName, index);
+      const candidatePath = joinRemotePath(parentPath, candidate);
+      const existingTarget = await this.tryStatRemotePath(connectionId, candidatePath);
+
+      if (!existingTarget) {
+        return candidate;
+      }
+    }
+
+    return buildCopyFileName(fileName, Date.now());
   }
 
   private async requestRenameEntry(payload: any): Promise<void> {
@@ -2115,6 +2261,11 @@ export class RemoteEditPanel {
     if (messageType === RemoteEditIncomingMessageType.RequestRenameEntry) {
       const entryPath = payload?.path ? normalizeRemotePath(String(payload.path)) : 'selected entry';
       return `Could not rename remote entry: ${entryPath}. Details: ${details}`;
+    }
+
+    if (messageType === RemoteEditIncomingMessageType.RequestMakeCopy) {
+      const entryPath = payload?.path ? normalizeRemotePath(String(payload.path)) : 'selected entry';
+      return `Could not make a copy of remote file: ${entryPath}. Details: ${details}`;
     }
 
     if (messageType === RemoteEditIncomingMessageType.RequestDeleteEntry) {

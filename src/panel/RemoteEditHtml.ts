@@ -515,6 +515,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <button id="contextUpload" type="button" role="menuitem">Upload...</button>
   <button id="contextDownload" type="button" role="menuitem">Download...</button>
   <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextMakeCopy" type="button" role="menuitem">Make a Copy...</button>
   <button id="contextRename" type="button" role="menuitem">Rename</button>
   <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
   <div id="contextDeleteSeparator" class="context-menu-separator" role="separator"></div>
@@ -646,6 +647,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const contextUpload = document.getElementById('contextUpload');
   const contextDownload = document.getElementById('contextDownload');
   const contextItemSeparator = document.getElementById('contextItemSeparator');
+  const contextMakeCopy = document.getElementById('contextMakeCopy');
   const contextSetPermissions = document.getElementById('contextSetPermissions');
   const contextRename = document.getElementById('contextRename');
   const contextDeleteSeparator = document.getElementById('contextDeleteSeparator');
@@ -1073,6 +1075,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const entry = getSelectedActionEntry();
     hideContextMenu();
     if (entry) vscode.postMessage({ type: 'requestSetPermissions', payload: actionPayload(entry) });
+  });
+
+  contextMakeCopy.addEventListener('click', () => {
+    const entry = getSelectedActionEntry();
+    hideContextMenu();
+    if (entry) vscode.postMessage({ type: 'requestMakeCopy', payload: actionPayload(entry) });
   });
 
   contextRename.addEventListener('click', () => {
@@ -1784,6 +1792,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const canOpen = isSingleDirectory || allFiles;
 
     const hasItemGroup = isSingleEntry;
+    const canMakeCopy = isSingleEntry && selectedEntries[0].type === 'file';
     const hasDeleteGroup = hasEntryActions;
 
     contextTransferSeparator.style.display = activeConnectionId ? '' : 'none';
@@ -1797,6 +1806,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       : (isSingleEntry && selectedEntries[0].type === 'link' ? 'Open Link' : 'View/Edit');
 
     contextItemSeparator.style.display = hasItemGroup ? '' : 'none';
+    contextMakeCopy.style.display = canMakeCopy ? '' : 'none';
     contextRename.style.display = hasItemGroup ? '' : 'none';
     contextSetPermissions.style.display = hasItemGroup ? '' : 'none';
     contextDeleteSeparator.style.display = hasDeleteGroup ? '' : 'none';

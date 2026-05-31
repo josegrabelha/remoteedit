@@ -5,7 +5,7 @@
 
 ### Added
 - Added **Make a Copy...** for single remote files from the browser context menu.
-- Suggest copy names like `index_copy.html` and `archive_copy.tar.gz`, automatically incrementing to avoid existing names.
+- Added **Refresh** to the remote browser context menu for selected items and empty list space.
 
 ## [1.2.1] - 2026-05-27
 

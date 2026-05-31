@@ -511,6 +511,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextCreateFile" type="button" role="menuitem">Create new file</button>
   <button id="contextCreateDirectory" type="button" role="menuitem">Create new directory</button>
+  <div id="contextRefreshSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextRefresh" type="button" role="menuitem">Refresh</button>
   <div id="contextTransferSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextUpload" type="button" role="menuitem">Upload...</button>
   <button id="contextDownload" type="button" role="menuitem">Download...</button>
@@ -652,6 +654,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const contextRename = document.getElementById('contextRename');
   const contextDeleteSeparator = document.getElementById('contextDeleteSeparator');
   const contextDelete = document.getElementById('contextDelete');
+  const contextRefreshSeparator = document.getElementById('contextRefreshSeparator');
+  const contextRefresh = document.getElementById('contextRefresh');
 
   const permissionBackdrop = document.getElementById('permissionBackdrop');
   const permissionDialogTitle = document.getElementById('permissionDialogTitle');
@@ -1069,6 +1073,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const entries = getSelectedActionEntries();
     hideContextMenu();
     if (entries.length) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } });
+  });
+
+  contextRefresh.addEventListener('click', () => {
+    hideContextMenu();
+    listDirectory(currentPath.value || '/');
   });
 
   contextSetPermissions.addEventListener('click', () => {
@@ -1811,6 +1820,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     contextSetPermissions.style.display = hasItemGroup ? '' : 'none';
     contextDeleteSeparator.style.display = hasDeleteGroup ? '' : 'none';
     contextDelete.style.display = hasDeleteGroup ? '' : 'none';
+    contextRefreshSeparator.style.display = activeConnectionId ? '' : 'none';
+    contextRefresh.style.display = activeConnectionId ? '' : 'none';
   }
 
   function hideContextMenu() {

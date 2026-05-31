@@ -6,6 +6,7 @@
 ### Added
 - Added **Make a Copy...** for single remote files from the browser context menu.
 - Added **Refresh** to the remote browser context menu for selected items and empty list space.
+- Added **File Properties** for single remote items from the browser context menu.
 
 ## [1.2.1] - 2026-05-27
 

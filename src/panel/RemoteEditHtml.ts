@@ -195,6 +195,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .context-menu button.danger-text { color: var(--vscode-errorForeground); }
   .context-menu-separator { height: 1px; margin: 4px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); opacity: 0.9; }
 
+  .file-properties-backdrop { position: fixed; inset: 0; z-index: 210; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
+  .file-properties-backdrop.visible { display: flex; }
+  .file-properties-dialog { width: min(640px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
+  .file-properties-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .file-properties-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
+  .file-properties-path { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; font-size: 12px; }
+  .file-properties-body { padding: 16px 18px; overflow: auto; }
+  .file-properties-grid { display: grid; grid-template-columns: 150px minmax(0, 1fr); border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
+  .file-properties-label, .file-properties-value { min-width: 0; padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); line-height: 1.35; }
+  .file-properties-label { color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-weight: 600; }
+  .file-properties-value { overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .file-properties-label:last-of-type, .file-properties-value:last-of-type { border-bottom: 0; }
+  .file-properties-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
 
   .transfer-queue-backdrop { position: fixed; inset: 0; z-index: 220; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .transfer-queue-backdrop.visible { display: flex; }
@@ -506,6 +519,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     </div>
   </div>
 
+  <div id="filePropertiesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="filePropertiesTitle" aria-hidden="true">
+    <section class="file-properties-dialog">
+      <div class="file-properties-header">
+        <h2 id="filePropertiesTitle" class="file-properties-title">File Properties</h2>
+        <div id="filePropertiesPath" class="file-properties-path"></div>
+      </div>
+      <div class="file-properties-body">
+        <div id="filePropertiesGrid" class="file-properties-grid"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="filePropertiesCopyPathButton" type="button" class="secondary">Copy Path</button>
+        <button id="filePropertiesCloseButton" type="button">Close</button>
+      </div>
+    </section>
+  </div>
+
   <div id="entryContextMenu" class="context-menu" role="menu" aria-label="Entry actions">
   <button id="contextOpen" type="button" role="menuitem">View/Edit</button>
   <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
@@ -520,6 +549,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <button id="contextMakeCopy" type="button" role="menuitem">Make a Copy...</button>
   <button id="contextRename" type="button" role="menuitem">Rename</button>
   <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
+  <button id="contextFileProperties" type="button" role="menuitem">File Properties</button>
   <div id="contextDeleteSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextDelete" type="button" role="menuitem" class="danger-text">Delete</button>
   </div>
@@ -651,11 +681,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const contextItemSeparator = document.getElementById('contextItemSeparator');
   const contextMakeCopy = document.getElementById('contextMakeCopy');
   const contextSetPermissions = document.getElementById('contextSetPermissions');
+  const contextFileProperties = document.getElementById('contextFileProperties');
   const contextRename = document.getElementById('contextRename');
   const contextDeleteSeparator = document.getElementById('contextDeleteSeparator');
   const contextDelete = document.getElementById('contextDelete');
   const contextRefreshSeparator = document.getElementById('contextRefreshSeparator');
   const contextRefresh = document.getElementById('contextRefresh');
+
+  const filePropertiesBackdrop = document.getElementById('filePropertiesBackdrop');
+  const filePropertiesTitle = document.getElementById('filePropertiesTitle');
+  const filePropertiesPath = document.getElementById('filePropertiesPath');
+  const filePropertiesGrid = document.getElementById('filePropertiesGrid');
+  const filePropertiesCopyPathButton = document.getElementById('filePropertiesCopyPathButton');
+  const filePropertiesCloseButton = document.getElementById('filePropertiesCloseButton');
 
   const permissionBackdrop = document.getElementById('permissionBackdrop');
   const permissionDialogTitle = document.getElementById('permissionDialogTitle');
@@ -689,6 +727,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let busy = false;
   let statusCancelAction = '';
   let statusCopyFeedbackTimer = 0;
+  let filePropertiesDialogOpen = false;
+  let filePropertiesRemotePath = '';
   let permissionsDialogOpen = false;
   let transferQueueState = { current: null, pending: [], completed: [] };
   let transferQueueModalOpen = false;
@@ -829,6 +869,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         updateFilterClearButton();
         currentSort = { key: '', direction: '' };
         hideContextMenu();
+        hideFilePropertiesDialog();
         hidePathFavoritesPopover();
         renderSessionTabs();
         updateActiveSessionUi();
@@ -1033,6 +1074,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   currentPath.addEventListener('keydown', event => { if (event.key === 'Enter') openPath(currentPath.value); });
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && filePropertiesDialogOpen) {
+      hideFilePropertiesDialog();
+      return;
+    }
     if (event.key === 'Escape' && transferQueueModalOpen) {
       hideTransferQueueModal();
     }
@@ -1084,6 +1129,26 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const entry = getSelectedActionEntry();
     hideContextMenu();
     if (entry) vscode.postMessage({ type: 'requestSetPermissions', payload: actionPayload(entry) });
+  });
+
+  contextFileProperties.addEventListener('click', () => {
+    const entry = getSelectedActionEntry();
+    hideContextMenu();
+    if (entry) showFilePropertiesDialog(entry);
+  });
+
+  filePropertiesCloseButton.addEventListener('click', () => {
+    hideFilePropertiesDialog();
+  });
+
+  filePropertiesCopyPathButton.addEventListener('click', () => {
+    if (filePropertiesRemotePath) copyRemotePath(filePropertiesRemotePath);
+  });
+
+  filePropertiesBackdrop.addEventListener('mousedown', event => {
+    if (event.target === filePropertiesBackdrop) {
+      hideFilePropertiesDialog();
+    }
   });
 
   contextMakeCopy.addEventListener('click', () => {
@@ -1429,6 +1494,133 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
 
+
+  function showFilePropertiesDialog(entry) {
+    if (!entry) return;
+
+    filePropertiesDialogOpen = true;
+    filePropertiesRemotePath = entry.path || '';
+    const active = getActiveSession();
+    const entryType = getEffectiveEntryType(entry);
+    const isDirectory = entryType === 'directory';
+    const isFile = entryType === 'file';
+    const isLink = entry.type === 'link';
+    const title = isDirectory
+      ? 'Directory Properties'
+      : isLink
+        ? 'Link Properties'
+        : isFile
+          ? 'File Properties'
+          : 'Item Properties';
+    const pathLabel = isDirectory
+      ? 'Remote directory'
+      : isLink
+        ? 'Remote link'
+        : isFile
+          ? 'Remote file'
+          : 'Remote path';
+
+    filePropertiesTitle.textContent = title;
+    filePropertiesPath.textContent = entry.path || '';
+
+    const rows = [
+      ['Name', entry.name || '—'],
+      [pathLabel, entry.path || '—'],
+      ['Type', formatPropertyType(entry)]
+    ];
+
+    if (!isDirectory) {
+      rows.push(['Size', formatSize(entry.size)]);
+    }
+
+    rows.push(
+      ['Modified', formatDate(entry.modifyTime) || '—'],
+      ['Permissions', formatPermissionsValue(entry.permissions)],
+      ['Owner', formatMetadata(entry.owner) || '—'],
+      ['Group', formatMetadata(entry.group) || '—']
+    );
+
+    if (isLink && entry.linkTarget) {
+      rows.push(['Symlink target', entry.linkTarget]);
+    }
+
+    if (isLink && entry.effectiveType) {
+      rows.push(['Resolved type', capitalizeText(entry.effectiveType)]);
+    }
+
+    rows.push(
+      ['Connection', active ? active.name : '—'],
+      ['Host', active ? formatSessionTarget(active) : '—'],
+      ['Sudo mode', active && active.sudoModeEnabled ? 'On' : 'Off']
+    );
+
+    filePropertiesGrid.innerHTML = rows.map(row => {
+      return '<div class="file-properties-label">' + escapeHtml(row[0]) + '</div>'
+        + '<div class="file-properties-value">' + escapeHtml(row[1] || '—') + '</div>';
+    }).join('');
+
+    filePropertiesCopyPathButton.disabled = !filePropertiesRemotePath;
+    filePropertiesBackdrop.classList.add('visible');
+    filePropertiesBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => filePropertiesCloseButton.focus(), 0);
+  }
+
+  function hideFilePropertiesDialog() {
+    if (!filePropertiesBackdrop) return;
+    filePropertiesDialogOpen = false;
+    filePropertiesRemotePath = '';
+    filePropertiesBackdrop.classList.remove('visible');
+    filePropertiesBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function formatPropertyType(entry) {
+    if (!entry) return 'Unknown';
+    if (entry.type === 'link') {
+      const resolvedType = entry.effectiveType ? ' (' + capitalizeText(entry.effectiveType) + ')' : '';
+      return 'Symbolic link' + resolvedType;
+    }
+    return capitalizeText(entry.type || 'unknown');
+  }
+
+  function formatPermissionsValue(permissions) {
+    const text = String(permissions || '').trim();
+    if (!text) return '—';
+    const mode = permissionModeFromSymbolic(text);
+    return mode ? text + ' (' + mode + ')' : text;
+  }
+
+  function permissionModeFromSymbolic(permissions) {
+    const text = String(permissions || '').trim();
+    if (text.length < 10) return '';
+
+    const chars = text.slice(-9);
+    let special = 0;
+    let owner = 0;
+    let group = 0;
+    let other = 0;
+
+    if (chars[0] === 'r') owner += 4;
+    if (chars[1] === 'w') owner += 2;
+    if (chars[2] === 'x' || chars[2] === 's') owner += 1;
+    if (chars[2] === 's' || chars[2] === 'S') special += 4;
+
+    if (chars[3] === 'r') group += 4;
+    if (chars[4] === 'w') group += 2;
+    if (chars[5] === 'x' || chars[5] === 's') group += 1;
+    if (chars[5] === 's' || chars[5] === 'S') special += 2;
+
+    if (chars[6] === 'r') other += 4;
+    if (chars[7] === 'w') other += 2;
+    if (chars[8] === 'x' || chars[8] === 't') other += 1;
+    if (chars[8] === 't' || chars[8] === 'T') special += 1;
+
+    return (special ? String(special) : '') + String(owner) + String(group) + String(other);
+  }
+
+  function capitalizeText(value) {
+    const text = String(value || 'unknown');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
 
   function showPermissionsDialog(options) {
     permissionsDialogOpen = true;
@@ -1818,6 +2010,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     contextMakeCopy.style.display = canMakeCopy ? '' : 'none';
     contextRename.style.display = hasItemGroup ? '' : 'none';
     contextSetPermissions.style.display = hasItemGroup ? '' : 'none';
+    contextFileProperties.style.display = hasItemGroup ? '' : 'none';
     contextDeleteSeparator.style.display = hasDeleteGroup ? '' : 'none';
     contextDelete.style.display = hasDeleteGroup ? '' : 'none';
     contextRefreshSeparator.style.display = activeConnectionId ? '' : 'none';

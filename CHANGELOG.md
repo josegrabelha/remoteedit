@@ -11,6 +11,9 @@
 - Added a VS Code-style clickable breadcrumb inside the Remote Path bar.
 - Added breadcrumb directory dropdowns for quick navigation between remote folders.
 
+### Improved
+- Polished context menus, file filtering, and listing UI.
+
 ## [1.2.1] - 2026-05-27
 
 ### Changed

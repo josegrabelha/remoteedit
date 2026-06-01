@@ -127,6 +127,51 @@ export class ConnectionManager {
     return this.updateFavoriteRemotePath(profileId, remotePath, false);
   }
 
+
+
+  async renameProfile(profileId: string, name: string): Promise<ConnectionProfile> {
+    const trimmedName = String(name || '').trim();
+
+    if (!profileId) {
+      throw new Error('Select a saved connection to rename.');
+    }
+
+    if (!trimmedName) {
+      throw new Error('Connection name is required.');
+    }
+
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    let updatedProfile: ConnectionProfile | undefined;
+
+    const nextProfiles = storedProfiles.map(storedProfile => {
+      const profile = this.normalizeStoredProfile(storedProfile);
+
+      if (profile.id !== profileId) {
+        return profile;
+      }
+
+      updatedProfile = {
+        ...profile,
+        name: trimmedName,
+        updatedAt: Date.now()
+      };
+
+      return updatedProfile;
+    });
+
+    if (!updatedProfile) {
+      throw new Error('The selected saved connection no longer exists.');
+    }
+
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+
+    return {
+      ...updatedProfile,
+      hasSavedPassword: Boolean(await this.context.secrets.get(secretKey(updatedProfile.id, 'password'))),
+      hasSavedPassphrase: Boolean(await this.context.secrets.get(secretKey(updatedProfile.id, 'passphrase')))
+    };
+  }
+
   async deleteProfile(profileId: string): Promise<void> {
     const profiles = await this.listProfiles();
     const nextProfiles = profiles.filter(profile => profile.id !== profileId);

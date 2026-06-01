@@ -5,6 +5,7 @@ export interface RemoteEditPanelMessageHandlers {
   saveConnection(payload: any): Promise<void>;
   pickPrivateKeyPath(): Promise<void>;
   deleteConnection(payload: any): Promise<void>;
+  renameConnection(payload: any): Promise<void>;
   connect(payload: any): Promise<void>;
   cancelConnection(): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
@@ -36,6 +37,7 @@ export interface RemoteEditPanelMessageHandlers {
   showOutput(): void;
   copyRemotePath(payload: any): Promise<void>;
   copyStatus(payload: any): Promise<void>;
+  confirmDialogResponse(payload: any): void;
   log(message: string): void;
   unknown(messageType: string): void;
 }

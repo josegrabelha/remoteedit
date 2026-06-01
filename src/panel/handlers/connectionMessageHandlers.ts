@@ -18,6 +18,9 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.DeleteConnection:
       await handlers.deleteConnection(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RenameConnection:
+      await handlers.renameConnection(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.Connect:
       await handlers.connect(message.payload);
       return true;

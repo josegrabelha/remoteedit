@@ -72,6 +72,7 @@ export interface ActiveConnection {
   port: number;
   username: string;
   authType: AuthType;
+  privateKeyPath?: string;
   startPath: string;
   keepAlive: boolean;
 }
@@ -200,6 +201,7 @@ export class SftpSessionManager {
       port: options.port,
       username: options.username,
       authType: options.authType,
+      privateKeyPath: options.privateKeyPath,
       startPath,
       keepAlive: options.keepAlive !== false
     };

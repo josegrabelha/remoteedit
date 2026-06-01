@@ -46,6 +46,15 @@ interface TransferSummary {
   failedItems: string[];
 }
 
+interface ConfirmDialogOptions {
+  title: string;
+  message: string;
+  details?: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}
+
 interface AggregateTransferState {
   completedBytes: number;
   totalBytes: number;
@@ -131,8 +140,9 @@ export class RemoteEditPanel {
   private runningTransfers = 0;
   private readonly maxConcurrentTransfers = 1;
   private activeConnectionCancellationSource: vscode.CancellationTokenSource | undefined;
-  private readonly transferCancelStatusBarItem: vscode.StatusBarItem;
   private pendingPermissionsDialogResolve: ((mode?: string) => void) | undefined;
+  private readonly pendingConfirmDialogs = new Map<string, (confirmed: boolean) => void>();
+  private confirmDialogSequence = 0;
 
   static open(
     context: vscode.ExtensionContext,
@@ -184,13 +194,7 @@ export class RemoteEditPanel {
   ) {
     this.state.initializeFromSessions(this.sessions.listConnections());
 
-    this.transferCancelStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1000);
-    this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
-    this.transferCancelStatusBarItem.tooltip = 'Cancel the active RemoteEdit transfer';
-    this.transferCancelStatusBarItem.command = 'remoteedit.cancelTransfer';
-
     this.disposables.push(
-      this.transferCancelStatusBarItem,
       vscode.commands.registerCommand('remoteedit.cancelTransfer', () => this.cancelActiveTransfer())
     );
 
@@ -212,6 +216,7 @@ export class RemoteEditPanel {
     this.panel = undefined;
     this.disposePanelDisposables();
     this.resolvePendingPermissionsDialog();
+    this.resolvePendingConfirmDialogs();
   }
 
   private disposePanelDisposables(): void {
@@ -233,6 +238,7 @@ export class RemoteEditPanel {
         saveConnection: payload => this.saveConnection(payload),
         pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
         deleteConnection: payload => this.deleteConnection(payload),
+        renameConnection: payload => this.renameConnection(payload),
         connect: payload => this.connect(payload),
         cancelConnection: () => this.cancelConnection(),
         disconnect: connectionId => this.disconnect(connectionId),
@@ -264,6 +270,7 @@ export class RemoteEditPanel {
         showOutput: () => this.output.show(true),
         copyRemotePath: payload => this.copyRemotePath(payload),
         copyStatus: payload => this.copyStatus(payload),
+        confirmDialogResponse: payload => this.handleConfirmDialogResponse(payload),
         log: logMessage => this.logDebug(logMessage),
         unknown: messageType => this.postError(`Unknown webview message: ${messageType}`)
       });
@@ -373,11 +380,11 @@ export class RemoteEditPanel {
   }
 
   private async saveConnection(payload: any): Promise<void> {
-    this.postBusy(true, 'Saving bookmarked connection...');
+    this.postBusy(true, 'Saving saved connection...');
     const profile = await this.connectionManager.saveProfile(payload || {});
     await this.sendProfiles(profile.id);
-    this.postBusy(false, `Saved bookmarked connection: ${profile.name}.`);
-    this.logInfo('Saved bookmarked connection.', { Name: profile.name, Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}` });
+    this.postBusy(false, `Saved connection: ${profile.name}.`);
+    this.logInfo('Saved connection.', { Name: profile.name, Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}` });
   }
 
   private async pickPrivateKeyPath(): Promise<void> {
@@ -395,32 +402,46 @@ export class RemoteEditPanel {
     }
   }
 
+
+  private async renameConnection(payload: any): Promise<void> {
+    const profileId = String(payload?.id || '').trim();
+    const name = String(payload?.name || '').trim();
+
+    this.postBusy(true, 'Renaming saved connection...');
+    const profile = await this.connectionManager.renameProfile(profileId, name);
+    await this.sendProfiles(profile.id);
+    this.postBusy(false, `Renamed saved connection: ${profile.name}.`);
+    this.logInfo('Renamed saved connection.', { Name: profile.name, ProfileId: profileId });
+  }
+
   private async deleteConnection(payload: any): Promise<void> {
     const profileId = String(payload?.id || '').trim();
 
     if (!profileId) {
-      throw new Error('Select a bookmarked connection to remove.');
+      throw new Error('Select a saved connection to remove.');
     }
 
     const profile = await this.connectionManager.getProfile(profileId);
 
     if (!profile) {
       await this.sendProfiles();
-      throw new Error('The selected bookmarked connection no longer exists.');
+      throw new Error('The selected saved connection no longer exists.');
     }
 
-    const confirmation = await vscode.window.showWarningMessage(
-      `Remove bookmarked connection "${profile.name}"? Stored secrets for this connection will also be removed.`,
-      { modal: true },
-      'Remove'
-    );
+    const confirmed = await this.showConfirmDialog({
+      title: 'Remove saved connection?',
+      message: `Remove saved connection "${profile.name}"? Stored secrets for this profile will also be removed.`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+      danger: true
+    });
 
-    if (confirmation !== 'Remove') {
-      this.postBusy(false, 'Remove canceled.');
+    if (!confirmed) {
+      this.postStatus('Remove canceled.');
       return;
     }
 
-    this.postBusy(true, 'Removing bookmarked connection...');
+    this.postBusy(true, 'Removing saved connection...');
 
     if (this.sessions.hasConnection(profileId)) {
       await this.disconnect(profileId);
@@ -429,8 +450,8 @@ export class RemoteEditPanel {
     await this.connectionManager.deleteProfile(profileId);
     await this.sendProfiles('');
     this.postMessage(RemoteEditOutboundMessageType.ConnectionFormCleared, {});
-    this.postBusy(false, `Removed bookmarked connection: ${profile.name}.`);
-    this.logInfo('Removed bookmarked connection.', { Name: profile.name, ProfileId: profileId });
+    this.postBusy(false, `Removed saved connection: ${profile.name}.`);
+    this.logInfo('Removed saved connection.', { Name: profile.name, ProfileId: profileId });
   }
 
   private async connect(payload: any): Promise<void> {
@@ -960,13 +981,16 @@ export class RemoteEditPanel {
         throw new Error(`A remote ${existingTarget.type} already exists at ${newPath}. Choose another name.`);
       }
 
-      const confirmation = await vscode.window.showWarningMessage(
-        `Overwrite remote file '${trimmedName}'?`,
-        { modal: true, detail: newPath },
-        'Overwrite'
-      );
+      const confirmed = await this.showConfirmDialog({
+        title: 'Overwrite remote file?',
+        message: 'A remote file with this name already exists. Do you want to overwrite it?',
+        details: newPath,
+        confirmLabel: 'Overwrite',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
 
-      if (confirmation !== 'Overwrite') {
+      if (!confirmed) {
         this.postStatus('Make a copy cancelled.');
         return;
       }
@@ -1167,13 +1191,16 @@ export class RemoteEditPanel {
     }
 
     const kind = entryType === 'directory' ? 'folder' : entryType === 'file' ? 'file' : 'item';
-    const confirmation = await vscode.window.showWarningMessage(
-      `Delete remote ${kind} '${entryName}'? This action cannot be undone.`,
-      { modal: true, detail: remotePath },
-      'Delete'
-    );
+    const confirmed = await this.showConfirmDialog({
+      title: 'Delete remote item?',
+      message: `Delete remote ${kind} '${entryName}'? This action cannot be undone.`,
+      details: remotePath,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      danger: true
+    });
 
-    if (confirmation !== 'Delete') {
+    if (!confirmed) {
       this.postStatus('Delete cancelled.');
       return;
     }
@@ -1207,13 +1234,16 @@ export class RemoteEditPanel {
     }
 
     const detail = buildDeleteEntriesConfirmationDetail(entries);
-    const confirmation = await vscode.window.showWarningMessage(
-      `Delete ${entries.length} remote items? This action cannot be undone.`,
-      { modal: true, detail },
-      'Delete'
-    );
+    const confirmed = await this.showConfirmDialog({
+      title: 'Delete remote items?',
+      message: `Delete ${entries.length} remote items? This action cannot be undone.`,
+      details: detail,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      danger: true
+    });
 
-    if (confirmation !== 'Delete') {
+    if (!confirmed) {
       this.postStatus('Delete cancelled.');
       return;
     }
@@ -1955,12 +1985,7 @@ export class RemoteEditPanel {
   }
 
   private updateActiveTransferStatusBarItem(): void {
-    if (!this.activeTransferCancellationSource) {
-      return;
-    }
-
-    const queuedSuffix = this.transferQueue.length ? ` (${this.formatQueuedTransferCount()})` : '';
-    this.transferCancelStatusBarItem.text = `$(x) Cancel Transfer${queuedSuffix}`;
+    // Transfer cancellation is available from the Transfer Queue modal.
   }
 
   private clearQueuedTransfersForConnection(connectionId: string): number {
@@ -2042,10 +2067,7 @@ export class RemoteEditPanel {
     this.activeTransferCancellationSource = source;
     this.activeTransferConnectionId = connectionId;
     this.activeTransferCancelling = false;
-    this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
-    this.transferCancelStatusBarItem.tooltip = `Cancel the active ${operation.toLowerCase()} transfer`;
     this.updateActiveTransferStatusBarItem();
-    this.transferCancelStatusBarItem.show();
     this.postTransferQueueState();
 
     return source;
@@ -2061,8 +2083,6 @@ export class RemoteEditPanel {
     this.activeTransferCancellationSource = undefined;
     this.activeTransferConnectionId = undefined;
     this.activeTransferCancelling = false;
-    this.transferCancelStatusBarItem.text = '$(x) Cancel Transfer';
-    this.transferCancelStatusBarItem.hide();
     activeSource?.dispose();
     this.postTransferQueueState();
   }
@@ -2457,6 +2477,47 @@ export class RemoteEditPanel {
     this.logInfo(message, { Operation: operation, ...details });
   }
 
+  private async showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
+    if (this.isDisposed || !this.panel) {
+      return false;
+    }
+
+    const requestId = `${Date.now()}-${++this.confirmDialogSequence}`;
+
+    return new Promise<boolean>(resolve => {
+      this.pendingConfirmDialogs.set(requestId, resolve);
+      this.postMessage(RemoteEditOutboundMessageType.ShowConfirmDialog, {
+        requestId,
+        title: options.title,
+        message: options.message,
+        details: options.details || '',
+        confirmLabel: options.confirmLabel,
+        cancelLabel: options.cancelLabel || 'Cancel',
+        danger: Boolean(options.danger)
+      });
+    });
+  }
+
+  private handleConfirmDialogResponse(payload: any): void {
+    const requestId = String(payload?.requestId || '');
+    const resolve = this.pendingConfirmDialogs.get(requestId);
+
+    if (!resolve) {
+      return;
+    }
+
+    this.pendingConfirmDialogs.delete(requestId);
+    resolve(Boolean(payload?.confirmed));
+  }
+
+  private resolvePendingConfirmDialogs(): void {
+    for (const resolve of this.pendingConfirmDialogs.values()) {
+      resolve(false);
+    }
+
+    this.pendingConfirmDialogs.clear();
+  }
+
   private postStatus(message: string): void {
     this.postMessage(RemoteEditOutboundMessageType.Status, { message });
   }
@@ -2499,6 +2560,7 @@ export class RemoteEditPanel {
     RemoteEditPanel.currentPanel = undefined;
 
     this.resolvePendingPermissionsDialog();
+    this.resolvePendingConfirmDialogs();
     this.clearAllQueuedTransfers();
     this.clearAllCompletedTransfers();
     this.endManualTransfer();

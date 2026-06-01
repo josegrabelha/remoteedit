@@ -15,9 +15,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   input, textarea { user-select: text; -webkit-user-select: text; }
   .page { height: 100vh; padding: 16px 6px; display: flex; min-width: 0; }
   .shell { width: 100%; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .hero { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; padding-bottom: 13px; border-bottom: 1px solid var(--vscode-panel-border); flex: 0 0 auto; min-width: 0; }
+  .hero { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid var(--vscode-panel-border); flex: 0 0 auto; min-width: 0; }
   .eyebrow { color: var(--vscode-descriptionForeground); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 7px; }
-  h1 { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 650; }
+  h1 { margin: 0; font-size: 23px; line-height: 1.15; font-weight: 650; }
   .description { margin: 8px 0 0; color: var(--vscode-descriptionForeground); max-width: 920px; line-height: 1.45; }
   .session-strip { display: flex; gap: 6px; align-items: center; min-height: 30px; margin-top: 10px; overflow-x: auto; padding: 1px 0; flex: 0 0 auto; }
   .session-label { color: var(--vscode-descriptionForeground); font-size: 12px; margin-right: 2px; white-space: nowrap; }
@@ -72,7 +72,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .card-subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 4px; }
   .card-body { padding: 14px; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
   .browser-card .card-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 10px; min-width: 0; }
+  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 9px; min-width: 0; }
   .full { grid-column: 1 / -1; }
   .keepalive-row { margin-top: 8px; margin-bottom: 0; }
   label { display: block; font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 5px; }
@@ -85,7 +85,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .input-icon-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .input-icon-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
   .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-  .connection-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: center; width: 100%; min-width: 0; }
+  .connection-actions { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: center; width: 100%; min-width: 0; margin-top: 8px; }
   .connection-actions button { width: 100%; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
   button { min-height: 31px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 6px 12px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
   button.icon-only { min-width: 32px; width: 32px; height: 32px; min-height: 32px; padding: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
@@ -104,17 +104,42 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   button.secondary:disabled { background: var(--vscode-button-secondaryBackground, var(--vscode-input-background)); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border-color: var(--vscode-button-border, var(--vscode-input-border, var(--vscode-panel-border))); }
   button.danger { background: var(--vscode-inputValidation-errorBackground, var(--vscode-button-secondaryBackground)); color: var(--vscode-inputValidation-errorForeground, var(--vscode-button-secondaryForeground)); }
   button.danger:hover:not(:disabled) { background: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); color: var(--vscode-inputValidation-errorForeground, var(--vscode-button-foreground)); }
-  .profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: end; margin-bottom: 12px; min-width: 0; }
-  .profile-row .tooltip-anchor, .profile-row .has-tooltip { align-self: end; }
-  .connection-name-row { grid-column: 1 / -1; }
-  .connection-config-divider { grid-column: 1 / -1; height: 1px; background: var(--vscode-panel-border); margin: 2px 0 4px; }
+  .profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: end; margin-bottom: 12px; min-width: 0; }
+  .profile-picker-field { min-width: 0; }
+  .profile-select-native { display: none; }
+  .profile-picker { position: relative; min-width: 0; }
+  .profile-dropdown-button { width: 100%; height: 31px; min-height: 31px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 5px 7px 5px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); text-align: left; }
+  .profile-dropdown-button:hover:not(:disabled) { background: var(--vscode-input-background); border-color: var(--vscode-focusBorder); }
+  .profile-dropdown-button:focus { outline: none; border-color: var(--vscode-focusBorder); }
+  .profile-dropdown-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .profile-dropdown-chevron { width: 15px; height: 15px; display: block; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.78; transition: transform 120ms ease; }
+  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
+  .profile-dropdown-menu { position: absolute; z-index: 130; top: calc(100% + 4px); left: 0; right: 0; display: none; width: 100%; max-width: 100%; box-sizing: border-box; max-height: 260px; overflow-y: auto; overflow-x: hidden; padding: 5px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+  .profile-dropdown-filter { padding: 2px 2px 5px; position: sticky; top: -5px; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
+  .profile-dropdown-filter input { width: 100%; height: 28px; box-sizing: border-box; padding: 4px 7px; }
+  .profile-dropdown-empty { color: var(--vscode-descriptionForeground); padding: 10px 7px; font-size: 12px; }
+  .profile-picker.open .profile-dropdown-menu, .auth-picker.open .profile-dropdown-menu { display: block; }
+  .auth-select-native { display: none; }
+  .auth-picker { position: relative; min-width: 0; }
+  .profile-dropdown-item { width: 100%; min-height: 34px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; align-items: center; padding: 6px 7px; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
+  .profile-dropdown-item:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+  .profile-dropdown-item.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  .profile-dropdown-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .profile-dropdown-meta { color: var(--vscode-descriptionForeground); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .profile-dropdown-item.selected .profile-dropdown-meta { color: inherit; opacity: 0.78; }
+  .profile-dropdown-separator { height: 1px; margin: 5px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); }
+  .manage-profiles-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+  .manage-profiles-button svg { width: 24px; height: 24px; display: block; fill: currentColor; flex: 0 0 auto; }
+  .connection-details-title { margin: 2px 0 10px; padding-top: 12px; border-top: 1px solid var(--vscode-panel-border); color: var(--vscode-foreground); font-size: 12px; font-weight: 650; }
+  .connection-section-title { grid-column: 1 / -1; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; letter-spacing: 0.03em; text-transform: uppercase; margin: 4px 0 -2px; }
+  .connection-section-title.actions-title { margin-top: 14px; }
   .divider { height: 1px; background: var(--vscode-panel-border); margin: 14px 0; }
   .hint-list { margin: 14px 0 0; padding-left: 17px; color: var(--vscode-descriptionForeground); line-height: 1.5; font-size: 12px; }
   .auth-block { display: none; }
   .auth-block.visible { display: block; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--vscode-foreground); font-size: 12px; }
   .checkbox-row input { width: auto; height: auto; margin: 0; }
-  .credential-state { margin-top: 6px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.35; }
+  .credential-state { margin-top: 3px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.72; }
   .credential-state.saved { color: var(--vscode-testing-iconPassed, var(--vscode-descriptionForeground)); }
   .credential-state.not-saved { color: var(--vscode-descriptionForeground); }
   .browser-header { display: block; }
@@ -135,15 +160,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .remote-path-box input { padding-right: 66px; }
   .remote-path-box.path-breadcrumb-mode input, .remote-path-box.path-breadcrumb-mode input:disabled { color: transparent !important; caret-color: transparent; }
   .remote-path-box.path-breadcrumb-mode input::selection { background: transparent; color: transparent; }
-  .remote-path-inline-breadcrumb { position: absolute; z-index: 1; top: 1px; bottom: 1px; left: 5px; right: 66px; display: none; align-items: center; gap: 4px; padding: 0 3px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 28px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; cursor: text; }
+  .remote-path-inline-breadcrumb { position: absolute; z-index: 1; top: 1px; bottom: 1px; left: 5px; right: 66px; display: none; align-items: center; gap: 1px; padding: 0 2px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 28px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; cursor: text; }
   .remote-path-inline-breadcrumb::-webkit-scrollbar { display: none; }
   .remote-path-box.path-breadcrumb-mode .remote-path-inline-breadcrumb { display: flex; }
   .remote-path-inline-breadcrumb button { min-height: 22px; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-foreground); font-size: 12px; line-height: 22px; white-space: nowrap; cursor: pointer; }
   .remote-path-inline-breadcrumb button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .remote-path-inline-breadcrumb button.current { font-weight: 600; cursor: default; }
-  .remote-path-breadcrumb-separator { flex: 0 0 24px; width: 24px; height: 24px; min-width: 24px; min-height: 24px; padding: 0; margin: 0 -1px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground); opacity: 0.82; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; vertical-align: middle; }
+  .remote-path-breadcrumb-separator { flex: 0 0 16px; width: 16px; height: 24px; min-width: 16px; min-height: 24px; padding: 0; margin: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground); opacity: 0.82; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; vertical-align: middle; }
   .remote-path-breadcrumb-separator:hover:not(:disabled), .remote-path-breadcrumb-separator.open { opacity: 1; color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
-  .remote-path-breadcrumb-separator-icon { width: 14px; height: 14px; display: block; transform-origin: 50% 50%; transition: transform 120ms ease-out; pointer-events: none; }
+  .remote-path-breadcrumb-separator-icon { width: 14px; height: 14px; display: block; flex: 0 0 14px; transform-origin: 50% 50%; transition: transform 120ms ease-out; pointer-events: none; }
   .remote-path-breadcrumb-separator-icon path { fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
   .remote-path-breadcrumb-separator.open .remote-path-breadcrumb-separator-icon { transform: rotate(90deg); }
   .remote-path-breadcrumb-segment { display: inline-flex; align-items: center; min-width: 0; border-radius: 3px; }
@@ -183,7 +208,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .transfer-queue-button.has-pending .transfer-queue-count { display: inline-flex; }
   .filter-box { position: relative; width: 180px; min-width: 140px; }
   .filter-input { width: 100%; padding-right: 28px; }
-  .filter-clear-button { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-foreground); opacity: 0; visibility: hidden; cursor: pointer; font-size: 16px; line-height: 20px; }
+  .filter-clear-button { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-foreground); opacity: 0; visibility: hidden; cursor: pointer; line-height: 0; }
+  .filter-clear-button svg { display: block; width: 11px; height: 11px; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
   .filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
   .filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .filter-clear-button:disabled { cursor: default; }
@@ -191,7 +217,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .table-wrap.privileged-session { border-color: color-mix(in srgb, #7a2f2f 62%, var(--vscode-panel-border)); box-shadow: 0 0 0 1px color-mix(in srgb, #7a2f2f 18%, transparent); }
   table { width: 100%; min-width: 984px; border-collapse: collapse; table-layout: fixed; }
   th, td { padding: 6px 10px; line-height: 1.25; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  th { position: sticky; top: 0; background: var(--vscode-sideBar-background); font-weight: 600; z-index: 1; user-select: none; }
+  th { position: sticky; top: 0; background: var(--vscode-sideBar-background); font-weight: 500; z-index: 1; user-select: none; }
   th.sortable { cursor: pointer; }
   th.sortable:hover { background: var(--vscode-list-hoverBackground); }
   th.size, td.size { text-align: right; }
@@ -217,7 +243,6 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .context-menu.visible { display: block; }
   .context-menu button { width: 100%; min-height: 28px; padding: 5px 9px; text-align: left; background: transparent; color: inherit; border-radius: 3px; }
   .context-menu button:hover:not(:disabled) { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
-  .context-menu button.danger-text { color: var(--vscode-errorForeground); }
   .context-menu-separator { height: 1px; margin: 4px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); opacity: 0.9; }
 
   .file-properties-backdrop { position: fixed; inset: 0; z-index: 210; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
@@ -228,6 +253,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .file-properties-path { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; font-size: 12px; }
   .file-properties-body { padding: 16px 18px; overflow: auto; }
   .file-properties-grid { display: grid; grid-template-columns: 150px minmax(0, 1fr); border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
+  .manage-profiles-dialog { width: min(640px, calc(100vw - 48px)); height: min(560px, calc(100vh - 48px)); max-height: calc(100vh - 48px); }
+  .manage-profiles-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .manage-profiles-filter { flex: 0 0 auto; margin-bottom: 10px; }
+  .manage-profiles-filter input { width: 100%; box-sizing: border-box; }
+  .manage-profiles-list { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 6px; overflow: auto; padding-right: 0; }
+  .manage-profiles-empty { color: var(--vscode-descriptionForeground); padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .manage-profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .manage-profile-main { min-width: 0; }
+  .manage-profile-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .manage-profile-meta { color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.72; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .manage-profile-rename-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; grid-column: 1 / -1; }
+  .manage-profile-rename-form input { height: 29px; }
+  .manage-profile-row button { min-height: 32px; padding: 4px 8px; }
+  .manage-profile-icon-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+  .manage-profile-icon-button svg { width: 22px; height: 22px; display: block; fill: currentColor; stroke: none; flex: 0 0 auto; }
   .file-properties-label, .file-properties-value { min-width: 0; padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); line-height: 1.35; }
   .file-properties-label { color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-weight: 600; }
   .file-properties-value { overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
@@ -259,6 +299,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .transfer-queue-actions button { min-height: 27px; padding: 4px 9px; }
   .transfer-queue-footer { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
 
+  .confirm-dialog-backdrop { position: fixed; inset: 0; z-index: 240; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
+  .confirm-dialog-backdrop.visible { display: flex; }
+  .confirm-dialog { width: min(520px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
+  .confirm-dialog-header { padding: 16px 18px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .confirm-dialog-title { margin: 0; font-size: 18px; font-weight: 650; }
+  .confirm-dialog-body { padding: 15px 18px; display: grid; gap: 12px; overflow: auto; }
+  .confirm-dialog-message { margin: 0; line-height: 1.45; }
+  .confirm-dialog-details { margin: 0; padding: 10px 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+
   .permission-backdrop { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .permission-backdrop.visible { display: flex; }
   .permission-dialog { width: min(620px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
@@ -283,16 +333,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .permission-current { color: var(--vscode-descriptionForeground); font-size: 12px; }
   .permission-validation { min-height: 18px; padding: 0 12px 12px; color: var(--vscode-errorForeground); }
   .permission-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
-  .statusbar { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; flex: 0 0 auto; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
+  .statusbar { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; flex: 0 0 auto; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
   .statusbar.error { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
   .statusbar.busy { color: var(--vscode-progressBar-background, var(--vscode-foreground)); }
   .status-main { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
   .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .status-action-button { align-self: center; min-height: 26px; height: 26px; padding: 0 8px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid var(--vscode-panel-border); background: transparent; color: inherit; opacity: 0.9; line-height: 1; }
+  .status-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+  .status-action-button { align-self: center; min-height: 26px; height: 26px; padding: 0 8px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid var(--vscode-panel-border); background: transparent; color: inherit; opacity: 0.9; line-height: 1; white-space: nowrap; }
   .status-action-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); border-color: var(--vscode-focusBorder, var(--vscode-button-border, var(--vscode-panel-border))); }
   .status-action-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-  .status-cancel-button { display: none; padding: 0 9px; }
-  .statusbar.cancelable .status-cancel-button { display: inline-flex; }
+  .status-cancel-button[hidden] { display: none; }
   .status-copy-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center; height: 26px; min-height: 26px; }
   .status-copy-button { width: 28px; min-width: 28px; padding: 0; }
   .status-copy-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
@@ -305,7 +355,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   code { font-family: var(--vscode-editor-font-family); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout, .layout.connection-collapsed { grid-template-columns: 1fr; flex: 0 0 auto; } .connection-rail { left: 0; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .browser-header { align-items: flex-start; flex-direction: column; } }
-  @media (max-height: 720px) and (min-width: 981px) { h1 { font-size: 22px; } .description, .hint-list { display: none; } .card-header, .card-body, .browser-open-section, .browser-title-section { padding: 11px 12px; } }
+  @media (max-height: 720px) and (min-width: 981px) { h1 { font-size: 20px; } .description, .hint-list { display: none; } .card-header, .card-body, .browser-open-section, .browser-title-section { padding: 11px 12px; } }
   @media (max-width: 760px) { .open-connections-row { align-items: flex-start; flex-direction: column; gap: 6px; } .browser-session-strip { width: 100%; } }
   </style>
 </head>
@@ -322,8 +372,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       <aside class="card connection-card">
         <div class="card-header connection-card-header">
           <div class="connection-card-title-text">
-            <div class="card-title">Connection</div>
-            <div class="card-subtitle">Bookmarked and quick connections</div>
+            <div class="card-title">Connections</div>
+            <div class="card-subtitle">Connect quickly or use a saved profile</div>
           </div>
         </div>
         <div class="connection-panel-handle connection-collapse-handle" aria-label="Connection panel expanded">
@@ -335,35 +385,51 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         </div>
         <div class="card-body">
           <div class="profile-row">
-            <div>
-              <label for="profileSelect">Bookmarked connections</label>
-              <select id="profileSelect"><option value="">New unsaved connection</option></select>
+            <div class="profile-picker-field">
+              <label for="profileDropdownButton">Connection profile</label>
+              <div class="profile-picker">
+                <button id="profileDropdownButton" type="button" class="profile-dropdown-button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="profileDropdownLabel" class="profile-dropdown-label">New unsaved connection</span>
+                  <svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg>
+                </button>
+                <div id="profileDropdownMenu" class="profile-dropdown-menu" role="listbox" aria-label="Connection profiles"></div>
+              </div>
+              <select id="profileSelect" class="profile-select-native" aria-hidden="true" tabindex="-1"><option value="">New unsaved connection</option></select>
+              <input id="profileName" type="hidden" autocomplete="off" />
             </div>
-            <span class="tooltip-anchor tooltip-above" data-tooltip="New bookmark">
-              <button id="newProfileButton" type="button" class="secondary icon-only profile-icon-button" aria-label="New bookmark"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M240-180v-555.38q0-27.62 18.5-46.12Q277-800 304.62-800H520v40H304.62q-9.24 0-16.93 7.69-7.69 7.69-7.69 16.93V-242l200-86 200 86v-278h40v340L480-283.08 240-180Zm40-580h240-240Zm400 160v-80h-80v-40h80v-80h40v80h80v40h-80v80h-40Z" /></svg></button>
-            </span>
-            <span class="tooltip-anchor tooltip-above" data-tooltip="Save bookmark">
-              <button id="saveProfileButton" type="button" class="secondary icon-only profile-icon-button" aria-label="Save bookmark"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M684.54-600 600-684.54l27.54-28.54 57 57 141-142 28.54 28.54L684.54-600ZM240-180v-555.38q0-27.62 18.5-46.12Q277-800 304.62-800H520v40H304.62q-9.24 0-16.93 7.69-7.69 7.69-7.69 16.93V-242l200-86 200 86v-278h40v340L480-283.08 240-180Zm40-580h240-240Z" /></svg></button>
-            </span>
-            <span class="tooltip-anchor tooltip-above" data-tooltip="Remove bookmark">
-              <button id="deleteProfileButton" type="button" class="secondary icon-only profile-icon-button" aria-label="Remove bookmark" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M800-680H600v-40h200v40ZM240-180v-555.38q0-27.62 18.5-46.12Q277-800 304.62-800H520v40H304.62q-9.24 0-16.93 7.69-7.69 7.69-7.69 16.93V-242l200-86 200 86v-278h40v340L480-283.08 240-180Zm40-580h240-240Z" /></svg></button>
-            </span>
+            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Manage saved connections" data-tooltip="Manage saved connections">
+              <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-280v-40h560v40H200Zm0-180v-40h560v40H200Zm0-180v-40h560v40H200Z" /></svg>
+            </button>
           </div>
 
+          <div class="connection-details-title">Connection details</div>
           <div class="form-grid">
-            <div class="connection-name-row">
-              <label for="profileName">Connection name</label>
-              <input id="profileName" placeholder="App Server PROD" autocomplete="off" />
-            </div>
-            <div class="connection-config-divider" aria-hidden="true"></div>
             <div>
               <label for="host">Host</label>
-              <input id="host" placeholder="server.example.com" autocomplete="off" />
+              <input id="host" autocomplete="off" />
               <label class="checkbox-row keepalive-row has-tooltip" data-tooltip="Send periodic SSH keepalive messages to reduce idle disconnects."><input id="keepAlive" type="checkbox" checked /> Keep connection alive</label>
             </div>
             <div><label for="port">Port</label><input id="port" value="22" inputmode="numeric" /></div>
-            <div class="full"><label for="username">Username</label><input id="username" placeholder="Enter now or leave blank in the bookmarked connection" autocomplete="username" /></div>
-            <div class="full"><label for="authType">Authentication</label><select id="authType"><option value="password">Password</option><option value="privateKey">Private key</option></select></div>
+
+            <div class="full"><label for="username">Username</label><input id="username" autocomplete="username" /></div>
+            <div class="full">
+              <label for="authDropdownButton">Authentication</label>
+              <div class="auth-picker">
+                <button id="authDropdownButton" type="button" class="profile-dropdown-button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="authDropdownLabel" class="profile-dropdown-label">Password</span>
+                  <svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg>
+                </button>
+                <div id="authDropdownMenu" class="profile-dropdown-menu auth-dropdown-menu" role="listbox" aria-label="Authentication method">
+                  <button type="button" class="profile-dropdown-item" role="option" data-auth-type="password">
+                    <span class="profile-dropdown-name">Password</span>
+                  </button>
+                  <button type="button" class="profile-dropdown-item" role="option" data-auth-type="privateKey">
+                    <span class="profile-dropdown-name">Private key</span>
+                  </button>
+                </div>
+              </div>
+              <select id="authType" class="auth-select-native" aria-hidden="true" tabindex="-1"><option value="password">Password</option><option value="privateKey">Private key</option></select>
+            </div>
             <div id="passwordBlock" class="full auth-block visible">
               <label for="password">Password</label>
               <input id="password" type="password" autocomplete="current-password" />
@@ -385,13 +451,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <label class="checkbox-row"><input id="rememberPassphrase" type="checkbox" /> Remember passphrase securely</label>
               <div id="passphraseSecretState" class="credential-state not-saved">Passphrase not saved.</div>
             </div>
+
             <div class="full"><label for="startPath">Start path</label><input id="startPath" placeholder="/home/user" autocomplete="off" /></div>
           </div>
 
           <div class="button-row connection-actions">
-            <button id="showOutputButton" class="secondary">Output</button>
-            <button id="disconnectButton" class="secondary" disabled>Disconnect</button>
             <button id="connectButton">Connect</button>
+            <button id="saveProfileButton" class="secondary">Save</button>
+            <button id="showOutputButton" class="secondary">Output</button>
           </div>
         </div>
       </aside>
@@ -481,7 +548,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </div>
             <div id="filterBox" class="filter-box">
               <input id="filterInput" class="filter-input" placeholder="Filter files..." aria-label="Filter files" disabled />
-              <button id="clearFilterButton" class="filter-clear-button has-tooltip" aria-label="Clear filter" data-tooltip="Clear filter" disabled>×</button>
+              <button id="clearFilterButton" class="filter-clear-button has-tooltip" aria-label="Clear filter" data-tooltip="Clear filter" disabled><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button>
             </div>
           </div>
 
@@ -509,7 +576,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </table>
           </div>
 
-          <div id="status" class="statusbar"><div class="status-main"><div id="statusText" class="status-text">Ready.</div><div class="spinner" aria-hidden="true"></div></div><button id="statusCancelButton" class="status-action-button status-cancel-button has-tooltip" type="button" data-tooltip="Cancel current operation">Cancel Transfer</button><div class="status-copy-wrap"><button id="statusCopyButton" class="status-action-button status-copy-button has-tooltip tooltip-above" type="button" aria-label="Copy status" data-tooltip="Copy status"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg></button><div id="statusCopyFeedback" class="status-copy-feedback" role="status" aria-live="polite">Copied</div></div></div>
+          <div id="status" class="statusbar"><div class="status-main"><div id="statusText" class="status-text">Ready.</div><div class="spinner" aria-hidden="true"></div></div><div class="status-actions"><button id="statusCancelButton" class="status-action-button status-cancel-button has-tooltip tooltip-above" type="button" aria-label="Cancel current operation" data-tooltip="Cancel current operation" hidden>Cancel</button><div class="status-copy-wrap"><button id="statusCopyButton" class="status-action-button status-copy-button has-tooltip tooltip-above" type="button" aria-label="Copy status" data-tooltip="Copy status"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg></button><div id="statusCopyFeedback" class="status-copy-feedback" role="status" aria-live="polite">Copied</div></div></div></div>
           </div>
         </section>
       </section>
@@ -518,6 +585,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   </main>
 
   <div id="webviewTooltip" class="webview-tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <div id="manageProfilesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="manageProfilesTitle" aria-hidden="true">
+    <section class="file-properties-dialog manage-profiles-dialog">
+      <div class="file-properties-header">
+        <h2 id="manageProfilesTitle" class="file-properties-title">Manage Saved Connections</h2>
+        <div class="file-properties-path">Rename or remove saved connection profiles.</div>
+      </div>
+      <div class="file-properties-body">
+        <div class="manage-profiles-filter">
+          <input id="manageProfilesFilterInput" type="text" placeholder="Filter connections..." aria-label="Filter saved connections" autocomplete="off" />
+        </div>
+        <div id="manageProfilesList" class="manage-profiles-list"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="manageProfilesCloseButton" type="button">Close</button>
+      </div>
+    </section>
+  </div>
 
   <div id="transferQueueModal" class="transfer-queue-backdrop" role="dialog" aria-modal="true" aria-labelledby="transferQueueTitle" aria-hidden="true">
     <div class="transfer-queue-dialog">
@@ -543,6 +628,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         <button id="transferQueueFooterCloseButton" class="secondary" type="button">Close</button>
       </div>
     </div>
+  </div>
+
+  <div id="confirmDialogBackdrop" class="confirm-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-hidden="true">
+    <section class="confirm-dialog">
+      <div class="confirm-dialog-header">
+        <h2 id="confirmDialogTitle" class="confirm-dialog-title">Confirm action</h2>
+      </div>
+      <div class="confirm-dialog-body">
+        <p id="confirmDialogMessage" class="confirm-dialog-message"></p>
+        <pre id="confirmDialogDetails" class="confirm-dialog-details" hidden></pre>
+      </div>
+      <div class="confirm-dialog-actions">
+        <button id="confirmDialogCancelButton" class="secondary" type="button">Cancel</button>
+        <button id="confirmDialogConfirmButton" type="button">Confirm</button>
+      </div>
+    </section>
   </div>
 
   <div id="filePropertiesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="filePropertiesTitle" aria-hidden="true">
@@ -582,21 +683,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <div id="entryContextMenu" class="context-menu" role="menu" aria-label="Entry actions">
   <button id="contextOpen" type="button" role="menuitem">View/Edit</button>
   <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextMakeCopy" type="button" role="menuitem">Make a Copy...</button>
+  <button id="contextRename" type="button" role="menuitem">Rename</button>
+  <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
+  <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextCalculateChecksums" type="button" role="menuitem">Calculate Checksums...</button>
+  <button id="contextFileProperties" type="button" role="menuitem">File Properties</button>
+  <div id="contextRefreshSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextCreateFile" type="button" role="menuitem">Create new file</button>
   <button id="contextCreateDirectory" type="button" role="menuitem">Create new directory</button>
-  <div id="contextRefreshSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextRefresh" type="button" role="menuitem">Refresh</button>
   <div id="contextTransferSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextUpload" type="button" role="menuitem">Upload...</button>
   <button id="contextDownload" type="button" role="menuitem">Download...</button>
-  <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
-  <button id="contextMakeCopy" type="button" role="menuitem">Make a Copy...</button>
-  <button id="contextRename" type="button" role="menuitem">Rename</button>
-  <button id="contextSetPermissions" type="button" role="menuitem">Set permissions</button>
-  <button id="contextFileProperties" type="button" role="menuitem">File Properties</button>
-  <button id="contextCalculateChecksums" type="button" role="menuitem">Calculate Checksums...</button>
   <div id="contextDeleteSeparator" class="context-menu-separator" role="separator"></div>
-  <button id="contextDelete" type="button" role="menuitem" class="danger-text">Delete</button>
+  <button id="contextDelete" type="button" role="menuitem">Delete</button>
   </div>
 
 
@@ -632,7 +733,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         <div class="permission-mode-row">
           <label for="permissionModeInput">Octal</label>
           <input id="permissionModeInput" type="text" maxlength="4" inputmode="numeric" autocomplete="off">
-          <span id="permissionCurrentText" class="permission-current"></span>
+          <span id="permissionCurrentText" class="permission-current" aria-live="polite"></span>
         </div>
         <div id="permissionValidation" class="permission-validation" role="alert"></div>
       </section>
@@ -652,12 +753,20 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const showConnectionPanelButton = document.getElementById('showConnectionPanelButton');
   const connectionRail = document.querySelector('.connection-rail');
   const connectionCard = document.querySelector('.connection-card');
+  const browserCard = document.querySelector('.browser-card');
   const profileSelect = document.getElementById('profileSelect');
+  const profileDropdownButton = document.getElementById('profileDropdownButton');
+  const profileDropdownLabel = document.getElementById('profileDropdownLabel');
+  const profileDropdownMenu = document.getElementById('profileDropdownMenu');
+  const manageProfilesButton = document.getElementById('manageProfilesButton');
   const profileName = document.getElementById('profileName');
   const host = document.getElementById('host');
   const port = document.getElementById('port');
   const username = document.getElementById('username');
   const authType = document.getElementById('authType');
+  const authDropdownButton = document.getElementById('authDropdownButton');
+  const authDropdownLabel = document.getElementById('authDropdownLabel');
+  const authDropdownMenu = document.getElementById('authDropdownMenu');
   const password = document.getElementById('password');
   const rememberPassword = document.getElementById('rememberPassword');
   const passwordSecretState = document.getElementById('passwordSecretState');
@@ -697,11 +806,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const sudoToggle = document.getElementById('sudoToggle');
   const sudoToggleState = document.getElementById('sudoToggleState');
 
-  const newProfileButton = document.getElementById('newProfileButton');
   const saveProfileButton = document.getElementById('saveProfileButton');
-  const deleteProfileButton = document.getElementById('deleteProfileButton');
   const connectButton = document.getElementById('connectButton');
-  const disconnectButton = document.getElementById('disconnectButton');
   const showOutputButton = document.getElementById('showOutputButton');
   const parentButton = document.getElementById('parentButton');
   const refreshButton = document.getElementById('refreshButton');
@@ -716,6 +822,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const transferQueueCurrent = document.getElementById('transferQueueCurrent');
   const transferQueuePending = document.getElementById('transferQueuePending');
   const transferQueueCompleted = document.getElementById('transferQueueCompleted');
+  const confirmDialogBackdrop = document.getElementById('confirmDialogBackdrop');
+  const confirmDialogTitle = document.getElementById('confirmDialogTitle');
+  const confirmDialogMessage = document.getElementById('confirmDialogMessage');
+  const confirmDialogDetails = document.getElementById('confirmDialogDetails');
+  const confirmDialogCancelButton = document.getElementById('confirmDialogCancelButton');
+  const confirmDialogConfirmButton = document.getElementById('confirmDialogConfirmButton');
   const goButton = document.getElementById('goButton');
   const entryContextMenu = document.getElementById('entryContextMenu');
   const contextOpen = document.getElementById('contextOpen');
@@ -749,6 +861,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const checksumsCopyMd5Button = document.getElementById('checksumsCopyMd5Button');
   const checksumsCopyAllButton = document.getElementById('checksumsCopyAllButton');
   const checksumsCloseButton = document.getElementById('checksumsCloseButton');
+  const manageProfilesBackdrop = document.getElementById('manageProfilesBackdrop');
+  const manageProfilesFilterInput = document.getElementById('manageProfilesFilterInput');
+  const manageProfilesList = document.getElementById('manageProfilesList');
+  const manageProfilesCloseButton = document.getElementById('manageProfilesCloseButton');
 
   const permissionBackdrop = document.getElementById('permissionBackdrop');
   const permissionDialogTitle = document.getElementById('permissionDialogTitle');
@@ -772,6 +888,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let profiles = [];
   let sessions = [];
   let selectedProfileId = '';
+  let profileDropdownOpen = false;
+  let profileDropdownFilterText = '';
+  let authDropdownOpen = false;
+  let manageProfilesDialogOpen = false;
+  let manageProfilesFilterText = '';
+  let renameProfileId = '';
   let activeConnectionId = '';
   let currentEntries = [];
   let selectedEntryPath = '';
@@ -783,14 +905,20 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let currentSort = { key: '', direction: '' };
   let busy = false;
   let statusCancelAction = '';
+  let statusCancelLabel = 'Cancel';
+  let connectionButtonState = '';
+  let lastSyncedActiveConnectionId = '';
   let statusCopyFeedbackTimer = 0;
   let filePropertiesDialogOpen = false;
   let filePropertiesRemotePath = '';
   let checksumsDialogOpen = false;
   let checksumsCopyState = { sha256: '', md5: '', all: '' };
   let permissionsDialogOpen = false;
+  let permissionPreviewTypeChar = '-';
   let transferQueueState = { current: null, pending: [], completed: [] };
   let transferQueueModalOpen = false;
+  let confirmDialogOpen = false;
+  let confirmDialogRequestId = '';
   let pathFavoritesOpen = false;
   let connectionPanelCollapsed = Boolean((vscode.getState() || {}).connectionPanelCollapsed);
 
@@ -882,6 +1010,64 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     hideRemotePathDropdown();
   });
 
+  function showConfirmDialog(payload) {
+    confirmDialogRequestId = String(payload.requestId || '');
+    confirmDialogOpen = Boolean(confirmDialogRequestId);
+
+    confirmDialogTitle.textContent = String(payload.title || 'Confirm action');
+    confirmDialogMessage.textContent = String(payload.message || 'Confirm this action?');
+
+    const details = String(payload.details || '').trim();
+    confirmDialogDetails.textContent = details;
+    confirmDialogDetails.hidden = !details;
+
+    confirmDialogCancelButton.textContent = String(payload.cancelLabel || 'Cancel');
+    confirmDialogConfirmButton.textContent = String(payload.confirmLabel || 'Confirm');
+    confirmDialogConfirmButton.classList.toggle('danger', Boolean(payload.danger));
+
+    hideWebviewTooltip();
+    hideContextMenu();
+    hideProfileDropdown();
+    hideAuthDropdown();
+    hideRemotePathDropdown();
+    hidePathFavoritesPopover();
+
+    confirmDialogBackdrop.classList.add('visible');
+    confirmDialogBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => confirmDialogCancelButton.focus(), 0);
+  }
+
+  function closeConfirmDialog(confirmed) {
+    if (!confirmDialogOpen) return;
+
+    const requestId = confirmDialogRequestId;
+    confirmDialogOpen = false;
+    confirmDialogRequestId = '';
+    confirmDialogBackdrop.classList.remove('visible');
+    confirmDialogBackdrop.setAttribute('aria-hidden', 'true');
+    confirmDialogConfirmButton.classList.remove('danger');
+
+    vscode.postMessage({ type: 'confirmDialogResponse', payload: { requestId, confirmed: Boolean(confirmed) } });
+  }
+
+  function trapConfirmDialogFocus(event) {
+    if (!confirmDialogOpen || event.key !== 'Tab') return;
+
+    const focusable = [confirmDialogCancelButton, confirmDialogConfirmButton].filter(Boolean);
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   window.addEventListener('message', event => {
     const message = event.data;
     const payload = message.payload || {};
@@ -894,23 +1080,27 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
       case 'connectionFormCleared':
-        selectedProfileId = '';
-        profileSelect.value = '';
-        clearForm();
+        selectProfile('', { preserveStatus: true });
         break;
       case 'privateKeyPathSelected':
         if (payload.path) {
           privateKeyPath.value = payload.path;
         }
         break;
-      case 'sessionsChanged':
+      case 'sessionsChanged': {
         sessions = payload.sessions || [];
+        const previousActiveConnectionId = activeConnectionId;
         activeConnectionId = payload.activeConnectionId || '';
+        connectionButtonState = '';
         renderSessionTabs();
         updateActiveSessionUi();
+        if (activeConnectionId && activeConnectionId !== previousActiveConnectionId) {
+          syncConnectionFormWithActiveSession({ preserveStatus: true });
+        }
         setControls();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
+      }
       case 'sudoModeChanged': {
         const targetConnectionId = payload.connectionId || activeConnectionId;
         const session = sessions.find(item => item.id === targetConnectionId);
@@ -924,6 +1114,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'disconnected':
         sessions = [];
         activeConnectionId = '';
+        connectionButtonState = '';
+        lastSyncedActiveConnectionId = '';
         currentEntries = [];
         selectedEntryPath = '';
         filterText = '';
@@ -944,21 +1136,27 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         setControls();
         setStatus('No active remote connections.');
         break;
-      case 'directoryListed':
+      case 'directoryListed': {
         if (payload.connectionId && payload.connectionId !== activeConnectionId) return;
-        currentPath.value = payload.path || '/';
+        const previousPath = normalizeUiRemotePath(currentPath.value || '/');
+        const nextPath = normalizeUiRemotePath(payload.path || '/');
+        const directoryChanged = previousPath !== nextPath;
+
+        currentPath.value = nextPath;
         exitRemotePathEditMode({ reset: false, keepFocus: true });
         hideRemotePathDropdown();
         currentEntries = payload.entries || [];
         selectedEntryPath = '';
         selectedEntryPaths.clear();
         selectionAnchorPath = '';
+        if (directoryChanged) clearFilterText();
         hideContextMenu();
         renderEntries(getVisibleEntries());
-        updateActiveSessionPath(payload.path || '/');
+        updateActiveSessionPath(nextPath);
         updatePathFavoriteControls();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
+      }
       case 'breadcrumbDirectoriesListed':
         handleBreadcrumbDirectoriesListed(payload);
         break;
@@ -975,8 +1173,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         updateTransferQueueState(payload);
         break;
       case 'error':
+        connectionButtonState = '';
         setBusy(false);
         setStatus(payload.message || 'Unknown error.', true);
+        break;
+      case 'showConfirmDialog':
+        showConfirmDialog(payload);
         break;
       case 'showChecksumsDialog':
         showChecksumsDialog(payload);
@@ -1004,57 +1206,66 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   profileSelect.addEventListener('change', () => {
-    selectedProfileId = profileSelect.value;
-    if (!selectedProfileId) {
-      clearForm();
-      return;
+    selectProfile(profileSelect.value || '');
+  });
+
+  profileDropdownButton.addEventListener('click', event => {
+    event.stopPropagation();
+    toggleProfileDropdown();
+  });
+
+  profileDropdownMenu.addEventListener('click', event => {
+    const item = event.target && event.target.closest ? event.target.closest('[data-profile-id]') : null;
+    if (!item) return;
+    selectProfile(item.dataset.profileId || '');
+    hideProfileDropdown();
+  });
+
+  profileDropdownMenu.addEventListener('input', event => {
+    const target = event.target;
+    if (!target || target.id !== 'profileDropdownFilterInput') return;
+    profileDropdownFilterText = String(target.value || '');
+    renderProfileDropdown({ focusFilter: true });
+  });
+
+  profileDropdownMenu.addEventListener('keydown', event => {
+    const target = event.target;
+    if (!target || target.id !== 'profileDropdownFilterInput') return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      hideProfileDropdown();
     }
-
-    const profile = profiles.find(item => item.id === selectedProfileId);
-    if (profile) fillForm(profile);
   });
 
-  newProfileButton.addEventListener('click', () => {
-    selectedProfileId = '';
-    profileSelect.value = '';
-    clearForm();
-    setStatus('New quick connection.');
-  });
+  manageProfilesButton.addEventListener('click', () => showManageProfilesDialog());
 
   saveProfileButton.addEventListener('click', () => {
-    setBusy(true, 'Saving bookmarked connection...');
+    setBusy(true, 'Saving connection...');
     vscode.postMessage({ type: 'saveConnection', payload: collectConnectionPayload() });
   });
 
-  deleteProfileButton.addEventListener('click', () => {
-    const profileId = profileSelect.value || selectedProfileId;
-    const profile = profiles.find(item => item.id === profileId);
-
-    if (!profileId || !profile) {
-      setStatus('Select a bookmarked connection to remove.', true);
+  connectButton.addEventListener('click', () => {
+    const connectedSession = getConnectedSessionForCurrentForm();
+    if (connectedSession) {
+      connectionButtonState = 'disconnecting';
+      setBusy(true, 'Disconnecting...');
+      vscode.postMessage({ type: 'disconnect', payload: { connectionId: connectedSession.id } });
       return;
     }
 
-    selectedProfileId = profileId;
-    setBusy(true, 'Removing bookmarked connection...');
-    vscode.postMessage({
-      type: 'deleteConnection',
-      payload: { id: profileId, name: profile.name || '' }
-    });
-  });
-
-  connectButton.addEventListener('click', () => {
+    connectionButtonState = 'connecting';
     setBusy(true, 'Connecting...');
     vscode.postMessage({ type: 'connect', payload: collectConnectionPayload() });
   });
 
-  disconnectButton.addEventListener('click', () => {
-    if (!activeConnectionId) return;
-    setBusy(true, 'Disconnecting...');
-    vscode.postMessage({ type: 'disconnect', payload: { connectionId: activeConnectionId } });
-  });
-
   showOutputButton.addEventListener('click', () => vscode.postMessage({ type: 'showOutput' }));
+  if (browserCard) {
+    browserCard.addEventListener('click', event => {
+      if (event.target instanceof Element && event.target.closest('.session-close')) return;
+      syncConnectionFormWithActiveSession({ preserveStatus: true });
+    });
+    browserCard.addEventListener('focusin', () => syncConnectionFormWithActiveSession({ preserveStatus: true }));
+  }
   hideConnectionPanelButton.addEventListener('click', () => setConnectionPanelCollapsed(true));
   showConnectionPanelButton.addEventListener('click', () => setConnectionPanelCollapsed(false));
   window.addEventListener('resize', updateConnectionRailPosition);
@@ -1083,6 +1294,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   transferQueueCloseButton.addEventListener('click', hideTransferQueueModal);
   transferQueueFooterCloseButton.addEventListener('click', hideTransferQueueModal);
   transferQueueModal.addEventListener('click', event => { if (event.target === transferQueueModal) hideTransferQueueModal(); });
+  confirmDialogCancelButton.addEventListener('click', () => closeConfirmDialog(false));
+  confirmDialogConfirmButton.addEventListener('click', () => closeConfirmDialog(true));
+  confirmDialogBackdrop.addEventListener('mousedown', event => {
+    if (event.target === confirmDialogBackdrop) {
+      event.preventDefault();
+      confirmDialogCancelButton.focus();
+    }
+  });
+  confirmDialogBackdrop.addEventListener('keydown', trapConfirmDialogFocus);
   transferQueueCurrent.addEventListener('click', event => {
     const button = event.target && event.target.closest ? event.target.closest('[data-transfer-action]') : null;
     if (!button || button.dataset.transferAction !== 'cancel-current') return;
@@ -1094,15 +1314,18 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     vscode.postMessage({ type: 'removeQueuedTransfer', payload: { transferId: button.dataset.transferId || '' } });
   });
   statusCancelButton.addEventListener('click', () => {
-    if (statusCancelAction === 'connection') {
+    if (!statusCancelAction) return;
+    const action = statusCancelAction;
+    statusCancelButton.disabled = true;
+    if (action === 'connection') {
       vscode.postMessage({ type: 'cancelConnection' });
       return;
     }
-
-    if (statusCancelAction === 'transfer') {
+    if (action === 'transfer') {
       vscode.postMessage({ type: 'cancelTransfer' });
     }
   });
+
   statusCopyButton.addEventListener('click', () => {
     vscode.postMessage({ type: 'copyStatus', payload: { text: getStatusCopyText() } });
   });
@@ -1184,6 +1407,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   document.addEventListener('click', event => {
+    if (profileDropdownOpen && event.target && event.target.closest && !event.target.closest('.profile-picker')) {
+      hideProfileDropdown();
+    }
+    if (authDropdownOpen && event.target && event.target.closest && !event.target.closest('.auth-picker')) {
+      hideAuthDropdown();
+    }
     if (!breadcrumbDropdownState.open) return;
     if (event.target && event.target.closest && event.target.closest('#remotePathBox')) return;
     hideRemotePathDropdown();
@@ -1201,7 +1430,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updatePathFavoriteControls();
     updateRemotePathBreadcrumb();
   });
-  authType.addEventListener('change', updateAuthFields);
+  authType.addEventListener('change', () => {
+    updateAuthFields();
+    updateAuthDropdown();
+  });
+
+  authDropdownButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleAuthDropdown();
+  });
+
+  authDropdownMenu.addEventListener('click', event => {
+    const item = event.target && event.target.closest ? event.target.closest('[data-auth-type]') : null;
+    if (!item || authDropdownButton.disabled) return;
+    selectAuthType(item.dataset.authType || 'password');
+    hideAuthDropdown();
+  });
+
   privateKeyBrowseButton.addEventListener('click', () => vscode.postMessage({ type: 'pickPrivateKeyPath' }));
   rememberPassword.addEventListener('change', () => { if (!rememberPassword.checked) { password.placeholder = ''; if (password.value === SAVED_SECRET_MASK) password.value = ''; } });
   rememberPassphrase.addEventListener('change', () => { if (!rememberPassphrase.checked) { passphrase.placeholder = ''; if (passphrase.value === SAVED_SECRET_MASK) passphrase.value = ''; } });
@@ -1218,6 +1464,34 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && confirmDialogOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeConfirmDialog(false);
+      return;
+    }
+    if (confirmDialogOpen) {
+      trapConfirmDialogFocus(event);
+      return;
+    }
+    if (event.key === 'Escape' && profileDropdownOpen) {
+      hideProfileDropdown();
+      return;
+    }
+    if (event.key === 'Escape' && authDropdownOpen) {
+      hideAuthDropdown();
+      return;
+    }
+    if (event.key === 'Escape' && manageProfilesDialogOpen) {
+      if (renameProfileId) {
+        event.preventDefault();
+        renameProfileId = '';
+        renderManageProfilesList();
+        return;
+      }
+      hideManageProfilesDialog();
+      return;
+    }
     if (event.key === 'Escape' && checksumsDialogOpen) {
       hideChecksumsDialog();
       return;
@@ -1327,6 +1601,23 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
 
+  manageProfilesCloseButton.addEventListener('click', () => {
+    hideManageProfilesDialog();
+  });
+
+  manageProfilesBackdrop.addEventListener('mousedown', event => {
+    if (event.target === manageProfilesBackdrop) {
+      hideManageProfilesDialog();
+    }
+  });
+
+  manageProfilesFilterInput.addEventListener('input', () => {
+    manageProfilesFilterText = String(manageProfilesFilterInput.value || '');
+    renderManageProfilesList();
+  });
+
+  manageProfilesList.addEventListener('click', handleManageProfilesClick);
+
   contextMakeCopy.addEventListener('click', () => {
     const entry = getSelectedActionEntry();
     hideContextMenu();
@@ -1350,6 +1641,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     checkbox.addEventListener('change', () => {
       if (!permissionsDialogOpen) return;
       permissionModeInput.value = calculateModeFromPermissionCheckboxes();
+      updatePermissionPreview(permissionModeInput.value);
       setPermissionValidation('', true);
     });
   }
@@ -1358,23 +1650,29 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const value = permissionModeInput.value.trim();
 
     if (/^[0-7]{0,4}$/.test(value) === false) {
+      updatePermissionPreview('');
       setPermissionValidation('Use only octal digits from 0 to 7.', false);
       return;
     }
 
     const normalized = normalizePermissionMode(value);
     if (!normalized) {
+      updatePermissionPreview('');
       setPermissionValidation('Enter 3 or 4 octal digits, for example 644, 0755, 2775 or 1777.', false);
       return;
     }
 
     updatePermissionCheckboxesFromMode(normalized);
+    updatePermissionPreview(normalized);
     setPermissionValidation('', true);
   });
 
   permissionModeInput.addEventListener('blur', () => {
     const normalized = normalizePermissionMode(permissionModeInput.value.trim());
-    if (normalized) permissionModeInput.value = normalized;
+    if (normalized) {
+      permissionModeInput.value = normalized;
+      updatePermissionPreview(normalized);
+    }
   });
 
   permissionApplyButton.addEventListener('click', () => {
@@ -1500,22 +1798,156 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     for (const profile of profiles) {
       const option = document.createElement('option');
       option.value = profile.id;
-      option.textContent = profile.name + ' - ' + formatProfileTarget(profile) + ' - ' + formatCredentialState(profile);
+      option.textContent = profile.name;
       profileSelect.appendChild(option);
     }
 
     const exists = profiles.some(profile => profile.id === previousId);
-    selectedProfileId = exists ? previousId : '';
-    profileSelect.value = selectedProfileId;
+    const nextId = exists ? previousId : '';
+    selectProfile(nextId, { preserveStatus: true });
+    renderProfileDropdown();
+    renderManageProfilesList();
+    setControls();
+  }
 
-    if (selectedProfileId) {
-      const profile = profiles.find(item => item.id === selectedProfileId);
-      if (profile) fillForm(profile);
+  function selectProfile(profileId, options = {}) {
+    selectedProfileId = profileId || '';
+    profileSelect.value = selectedProfileId;
+    hideProfileDropdown();
+
+    const profile = selectedProfileId ? profiles.find(item => item.id === selectedProfileId) : undefined;
+    if (profile) {
+      fillForm(profile);
     } else {
       clearForm();
+      if (!options.preserveStatus) setStatus('New quick connection.');
     }
 
+    updateProfileDropdownLabel();
+    renderProfileDropdown();
     setControls();
+  }
+
+  function updateProfileDropdownLabel() {
+    const profile = selectedProfileId ? profiles.find(item => item.id === selectedProfileId) : undefined;
+    profileDropdownLabel.textContent = profile ? profile.name : 'New unsaved connection';
+    profileDropdownButton.title = profile ? formatProfileTarget(profile) : 'Use the form below without saving first';
+  }
+
+  function normalizeConnectionFilter(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function profileMatchesFilter(profile, filter) {
+    const normalized = normalizeConnectionFilter(filter);
+    if (!normalized) return true;
+
+    const haystack = [
+      profile && profile.name,
+      profile && profile.host,
+      profile && profile.port,
+      profile && profile.username,
+      profile ? formatProfileTarget(profile) : ''
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+
+    return haystack.includes(normalized);
+  }
+
+  function renderProfileDropdown(options = {}) {
+    if (!profileDropdownMenu) return;
+    const filterTextBeforeRender = profileDropdownFilterText;
+    profileDropdownMenu.innerHTML = '';
+
+    const filterWrap = document.createElement('div');
+    filterWrap.className = 'profile-dropdown-filter';
+    const filterInput = document.createElement('input');
+    filterInput.id = 'profileDropdownFilterInput';
+    filterInput.type = 'text';
+    filterInput.placeholder = 'Filter connections...';
+    filterInput.setAttribute('aria-label', 'Filter saved connections');
+    filterInput.setAttribute('autocomplete', 'off');
+    filterInput.value = filterTextBeforeRender;
+    filterWrap.appendChild(filterInput);
+    profileDropdownMenu.appendChild(filterWrap);
+
+    const quick = buildProfileDropdownItem('', 'New unsaved connection', 'Use the form below without saving first');
+    profileDropdownMenu.appendChild(quick);
+
+    if (profiles.length) {
+      const separator = document.createElement('div');
+      separator.className = 'profile-dropdown-separator';
+      profileDropdownMenu.appendChild(separator);
+    }
+
+    const filteredProfiles = profiles.filter(profile => profileMatchesFilter(profile, filterTextBeforeRender));
+    if (profiles.length && !filteredProfiles.length) {
+      const empty = document.createElement('div');
+      empty.className = 'profile-dropdown-empty';
+      empty.textContent = 'No saved connections found.';
+      profileDropdownMenu.appendChild(empty);
+    } else {
+      for (const profile of filteredProfiles) {
+        profileDropdownMenu.appendChild(buildProfileDropdownItem(profile.id, profile.name, formatProfileTarget(profile)));
+      }
+    }
+
+    updateProfileDropdownLabel();
+
+    if (options.focusFilter) {
+      setTimeout(() => {
+        const nextFilterInput = document.getElementById('profileDropdownFilterInput');
+        if (!nextFilterInput) return;
+        nextFilterInput.focus();
+        const valueLength = String(nextFilterInput.value || '').length;
+        try { nextFilterInput.setSelectionRange(valueLength, valueLength); } catch (error) { /* ignore */ }
+      }, 0);
+    }
+  }
+
+  function buildProfileDropdownItem(id, name, meta) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'profile-dropdown-item' + (String(id || '') === selectedProfileId ? ' selected' : '');
+    button.dataset.profileId = id || '';
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', String(String(id || '') === selectedProfileId));
+
+    const nameElement = document.createElement('span');
+    nameElement.className = 'profile-dropdown-name';
+    nameElement.textContent = name || 'Unnamed connection';
+    button.appendChild(nameElement);
+
+    if (meta) {
+      const metaElement = document.createElement('span');
+      metaElement.className = 'profile-dropdown-meta';
+      metaElement.textContent = meta;
+      button.appendChild(metaElement);
+    }
+
+    return button;
+  }
+
+  function toggleProfileDropdown() {
+    if (busy || !profileDropdownButton) return;
+    if (profileDropdownOpen) {
+      hideProfileDropdown();
+      return;
+    }
+
+    hideAuthDropdown();
+    profileDropdownOpen = true;
+    profileDropdownFilterText = '';
+    profileDropdownButton.setAttribute('aria-expanded', 'true');
+    profileDropdownButton.closest('.profile-picker').classList.add('open');
+    renderProfileDropdown({ focusFilter: true });
+  }
+
+  function hideProfileDropdown() {
+    profileDropdownOpen = false;
+    profileDropdownFilterText = '';
+    if (profileDropdownButton) profileDropdownButton.setAttribute('aria-expanded', 'false');
+    const picker = profileDropdownButton ? profileDropdownButton.closest('.profile-picker') : null;
+    if (picker) picker.classList.remove('open');
   }
 
   function renderSessionTabs() {
@@ -1532,7 +1964,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       tab.dataset.tooltip = formatConnectionLabel(session.name, formatSessionTarget(session)) + ' - ' + (session.currentPath || '/');
       tab.innerHTML = '<span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect">×</span>';
       tab.addEventListener('click', () => {
-        if (session.id === activeConnectionId) return;
+        if (session.id === activeConnectionId) {
+          syncConnectionFormWithActiveSession({ preserveStatus: true });
+          return;
+        }
         setBusy(true, 'Switching to ' + session.name + '...');
         vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id } });
       });
@@ -1540,6 +1975,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const close = tab.querySelector('.session-close');
       close.addEventListener('click', event => {
         event.stopPropagation();
+        connectionButtonState = 'disconnecting';
         setBusy(true, 'Disconnecting...');
         vscode.postMessage({ type: 'disconnect', payload: { connectionId: session.id } });
       });
@@ -1807,8 +2243,146 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return parts;
   }
 
+  function getConnectedSessionForCurrentForm() {
+    if (selectedProfileId) {
+      return sessions.find(item => item.id === selectedProfileId);
+    }
+
+    const hostValue = String(host.value || '').trim();
+    const portValue = Number(port.value || 22);
+    const usernameValue = String(username.value || '').trim();
+    const authTypeValue = String(authType.value || 'password');
+
+    if (!hostValue || !usernameValue || !Number.isFinite(portValue)) {
+      return undefined;
+    }
+
+    return sessions.find(item =>
+      String(item.host || '').trim() === hostValue &&
+      Number(item.port || 22) === portValue &&
+      String(item.username || '').trim() === usernameValue &&
+      String(item.authType || 'password') === authTypeValue
+    );
+  }
+
   function getActiveSession() {
     return sessions.find(item => item.id === activeConnectionId);
+  }
+
+  function syncConnectionFormWithActiveSession(options = {}) {
+    const active = getActiveSession();
+    if (!active || connectionButtonState === 'connecting' || connectionButtonState === 'disconnecting') return;
+
+    const profile = profiles.find(item => item.id === active.id);
+    if (profile) {
+      if (selectedProfileId !== profile.id || lastSyncedActiveConnectionId !== active.id) {
+        selectProfile(profile.id, { preserveStatus: true });
+      }
+      lastSyncedActiveConnectionId = active.id;
+      return;
+    }
+
+    selectedProfileId = '';
+    profileSelect.value = '';
+    hideProfileDropdown();
+    fillFormFromSession(active);
+    updateProfileDropdownLabel();
+    renderProfileDropdown();
+    lastSyncedActiveConnectionId = active.id;
+    if (!options.preserveStatus) setStatus('Active connection loaded.');
+    setControls();
+  }
+
+  function fillFormFromSession(session) {
+    profileName.value = session.name || '';
+    host.value = session.host || '';
+    port.value = String(session.port || 22);
+    username.value = session.username || '';
+    authType.value = session.authType || 'password';
+    password.value = '';
+    rememberPassword.checked = false;
+    password.placeholder = '';
+    privateKeyPath.value = session.privateKeyPath || '';
+    passphrase.value = '';
+    rememberPassphrase.checked = false;
+    passphrase.placeholder = '';
+    startPath.value = session.startPath || '';
+    keepAlive.checked = session.keepAlive !== false;
+    updateCredentialState();
+    updateAuthFields();
+  }
+
+  function getConnectionDetailControls() {
+    return [
+      host,
+      port,
+      username,
+      authType,
+      authDropdownButton,
+      password,
+      rememberPassword,
+      privateKeyPath,
+      privateKeyBrowseButton,
+      passphrase,
+      rememberPassphrase,
+      startPath,
+      keepAlive
+    ].filter(Boolean);
+  }
+
+  function isConnectionTransitionBusy() {
+    return connectionButtonState === 'connecting' || connectionButtonState === 'disconnecting';
+  }
+
+
+  function getAuthTypeLabel(value) {
+    return value === 'privateKey' ? 'Private key' : 'Password';
+  }
+
+  function updateAuthDropdown() {
+    const value = String(authType.value || 'password');
+    if (authDropdownLabel) authDropdownLabel.textContent = getAuthTypeLabel(value);
+    if (!authDropdownMenu) return;
+
+    const items = Array.from(authDropdownMenu.querySelectorAll('[data-auth-type]'));
+    items.forEach(item => {
+      const selected = item.dataset.authType === value;
+      item.classList.toggle('selected', selected);
+      item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+  }
+
+  function showAuthDropdown() {
+    if (!authDropdownButton || !authDropdownMenu || authDropdownButton.disabled) return;
+    hideProfileDropdown();
+    authDropdownOpen = true;
+    const picker = authDropdownButton.closest('.auth-picker');
+    if (picker) picker.classList.add('open');
+    authDropdownButton.setAttribute('aria-expanded', 'true');
+    updateAuthDropdown();
+  }
+
+  function hideAuthDropdown() {
+    if (!authDropdownButton) return;
+    authDropdownOpen = false;
+    const picker = authDropdownButton.closest('.auth-picker');
+    if (picker) picker.classList.remove('open');
+    authDropdownButton.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleAuthDropdown() {
+    if (authDropdownOpen) {
+      hideAuthDropdown();
+    } else {
+      showAuthDropdown();
+    }
+  }
+
+  function selectAuthType(value) {
+    authType.value = value === 'privateKey' ? 'privateKey' : 'password';
+    updateAuthFields();
+    updateAuthDropdown();
+    setControls();
   }
 
   function formatProfileTarget(profile) {
@@ -1838,13 +2412,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const hasPassphrase = Boolean(profile && profile.hasSavedPassphrase);
 
     passwordSecretState.textContent = hasPassword
-      ? 'Password saved in VS Code SecretStorage. Uncheck and save/connect to forget it.'
-      : 'Password not saved. Check remember to store a new password securely.';
+      ? 'Password saved in VS Code SecretStorage.'
+      : 'Password not saved.';
     passwordSecretState.className = 'credential-state ' + (hasPassword ? 'saved' : 'not-saved');
 
     passphraseSecretState.textContent = hasPassphrase
-      ? 'Passphrase saved in VS Code SecretStorage. Uncheck and save/connect to forget it.'
-      : 'Passphrase not saved. Check remember to store a new passphrase securely.';
+      ? 'Passphrase saved in VS Code SecretStorage.'
+      : 'Passphrase not saved.';
     passphraseSecretState.className = 'credential-state ' + (hasPassphrase ? 'saved' : 'not-saved');
   }
 
@@ -1888,6 +2462,175 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     setControls();
   }
 
+
+
+  function showManageProfilesDialog() {
+    manageProfilesDialogOpen = true;
+    renameProfileId = '';
+    manageProfilesFilterText = '';
+    if (manageProfilesFilterInput) manageProfilesFilterInput.value = '';
+    renderManageProfilesList();
+    manageProfilesBackdrop.classList.add('visible');
+    manageProfilesBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => { if (manageProfilesFilterInput) manageProfilesFilterInput.focus(); else manageProfilesCloseButton.focus(); }, 0);
+  }
+
+  function hideManageProfilesDialog() {
+    if (!manageProfilesBackdrop) return;
+    manageProfilesDialogOpen = false;
+    manageProfilesFilterText = '';
+    if (manageProfilesFilterInput) manageProfilesFilterInput.value = '';
+    renameProfileId = '';
+    manageProfilesBackdrop.classList.remove('visible');
+    manageProfilesBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  const MANAGE_ICON_RENAME = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M200-200h57.46l391.77-391.77-57.46-57.46L200-257.46V-200Zm-40 40v-114.15l489.23-489.23q5.85-5.85 13.08-8.54 7.23-2.69 14.69-2.69 7.46 0 14.88 2.69 7.43 2.69 13.27 8.54l57.23 57.23q5.85 5.84 8.54 13.27 2.69 7.42 2.69 14.88 0 7.46-2.69 14.69-2.69 7.23-8.54 13.08L274.15-160H160Zm432-489.23 57.23 57.46L592-649.23Z"></path></svg>';
+  const MANAGE_ICON_SAVE = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M382-267.69 194.69-455l28.31-28.31 159 159 355-355L765.31-651 382-267.69Z"></path></svg>';
+  const MANAGE_ICON_CANCEL = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="m256-227.69-28.31-28.31 224-224-224-224L256-732.31l224 224 224-224 28.31 28.31-224 224 224 224L704-227.69l-224-224-224 224Z"></path></svg>';
+  const MANAGE_ICON_DELETE = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M292.31-140q-29.83 0-51.07-21.24Q220-182.48 220-212.31V-720h-40v-40h180v-40h240v40h180v40h-40v507.69q0 29.83-21.24 51.07Q697.52-140 667.69-140H292.31ZM700-720H260v507.69q0 13.85 9.23 23.08 9.23 9.23 23.08 9.23h375.38q13.85 0 23.08-9.23 9.23-9.23 9.23-23.08V-720ZM376.92-266.15h40v-367.7h-40v367.7Zm166.16 0h40v-367.7h-40v367.7ZM260-720v540-540Z"></path></svg>';
+
+  function createManageProfileIconButton(action, label, iconMarkup, extraClass) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = ((extraClass || '') + ' manage-profile-icon-button has-tooltip').trim();
+    button.dataset.manageAction = action;
+    button.dataset.tooltip = label;
+    button.setAttribute('aria-label', label);
+    button.innerHTML = iconMarkup;
+    return button;
+  }
+
+  function renderManageProfilesList() {
+    if (!manageProfilesList) return;
+
+    manageProfilesList.innerHTML = '';
+
+    if (!profiles.length) {
+      const empty = document.createElement('div');
+      empty.className = 'manage-profiles-empty';
+      empty.textContent = 'No saved connections.';
+      manageProfilesList.appendChild(empty);
+      return;
+    }
+
+    const filteredProfiles = profiles.filter(profile => profileMatchesFilter(profile, manageProfilesFilterText) || profile.id === renameProfileId);
+    if (!filteredProfiles.length) {
+      const empty = document.createElement('div');
+      empty.className = 'manage-profiles-empty';
+      empty.textContent = 'No saved connections found.';
+      manageProfilesList.appendChild(empty);
+      return;
+    }
+
+    for (const profile of filteredProfiles) {
+      const row = document.createElement('div');
+      row.className = 'manage-profile-row';
+      row.dataset.profileId = profile.id;
+
+      if (renameProfileId === profile.id) {
+        const form = document.createElement('div');
+        form.className = 'manage-profile-rename-form';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = profile.name || '';
+        input.setAttribute('aria-label', 'Connection name');
+        form.appendChild(input);
+
+        const saveButton = createManageProfileIconButton('save-rename', 'Save', MANAGE_ICON_SAVE, '');
+        form.appendChild(saveButton);
+
+        const cancelButton = createManageProfileIconButton('cancel-rename', 'Cancel', MANAGE_ICON_CANCEL, 'secondary');
+        form.appendChild(cancelButton);
+
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            saveButton.click();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            renameProfileId = '';
+            renderManageProfilesList();
+          }
+        });
+
+        row.appendChild(form);
+        manageProfilesList.appendChild(row);
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+        continue;
+      }
+
+      const main = document.createElement('div');
+      main.className = 'manage-profile-main';
+
+      const name = document.createElement('div');
+      name.className = 'manage-profile-name';
+      name.textContent = profile.name || 'Unnamed connection';
+      main.appendChild(name);
+
+      const meta = document.createElement('div');
+      meta.className = 'manage-profile-meta';
+      meta.textContent = formatProfileTarget(profile);
+      main.appendChild(meta);
+
+      row.appendChild(main);
+
+      const renameButton = createManageProfileIconButton('rename', 'Rename', MANAGE_ICON_RENAME, 'secondary');
+      row.appendChild(renameButton);
+
+      const deleteButton = createManageProfileIconButton('delete', 'Delete', MANAGE_ICON_DELETE, 'secondary');
+      row.appendChild(deleteButton);
+
+      manageProfilesList.appendChild(row);
+    }
+  }
+
+  function handleManageProfilesClick(event) {
+    const actionTarget = event.target && event.target.closest ? event.target.closest('[data-manage-action]') : null;
+    if (!actionTarget) return;
+
+    const row = actionTarget.closest('[data-profile-id]');
+    const profileId = row ? row.dataset.profileId || '' : '';
+    const profile = profiles.find(item => item.id === profileId);
+
+    if (!profileId || !profile) return;
+
+    const action = actionTarget.dataset.manageAction;
+    if (action === 'rename') {
+      renameProfileId = profileId;
+      renderManageProfilesList();
+      return;
+    }
+
+    if (action === 'cancel-rename') {
+      renameProfileId = '';
+      renderManageProfilesList();
+      return;
+    }
+
+    if (action === 'save-rename') {
+      const input = row.querySelector('input');
+      const name = input ? String(input.value || '').trim() : '';
+      if (!name) {
+        setStatus('Connection name is required.', true);
+        if (input) input.focus();
+        return;
+      }
+
+      renameProfileId = '';
+      renderManageProfilesList();
+      setBusy(true, 'Renaming saved connection...');
+      vscode.postMessage({ type: 'renameConnection', payload: { id: profileId, name } });
+      return;
+    }
+
+    if (action === 'delete') {
+      vscode.postMessage({ type: 'deleteConnection', payload: { id: profileId, name: profile.name || '' } });
+    }
+  }
 
 
   function showFilePropertiesDialog(entry) {
@@ -1945,8 +2688,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     rows.push(
       ['Connection', active ? active.name : '—'],
-      ['Host', active ? formatSessionTarget(active) : '—'],
-      ['Sudo mode', active && active.sudoModeEnabled ? 'On' : 'Off']
+      ['Host', active ? formatSessionTarget(active) : '—']
     );
 
     filePropertiesGrid.innerHTML = rows.map(row => {
@@ -2071,7 +2813,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const isDirectory = Boolean(options.isDirectory);
     permissionDialogTitle.textContent = 'Set Permissions: ' + (options.entryName || 'selected item');
     permissionDialogPath.textContent = options.remotePath || '';
-    permissionCurrentText.textContent = 'Current: ' + (options.currentPermissions || 'unknown');
+    permissionPreviewTypeChar = permissionFileTypeCharFromSymbolic(options.currentPermissions, isDirectory);
     permissionSetuidLabel.textContent = isDirectory ? 'Set user ID / usually ignored on directories' : 'Run as owner / setuid';
     permissionSetgidLabel.textContent = isDirectory ? 'Inherit group for new files and folders / setgid' : 'Run as group / setgid';
     permissionStickyLabel.textContent = isDirectory ? 'Restrict delete/rename to item owners / sticky' : 'Sticky bit / rarely used on files';
@@ -2081,6 +2823,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
 
     permissionModeInput.value = normalizePermissionMode(String(options.initialMode || '').trim()) || calculateModeFromPermissionCheckboxes();
+    updatePermissionPreview(permissionModeInput.value);
     setPermissionValidation('', true);
     permissionBackdrop.classList.add('visible');
     permissionBackdrop.setAttribute('aria-hidden', 'false');
@@ -2133,6 +2876,36 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function setPermissionChecked(permission, checked) {
     const checkbox = permissionCheckboxes.find(item => item.dataset.permission === permission);
     if (checkbox) checkbox.checked = checked;
+  }
+
+
+  function permissionFileTypeCharFromSymbolic(permissions, isDirectory) {
+    const text = String(permissions || '').trim();
+    return /^[bcdlps-]/.test(text) ? text.charAt(0) : (isDirectory ? 'd' : '-');
+  }
+
+  function updatePermissionPreview(mode) {
+    const normalized = normalizePermissionMode(String(mode || '').trim());
+    permissionCurrentText.textContent = 'Preview: ' + (normalized ? permissionSymbolicFromMode(normalized) : '—');
+  }
+
+  function permissionSymbolicFromMode(mode) {
+    const digits = normalizePermissionMode(mode).split('').map(item => Number(item));
+    const special = digits[0];
+    const owner = digits[1];
+    const group = digits[2];
+    const others = digits[3];
+
+    return permissionPreviewTypeChar +
+      permissionTriplet(owner, (special & 4) !== 0, 's') +
+      permissionTriplet(group, (special & 2) !== 0, 's') +
+      permissionTriplet(others, (special & 1) !== 0, 't');
+  }
+
+  function permissionTriplet(digit, special, specialExecuteChar) {
+    return ((digit & 4) ? 'r' : '-') +
+      ((digit & 2) ? 'w' : '-') +
+      ((digit & 1) ? (special ? specialExecuteChar : 'x') : (special ? specialExecuteChar.toUpperCase() : '-'));
   }
 
   function setPermissionValidation(message, isValid) {
@@ -2253,6 +3026,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     passwordBlock.classList.toggle('visible', !isPrivateKey);
     privateKeyBlock.classList.toggle('visible', isPrivateKey);
     passphraseBlock.classList.toggle('visible', isPrivateKey);
+    updateAuthDropdown();
   }
 
   function listDirectory(path) {
@@ -2270,6 +3044,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function copyRemotePath(path) {
     if (!activeConnectionId || busy) return;
     vscode.postMessage({ type: 'copyRemotePath', payload: { path } });
+  }
+
+  function clearFilterText() {
+    filterText = '';
+    filterInput.value = '';
+    updateFilterClearButton();
   }
 
   function applyFilterInput() {
@@ -2303,8 +3083,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const row = document.createElement('tr');
       const isParentEntry = entry.name === '..' && entry.type === 'directory';
       const entryKey = entry.path || entry.name;
-      row.className = 'entry-row has-tooltip' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
-      row.dataset.tooltip = entry.linkTarget ? ((entry.path || entry.name) + ' -> ' + entry.linkTarget) : (entry.path || entry.name);
+      row.className = 'entry-row' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
       row.dataset.entryPath = entryKey;
       row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
         '<td class="type">' + escapeHtml(formatEntryType(entry)) + '</td>' +
@@ -2433,31 +3212,74 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const allFiles = hasEntryActions && selectedEntries.every(entry => getEffectiveEntryType(entry) === 'file' || entry.type === 'link');
     const canOpen = isSingleDirectory || allFiles;
 
-    const hasItemGroup = isSingleEntry;
     const canMakeCopy = isSingleEntry && selectedEntries[0].type === 'file';
     const canCalculateChecksums = canMakeCopy;
+    const hasItemGroup = isSingleEntry;
+    const hasInfoGroup = isSingleEntry;
+    const hasCurrentDirectoryGroup = Boolean(activeConnectionId);
+    const hasTransferGroup = Boolean(activeConnectionId);
     const hasDeleteGroup = hasEntryActions;
 
-    contextTransferSeparator.style.display = activeConnectionId ? '' : 'none';
-    contextUpload.style.display = activeConnectionId ? '' : 'none';
-    contextDownload.style.display = hasEntryActions ? '' : 'none';
-
     contextOpen.style.display = canOpen ? '' : 'none';
-    contextOpenSeparator.style.display = canOpen ? '' : 'none';
+    contextOpenSeparator.style.display = canOpen && (hasItemGroup || hasInfoGroup || hasCurrentDirectoryGroup || hasTransferGroup || hasDeleteGroup) ? '' : 'none';
     contextOpen.textContent = isSingleDirectory
       ? 'Enter Directory'
       : (isSingleEntry && selectedEntries[0].type === 'link' ? 'Open Link' : 'View/Edit');
 
-    contextItemSeparator.style.display = hasItemGroup ? '' : 'none';
     contextMakeCopy.style.display = canMakeCopy ? '' : 'none';
     contextRename.style.display = hasItemGroup ? '' : 'none';
     contextSetPermissions.style.display = hasItemGroup ? '' : 'none';
-    contextFileProperties.style.display = hasItemGroup ? '' : 'none';
+
+    contextItemSeparator.style.display = hasItemGroup && hasInfoGroup ? '' : 'none';
     contextCalculateChecksums.style.display = canCalculateChecksums ? '' : 'none';
+    contextFileProperties.style.display = hasInfoGroup ? '' : 'none';
+
+    contextRefreshSeparator.style.display = hasCurrentDirectoryGroup && (canOpen || hasItemGroup || hasInfoGroup) ? '' : 'none';
+    contextCreateFile.style.display = hasCurrentDirectoryGroup ? '' : 'none';
+    contextCreateDirectory.style.display = hasCurrentDirectoryGroup ? '' : 'none';
+    contextRefresh.style.display = hasCurrentDirectoryGroup ? '' : 'none';
+
+    contextTransferSeparator.style.display = hasTransferGroup && hasCurrentDirectoryGroup ? '' : 'none';
+    contextUpload.style.display = hasTransferGroup ? '' : 'none';
+    contextDownload.style.display = hasEntryActions ? '' : 'none';
+
     contextDeleteSeparator.style.display = hasDeleteGroup ? '' : 'none';
     contextDelete.style.display = hasDeleteGroup ? '' : 'none';
-    contextRefreshSeparator.style.display = activeConnectionId ? '' : 'none';
-    contextRefresh.style.display = activeConnectionId ? '' : 'none';
+
+    normalizeContextMenuSeparators();
+  }
+
+  function isContextMenuNodeVisible(node) {
+    return node && node.style && node.style.display !== 'none';
+  }
+
+  function normalizeContextMenuSeparators() {
+    const nodes = Array.from(entryContextMenu.children);
+    const isSeparator = node => node.classList && node.classList.contains('context-menu-separator');
+
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index];
+      if (!isSeparator(node) || !isContextMenuNodeVisible(node)) continue;
+
+      let previousVisible = null;
+      for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+        if (isContextMenuNodeVisible(nodes[previousIndex])) {
+          previousVisible = nodes[previousIndex];
+          break;
+        }
+      }
+
+      let nextVisible = null;
+      for (let nextIndex = index + 1; nextIndex < nodes.length; nextIndex += 1) {
+        if (isContextMenuNodeVisible(nodes[nextIndex])) {
+          nextVisible = nodes[nextIndex];
+          break;
+        }
+      }
+
+      const shouldHide = !previousVisible || !nextVisible || isSeparator(previousVisible) || isSeparator(nextVisible);
+      if (shouldHide) node.style.display = 'none';
+    }
   }
 
   function hideContextMenu() {
@@ -2868,25 +3690,25 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function setBusy(isBusy, message, cancelAction = '', cancelLabel = 'Cancel') {
     busy = isBusy;
     statusCancelAction = isBusy ? String(cancelAction || '') : '';
-    if (busy) hideContextMenu();
+    statusCancelLabel = String(cancelLabel || 'Cancel');
+    if (!busy && isConnectionTransitionBusy()) {
+      connectionButtonState = '';
+    }
+    if (busy) {
+      hideContextMenu();
+      hideProfileDropdown();
+    }
     setControls();
     if (message) statusText.textContent = message;
-    if (statusCancelButton) {
-      statusCancelButton.textContent = cancelLabel || 'Cancel';
-      statusCancelButton.dataset.tooltip = cancelLabel || 'Cancel';
-    }
-    status.className = isBusy ? ('statusbar busy' + (statusCancelAction ? ' cancelable' : '')) : 'statusbar';
+    status.className = isBusy ? 'statusbar busy' : 'statusbar';
   }
 
   function setStatus(message, isError = false) {
     busy = false;
     statusCancelAction = '';
+    statusCancelLabel = 'Cancel';
     setControls();
     statusText.textContent = message;
-    if (statusCancelButton) {
-      statusCancelButton.textContent = 'Cancel';
-      statusCancelButton.dataset.tooltip = 'Cancel';
-    }
     status.className = isError ? 'statusbar error' : 'statusbar';
   }
 
@@ -2895,14 +3717,40 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function setControls() {
-    const hasProfile = Boolean(selectedProfileId || profileSelect.value);
     const hasActiveSession = Boolean(activeConnectionId);
+    const connectedSession = getConnectedSessionForCurrentForm();
+    const isConnectedForm = Boolean(connectedSession);
+    const shouldLockConnectionPicker = busy;
+    const shouldLockConnectionDetails = busy || isConnectedForm;
+
     connectButton.disabled = busy;
-    saveProfileButton.disabled = busy;
-    deleteProfileButton.disabled = busy || !hasProfile;
-    newProfileButton.disabled = busy;
-    profileSelect.disabled = busy;
-    disconnectButton.disabled = busy || !hasActiveSession;
+    connectButton.textContent = connectionButtonState === 'connecting'
+      ? 'Connecting...'
+      : connectionButtonState === 'disconnecting'
+        ? 'Disconnecting...'
+        : (isConnectedForm ? 'Disconnect' : 'Connect');
+    connectButton.classList.toggle('secondary', isConnectedForm || connectionButtonState === 'disconnecting');
+
+    saveProfileButton.disabled = busy || isConnectedForm;
+    profileSelect.disabled = shouldLockConnectionPicker;
+    profileDropdownButton.disabled = shouldLockConnectionPicker;
+    manageProfilesButton.disabled = busy;
+    showOutputButton.disabled = false;
+
+    const hasStatusCancelAction = Boolean(statusCancelAction);
+    statusCancelButton.hidden = !hasStatusCancelAction;
+    statusCancelButton.disabled = !hasStatusCancelAction;
+    statusCancelButton.textContent = statusCancelLabel || 'Cancel';
+    statusCancelButton.setAttribute('aria-label', statusCancelLabel || 'Cancel current operation');
+    statusCancelButton.setAttribute('data-tooltip', statusCancelLabel || 'Cancel current operation');
+
+    for (const control of getConnectionDetailControls()) {
+      control.disabled = shouldLockConnectionDetails;
+    }
+
+    if (shouldLockConnectionDetails || !authDropdownButton || authDropdownButton.disabled) hideAuthDropdown();
+    if (busy) hideProfileDropdown();
+
     currentPath.disabled = busy || !hasActiveSession;
     if (currentPath.disabled && remotePathEditing) {
       exitRemotePathEditMode({ reset: true, keepFocus: true });
@@ -2920,15 +3768,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     goButton.disabled = busy || !hasActiveSession;
     sudoToggle.disabled = busy || !hasActiveSession;
     updateSudoToggle();
-    privateKeyBrowseButton.disabled = busy;
   }
+
 
   function updateTransferButtons() {
     const hasActiveSession = Boolean(activeConnectionId);
     if (uploadButton) uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;
     if (downloadButton) downloadButton.disabled = !canStartTransferAction() || !hasActiveSession || getSelectedActionEntries().length === 0;
     renderTransferQueueButton();
-    if (statusCancelButton) statusCancelButton.disabled = !statusCancelAction;
   }
 
   function escapeHtml(value) {

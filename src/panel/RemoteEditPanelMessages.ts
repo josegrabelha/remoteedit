@@ -3,6 +3,7 @@ export const RemoteEditIncomingMessageType = {
   SaveConnection: 'saveConnection',
   PickPrivateKeyPath: 'pickPrivateKeyPath',
   DeleteConnection: 'deleteConnection',
+  RenameConnection: 'renameConnection',
   Connect: 'connect',
   CancelConnection: 'cancelConnection',
   Disconnect: 'disconnect',
@@ -34,6 +35,7 @@ export const RemoteEditIncomingMessageType = {
   ShowOutput: 'showOutput',
   CopyRemotePath: 'copyRemotePath',
   CopyStatus: 'copyStatus',
+  ConfirmDialogResponse: 'confirmDialogResponse',
   Log: 'log'
 } as const;
 
@@ -54,7 +56,8 @@ export const RemoteEditOutboundMessageType = {
   Busy: 'busy',
   StatusCopyFeedback: 'statusCopyFeedback',
   TransferQueueChanged: 'transferQueueChanged',
-  Error: 'error'
+  Error: 'error',
+  ShowConfirmDialog: 'showConfirmDialog'
 } as const;
 
 export type RemoteEditIncomingMessageType = typeof RemoteEditIncomingMessageType[keyof typeof RemoteEditIncomingMessageType];

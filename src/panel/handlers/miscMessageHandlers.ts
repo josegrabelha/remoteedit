@@ -9,6 +9,9 @@ export function tryHandleMiscMessage(
     case RemoteEditIncomingMessageType.ShowOutput:
       handlers.showOutput();
       return true;
+    case RemoteEditIncomingMessageType.ConfirmDialogResponse:
+      handlers.confirmDialogResponse(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.Log:
       handlers.log(String(message.payload?.message || ''));
       return true;

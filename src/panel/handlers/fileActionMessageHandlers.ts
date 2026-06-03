@@ -33,6 +33,18 @@ export async function tryHandleFileActionMessage(
     case RemoteEditIncomingMessageType.RequestDownloadEntries:
       await handlers.requestDownloadEntries(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestCompressArchive:
+      await handlers.requestCompressArchive(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RequestChangeOwnerGroup:
+      await handlers.requestChangeOwnerGroup(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RequestRunRemoteCommand:
+      await handlers.requestRunRemoteCommand(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.StopRemoteCommand:
+      handlers.stopRemoteCommand(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.CancelTransfer:
       await handlers.cancelTransfer();
       return true;

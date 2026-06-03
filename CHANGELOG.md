@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0] - 2026-06-03
+
+### Added
+- Added **View Read-Only** for remote files.
+- Added **Compare Selected** for comparing two remote files in VS Code.
+- Added **Compress to Archive** for selected remote items.
+- Added **Change owner/group** with optional recursive apply.
+- Added **Run Remote Command** with streaming output and stop/force-kill controls.
+- Added copy actions for remote paths, filenames, and current path.
+- Added manual resizing for the Connection panel.
+
+### Improved
+- Improved **Set permissions** with multi-select and recursive support.
+- Improved Remote Path, Filter, breadcrumb, and Connection panel resize behavior.
+- Polished context menus, dialogs, checkbox styling, Sudo switch, and column resize indicators.
+- Updated README documentation for permissions, ownership, and sudo-related operations.
 
 ## [1.3.0] - 2026-05-30
 

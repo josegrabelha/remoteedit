@@ -59,6 +59,8 @@ export interface RemoteChecksumSummary {
   md5: RemoteChecksumValue;
 }
 
+export type RemoteArchiveFormat = 'tar.gz' | 'tar.bz2' | 'tar.xz' | 'tar.Z';
+
 interface ChecksumCommandAttempt {
   label: string;
   command: (quotedPath: string) => string;
@@ -96,6 +98,31 @@ interface RemoteExecResult {
   signal?: string;
 }
 
+export interface RemoteCommandStreamingControl {
+  stop: () => void;
+  forceKill: () => void;
+}
+
+export interface RemoteCommandStreamingCallbacks {
+  onStdout?: (chunk: string) => void;
+  onStderr?: (chunk: string) => void;
+  onCommand?: (command: string) => void;
+  onCommandStatus?: (index: number, code: number) => void;
+  onControl?: (control: RemoteCommandStreamingControl) => void;
+}
+
+interface RemoteCommandStreamingOptions {
+  input?: string;
+  remoteProcess?: {
+    pidMarkerPrefix: string;
+  };
+}
+
+export interface RemoteCommandStreamingResult {
+  code: number;
+  signal?: string;
+}
+
 interface CachedReadFile {
   content: Buffer;
   expiresAt: number;
@@ -104,6 +131,16 @@ interface CachedReadFile {
 interface SudoTargetMetadata {
   size: number;
   mode?: number;
+}
+
+interface ChangeOwnerGroupOptions {
+  owner?: string;
+  group?: string;
+  recursive?: boolean;
+}
+
+interface ChmodOptions {
+  recursive?: boolean;
 }
 
 export class SftpSessionManager {
@@ -259,6 +296,355 @@ export class SftpSessionManager {
     return this.sessions.has(connectionId);
   }
 
+  async runRemoteCommandStreaming(
+    connectionId: string,
+    workingDirectory: string,
+    command: string,
+    callbacks: RemoteCommandStreamingCallbacks = {},
+    cancellationToken?: ConnectionCancellationToken
+  ): Promise<RemoteCommandStreamingResult> {
+    const trimmedCommand = String(command || '').trim();
+
+    if (!trimmedCommand) {
+      throw new Error('Enter a command to run.');
+    }
+
+    const client = this.getClient(connectionId);
+    const normalizedWorkingDirectory = normalizeRemotePath(workingDirectory || '/');
+    const displayScript = this.buildRemoteCommandDisplayScript(trimmedCommand);
+    const streamingCallbacks = this.createRemoteCommandDisplayCallbacks(displayScript, callbacks);
+    const sudoPassword = this.sudoPasswords.get(connectionId);
+    const remoteProcessMarkerToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    const remoteProcessPidMarkerPrefix = `__REMOTE_EDIT_PROCESS_PID_${remoteProcessMarkerToken}_`;
+    const controlledScript = this.buildControlledRemoteCommandScript(
+      normalizedWorkingDirectory,
+      displayScript.script,
+      remoteProcessPidMarkerPrefix,
+      Boolean(sudoPassword)
+    );
+
+    try {
+      if (!sudoPassword) {
+        return await this.executeRemoteCommandStreaming(client, controlledScript, streamingCallbacks, cancellationToken, {
+          remoteProcess: { pidMarkerPrefix: remoteProcessPidMarkerPrefix }
+        });
+      }
+
+      const sudoCommand = `sudo -S -p '' sh -c ${shellQuote(controlledScript)}`;
+      return await this.executeRemoteCommandStreaming(client, sudoCommand, streamingCallbacks, cancellationToken, {
+        input: `${sudoPassword}\n`,
+        remoteProcess: { pidMarkerPrefix: remoteProcessPidMarkerPrefix }
+      });
+    } finally {
+      displayScript.flush();
+    }
+  }
+
+  private buildControlledRemoteCommandScript(
+    workingDirectory: string,
+    commandScript: string,
+    pidMarkerPrefix: string,
+    redirectInputFromNull: boolean
+  ): string {
+    const inputRedirectLine = redirectInputFromNull ? 'exec </dev/null' : '';
+    const scriptLines = [
+      `cd ${shellQuote(workingDirectory)} || exit $?`,
+      inputRedirectLine,
+      'if command -v setsid >/dev/null 2>&1; then',
+      `  setsid sh -c ${shellQuote(commandScript)} &`,
+      'else',
+      `  sh -c ${shellQuote(commandScript)} &`,
+      'fi',
+      '__remote_edit_command_pid=$!',
+      `printf '%s%s%s\\n' ${shellQuote(pidMarkerPrefix)} "$__remote_edit_command_pid" ${shellQuote('__')}`,
+      'wait "$__remote_edit_command_pid" 2>/dev/null',
+      '__remote_edit_wait_status=$?',
+      'exit "$__remote_edit_wait_status"'
+    ];
+
+    return scriptLines.filter(line => line !== '').join('\n');
+  }
+
+
+
+  private buildRemoteCommandDisplayScript(command: string): {
+    readonly script: string;
+    flush: () => void;
+  } {
+    const logicalCommands = this.splitRemoteCommandForDisplay(command);
+    const markerToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    const commandMarkerPrefix = `__REMOTE_EDIT_COMMAND_${markerToken}_`;
+    const statusMarkerPrefix = `__REMOTE_EDIT_COMMAND_STATUS_${markerToken}_`;
+    const markerMap = new Map<string, string>();
+
+    const scriptParts: string[] = ['__remote_edit_last_status=0'];
+
+    logicalCommands.forEach((logicalCommand, index) => {
+      const commandMarker = `${commandMarkerPrefix}${index}__`;
+      const statusMarkerPrefixForCommand = `${statusMarkerPrefix}${index}_`;
+      markerMap.set(commandMarker, logicalCommand);
+      const commandMarkerPrinter = index === 0
+        ? `printf '%s\\n' ${shellQuote(commandMarker)}`
+        : `printf '\\n%s\\n' ${shellQuote(commandMarker)}`;
+
+      scriptParts.push(commandMarkerPrinter);
+      scriptParts.push(logicalCommand);
+      scriptParts.push('__remote_edit_command_status=$?');
+      scriptParts.push('__remote_edit_last_status=$__remote_edit_command_status');
+      scriptParts.push(`printf '%s%s%s\\n' ${shellQuote(statusMarkerPrefixForCommand)} "$__remote_edit_command_status" ${shellQuote('__')}`);
+    });
+
+    scriptParts.push('exit $__remote_edit_last_status');
+    const script = scriptParts.join('\n');
+
+    const maxCommandMarkerLength = Array.from(markerMap.keys()).reduce((max, marker) => Math.max(max, marker.length), 0);
+    const maxStatusMarkerLength = statusMarkerPrefix.length + String(Math.max(0, logicalCommands.length - 1)).length + 1 + 16 + 2;
+    const displayScript = {
+      script,
+      flush: () => undefined as void
+    };
+
+    (displayScript as any).commandMarkerPrefix = commandMarkerPrefix;
+    (displayScript as any).statusMarkerPrefix = statusMarkerPrefix;
+    (displayScript as any).markerMap = markerMap;
+    (displayScript as any).maxMarkerLength = Math.max(maxCommandMarkerLength, maxStatusMarkerLength);
+
+    return displayScript;
+  }
+
+  private createRemoteCommandDisplayCallbacks(
+    displayScript: { readonly script: string; flush: () => void },
+    callbacks: RemoteCommandStreamingCallbacks
+  ): RemoteCommandStreamingCallbacks {
+    const commandMarkerPrefix = String((displayScript as any).commandMarkerPrefix || '');
+    const statusMarkerPrefix = String((displayScript as any).statusMarkerPrefix || '');
+    const markerMap = (displayScript as any).markerMap as Map<string, string> | undefined;
+    const maxMarkerLength = Number((displayScript as any).maxMarkerLength || 0);
+    const commandMarkerPattern = commandMarkerPrefix ? new RegExp(`${this.escapeRegExp(commandMarkerPrefix)}\\d+__`) : undefined;
+    const statusMarkerPattern = statusMarkerPrefix ? new RegExp(`${this.escapeRegExp(statusMarkerPrefix)}(\\d+)_(\\d+)__`) : undefined;
+    const markerPattern = commandMarkerPrefix || statusMarkerPrefix
+      ? new RegExp([
+        commandMarkerPrefix ? `${this.escapeRegExp(commandMarkerPrefix)}\\d+__` : '',
+        statusMarkerPrefix ? `${this.escapeRegExp(statusMarkerPrefix)}\\d+_\\d+__` : ''
+      ].filter(Boolean).join('|'))
+      : undefined;
+    let pendingStdout = '';
+
+    const emitStdout = (text: string) => {
+      if (text) {
+        callbacks.onStdout?.(text);
+      }
+    };
+
+    const processStdout = (chunk: string) => {
+      if (!chunk || !markerPattern || !markerMap || !maxMarkerLength) {
+        emitStdout(chunk);
+        return;
+      }
+
+      pendingStdout += chunk;
+
+      while (pendingStdout) {
+        markerPattern.lastIndex = 0;
+        const match = markerPattern.exec(pendingStdout);
+
+        if (!match) {
+          const keepLength = this.getPotentialRemoteCommandDisplayMarkerSuffixLength(
+            pendingStdout,
+            commandMarkerPrefix,
+            statusMarkerPrefix,
+            maxMarkerLength
+          );
+          if (pendingStdout.length > keepLength) {
+            const emitLength = pendingStdout.length - keepLength;
+            emitStdout(pendingStdout.slice(0, emitLength));
+            pendingStdout = pendingStdout.slice(emitLength);
+          }
+          return;
+        }
+
+        if (match.index > 0) {
+          emitStdout(pendingStdout.slice(0, match.index));
+        }
+
+        const marker = match[0];
+        if (commandMarkerPattern?.test(marker)) {
+          commandMarkerPattern.lastIndex = 0;
+          const command = markerMap.get(marker);
+          if (command) {
+            callbacks.onCommand?.(command);
+          }
+        } else if (statusMarkerPattern) {
+          statusMarkerPattern.lastIndex = 0;
+          const statusMatch = statusMarkerPattern.exec(marker);
+          if (statusMatch) {
+            callbacks.onCommandStatus?.(Number(statusMatch[1]), Number(statusMatch[2]));
+          }
+        }
+
+        pendingStdout = pendingStdout.slice(match.index + marker.length);
+        if (pendingStdout.startsWith('\r\n')) {
+          pendingStdout = pendingStdout.slice(2);
+        } else if (pendingStdout.startsWith('\n')) {
+          pendingStdout = pendingStdout.slice(1);
+        } else if (pendingStdout.startsWith('\r')) {
+          pendingStdout = pendingStdout.slice(1);
+        }
+      }
+    };
+
+    displayScript.flush = () => {
+      if (pendingStdout) {
+        emitStdout(pendingStdout);
+        pendingStdout = '';
+      }
+    };
+
+    return {
+      ...callbacks,
+      onStdout: processStdout,
+      onStderr: callbacks.onStderr
+    };
+  }
+
+  private splitRemoteCommandForDisplay(command: string): string[] {
+    const normalized = String(command || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+
+    if (!normalized) {
+      return [];
+    }
+
+    if (this.shouldKeepRemoteCommandAsSingleBlock(normalized)) {
+      return [normalized];
+    }
+
+    const logicalCommands: string[] = [];
+    const currentLines: string[] = [];
+
+    for (const line of normalized.split('\n')) {
+      if (!currentLines.length && !line.trim()) {
+        continue;
+      }
+
+      currentLines.push(line);
+
+      if (this.isShellLineContinued(line)) {
+        continue;
+      }
+
+      const logicalCommand = currentLines.join('\n').trim();
+      if (logicalCommand) {
+        logicalCommands.push(logicalCommand);
+      }
+      currentLines.length = 0;
+    }
+
+    const trailingCommand = currentLines.join('\n').trim();
+    if (trailingCommand) {
+      logicalCommands.push(trailingCommand);
+    }
+
+    return logicalCommands.length ? logicalCommands : [normalized];
+  }
+
+  private shouldKeepRemoteCommandAsSingleBlock(command: string): boolean {
+    const lines = command.split('\n').map(line => line.trim()).filter(Boolean);
+
+    if (lines.length <= 1) {
+      return false;
+    }
+
+    return lines.some(line =>
+      /<<[-]?\s*['"]?\w+['"]?/.test(line) ||
+      /^(if|for|while|until|case|select)\b/.test(line) ||
+      /\b(then|do)\s*$/.test(line) ||
+      /^(elif|else|fi|done|esac)\b/.test(line) ||
+      /^\{\s*$/.test(line) ||
+      /^\}\s*$/.test(line)
+    );
+  }
+
+  private isShellLineContinued(line: string): boolean {
+    const trimmedRight = String(line || '').replace(/[ \t]+$/g, '');
+    let trailingBackslashes = 0;
+
+    for (let index = trimmedRight.length - 1; index >= 0 && trimmedRight[index] === '\\'; index -= 1) {
+      trailingBackslashes += 1;
+    }
+
+    return trailingBackslashes > 0 && trailingBackslashes % 2 === 1;
+  }
+
+  private escapeRegExp(value: string): string {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+
+  private getPotentialRemoteCommandDisplayMarkerSuffixLength(
+    text: string,
+    commandMarkerPrefix: string,
+    statusMarkerPrefix: string,
+    maxMarkerLength: number
+  ): number {
+    return this.getPotentialMarkerSuffixLength(text, maxMarkerLength, suffix => {
+      if (commandMarkerPrefix && this.isPotentialNumberMarkerSuffix(suffix, commandMarkerPrefix)) {
+        return true;
+      }
+
+      if (!statusMarkerPrefix) {
+        return false;
+      }
+
+      if (statusMarkerPrefix.startsWith(suffix)) {
+        return true;
+      }
+
+      if (!suffix.startsWith(statusMarkerPrefix)) {
+        return false;
+      }
+
+      const rest = suffix.slice(statusMarkerPrefix.length);
+      return /^\d*(?:_\d*)?(?:_{0,2})?$/.test(rest);
+    });
+  }
+
+  private getPotentialRemoteProcessPidMarkerSuffixLength(text: string, pidMarkerPrefix: string, maxMarkerLength: number): number {
+    if (!pidMarkerPrefix) {
+      return 0;
+    }
+
+    return this.getPotentialMarkerSuffixLength(text, maxMarkerLength, suffix => this.isPotentialNumberMarkerSuffix(suffix, pidMarkerPrefix));
+  }
+
+  private getPotentialMarkerSuffixLength(text: string, maxMarkerLength: number, isPotentialMarkerSuffix: (suffix: string) => boolean): number {
+    const maxLength = Math.min(Math.max(0, maxMarkerLength - 1), text.length);
+
+    for (let length = maxLength; length > 0; length -= 1) {
+      const suffix = text.slice(text.length - length);
+      if (isPotentialMarkerSuffix(suffix)) {
+        return length;
+      }
+    }
+
+    return 0;
+  }
+
+  private isPotentialNumberMarkerSuffix(suffix: string, markerPrefix: string): boolean {
+    if (!suffix) {
+      return false;
+    }
+
+    if (markerPrefix.startsWith(suffix)) {
+      return true;
+    }
+
+    if (!suffix.startsWith(markerPrefix)) {
+      return false;
+    }
+
+    const rest = suffix.slice(markerPrefix.length);
+    return /^\d*(?:_{0,2})?$/.test(rest);
+  }
   async listDirectory(connectionId: string, remotePath: string): Promise<RemoteEntry[]> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
@@ -559,6 +945,56 @@ export class SftpSessionManager {
     this.clearReadFileCache(connectionId, normalizedTargetPath);
   }
 
+  async createArchive(
+    connectionId: string,
+    baseDirectory: string,
+    entryNames: string[],
+    archiveName: string,
+    format: RemoteArchiveFormat,
+    overwrite = false,
+    cancellationToken?: ConnectionCancellationToken
+  ): Promise<void> {
+    const client = this.getClient(connectionId);
+    const normalizedBaseDirectory = normalizeRemotePath(baseDirectory);
+    const safeEntryNames = entryNames.map(name => String(name || '').trim()).filter(Boolean);
+    const safeArchiveName = String(archiveName || '').trim();
+
+    if (!safeEntryNames.length) {
+      throw new Error('Select one or more remote items to archive.');
+    }
+
+    for (const name of safeEntryNames) {
+      if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+        throw new Error(`Cannot archive invalid entry name: ${name}`);
+      }
+    }
+
+    if (!safeArchiveName || safeArchiveName === '.' || safeArchiveName === '..' || safeArchiveName.includes('/') || safeArchiveName.includes('\\')) {
+      throw new Error('The archive name must be a filename in the current remote directory.');
+    }
+
+    if (safeEntryNames.includes(safeArchiveName)) {
+      throw new Error('The archive name cannot be the same as one of the selected items.');
+    }
+
+    const command = this.buildCreateArchiveCommand(normalizedBaseDirectory, safeEntryNames, safeArchiveName, format, overwrite);
+
+    if (this.isSudoModeEnabled(connectionId)) {
+      await this.runSudoCommandText(connectionId, command, 1800000, cancellationToken);
+      this.clearReadFileCache(connectionId, joinRemotePath(normalizedBaseDirectory, safeArchiveName));
+      return;
+    }
+
+    const result = await this.executeRemoteCommand(client, command, { timeoutMs: 1800000, cancellationToken });
+
+    if (result.code !== 0) {
+      const message = (result.stderr || result.stdout.toString('utf8') || `Remote archive command failed with exit code ${result.code}.`).trim();
+      throw new Error(message);
+    }
+
+    this.clearReadFileCache(connectionId, joinRemotePath(normalizedBaseDirectory, safeArchiveName));
+  }
+
   private buildCopyFileCommand(sourcePath: string, targetPath: string, overwrite: boolean): string {
     const source = shellQuote(sourcePath);
     const target = shellQuote(targetPath);
@@ -567,6 +1003,72 @@ export class SftpSessionManager {
       : `if [ -e ${target} ] || [ -L ${target} ]; then echo 'Target already exists.' >&2; exit 17; fi;`;
 
     return `if [ ! -f ${source} ]; then echo 'Source is not a regular file.' >&2; exit 22; fi; ${targetGuard} cp -p ${source} ${target}`;
+  }
+
+  private buildCreateArchiveCommand(
+    baseDirectory: string,
+    entryNames: string[],
+    archiveName: string,
+    format: RemoteArchiveFormat,
+    overwrite: boolean
+  ): string {
+    const directory = shellQuote(baseDirectory);
+    const target = shellQuote(archiveName);
+    const tempTar = shellQuote(`.remoteedit-archive-${Date.now()}-${Math.random().toString(16).slice(2)}.tar`);
+    const entries = entryNames.map(name => shellQuote(`./${name}`)).join(' ');
+    const compression = this.buildArchiveCompressionCommand(format, tempTar, target, overwrite);
+    const compressor = this.getArchiveCompressorCommand(format);
+    const targetGuard = overwrite
+      ? `if [ -d ${target} ] && [ ! -L ${target} ]; then echo 'Target archive is a directory.' >&2; exit 21; fi; rm -f ${target}`
+      : `if [ -e ${target} ] || [ -L ${target} ]; then echo 'Target archive already exists.' >&2; exit 17; fi`;
+
+    return [
+      `cd ${directory}`,
+      `if ! command -v tar >/dev/null 2>&1; then echo 'tar command not found on the remote host.' >&2; exit 127; fi`,
+      `if ! command -v ${compressor} >/dev/null 2>&1; then echo '${compressor} command not found on the remote host.' >&2; exit 127; fi`,
+      targetGuard,
+      `rm -f ${tempTar}`,
+      `tar -cf ${tempTar} ${entries}`,
+      `__remote_edit_status=$?`,
+      `if [ $__remote_edit_status -eq 0 ]; then ${compression}; __remote_edit_status=$?; fi`,
+      `rm -f ${tempTar}`,
+      `exit $__remote_edit_status`
+    ].join('; ');
+  }
+
+  private buildArchiveCompressionCommand(format: RemoteArchiveFormat, tempTar: string, target: string, overwrite: boolean): string {
+    const redirect = overwrite ? `> ${target}` : `> ${target}`;
+    const command = (() => {
+      switch (format) {
+        case 'tar.gz':
+          return `gzip -c ${tempTar} ${redirect}`;
+        case 'tar.bz2':
+          return `bzip2 -c ${tempTar} ${redirect}`;
+        case 'tar.xz':
+          return `xz -c ${tempTar} ${redirect}`;
+        case 'tar.Z':
+          return `compress -c ${tempTar} ${redirect}`;
+        default:
+          return '';
+      }
+    })();
+
+    return overwrite ? command : `(set -C; ${command})`;
+  }
+
+  private getArchiveCompressorCommand(format: RemoteArchiveFormat): string {
+    switch (format) {
+      case 'tar.gz':
+        return 'gzip';
+      case 'tar.bz2':
+        return 'bzip2';
+      case 'tar.xz':
+        return 'xz';
+      case 'tar.Z':
+        return 'compress';
+      default:
+        return 'gzip';
+    }
   }
 
 
@@ -669,7 +1171,39 @@ export class SftpSessionManager {
     return match ? match[0].toLowerCase() : undefined;
   }
 
-  async chmod(connectionId: string, remotePath: string, mode: string | number): Promise<void> {
+
+  async changeOwnerGroup(connectionId: string, remotePath: string, options: ChangeOwnerGroupOptions): Promise<void> {
+    const normalizedPath = normalizeRemotePath(remotePath);
+    const owner = String(options?.owner || '').trim();
+    const group = String(options?.group || '').trim();
+
+    if (!owner && !group) {
+      throw new Error('Owner or group is required.');
+    }
+
+    const commandName = owner ? 'chown' : 'chgrp';
+    const target = owner && group ? `${owner}:${group}` : (owner || group);
+    const recursiveFlag = options?.recursive ? ' -R' : '';
+    const command = `${commandName}${recursiveFlag} ${shellQuote(target)} ${shellQuote(normalizedPath)}`;
+
+    if (this.isSudoModeEnabled(connectionId)) {
+      await this.runSudoCommandText(connectionId, command, 300000);
+      this.clearReadFileCache(connectionId, normalizedPath);
+      return;
+    }
+
+    const client = this.getClient(connectionId);
+    const result = await this.executeRemoteCommand(client, command, { timeoutMs: 300000 });
+
+    if (result.code !== 0) {
+      const output = `${result.stderr}\n${result.stdout.toString('utf8')}`.trim();
+      throw new Error(output || `Remote ${commandName} command failed with exit code ${result.code}.`);
+    }
+
+    this.clearReadFileCache(connectionId, normalizedPath);
+  }
+
+  async chmod(connectionId: string, remotePath: string, mode: string | number, options: ChmodOptions = {}): Promise<void> {
     const client = this.getClient(connectionId);
     const modeText = typeof mode === 'number' ? mode.toString(8) : String(mode).trim();
 
@@ -679,8 +1213,24 @@ export class SftpSessionManager {
 
     const normalizedPath = normalizeRemotePath(remotePath);
 
-    if (this.isSudoModeEnabled(connectionId)) {
-      await this.runSudoCommandText(connectionId, `chmod ${shellQuote(modeText)} ${shellQuote(normalizedPath)}`, 30000);
+    if (this.isSudoModeEnabled(connectionId) || options.recursive) {
+      const recursiveFlag = options.recursive ? ' -R' : '';
+      const command = `chmod${recursiveFlag} ${shellQuote(modeText)} ${shellQuote(normalizedPath)}`;
+
+      if (this.isSudoModeEnabled(connectionId)) {
+        await this.runSudoCommandText(connectionId, command, 300000);
+        this.clearReadFileCache(connectionId, normalizedPath);
+        return;
+      }
+
+      const result = await this.executeRemoteCommand(client, command, { timeoutMs: 300000 });
+
+      if (result.code !== 0) {
+        const output = `${result.stderr}
+${result.stdout.toString('utf8')}`.trim();
+        throw new Error(output || `Remote chmod command failed with exit code ${result.code}.`);
+      }
+
       this.clearReadFileCache(connectionId, normalizedPath);
       return;
     }
@@ -1376,6 +1926,429 @@ export class SftpSessionManager {
     }
 
     return result;
+  }
+
+  private async executeRemoteCommandStreaming(
+    client: SftpClient,
+    command: string,
+    callbacks: RemoteCommandStreamingCallbacks = {},
+    cancellationToken?: ConnectionCancellationToken,
+    options: RemoteCommandStreamingOptions = {}
+  ): Promise<RemoteCommandStreamingResult> {
+    const sshClient = (client as any).client;
+
+    if (!sshClient || typeof sshClient.exec !== 'function') {
+      throw new Error('The active SSH client does not support remote command execution.');
+    }
+
+    return new Promise<RemoteCommandStreamingResult>((resolve, reject) => {
+      let settled = false;
+      let remoteStream: any;
+      let stopRequested = false;
+      let forceKillRequested = false;
+      let throttledOutputBytes = 0;
+      let outputThrottleTimer: ReturnType<typeof setTimeout> | undefined;
+      let forceCloseTimer: ReturnType<typeof setTimeout> | undefined;
+      const maxOutputBytesBeforePause = 65536;
+      const remoteProcessPidMarkerPrefix = String(options.remoteProcess?.pidMarkerPrefix || '');
+      const remoteProcessPidPattern = remoteProcessPidMarkerPrefix
+        ? new RegExp(`${this.escapeRegExp(remoteProcessPidMarkerPrefix)}(\\d+)__`)
+        : undefined;
+      const maxRemoteProcessPidMarkerLength = remoteProcessPidMarkerPrefix.length + 32;
+      let remoteProcessPid = '';
+      let pendingStdoutForRemoteProcess = '';
+      let lastRemoteKillSignal: 'TERM' | 'KILL' | undefined;
+
+      const emitStdoutAfterRemoteProcessFilter = (text: string) => {
+        if (text) {
+          callbacks.onStdout?.(text);
+        }
+      };
+
+      const processStdoutForRemoteProcess = (chunk: string) => {
+        if (!chunk || !remoteProcessPidPattern || !maxRemoteProcessPidMarkerLength || remoteProcessPid) {
+          emitStdoutAfterRemoteProcessFilter(chunk);
+          return;
+        }
+
+        pendingStdoutForRemoteProcess += chunk;
+
+        while (pendingStdoutForRemoteProcess) {
+          remoteProcessPidPattern.lastIndex = 0;
+          const match = remoteProcessPidPattern.exec(pendingStdoutForRemoteProcess);
+
+          if (!match) {
+            const keepLength = this.getPotentialRemoteProcessPidMarkerSuffixLength(
+              pendingStdoutForRemoteProcess,
+              remoteProcessPidMarkerPrefix,
+              maxRemoteProcessPidMarkerLength
+            );
+            if (pendingStdoutForRemoteProcess.length > keepLength) {
+              const emitLength = pendingStdoutForRemoteProcess.length - keepLength;
+              emitStdoutAfterRemoteProcessFilter(pendingStdoutForRemoteProcess.slice(0, emitLength));
+              pendingStdoutForRemoteProcess = pendingStdoutForRemoteProcess.slice(emitLength);
+            }
+            return;
+          }
+
+          if (match.index > 0) {
+            emitStdoutAfterRemoteProcessFilter(pendingStdoutForRemoteProcess.slice(0, match.index));
+          }
+
+          remoteProcessPid = String(match[1] || '').trim();
+          pendingStdoutForRemoteProcess = pendingStdoutForRemoteProcess.slice(match.index + match[0].length);
+
+          if (pendingStdoutForRemoteProcess.startsWith('\r\n')) {
+            pendingStdoutForRemoteProcess = pendingStdoutForRemoteProcess.slice(2);
+          } else if (pendingStdoutForRemoteProcess.startsWith('\n')) {
+            pendingStdoutForRemoteProcess = pendingStdoutForRemoteProcess.slice(1);
+          } else if (pendingStdoutForRemoteProcess.startsWith('\r')) {
+            pendingStdoutForRemoteProcess = pendingStdoutForRemoteProcess.slice(1);
+          }
+
+          if (pendingStdoutForRemoteProcess) {
+            emitStdoutAfterRemoteProcessFilter(pendingStdoutForRemoteProcess);
+            pendingStdoutForRemoteProcess = '';
+          }
+          return;
+        }
+      };
+
+      const flushStdoutForRemoteProcess = () => {
+        if (pendingStdoutForRemoteProcess) {
+          emitStdoutAfterRemoteProcessFilter(pendingStdoutForRemoteProcess);
+          pendingStdoutForRemoteProcess = '';
+        }
+      };
+
+      let pendingStderrForWrapperFilter = '';
+      let skippingWrapperTerminationStderrBlock = false;
+
+      const closeRemoteStreamForForceKill = () => {
+        try {
+          remoteStream?.close?.();
+        } catch {
+          // Ignore force-close errors.
+        }
+        try {
+          remoteStream?.destroy?.();
+        } catch {
+          // Ignore force-destroy errors.
+        }
+      };
+
+      const emitStderrAfterWrapperFilter = (text: string) => {
+        if (text) {
+          callbacks.onStderr?.(text);
+        }
+      };
+
+      const isWrapperTerminationBlockStart = (line: string) => {
+        return /\bTerminated\b/.test(line)
+          && /(?:^|\s)(?:setsid\s+)?sh\s+-c\s+/.test(line)
+          && /__remote_edit_|__REMOTE_EDIT_COMMAND/.test(line);
+      };
+
+      const isWrapperTerminationBlockEnd = (line: string) => {
+        return /exit\s+"?\$__remote_edit_last_status"?'?\s*$/.test(line)
+          || /exit\s+"?\$__remote_edit_wait_status"?'?\s*$/.test(line);
+      };
+
+      const isPlainWrapperTerminatedLine = (line: string) => {
+        return /^\s*(?:[A-Za-z0-9_.-]+(?:\[\d+\])?:\s*)?(?:line\s+\d+:\s*)?\d+\s+Terminated\s*$/.test(line);
+      };
+
+      const filterWrapperTerminationStderrLine = (lineWithNewline: string) => {
+        if (!stopRequested && !forceKillRequested) {
+          return lineWithNewline;
+        }
+
+        const line = lineWithNewline.replace(/[\r\n]+$/g, '');
+
+        if (skippingWrapperTerminationStderrBlock) {
+          if (isWrapperTerminationBlockEnd(line)) {
+            skippingWrapperTerminationStderrBlock = false;
+          }
+          return '';
+        }
+
+        if (isWrapperTerminationBlockStart(line)) {
+          skippingWrapperTerminationStderrBlock = !isWrapperTerminationBlockEnd(line);
+          return '';
+        }
+
+        if (isPlainWrapperTerminatedLine(line)) {
+          return '';
+        }
+
+        return lineWithNewline;
+      };
+
+      const processStderrForWrapperFilter = (chunk: string) => {
+        if (!chunk) {
+          return;
+        }
+
+        if (!stopRequested && !forceKillRequested && !pendingStderrForWrapperFilter && !skippingWrapperTerminationStderrBlock) {
+          emitStderrAfterWrapperFilter(chunk);
+          return;
+        }
+
+        pendingStderrForWrapperFilter += chunk;
+        let startIndex = 0;
+
+        for (let index = 0; index < pendingStderrForWrapperFilter.length; index += 1) {
+          const char = pendingStderrForWrapperFilter[index];
+          if (char !== '\n' && char !== '\r') {
+            continue;
+          }
+
+          let endIndex = index + 1;
+          if (char === '\r' && pendingStderrForWrapperFilter[index + 1] === '\n') {
+            endIndex += 1;
+            index += 1;
+          }
+
+          emitStderrAfterWrapperFilter(filterWrapperTerminationStderrLine(pendingStderrForWrapperFilter.slice(startIndex, endIndex)));
+          startIndex = endIndex;
+        }
+
+        pendingStderrForWrapperFilter = pendingStderrForWrapperFilter.slice(startIndex);
+
+        if (pendingStderrForWrapperFilter.length > 8192) {
+          emitStderrAfterWrapperFilter(filterWrapperTerminationStderrLine(pendingStderrForWrapperFilter));
+          pendingStderrForWrapperFilter = '';
+        }
+      };
+
+      const flushStderrForWrapperFilter = () => {
+        if (pendingStderrForWrapperFilter) {
+          emitStderrAfterWrapperFilter(filterWrapperTerminationStderrLine(pendingStderrForWrapperFilter));
+          pendingStderrForWrapperFilter = '';
+        }
+        skippingWrapperTerminationStderrBlock = false;
+      };
+
+      const runRemoteProcessKill = (force: boolean): boolean => {
+        if (!remoteProcessPid || !/^\d+$/.test(remoteProcessPid)) {
+          return false;
+        }
+
+        const signal: 'TERM' | 'KILL' = force ? 'KILL' : 'TERM';
+        if (lastRemoteKillSignal === 'KILL' || (!force && lastRemoteKillSignal === 'TERM')) {
+          return true;
+        }
+        lastRemoteKillSignal = signal;
+
+        const killScript = [
+          `__remote_edit_command_pid=${shellQuote(remoteProcessPid)}`,
+          `kill -${signal} -"$__remote_edit_command_pid" 2>/dev/null || kill -${signal} "$__remote_edit_command_pid" 2>/dev/null || true`
+        ].join('\n');
+
+        try {
+          sshClient.exec(killScript, (error: Error | undefined, killStream: any) => {
+            if (error || !killStream) {
+              return;
+            }
+
+            try {
+              killStream.stderr?.resume?.();
+            } catch {
+              // Ignore kill stderr handling errors.
+            }
+            try {
+              killStream.resume?.();
+            } catch {
+              // Ignore kill stdout handling errors.
+            }
+            try {
+              killStream.end?.();
+            } catch {
+              // Ignore kill stdin close errors.
+            }
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      const settle = (callback: () => void) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cancellationDisposable?.dispose();
+        if (outputThrottleTimer) {
+          clearTimeout(outputThrottleTimer);
+          outputThrottleTimer = undefined;
+        }
+        if (forceCloseTimer) {
+          clearTimeout(forceCloseTimer);
+          forceCloseTimer = undefined;
+        }
+        flushStdoutForRemoteProcess();
+        flushStderrForWrapperFilter();
+        callback();
+      };
+
+      const requestStop = (force = false) => {
+        if (settled) {
+          return;
+        }
+
+        stopRequested = true;
+        forceKillRequested = forceKillRequested || force;
+
+        if (!remoteStream) {
+          settle(() => reject(new Error('Operation cancelled.')));
+          return;
+        }
+
+        if (outputThrottleTimer) {
+          clearTimeout(outputThrottleTimer);
+          outputThrottleTimer = undefined;
+        }
+
+        const remoteKillSent = runRemoteProcessKill(force);
+
+        try {
+          remoteStream.resume?.();
+        } catch {
+          // Ignore resume errors while stopping.
+        }
+
+        try {
+          if (typeof remoteStream.signal === 'function') {
+            remoteStream.signal(force ? 'KILL' : 'TERM');
+          }
+        } catch {
+          // Some servers do not support SSH channel signals. The remote PID kill above is the primary stop path.
+        }
+
+        if (force) {
+          if (forceCloseTimer) {
+            clearTimeout(forceCloseTimer);
+          }
+          forceCloseTimer = setTimeout(closeRemoteStreamForForceKill, remoteKillSent ? 500 : 0);
+        } else if (!remoteKillSent && typeof remoteStream.signal !== 'function') {
+          try {
+            remoteStream.close?.();
+          } catch {
+            // Ignore stream close errors when a command is stopped.
+          }
+        }
+      };
+
+      const throttleOutputIfNeeded = (byteCount: number) => {
+        if (!remoteStream || settled || stopRequested || forceKillRequested || byteCount <= 0) {
+          return;
+        }
+
+        throttledOutputBytes += byteCount;
+        if (throttledOutputBytes < maxOutputBytesBeforePause || outputThrottleTimer) {
+          return;
+        }
+
+        try {
+          remoteStream.pause?.();
+        } catch {
+          // Ignore pause errors. Output throttling is best-effort only.
+        }
+
+        outputThrottleTimer = setTimeout(() => {
+          outputThrottleTimer = undefined;
+          throttledOutputBytes = 0;
+          if (settled || stopRequested || forceKillRequested) {
+            return;
+          }
+          try {
+            remoteStream?.resume?.();
+          } catch {
+            // Ignore resume errors.
+          }
+        }, 50);
+      };
+
+      const cancellationDisposable = cancellationToken?.onCancellationRequested(() => requestStop(false));
+
+      if (cancellationToken?.isCancellationRequested) {
+        cancellationDisposable?.dispose();
+        settle(() => reject(new Error('Operation cancelled.')));
+        return;
+      }
+
+      try {
+        sshClient.exec(command, (error: Error | undefined, stream: any) => {
+          if (error) {
+            settle(() => reject(error));
+            return;
+          }
+
+          if (!stream) {
+            settle(() => reject(new Error('Remote command did not return a stream.')));
+            return;
+          }
+
+          remoteStream = stream;
+          callbacks.onControl?.({
+            stop: () => requestStop(false),
+            forceKill: () => requestStop(true)
+          });
+
+          if (stopRequested) {
+            requestStop(forceKillRequested);
+          }
+
+          stream.on('data', (data: Buffer | string) => {
+            const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+            if (text) {
+              processStdoutForRemoteProcess(text);
+              throttleOutputIfNeeded(Buffer.isBuffer(data) ? data.length : Buffer.byteLength(text, 'utf8'));
+            }
+          });
+
+          stream.stderr?.on?.('data', (data: Buffer | string) => {
+            const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+            if (text) {
+              processStderrForWrapperFilter(text);
+              throttleOutputIfNeeded(Buffer.isBuffer(data) ? data.length : Buffer.byteLength(text, 'utf8'));
+            }
+          });
+
+          stream.on('close', (code: number | undefined, signal: string | undefined) => {
+            settle(() => resolve({
+              code: typeof code === 'number' ? code : 0,
+              signal
+            }));
+          });
+
+          stream.on('error', (streamError: Error) => {
+            if (stopRequested) {
+              settle(() => reject(new Error('Operation cancelled.')));
+              return;
+            }
+
+            settle(() => reject(streamError));
+          });
+
+          // Keep the runner non-interactive. Commands that require input receive EOF.
+          // When sudo is used, send only the sudo password and then close stdin;
+          // the sudo shell redirects stdin from /dev/null before running the user command.
+          if (options.input) {
+            try {
+              stream.write(options.input);
+            } catch {
+              // Ignore write errors; the stream close/error handlers will report the command result.
+            }
+          }
+          stream.end();
+        });
+      } catch (error) {
+        settle(() => reject(error instanceof Error ? error : new Error(String(error))));
+      }
+    });
   }
 
   private async executeRemoteCommand(client: SftpClient, command: string, options: RemoteExecOptions = {}): Promise<RemoteExecResult> {

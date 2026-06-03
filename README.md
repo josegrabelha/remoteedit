@@ -15,7 +15,7 @@ With Remote Edit, you can:
 - browse remote directories over SSH/SFTP
 - open and edit remote files directly in VS Code
 - upload and download files or folders
-- make copies, inspect properties, and calculate server-side checksums for remote files
+- make copies, inspect properties, calculate server-side checksums, set permissions, and change owner/group for remote items
 - save frequently used SSH connections as bookmarks
 - work with privileged files using sudo mode
 
@@ -37,6 +37,13 @@ Upload local files or folders to the current remote directory, or download selec
 
 Folder transfers are recursive and keep their directory structure. When a file already exists at the destination, Remote Edit asks whether to overwrite, skip, apply the choice to all conflicts, or cancel.
 
+
+### Permissions and ownership
+
+Use the file browser context menu to set permissions or change owner/group for one or more selected remote items.
+
+Permission changes support multi-select and can optionally apply recursively to selected directories. For mixed selections, the permissions dialog shows separate file and directory previews because special permission bits may behave differently for each type.
+
 ### Bookmarked connections
 
 Save frequently used SSH/SFTP connections with host, port, username, authentication type, private key path, and start path.
@@ -51,7 +58,7 @@ When enabled, saved SSH passwords and private key passphrases are stored using V
 
 Enable sudo mode when you need to work with files that require elevated permissions.
 
-Sudo mode is used for privileged file operations such as reading, saving, creating files or directories, deleting, renaming, and changing permissions.
+Sudo mode is used for privileged file operations such as reading, saving, creating files or directories, deleting, renaming, setting permissions recursively, and changing owner/group.
 
 Sudo passwords are kept only in memory for the active session and are forgotten when sudo mode is disabled, the connection is closed, or VS Code is restarted.
 

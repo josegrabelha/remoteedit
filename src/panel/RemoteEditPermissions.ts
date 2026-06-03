@@ -22,6 +22,15 @@ export interface SetPermissionsPanelOptions {
   isDirectory: boolean;
   initialMode: string;
   permissionState: PermissionState;
+  selectedCount?: number;
+  hasFile?: boolean;
+  hasDirectory?: boolean;
+  isMixed?: boolean;
+}
+
+export interface SetPermissionsDialogResult {
+  mode: string;
+  recursive: boolean;
 }
 
 export function parsePermissionString(permissionString: string, isDirectory: boolean): PermissionState {

@@ -17,6 +17,8 @@ export interface RemoteEditPanelMessageHandlers {
   openParent(): Promise<void>;
   openEntry(payload: any): Promise<void>;
   openEntries(payload: any): Promise<void>;
+  openEntriesReadOnly(payload: any): Promise<void>;
+  compareSelectedEntries(payload: any): Promise<void>;
   openPath(payload: any): Promise<void>;
   addRemotePathFavorite(payload: any): Promise<void>;
   removeRemotePathFavorite(payload: any): Promise<void>;
@@ -29,9 +31,13 @@ export interface RemoteEditPanelMessageHandlers {
   requestDeleteEntries(payload: any): Promise<void>;
   requestUploadEntries(payload: any): Promise<void>;
   requestDownloadEntries(payload: any): Promise<void>;
+  requestCompressArchive(payload: any): Promise<void>;
   cancelTransfer(): Promise<void>;
   removeQueuedTransfer(payload: any): void;
   requestSetPermissions(payload: any): Promise<void>;
+  requestChangeOwnerGroup(payload: any): Promise<void>;
+  requestRunRemoteCommand(payload: any): Promise<void>;
+  stopRemoteCommand(payload: any): void;
   applyPermissions(payload: any): void;
   cancelPermissions(): void;
   showOutput(): void;

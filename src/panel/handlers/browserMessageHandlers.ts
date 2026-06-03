@@ -21,6 +21,12 @@ export async function tryHandleBrowserMessage(
     case RemoteEditIncomingMessageType.OpenEntries:
       await handlers.openEntries(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.OpenEntriesReadOnly:
+      await handlers.openEntriesReadOnly(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CompareSelectedEntries:
+      await handlers.compareSelectedEntries(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.OpenPath:
       await handlers.openPath(message.payload);
       return true;

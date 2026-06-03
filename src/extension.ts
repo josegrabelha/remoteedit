@@ -23,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessions = new SftpSessionManager();
   const connectionManager = new ConnectionManager(context);
   const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);
+  const readOnlyFileSystemProvider = new RemoteEditFileSystemProvider(sessions, output, true);
   let statusBarButton: StatusBarButtonState | undefined;
 
   const disposeStatusBarButton = (): void => {
@@ -68,6 +69,10 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
     vscode.workspace.registerFileSystemProvider('remoteedit', fileSystemProvider, {
       isCaseSensitive: true
+    }),
+    vscode.workspace.registerFileSystemProvider('remoteedit-readonly', readOnlyFileSystemProvider, {
+      isCaseSensitive: true,
+      isReadonly: true
     }),
     vscode.commands.registerCommand(COMMAND_OPEN, () => {
       RemoteEditPanel.open(context, sessions, connectionManager, output);

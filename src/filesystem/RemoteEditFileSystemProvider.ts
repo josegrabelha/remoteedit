@@ -8,7 +8,11 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
 
   readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this.emitter.event;
 
-  constructor(private readonly sessions: SftpSessionManager, private readonly output?: vscode.OutputChannel) {}
+  constructor(
+    private readonly sessions: SftpSessionManager,
+    private readonly output?: vscode.OutputChannel,
+    private readonly readOnly = false
+  ) {}
 
   watch(_uri: vscode.Uri, _options: { readonly recursive: boolean; readonly excludes: readonly string[] }): vscode.Disposable {
     // Remote file watching is not implemented yet.
@@ -35,6 +39,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async createDirectory(uri: vscode.Uri): Promise<void> {
+    this.assertWritable();
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
     await this.sessions.createDirectory(connectionId, remotePath);
     this.logInfo('Remote directory created.', { Connection: connectionId, Path: remotePath });
@@ -47,6 +52,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array, _options: { readonly create: boolean; readonly overwrite: boolean }): Promise<void> {
+    this.assertWritable();
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
     await withRemoteEditProgress(
       'Saving remote file...',
@@ -58,6 +64,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async delete(uri: vscode.Uri, _options: { readonly recursive: boolean }): Promise<void> {
+    this.assertWritable();
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
     await this.sessions.delete(connectionId, remotePath);
     this.logInfo('Remote item deleted from editor workspace.', { Connection: connectionId, Path: remotePath });
@@ -65,6 +72,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async rename(oldUri: vscode.Uri, newUri: vscode.Uri, _options: { readonly overwrite: boolean }): Promise<void> {
+    this.assertWritable();
     const oldInfo = parseRemoteEditUri(oldUri);
     const newInfo = parseRemoteEditUri(newUri);
 
@@ -76,6 +84,12 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
     this.logInfo('Remote item renamed from editor workspace.', { Connection: oldInfo.connectionId, From: oldInfo.remotePath, To: newInfo.remotePath });
     this.fireChanged(oldUri, vscode.FileChangeType.Deleted);
     this.fireChanged(newUri, vscode.FileChangeType.Created);
+  }
+
+  private assertWritable(): void {
+    if (this.readOnly) {
+      throw vscode.FileSystemError.NoPermissions('This RemoteEdit document was opened read-only.');
+    }
   }
 
   private logInfo(message: string, details?: Record<string, string | number | boolean | undefined | null>): void {
@@ -91,16 +105,22 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   }
 }
 
-export function buildRemoteEditUri(connectionId: string, remotePath: string, displayAuthority?: string): vscode.Uri {
+export function buildRemoteEditUri(
+  connectionId: string,
+  remotePath: string,
+  displayAuthority?: string,
+  options: { readonly readOnly?: boolean } = {}
+): vscode.Uri {
   const normalizedRemotePath = remotePath.startsWith('/') ? remotePath : `/${remotePath}`;
   const authority = normalizeUriAuthority(displayAuthority || connectionId);
+  const scheme = options.readOnly ? 'remoteedit-readonly' : 'remoteedit';
 
   if (displayAuthority) {
     const virtualRoot = normalizeUriPathSegment(shortenHostname(displayAuthority));
     const remotePathWithoutRoot = normalizedRemotePath.replace(/^\/+/, '');
 
     return vscode.Uri.from({
-      scheme: 'remoteedit',
+      scheme,
       authority,
       path: `/${virtualRoot}${remotePathWithoutRoot ? `/${remotePathWithoutRoot}` : ''}`,
       query: `connectionId=${encodeURIComponent(connectionId)}&remoteRoot=${encodeURIComponent(virtualRoot)}`
@@ -108,14 +128,14 @@ export function buildRemoteEditUri(connectionId: string, remotePath: string, dis
   }
 
   return vscode.Uri.from({
-    scheme: 'remoteedit',
+    scheme,
     authority,
     path: normalizedRemotePath
   });
 }
 
 export function parseRemoteEditUri(uri: vscode.Uri): { connectionId: string; remotePath: string } {
-  if (uri.scheme !== 'remoteedit') {
+  if (uri.scheme !== 'remoteedit' && uri.scheme !== 'remoteedit-readonly') {
     throw new Error(`Unsupported URI scheme '${uri.scheme}'.`);
   }
 

@@ -15,6 +15,8 @@ export const RemoteEditIncomingMessageType = {
   OpenParent: 'openParent',
   OpenEntry: 'openEntry',
   OpenEntries: 'openEntries',
+  OpenEntriesReadOnly: 'openEntriesReadOnly',
+  CompareSelectedEntries: 'compareSelectedEntries',
   OpenPath: 'openPath',
   AddRemotePathFavorite: 'addRemotePathFavorite',
   RemoveRemotePathFavorite: 'removeRemotePathFavorite',
@@ -27,9 +29,13 @@ export const RemoteEditIncomingMessageType = {
   RequestDeleteEntries: 'requestDeleteEntries',
   RequestUploadEntries: 'requestUploadEntries',
   RequestDownloadEntries: 'requestDownloadEntries',
+  RequestCompressArchive: 'requestCompressArchive',
   CancelTransfer: 'cancelTransfer',
   RemoveQueuedTransfer: 'removeQueuedTransfer',
   RequestSetPermissions: 'requestSetPermissions',
+  RequestChangeOwnerGroup: 'requestChangeOwnerGroup',
+  RequestRunRemoteCommand: 'requestRunRemoteCommand',
+  StopRemoteCommand: 'stopRemoteCommand',
   ApplyPermissions: 'applyPermissions',
   CancelPermissions: 'cancelPermissions',
   ShowOutput: 'showOutput',
@@ -57,7 +63,10 @@ export const RemoteEditOutboundMessageType = {
   StatusCopyFeedback: 'statusCopyFeedback',
   TransferQueueChanged: 'transferQueueChanged',
   Error: 'error',
-  ShowConfirmDialog: 'showConfirmDialog'
+  ShowConfirmDialog: 'showConfirmDialog',
+  RemoteCommandStarted: 'remoteCommandStarted',
+  RemoteCommandOutput: 'remoteCommandOutput',
+  RemoteCommandFinished: 'remoteCommandFinished'
 } as const;
 
 export type RemoteEditIncomingMessageType = typeof RemoteEditIncomingMessageType[keyof typeof RemoteEditIncomingMessageType];

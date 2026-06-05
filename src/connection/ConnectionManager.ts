@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { ConnectOptions } from '../ssh/SftpSessionManager';
 
 export type AuthType = 'password' | 'privateKey';
@@ -19,6 +20,119 @@ export interface ConnectionProfile {
   createdAt: number;
   updatedAt: number;
 }
+
+
+export type RemoteEditImportMode = 'merge' | 'replace';
+
+export interface ConnectionBackupExportOptions {
+  includeSettings: boolean;
+  includeConnections: boolean;
+  includeFavorites: boolean;
+  includeUsernames: boolean;
+  includeCredentials: boolean;
+  credentialPassword?: string;
+  extensionVersion?: string;
+}
+
+export interface ConnectionBackupImportOptions {
+  includeSettings: boolean;
+  includeConnections: boolean;
+  includeFavorites: boolean;
+  includeUsernames: boolean;
+  restoreCredentials: boolean;
+  credentialPassword?: string;
+  importMode: RemoteEditImportMode;
+}
+
+export interface RemoteEditBackupConnection {
+  id: string;
+  connectionType: 'sftp' | string;
+  name: string;
+  host: string;
+  port: number;
+  username?: string;
+  authType: AuthType;
+  startPath: string;
+  privateKeyPath?: string;
+  keepAlive: boolean;
+  remotePathFavorites?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface RemoteEditEncryptedCredentials {
+  version: number;
+  kdf: 'scrypt';
+  kdfParams: {
+    salt: string;
+    keyLength: number;
+    N: number;
+    r: number;
+    p: number;
+  };
+  cipher: 'aes-256-gcm';
+  iv: string;
+  authTag: string;
+  data: string;
+}
+
+export interface RemoteEditBackupFile {
+  remoteEditExportVersion: number;
+  exportedAt: string;
+  extensionVersion?: string;
+  settings?: Record<string, unknown>;
+  connections?: RemoteEditBackupConnection[];
+  encryptedCredentials?: RemoteEditEncryptedCredentials | null;
+}
+
+export interface RemoteEditBackupSummary {
+  hasSettings: boolean;
+  connectionCount: number;
+  supportedConnectionCount: number;
+  unsupportedConnectionCount: number;
+  remotePathFavoriteCount: number;
+  usernamesIncluded: boolean;
+  hasEncryptedCredentials: boolean;
+}
+
+export interface RemoteEditBackupImportResult {
+  settingsImported: boolean;
+  added: number;
+  updated: number;
+  replaced: boolean;
+  skippedUnsupported: number;
+  credentialsRestored: number;
+  favoritesImported: number;
+  usernamesImported: number;
+}
+
+interface StoredCredentialMap {
+  [profileId: string]: {
+    password?: string;
+    passphrase?: string;
+  };
+}
+
+const CONFIG_SECTION = 'remoteedit';
+const SUPPORTED_BACKUP_VERSION = 1;
+const SFTP_CONNECTION_TYPE = 'sftp';
+const REMOTE_EDIT_SETTING_KEYS = [
+  'showStatusBarButton',
+  'statusBarButtonStyle',
+  'statusBarButtonAlignment',
+  'statusBarButtonPriority',
+  'sshReadyTimeout',
+  'sshKeepAliveInterval',
+  'sshKeepAliveCountMax',
+  'sudoTempDirectory',
+  'restoreSpecialPermissionBits'
+] as const;
+const SCRYPT_PARAMS = {
+  keyLength: 32,
+  N: 16384,
+  r: 8,
+  p: 1
+} as const;
 
 export interface ConnectionProfileInput {
   id?: string;
@@ -177,6 +291,296 @@ export class ConnectionManager {
     const nextProfiles = profiles.filter(profile => profile.id !== profileId);
 
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    await this.context.secrets.delete(secretKey(profileId, 'password'));
+    await this.context.secrets.delete(secretKey(profileId, 'passphrase'));
+  }
+
+
+  async buildBackupFile(options: ConnectionBackupExportOptions): Promise<RemoteEditBackupFile> {
+    const includeConnections = Boolean(options.includeConnections);
+    const includeCredentials = includeConnections && Boolean(options.includeCredentials);
+    const profiles = includeConnections ? await this.listProfiles() : [];
+    const backupConnections = includeConnections
+      ? profiles.map(profile => this.toBackupConnection(profile, options))
+      : [];
+
+    const backup: RemoteEditBackupFile = {
+      remoteEditExportVersion: SUPPORTED_BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      extensionVersion: options.extensionVersion || undefined,
+      settings: options.includeSettings ? this.exportSettings() : undefined,
+      connections: includeConnections ? backupConnections : undefined,
+      encryptedCredentials: null
+    };
+
+    if (includeCredentials) {
+      const credentials = await this.collectStoredCredentials(profiles);
+      if (Object.keys(credentials).length > 0) {
+        const password = String(options.credentialPassword || '');
+        if (!password) {
+          throw new Error('Export password is required to include encrypted passwords/passphrases.');
+        }
+
+        backup.encryptedCredentials = await encryptCredentials(credentials, password);
+      }
+    }
+
+    return backup;
+  }
+
+  summarizeBackupFile(backup: RemoteEditBackupFile): RemoteEditBackupSummary {
+    validateBackupVersion(backup);
+
+    const connections = Array.isArray(backup.connections) ? backup.connections : [];
+    const supportedConnections = connections.filter(connection => isSupportedBackupConnection(connection));
+
+    return {
+      hasSettings: Boolean(backup.settings && typeof backup.settings === 'object'),
+      connectionCount: connections.length,
+      supportedConnectionCount: supportedConnections.length,
+      unsupportedConnectionCount: Math.max(0, connections.length - supportedConnections.length),
+      remotePathFavoriteCount: supportedConnections.reduce((count, connection) => {
+        const favorites = Array.isArray(connection.remotePathFavorites) ? connection.remotePathFavorites : [];
+        return count + favorites.length;
+      }, 0),
+      usernamesIncluded: supportedConnections.some(connection => typeof connection.username === 'string' && connection.username.trim().length > 0),
+      hasEncryptedCredentials: Boolean(backup.encryptedCredentials)
+    };
+  }
+
+  async importBackupFile(backup: RemoteEditBackupFile, options: ConnectionBackupImportOptions): Promise<RemoteEditBackupImportResult> {
+    validateBackupVersion(backup);
+
+    if (!options.includeSettings && !options.includeConnections) {
+      throw new Error('Select at least one import option.');
+    }
+
+    const result: RemoteEditBackupImportResult = {
+      settingsImported: false,
+      added: 0,
+      updated: 0,
+      replaced: options.importMode === 'replace' && Boolean(options.includeConnections),
+      skippedUnsupported: 0,
+      credentialsRestored: 0,
+      favoritesImported: 0,
+      usernamesImported: 0
+    };
+
+    if (options.includeSettings && backup.settings && typeof backup.settings === 'object') {
+      await this.importSettings(backup.settings);
+      result.settingsImported = true;
+    }
+
+    if (!options.includeConnections) {
+      return result;
+    }
+
+    const importedConnections = this.normalizeBackupConnections(backup.connections || [], options);
+    result.skippedUnsupported = Math.max(0, (backup.connections || []).length - importedConnections.length);
+    result.favoritesImported = options.includeFavorites
+      ? importedConnections.reduce((count, profile) => count + normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []).length, 0)
+      : 0;
+    result.usernamesImported = options.includeUsernames
+      ? importedConnections.filter(profile => String(profile.username || '').trim().length > 0).length
+      : 0;
+
+    const existingProfiles = await this.listProfiles();
+    const existingById = new Map(existingProfiles.map(profile => [profile.id, profile]));
+    const now = Date.now();
+    let nextProfiles: ConnectionProfile[];
+
+    if (options.importMode === 'replace') {
+      for (const profile of existingProfiles) {
+        await this.deleteStoredCredentials(profile.id);
+      }
+
+      nextProfiles = importedConnections.map(profile => ({
+        ...profile,
+        createdAt: profile.createdAt || now,
+        updatedAt: now
+      }));
+      result.added = nextProfiles.length;
+    } else {
+      const importedById = new Map(importedConnections.map(profile => [profile.id, profile]));
+      nextProfiles = existingProfiles.map(existing => {
+        const imported = importedById.get(existing.id);
+
+        if (!imported) {
+          return existing;
+        }
+
+        result.updated += 1;
+        importedById.delete(existing.id);
+
+        return {
+          ...existing,
+          ...imported,
+          username: options.includeUsernames ? imported.username : existing.username,
+          favoriteRemotePaths: options.includeFavorites ? imported.favoriteRemotePaths : existing.favoriteRemotePaths,
+          createdAt: existing.createdAt || imported.createdAt || now,
+          updatedAt: now
+        };
+      });
+
+      for (const imported of importedById.values()) {
+        nextProfiles.push({
+          ...imported,
+          createdAt: imported.createdAt || now,
+          updatedAt: now
+        });
+        result.added += 1;
+      }
+    }
+
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+
+    if (options.restoreCredentials) {
+      if (!backup.encryptedCredentials) {
+        throw new Error('This backup does not contain encrypted passwords/passphrases.');
+      }
+
+      const password = String(options.credentialPassword || '');
+      if (!password) {
+        throw new Error('Export password is required to restore encrypted passwords/passphrases.');
+      }
+
+      const credentials = await decryptCredentials(backup.encryptedCredentials, password);
+      const importedIds = new Set(importedConnections.map(profile => profile.id));
+
+      for (const profileId of importedIds) {
+        const profileCredentials = credentials[profileId];
+        if (!profileCredentials) {
+          continue;
+        }
+
+        if (profileCredentials.password) {
+          await this.context.secrets.store(secretKey(profileId, 'password'), profileCredentials.password);
+          result.credentialsRestored += 1;
+        }
+
+        if (profileCredentials.passphrase) {
+          await this.context.secrets.store(secretKey(profileId, 'passphrase'), profileCredentials.passphrase);
+          result.credentialsRestored += 1;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private toBackupConnection(profile: ConnectionProfile, options: ConnectionBackupExportOptions): RemoteEditBackupConnection {
+    const backupConnection: RemoteEditBackupConnection = {
+      id: profile.id,
+      connectionType: SFTP_CONNECTION_TYPE,
+      name: profile.name,
+      host: profile.host,
+      port: profile.port,
+      authType: profile.authType,
+      startPath: profile.startPath || '',
+      privateKeyPath: profile.authType === 'privateKey' ? profile.privateKeyPath || '' : undefined,
+      keepAlive: profile.keepAlive !== false,
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt
+    };
+
+    if (options.includeUsernames) {
+      backupConnection.username = profile.username || '';
+    }
+
+    if (options.includeFavorites) {
+      backupConnection.remotePathFavorites = normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []);
+    }
+
+    return backupConnection;
+  }
+
+  private exportSettings(): Record<string, unknown> {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const settings: Record<string, unknown> = {};
+
+    for (const key of REMOTE_EDIT_SETTING_KEYS) {
+      settings[key] = config.get(key);
+    }
+
+    return settings;
+  }
+
+  private async importSettings(settings: Record<string, unknown>): Promise<void> {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+
+    for (const key of REMOTE_EDIT_SETTING_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(settings, key)) {
+        await config.update(key, settings[key], vscode.ConfigurationTarget.Global);
+      }
+    }
+  }
+
+  private normalizeBackupConnections(connections: RemoteEditBackupConnection[], options: ConnectionBackupImportOptions): ConnectionProfile[] {
+    const normalizedProfiles: ConnectionProfile[] = [];
+    const seenIds = new Set<string>();
+
+    for (const connection of connections) {
+      if (!isSupportedBackupConnection(connection)) {
+        continue;
+      }
+
+      const id = String(connection.id || '').trim();
+      const host = String(connection.host || '').trim();
+      const name = String(connection.name || '').trim() || buildDefaultProfileName(host, String(connection.username || '').trim());
+
+      if (!id || !host || seenIds.has(id)) {
+        continue;
+      }
+
+      seenIds.add(id);
+
+      const authType = normalizeAuthType(String(connection.authType || 'password'));
+      const privateKeyPath = String(connection.privateKeyPath || '').trim();
+      const profile: ConnectionProfile = {
+        id,
+        name,
+        host,
+        port: normalizePort(connection.port),
+        username: options.includeUsernames ? String(connection.username || '').trim() : '',
+        authType,
+        startPath: String(connection.startPath || '').trim(),
+        privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
+        keepAlive: connection.keepAlive !== false,
+        favoriteRemotePaths: options.includeFavorites ? normalizeFavoriteRemotePaths(connection.remotePathFavorites || []) : [],
+        createdAt: Number(connection.createdAt || Date.now()),
+        updatedAt: Number(connection.updatedAt || Date.now())
+      };
+
+      normalizedProfiles.push(profile);
+    }
+
+    return normalizedProfiles;
+  }
+
+  private async collectStoredCredentials(profiles: ConnectionProfile[]): Promise<StoredCredentialMap> {
+    const credentials: StoredCredentialMap = {};
+
+    for (const profile of profiles) {
+      const password = await this.context.secrets.get(secretKey(profile.id, 'password'));
+      const passphrase = await this.context.secrets.get(secretKey(profile.id, 'passphrase'));
+
+      if (password || passphrase) {
+        credentials[profile.id] = {};
+
+        if (password) {
+          credentials[profile.id].password = password;
+        }
+
+        if (passphrase) {
+          credentials[profile.id].passphrase = passphrase;
+        }
+      }
+    }
+
+    return credentials;
+  }
+
+  private async deleteStoredCredentials(profileId: string): Promise<void> {
     await this.context.secrets.delete(secretKey(profileId, 'password'));
     await this.context.secrets.delete(secretKey(profileId, 'passphrase'));
   }
@@ -414,6 +818,98 @@ function buildProfileId(name: string, host: string, username: string): string {
     .slice(0, 72) || 'remoteedit-connection';
 
   return `${base}-${Date.now().toString(36)}`;
+}
+
+
+function validateBackupVersion(backup: RemoteEditBackupFile): void {
+  const version = Number(backup?.remoteEditExportVersion || 0);
+
+  if (!version) {
+    throw new Error('Invalid Remote Edit backup file.');
+  }
+
+  if (version > SUPPORTED_BACKUP_VERSION) {
+    throw new Error(`This backup was created by a newer Remote Edit export format (version ${version}).`);
+  }
+}
+
+function isSupportedBackupConnection(connection: RemoteEditBackupConnection): boolean {
+  if (!connection || typeof connection !== 'object') {
+    return false;
+  }
+
+  const connectionType = String(connection.connectionType || SFTP_CONNECTION_TYPE).toLowerCase();
+  return connectionType === SFTP_CONNECTION_TYPE;
+}
+
+async function encryptCredentials(credentials: StoredCredentialMap, password: string): Promise<RemoteEditEncryptedCredentials> {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = await deriveBackupKey(password, salt, SCRYPT_PARAMS);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const data = Buffer.from(JSON.stringify(credentials), 'utf8');
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return {
+    version: 1,
+    kdf: 'scrypt',
+    kdfParams: {
+      salt: salt.toString('base64'),
+      keyLength: SCRYPT_PARAMS.keyLength,
+      N: SCRYPT_PARAMS.N,
+      r: SCRYPT_PARAMS.r,
+      p: SCRYPT_PARAMS.p
+    },
+    cipher: 'aes-256-gcm',
+    iv: iv.toString('base64'),
+    authTag: authTag.toString('base64'),
+    data: encrypted.toString('base64')
+  };
+}
+
+async function decryptCredentials(encryptedCredentials: RemoteEditEncryptedCredentials, password: string): Promise<StoredCredentialMap> {
+  if (!encryptedCredentials || encryptedCredentials.version !== 1 || encryptedCredentials.kdf !== 'scrypt' || encryptedCredentials.cipher !== 'aes-256-gcm') {
+    throw new Error('Unsupported encrypted passwords/passphrases format.');
+  }
+
+  try {
+    const salt = Buffer.from(encryptedCredentials.kdfParams.salt, 'base64');
+    const iv = Buffer.from(encryptedCredentials.iv, 'base64');
+    const authTag = Buffer.from(encryptedCredentials.authTag, 'base64');
+    const data = Buffer.from(encryptedCredentials.data, 'base64');
+    const key = await deriveBackupKey(password, salt, encryptedCredentials.kdfParams);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+    const parsed = JSON.parse(decrypted.toString('utf8')) as StoredCredentialMap;
+
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    throw new Error('Could not restore saved passwords/passphrases. Check the export password and try again.');
+  }
+}
+
+async function deriveBackupKey(
+  password: string,
+  salt: Buffer,
+  params: { keyLength: number; N: number; r: number; p: number }
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, params.keyLength, {
+      N: params.N,
+      r: params.r,
+      p: params.p,
+      maxmem: 64 * 1024 * 1024
+    }, (error, key) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(key);
+    });
+  });
 }
 
 function secretKey(profileId: string, field: 'password' | 'passphrase'): string {

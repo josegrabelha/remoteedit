@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0] - 2026-06-05
+
+### Added
+- Added import/export for Remote Edit settings, saved connections, remote path favorites, and encrypted saved passwords/passphrases.
+
+### Fixed
+- Fixed Transfer Queue stability issues during upload/download conflicts, failures, and cancellations.
+
+### Changed
+- Updated project license terms.
+
+### Improved
+- Improved Transfer Queue status handling and failed item details.
+- Improved saved favorites button visual state when favorites are available.
+- Polished small UI details across the extension.
+
 ## [1.4.0] - 2026-06-03
 
 ### Added

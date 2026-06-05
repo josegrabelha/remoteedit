@@ -147,24 +147,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--vscode-foreground); font-size: 12px; }
   .dialog-checkbox,
   .checkbox-row input[type="checkbox"],
-  .modal-checkbox-line input[type="checkbox"],
-  .permission-check { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 auto; width: 14px; min-width: 14px; height: 14px; min-height: 14px; margin: 0; padding: 0; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 3px; background: var(--vscode-input-background); color: var(--vscode-button-foreground); cursor: pointer; }
+  .modal-checkbox-line input[type="checkbox"] { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 auto; width: 14px; min-width: 14px; height: 14px; min-height: 14px; margin: 0; padding: 0; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 3px; background: var(--vscode-input-background); color: var(--vscode-button-foreground); cursor: pointer; }
   .dialog-checkbox:checked,
   .checkbox-row input[type="checkbox"]:checked,
-  .modal-checkbox-line input[type="checkbox"]:checked,
-  .permission-check:checked { background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
+  .modal-checkbox-line input[type="checkbox"]:checked { background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
   .dialog-checkbox:checked::after,
   .checkbox-row input[type="checkbox"]:checked::after,
-  .modal-checkbox-line input[type="checkbox"]:checked::after,
-  .permission-check:checked::after { content: ''; position: absolute; left: 50%; top: 47%; width: 3.5px; height: 7px; border: solid var(--vscode-button-foreground); border-width: 0 1.5px 1.5px 0; transform: translate(-50%, -50%) rotate(45deg); transform-origin: center; }
+  .modal-checkbox-line input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 50%; top: 40%; width: 3.5px; height: 7px; border: solid var(--vscode-button-foreground); border-width: 0 1.5px 1.5px 0; transform: translate(-50%, -50%) rotate(45deg); transform-origin: center; }
   .dialog-checkbox:focus-visible,
   .checkbox-row input[type="checkbox"]:focus-visible,
-  .modal-checkbox-line input[type="checkbox"]:focus-visible,
-  .permission-check:focus-visible { border-color: var(--vscode-focusBorder); outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .modal-checkbox-line input[type="checkbox"]:focus-visible { border-color: var(--vscode-focusBorder); outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .dialog-checkbox:disabled,
   .checkbox-row input[type="checkbox"]:disabled,
-  .modal-checkbox-line input[type="checkbox"]:disabled,
-  .permission-check:disabled { opacity: 0.68; cursor: default; }
+  .modal-checkbox-line input[type="checkbox"]:disabled { opacity: 0.68; cursor: default; }
   .credential-state { margin-top: 3px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.72; }
   .credential-state.saved { color: var(--vscode-testing-iconPassed, var(--vscode-descriptionForeground)); }
   .credential-state.not-saved { color: var(--vscode-descriptionForeground); }
@@ -220,11 +215,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .remote-path-favorite-buttons { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; gap: 1px; height: 27px; }
   .remote-path-favorite-button { width: 30px; min-width: 30px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: transparent; color: var(--vscode-input-foreground); opacity: 0.82; line-height: 1; }
   .remote-path-favorite-button svg { width: 25px; height: 25px; display: block; fill: currentColor; stroke: none; pointer-events: none; }
-  .remote-path-favorite-button .filled-star-icon { display: none; }
+  .remote-path-favorite-button .filled-star-icon,
+  .remote-path-favorite-button .filled-hotel-class-icon { display: none; }
   .remote-path-favorite-button.active .star-icon { display: none; }
   .remote-path-favorite-button.active .filled-star-icon { display: block; }
+  .remote-path-favorite-button.has-favorites .hotel-class-icon { display: none; }
+  .remote-path-favorite-button.has-favorites .filled-hotel-class-icon { display: block; }
   .remote-path-favorite-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
-  .remote-path-favorite-button.active { opacity: 1; }
+  .remote-path-favorite-button.active,
+  .remote-path-favorite-button.has-favorites { opacity: 1; }
   .remote-path-favorite-button:disabled { cursor: default; opacity: 0.42; }
   .remote-path-favorites-popover { position: absolute; top: calc(100% + 4px); right: 0; z-index: 90; display: none; width: min(520px, 100%); max-height: 240px; overflow-y: auto; overflow-x: hidden; padding: 6px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
   .remote-path-favorites-popover.visible { display: block; }
@@ -301,6 +300,45 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .manage-profiles-filter input { width: 100%; box-sizing: border-box; }
   .manage-profiles-list { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 6px; overflow: auto; padding-right: 0; }
   .manage-profiles-empty { color: var(--vscode-descriptionForeground); padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .manage-profiles-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .manage-profiles-header-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .manage-profiles-header-actions button { min-height: 28px; height: 28px; padding: 3px 10px; font-size: 12px; }
+  .backup-dialog { width: min(620px, calc(100vw - 48px)); max-height: calc(100vh - 48px); }
+  .backup-dialog.export-backup-dialog { height: min(500px, calc(100vh - 48px)); }
+  .backup-dialog.import-backup-dialog { height: min(660px, calc(100vh - 48px)); }
+  .backup-dialog .file-properties-path { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; }
+  .backup-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 10px; overflow: hidden; }
+  .backup-section { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .backup-summary-section { gap: 4px; padding: 7px 9px; }
+  .backup-section-title { margin: 0; font-size: 11px; font-weight: 650; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: 0.03em; }
+  .backup-checkbox-list { display: grid; gap: 8px; }
+  .backup-child-options { display: grid; gap: 7px; margin-left: 22px; }
+  .backup-credential-block { display: none; gap: 8px; margin-left: 22px; padding: 10px 11px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
+  .backup-credential-block.visible { display: grid; }
+  .backup-credential-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .backup-credential-fields label { display: grid; gap: 5px; min-width: 0; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 600; }
+  .backup-credential-fields input { width: 100%; box-sizing: border-box; }
+  .backup-credential-fields .input-with-button { width: 100%; }
+  .backup-field-error { display: none; min-height: 13px; color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground)); font-size: 10.5px; font-weight: 400; line-height: 1.25; }
+  .backup-field-error.visible { display: block; }
+  .backup-credential-fields input.backup-input-invalid { border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); }
+  .password-reveal-button svg { width: 16px; height: 16px; }
+  .backup-summary-line { min-width: 0; color: var(--vscode-foreground); font-size: 11px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .backup-result { display: none; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); color: var(--vscode-foreground); font-size: 12px; line-height: 1.35; }
+  .backup-result.visible { display: block; }
+  .backup-result.success { border-color: color-mix(in srgb, var(--vscode-button-background) 45%, var(--vscode-panel-border)); }
+  .backup-result.error { color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground)); border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); background: transparent; }
+  .backup-import-mode { display: grid; gap: 7px; padding: 10px 11px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .backup-import-mode-title { margin: 0; font-size: 11px; font-weight: 650; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: 0.03em; }
+  .backup-import-mode .modal-checkbox-line { align-items: center; }
+  .backup-import-mode input[type="radio"] { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 auto; width: 14px; min-width: 14px; height: 14px; min-height: 14px; margin: 0; padding: 0; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 50%; background: var(--vscode-input-background); cursor: pointer; }
+  .backup-import-mode input[type="radio"]:checked { border-color: var(--vscode-button-background); }
+  .backup-import-mode input[type="radio"]:checked::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-button-background); transform: translate(-50%, -50%); }
+  .backup-import-mode input[type="radio"]:focus-visible { border-color: var(--vscode-focusBorder); outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .backup-import-mode input[type="radio"]:disabled { opacity: 0.68; cursor: default; }
+  .backup-mode-help { margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; opacity: 0.78; }
+  .backup-validation { min-height: 16px; color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground)); font-size: 12px; line-height: 1.35; }
+  @media (max-width: 560px) { .manage-profiles-header-row { flex-direction: column; } .backup-credential-fields { grid-template-columns: 1fr; } .backup-summary-line { white-space: normal; } }
   .manage-profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .manage-profile-main { min-width: 0; }
   .manage-profile-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -384,6 +422,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .transfer-queue-icon { width: 18px; min-width: 18px; text-align: center; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
   .transfer-queue-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .transfer-queue-detail, .transfer-queue-status, .transfer-queue-progress { color: var(--vscode-descriptionForeground); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-queue-failed-items { margin-top: 6px; padding: 7px 9px; display: grid; gap: 4px; min-width: 0; border: 1px solid var(--vscode-panel-border); border-left: 2px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border)); border-radius: 6px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; }
+  .transfer-queue-failed-title { color: var(--vscode-descriptionForeground); font-weight: 500; opacity: 0.92; }
+  .transfer-queue-failed-item { display: grid; gap: 1px; min-width: 0; padding: 1px 0; }
+  .transfer-queue-failed-path { color: var(--vscode-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-queue-failed-error { color: var(--vscode-descriptionForeground); opacity: 0.82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }
+  .transfer-queue-failed-more { color: var(--vscode-descriptionForeground); opacity: 0.78; }
   .transfer-queue-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .transfer-queue-actions button { min-height: 27px; padding: 4px 9px; }
   .transfer-queue-footer { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
@@ -397,6 +441,25 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .confirm-dialog-message { margin: 0; line-height: 1.45; }
   .confirm-dialog-details { margin: 0; padding: 10px 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
   .confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+  .transfer-conflict-backdrop { position: fixed; inset: 0; z-index: 250; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
+  .transfer-conflict-backdrop.visible { display: flex; }
+  .transfer-conflict-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
+  .transfer-conflict-header { padding: 16px 18px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .transfer-conflict-title { margin: 0; font-size: 18px; font-weight: 650; }
+  .transfer-conflict-body { padding: 15px 18px; display: grid; gap: 12px; overflow: auto; }
+  .transfer-conflict-message { margin: 0; line-height: 1.45; }
+  .transfer-conflict-file { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-input-background); }
+  .transfer-conflict-name { font-weight: 650; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .transfer-conflict-path { color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .transfer-conflict-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .transfer-conflict-card { border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
+  .transfer-conflict-card-title { margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); font-size: 12px; font-weight: 650; }
+  .transfer-conflict-card-body { padding: 9px 10px; display: grid; gap: 5px; min-width: 0; }
+  .transfer-conflict-meta { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+  .transfer-conflict-note { margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; opacity: 0.78; }
+  .transfer-conflict-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 0 18px 16px; }
+  .transfer-conflict-actions button { min-height: 29px; }
+  @media (max-width: 560px) { .transfer-conflict-grid { grid-template-columns: 1fr; } }
 
   .permission-backdrop { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .permission-backdrop.visible { display: flex; }
@@ -408,8 +471,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .permission-section { border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
   .permission-section-title { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 600; background: var(--vscode-sideBar-background); }
   .permission-table { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; }
-  .permission-table th, .permission-table td { padding: 8px 10px; text-align: center; border-bottom: 1px solid var(--vscode-panel-border); white-space: nowrap; }
+  .permission-table th, .permission-table td { padding: 8px 10px; text-align: center; vertical-align: middle; border-bottom: 1px solid var(--vscode-panel-border); white-space: nowrap; }
   .permission-table th:first-child, .permission-table td:first-child { text-align: left; width: 34%; }
+  .permission-table .dialog-checkbox { display: block; margin: 0 auto; }
   .permission-table tbody tr:last-child td { border-bottom: 0; }
   .permission-table th { position: static; z-index: auto; cursor: default; background: var(--vscode-sideBar-background); }
   .permission-special-list { display: grid; gap: 10px; padding: 12px; }
@@ -540,7 +604,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <div id="passphraseSecretState" class="credential-state not-saved">Passphrase not saved.</div>
             </div>
 
-            <div class="full"><label for="startPath">Start path</label><input id="startPath" placeholder="/home/user" autocomplete="off" /></div>
+            <div class="full"><label for="startPath">Start path</label><input id="startPath" autocomplete="off" /></div>
           </div>
 
           <div class="button-row connection-actions">
@@ -592,6 +656,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
                 </button>
                 <button id="pathFavoritesButton" class="remote-path-favorite-button" type="button" aria-label="Show remote path favorites" data-tooltip="Save this connection to use remote path favorites" disabled>
                   <svg class="hotel-class-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="m620.31-395.38 138.92-120 57.69 5.38-149.84 129.15 44.31 195.47-48.93-29.7-42.15-180.3ZM544-631.23l-38.92-91.85 22.15-54.61 63.54 150.84-46.77-4.38ZM294-287l126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143Zm-61 83.92 49.62-212.54-164.93-142.84 217.23-18.85L420-777.69l85.08 200.38 217.23 18.85-164.93 142.84L607-203.08 420-315.92 233-203.08Zm187-257.69Z" /></svg>
+                  <svg class="filled-hotel-class-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="m620.31-395.38 138.92-120 57.69 5.38-149.84 129.15 44.31 195.47-48.93-29.7-42.15-180.3ZM544-631.23l-38.92-91.85 22.15-54.61 63.54 150.84-46.77-4.38ZM233-203.08l49.62-212.54-164.93-142.84 217.23-18.85L420-777.69l85.08 200.38 217.23 18.85-164.93 142.84L607-203.08 420-315.92 233-203.08Z" /></svg>
                 </button>
               </div>
               <div id="pathFavoritesPopover" class="remote-path-favorites-popover" aria-hidden="true">
@@ -666,11 +731,18 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   <div id="manageProfilesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="manageProfilesTitle" aria-hidden="true">
     <section class="file-properties-dialog manage-profiles-dialog">
-      <div class="file-properties-header">
-        <h2 id="manageProfilesTitle" class="file-properties-title">Manage Saved Connections</h2>
-        <div class="file-properties-path">Rename or remove saved connection profiles.</div>
+      <div class="file-properties-header manage-profiles-header-row">
+        <div>
+          <h2 id="manageProfilesTitle" class="file-properties-title">Manage Saved Connections</h2>
+          <div class="file-properties-path">Rename or remove saved connection profiles.</div>
+        </div>
+        <div class="manage-profiles-header-actions">
+          <button id="manageProfilesImportButton" class="secondary" type="button">Import</button>
+          <button id="manageProfilesExportButton" class="secondary" type="button">Export</button>
+        </div>
       </div>
       <div class="file-properties-body">
+        <div id="manageProfilesFeedback" class="manage-profiles-feedback" role="status" aria-live="polite"></div>
         <div class="manage-profiles-filter">
           <input id="manageProfilesFilterInput" type="text" placeholder="Filter connections..." aria-label="Filter saved connections" autocomplete="off" />
         </div>
@@ -678,6 +750,118 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       </div>
       <div class="file-properties-actions">
         <button id="manageProfilesCloseButton" type="button">Close</button>
+      </div>
+    </section>
+  </div>
+
+
+  <div id="exportBackupBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="exportBackupTitle" aria-hidden="true">
+    <section class="file-properties-dialog backup-dialog export-backup-dialog">
+      <div class="file-properties-header">
+        <h2 id="exportBackupTitle" class="file-properties-title">Export Connections and Settings</h2>
+        <div class="file-properties-path">Export Remote Edit data to a JSON backup file.</div>
+      </div>
+      <div class="file-properties-body">
+        <section class="backup-section">
+          <p class="backup-section-title">Export content</p>
+          <div class="backup-checkbox-list">
+            <label class="modal-checkbox-line"><input id="exportIncludeSettings" class="dialog-checkbox" type="checkbox" checked> Remote Edit settings</label>
+            <div class="modal-checkbox-block">
+              <label class="modal-checkbox-line"><input id="exportIncludeConnections" class="dialog-checkbox" type="checkbox" checked> Saved connections</label>
+              <div class="backup-child-options">
+                <label class="modal-checkbox-line"><input id="exportIncludeFavorites" class="dialog-checkbox" type="checkbox" checked> Remote path favorites</label>
+                <label class="modal-checkbox-line"><input id="exportIncludeUsernames" class="dialog-checkbox" type="checkbox" checked> Include usernames</label>
+                <label class="modal-checkbox-line"><input id="exportIncludeCredentials" class="dialog-checkbox" type="checkbox"> Include encrypted passwords/passphrases</label>
+                <div id="exportCredentialsBlock" class="backup-credential-block">
+                  <div class="modal-helper-text">Encrypt saved passwords and key passphrases. Private key files are not exported.</div>
+                  <div class="backup-credential-fields">
+                    <label>Export password
+                      <div class="input-with-button">
+                        <input id="exportCredentialPassword" type="password" autocomplete="new-password">
+                        <button id="exportCredentialPasswordRevealButton" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily show export password" data-tooltip="Hold to show password">
+                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg>
+                        </button>
+                      </div>
+                      <span id="exportCredentialPasswordError" class="backup-field-error" role="alert"></span>
+                    </label>
+                    <label>Confirm password
+                      <div class="input-with-button">
+                        <input id="exportCredentialConfirmPassword" type="password" autocomplete="new-password">
+                        <button id="exportCredentialConfirmPasswordRevealButton" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily show password confirmation" data-tooltip="Hold to show password">
+                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg>
+                        </button>
+                      </div>
+                      <span id="exportCredentialConfirmPasswordError" class="backup-field-error" role="alert"></span>
+                    </label>
+                  </div>
+                </div>
+                <div id="exportCredentialsDisabledHelp" class="modal-helper-text modal-checkbox-helper"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div id="exportBackupResult" class="backup-result" role="status" aria-live="polite"></div>
+        <div id="exportBackupValidation" class="backup-validation" role="alert"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="exportBackupCancelButton" class="secondary" type="button">Close</button>
+        <button id="exportBackupApplyButton" type="button">Export</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="importBackupBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="importBackupTitle" aria-hidden="true">
+    <section class="file-properties-dialog backup-dialog import-backup-dialog">
+      <div class="file-properties-header">
+        <h2 id="importBackupTitle" class="file-properties-title">Import Connections and Settings</h2>
+        <div class="file-properties-path">Review the backup content before importing.</div>
+      </div>
+      <div class="file-properties-body">
+        <section class="backup-section backup-summary-section">
+          <p class="backup-section-title">Backup summary</p>
+          <div id="importBackupSummary" class="backup-summary-line"></div>
+        </section>
+        <section class="backup-section">
+          <p class="backup-section-title">Import content</p>
+          <div class="backup-checkbox-list">
+            <label class="modal-checkbox-line"><input id="importIncludeSettings" class="dialog-checkbox" type="checkbox" checked> Remote Edit settings</label>
+            <div class="modal-checkbox-block">
+              <label class="modal-checkbox-line"><input id="importIncludeConnections" class="dialog-checkbox" type="checkbox" checked> Saved connections</label>
+              <div class="backup-child-options">
+                <label class="modal-checkbox-line"><input id="importIncludeFavorites" class="dialog-checkbox" type="checkbox" checked> Remote path favorites</label>
+                <label class="modal-checkbox-line"><input id="importIncludeUsernames" class="dialog-checkbox" type="checkbox" checked> Include usernames</label>
+                <label class="modal-checkbox-line"><input id="importRestoreCredentials" class="dialog-checkbox" type="checkbox"> Restore encrypted passwords/passphrases</label>
+                <div id="importCredentialsBlock" class="backup-credential-block">
+                  <div class="modal-helper-text">Restore saved passwords and key passphrases. Private key files are not included.</div>
+                  <div class="backup-credential-fields">
+                    <label>Export password
+                      <div class="input-with-button">
+                        <input id="importCredentialPassword" type="password" autocomplete="current-password">
+                        <button id="importCredentialPasswordRevealButton" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily show export password" data-tooltip="Hold to show password">
+                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg>
+                        </button>
+                      </div>
+                      <span id="importCredentialPasswordError" class="backup-field-error" role="alert"></span>
+                    </label>
+                  </div>
+                </div>
+                <div id="importCredentialsDisabledHelp" class="modal-helper-text modal-checkbox-helper"></div>
+              </div>
+            </div>
+            <div id="importModeBlock" class="backup-import-mode">
+              <p class="backup-import-mode-title">Import mode</p>
+              <label class="modal-checkbox-line"><input id="importModeMerge" name="importMode" type="radio" value="merge" checked> Merge with existing connections</label>
+              <label class="modal-checkbox-line"><input id="importModeReplace" name="importMode" type="radio" value="replace"> Replace existing connections</label>
+              <p id="importModeHelp" class="backup-mode-help">Matching connections are updated. New connections are added.</p>
+            </div>
+          </div>
+        </section>
+        <div id="importBackupResult" class="backup-result" role="status" aria-live="polite"></div>
+        <div id="importBackupValidation" class="backup-validation" role="alert"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="importBackupCancelButton" class="secondary" type="button">Close</button>
+        <button id="importBackupApplyButton" type="button">Import</button>
       </div>
     </section>
   </div>
@@ -721,6 +905,43 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         <button id="confirmDialogCancelButton" class="secondary" type="button">Cancel</button>
         <button id="confirmDialogConfirmButton" type="button">Confirm</button>
       </div>
+    </section>
+  </div>
+
+  <div id="transferConflictBackdrop" class="transfer-conflict-backdrop" role="dialog" aria-modal="true" aria-labelledby="transferConflictTitle" aria-hidden="true">
+    <section class="transfer-conflict-dialog" tabindex="-1">
+      <div class="transfer-conflict-header">
+        <h2 id="transferConflictTitle" class="transfer-conflict-title">Transfer conflict</h2>
+      </div>
+      <div class="transfer-conflict-body">
+        <p id="transferConflictMessage" class="transfer-conflict-message"></p>
+        <div class="transfer-conflict-file">
+          <span id="transferConflictName" class="transfer-conflict-name"></span>
+          <span id="transferConflictPath" class="transfer-conflict-path"></span>
+        </div>
+        <div class="transfer-conflict-grid">
+          <section class="transfer-conflict-card" aria-labelledby="transferConflictSourceTitle">
+            <h3 id="transferConflictSourceTitle" class="transfer-conflict-card-title">Source</h3>
+            <div class="transfer-conflict-card-body">
+              <div id="transferConflictSourceType" class="transfer-conflict-meta"></div>
+              <div id="transferConflictSourcePath" class="transfer-conflict-meta"></div>
+              <div id="transferConflictSourceSize" class="transfer-conflict-meta"></div>
+              <div id="transferConflictSourceModified" class="transfer-conflict-meta"></div>
+            </div>
+          </section>
+          <section class="transfer-conflict-card" aria-labelledby="transferConflictDestinationTitle">
+            <h3 id="transferConflictDestinationTitle" class="transfer-conflict-card-title">Destination</h3>
+            <div class="transfer-conflict-card-body">
+              <div id="transferConflictDestinationType" class="transfer-conflict-meta"></div>
+              <div id="transferConflictDestinationPath" class="transfer-conflict-meta"></div>
+              <div id="transferConflictDestinationSize" class="transfer-conflict-meta"></div>
+              <div id="transferConflictDestinationModified" class="transfer-conflict-meta"></div>
+            </div>
+          </section>
+        </div>
+        <p id="transferConflictNote" class="transfer-conflict-note"></p>
+      </div>
+      <div id="transferConflictActions" class="transfer-conflict-actions"></div>
     </section>
   </div>
 
@@ -1038,6 +1259,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const confirmDialogDetails = document.getElementById('confirmDialogDetails');
   const confirmDialogCancelButton = document.getElementById('confirmDialogCancelButton');
   const confirmDialogConfirmButton = document.getElementById('confirmDialogConfirmButton');
+  const transferConflictBackdrop = document.getElementById('transferConflictBackdrop');
+  const transferConflictDialog = transferConflictBackdrop ? transferConflictBackdrop.querySelector('.transfer-conflict-dialog') : null;
+  const transferConflictTitle = document.getElementById('transferConflictTitle');
+  const transferConflictMessage = document.getElementById('transferConflictMessage');
+  const transferConflictName = document.getElementById('transferConflictName');
+  const transferConflictPath = document.getElementById('transferConflictPath');
+  const transferConflictSourceType = document.getElementById('transferConflictSourceType');
+  const transferConflictSourcePath = document.getElementById('transferConflictSourcePath');
+  const transferConflictSourceSize = document.getElementById('transferConflictSourceSize');
+  const transferConflictSourceModified = document.getElementById('transferConflictSourceModified');
+  const transferConflictDestinationType = document.getElementById('transferConflictDestinationType');
+  const transferConflictDestinationPath = document.getElementById('transferConflictDestinationPath');
+  const transferConflictDestinationSize = document.getElementById('transferConflictDestinationSize');
+  const transferConflictDestinationModified = document.getElementById('transferConflictDestinationModified');
+  const transferConflictNote = document.getElementById('transferConflictNote');
+  const transferConflictActions = document.getElementById('transferConflictActions');
   const goButton = document.getElementById('goButton');
   const entryContextMenu = document.getElementById('entryContextMenu');
   const contextOpen = document.getElementById('contextOpen');
@@ -1116,8 +1353,49 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const ownerGroupApplyButton = document.getElementById('ownerGroupApplyButton');
   const manageProfilesBackdrop = document.getElementById('manageProfilesBackdrop');
   const manageProfilesFilterInput = document.getElementById('manageProfilesFilterInput');
+  const manageProfilesFeedback = document.getElementById('manageProfilesFeedback');
   const manageProfilesList = document.getElementById('manageProfilesList');
   const manageProfilesCloseButton = document.getElementById('manageProfilesCloseButton');
+  const manageProfilesImportButton = document.getElementById('manageProfilesImportButton');
+  const manageProfilesExportButton = document.getElementById('manageProfilesExportButton');
+  const exportBackupBackdrop = document.getElementById('exportBackupBackdrop');
+  const exportIncludeSettings = document.getElementById('exportIncludeSettings');
+  const exportIncludeConnections = document.getElementById('exportIncludeConnections');
+  const exportIncludeFavorites = document.getElementById('exportIncludeFavorites');
+  const exportIncludeUsernames = document.getElementById('exportIncludeUsernames');
+  const exportIncludeCredentials = document.getElementById('exportIncludeCredentials');
+  const exportCredentialsBlock = document.getElementById('exportCredentialsBlock');
+  const exportCredentialsDisabledHelp = document.getElementById('exportCredentialsDisabledHelp');
+  const exportCredentialPassword = document.getElementById('exportCredentialPassword');
+  const exportCredentialPasswordError = document.getElementById('exportCredentialPasswordError');
+  const exportCredentialPasswordRevealButton = document.getElementById('exportCredentialPasswordRevealButton');
+  const exportCredentialConfirmPassword = document.getElementById('exportCredentialConfirmPassword');
+  const exportCredentialConfirmPasswordError = document.getElementById('exportCredentialConfirmPasswordError');
+  const exportCredentialConfirmPasswordRevealButton = document.getElementById('exportCredentialConfirmPasswordRevealButton');
+  const exportBackupResult = document.getElementById('exportBackupResult');
+  const exportBackupValidation = document.getElementById('exportBackupValidation');
+  const exportBackupCancelButton = document.getElementById('exportBackupCancelButton');
+  const exportBackupApplyButton = document.getElementById('exportBackupApplyButton');
+  const importBackupBackdrop = document.getElementById('importBackupBackdrop');
+  const importBackupSummary = document.getElementById('importBackupSummary');
+  const importIncludeSettings = document.getElementById('importIncludeSettings');
+  const importIncludeConnections = document.getElementById('importIncludeConnections');
+  const importIncludeFavorites = document.getElementById('importIncludeFavorites');
+  const importIncludeUsernames = document.getElementById('importIncludeUsernames');
+  const importRestoreCredentials = document.getElementById('importRestoreCredentials');
+  const importCredentialsBlock = document.getElementById('importCredentialsBlock');
+  const importCredentialsDisabledHelp = document.getElementById('importCredentialsDisabledHelp');
+  const importCredentialPassword = document.getElementById('importCredentialPassword');
+  const importCredentialPasswordError = document.getElementById('importCredentialPasswordError');
+  const importCredentialPasswordRevealButton = document.getElementById('importCredentialPasswordRevealButton');
+  const importModeBlock = document.getElementById('importModeBlock');
+  const importModeMerge = document.getElementById('importModeMerge');
+  const importModeReplace = document.getElementById('importModeReplace');
+  const importModeHelp = document.getElementById('importModeHelp');
+  const importBackupResult = document.getElementById('importBackupResult');
+  const importBackupValidation = document.getElementById('importBackupValidation');
+  const importBackupCancelButton = document.getElementById('importBackupCancelButton');
+  const importBackupApplyButton = document.getElementById('importBackupApplyButton');
 
   const permissionBackdrop = document.getElementById('permissionBackdrop');
   const permissionDialogTitle = document.getElementById('permissionDialogTitle');
@@ -1161,6 +1439,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let profileDropdownFilterText = '';
   let authDropdownOpen = false;
   let manageProfilesDialogOpen = false;
+  let exportBackupDialogOpen = false;
+  let importBackupDialogOpen = false;
+  let importBackupSummaryState = null;
   let manageProfilesFilterText = '';
   let renameProfileId = '';
   let activeConnectionId = '';
@@ -1202,6 +1483,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const REMOTE_COMMAND_MAX_OUTPUT_CHARS = 500000;
   let confirmDialogOpen = false;
   let confirmDialogRequestId = '';
+  let transferConflictDialogOpen = false;
+  let transferConflictRequestId = '';
   let pathFavoritesOpen = false;
   function readPersistentConnectionPanelState() {
     try {
@@ -1357,6 +1640,91 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     vscode.postMessage({ type: 'confirmDialogResponse', payload: { requestId, confirmed: Boolean(confirmed) } });
   }
 
+  function setTransferConflictMeta(element, label, value) {
+    if (!element) return;
+    const text = value === undefined || value === null || value === '' || value === 'unknown'
+      ? ''
+      : label + ': ' + String(value);
+    element.textContent = text;
+    element.hidden = !text;
+  }
+
+  function showTransferConflictDialog(payload) {
+    transferConflictRequestId = String(payload.requestId || '');
+    transferConflictDialogOpen = Boolean(transferConflictRequestId);
+
+    if (!transferConflictDialogOpen) return;
+
+    transferConflictTitle.textContent = String(payload.title || 'Transfer conflict');
+    transferConflictMessage.textContent = String(payload.message || 'A conflict decision is required to continue.');
+    transferConflictName.textContent = String(payload.itemName || payload.relativePath || '');
+    transferConflictPath.textContent = String(payload.relativePath || '');
+
+    setTransferConflictMeta(transferConflictSourceType, 'Type', payload.sourceType || 'Source');
+    setTransferConflictMeta(transferConflictSourcePath, 'Path', payload.sourcePath || '');
+    setTransferConflictMeta(transferConflictSourceSize, 'Size', payload.sourceSize || '');
+    setTransferConflictMeta(transferConflictSourceModified, 'Modified', payload.sourceModified || '');
+    setTransferConflictMeta(transferConflictDestinationType, 'Type', payload.destinationType || 'Destination');
+    setTransferConflictMeta(transferConflictDestinationPath, 'Path', payload.destinationPath || '');
+    setTransferConflictMeta(transferConflictDestinationSize, 'Size', payload.destinationSize || '');
+    setTransferConflictMeta(transferConflictDestinationModified, 'Modified', payload.destinationModified || '');
+
+    const note = String(payload.note || '');
+    transferConflictNote.textContent = note;
+    transferConflictNote.hidden = !note;
+
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    transferConflictActions.innerHTML = choices.map(choice => {
+      const label = String(choice && choice.label || 'Cancel');
+      const decision = String(choice && choice.decision || 'cancel');
+      const classes = [];
+      if (!choice || !choice.primary) classes.push('secondary');
+      if (choice && choice.danger) classes.push('danger');
+      return '<button class="' + classes.join(' ') + '" type="button" data-transfer-conflict-decision="' + escapeHtml(decision) + '">' + escapeHtml(label) + '</button>';
+    }).join('');
+
+    transferConflictBackdrop.classList.add('visible');
+    transferConflictBackdrop.setAttribute('aria-hidden', 'false');
+
+    const cancelButton = transferConflictActions.querySelector('button[data-transfer-conflict-decision="cancel"]');
+    const firstButton = transferConflictActions.querySelector('button');
+    setTimeout(() => (cancelButton || firstButton || transferConflictDialog).focus(), 0);
+  }
+
+  function hideTransferConflictDialog() {
+    transferConflictDialogOpen = false;
+    transferConflictRequestId = '';
+    transferConflictBackdrop.classList.remove('visible');
+    transferConflictBackdrop.setAttribute('aria-hidden', 'true');
+    transferConflictActions.innerHTML = '';
+  }
+
+  function closeTransferConflictDialog(decision) {
+    if (!transferConflictDialogOpen) return;
+
+    const requestId = transferConflictRequestId;
+    hideTransferConflictDialog();
+    vscode.postMessage({ type: 'transferConflictResponse', payload: { requestId, decision: decision || 'cancel' } });
+  }
+
+  function trapTransferConflictFocus(event) {
+    if (!transferConflictDialogOpen || event.key !== 'Tab') return;
+
+    const focusable = Array.from(transferConflictBackdrop.querySelectorAll('button, [tabindex]:not([tabindex="-1"])')).filter(element => !element.disabled);
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function trapConfirmDialogFocus(event) {
     if (!confirmDialogOpen || event.key !== 'Tab') return;
 
@@ -1388,6 +1756,32 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         break;
       case 'connectionFormCleared':
         selectProfile('', { preserveStatus: true });
+        break;
+      case 'showImportConnectionsSettingsDialog':
+        showImportBackupDialog(payload.summary || {});
+        break;
+      case 'hideExportConnectionsSettingsDialog':
+        hideExportBackupDialog();
+        break;
+      case 'hideImportConnectionsSettingsDialog':
+        hideImportBackupDialog();
+        break;
+      case 'exportConnectionsSettingsValidationError':
+        exportBackupValidation.textContent = '';
+        showBackupResult(exportBackupResult, payload.message || 'Export failed.', true);
+        break;
+      case 'importConnectionsSettingsValidationError':
+        importBackupValidation.textContent = '';
+        showBackupResult(importBackupResult, payload.message || 'Import failed.', true);
+        break;
+      case 'backupOperationResult':
+        if (payload.operation === 'export') {
+          showBackupResult(exportBackupResult, payload.message || '', Boolean(payload.isError));
+        } else if (payload.operation === 'import') {
+          showBackupResult(importBackupResult, payload.message || '', Boolean(payload.isError));
+        } else {
+          showManageProfilesFeedback(payload.message || '', Boolean(payload.isError));
+        }
         break;
       case 'privateKeyPathSelected':
         if (payload.path) {
@@ -1500,10 +1894,23 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'error':
         connectionButtonState = '';
         setBusy(false);
+        if (importBackupDialogOpen && importBackupResult) {
+          showBackupResult(importBackupResult, payload.message || 'Unknown error.', true);
+          break;
+        } else if (exportBackupDialogOpen && exportBackupResult) {
+          showBackupResult(exportBackupResult, payload.message || 'Unknown error.', true);
+          break;
+        }
         setStatus(payload.message || 'Unknown error.', true);
         break;
       case 'showConfirmDialog':
         showConfirmDialog(payload);
+        break;
+      case 'showTransferConflictDialog':
+        showTransferConflictDialog(payload);
+        break;
+      case 'hideTransferConflictDialog':
+        hideTransferConflictDialog();
         break;
       case 'showChecksumsDialog':
         showChecksumsDialog(payload);
@@ -1620,6 +2027,20 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   transferQueueModal.addEventListener('click', event => { if (event.target === transferQueueModal) hideTransferQueueModal(); });
   confirmDialogCancelButton.addEventListener('click', () => closeConfirmDialog(false));
   confirmDialogConfirmButton.addEventListener('click', () => closeConfirmDialog(true));
+  transferConflictActions.addEventListener('click', event => {
+    const button = event.target && event.target.closest ? event.target.closest('button[data-transfer-conflict-decision]') : null;
+    if (!button) return;
+    closeTransferConflictDialog(button.dataset.transferConflictDecision || 'cancel');
+  });
+  transferConflictBackdrop.addEventListener('mousedown', event => {
+    if (event.target === transferConflictBackdrop) {
+      event.preventDefault();
+      const cancelButton = transferConflictActions.querySelector('button[data-transfer-conflict-decision="cancel"]');
+      const firstButton = transferConflictActions.querySelector('button');
+      (cancelButton || firstButton || transferConflictDialog).focus();
+    }
+  });
+  transferConflictBackdrop.addEventListener('keydown', trapTransferConflictFocus);
   confirmDialogBackdrop.addEventListener('mousedown', event => {
     if (event.target === confirmDialogBackdrop) {
       event.preventDefault();
@@ -1795,6 +2216,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && transferConflictDialogOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTransferConflictDialog('cancel');
+      return;
+    }
+    if (transferConflictDialogOpen) {
+      trapTransferConflictFocus(event);
+      return;
+    }
     if (event.key === 'Escape' && confirmDialogOpen) {
       event.preventDefault();
       event.stopPropagation();
@@ -1811,6 +2242,18 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
     if (event.key === 'Escape' && authDropdownOpen) {
       hideAuthDropdown();
+      return;
+    }
+    if (event.key === 'Escape' && exportBackupDialogOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideExportBackupDialog();
+      return;
+    }
+    if (event.key === 'Escape' && importBackupDialogOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideImportBackupDialog();
       return;
     }
     if (event.key === 'Escape' && manageProfilesDialogOpen) {
@@ -2056,6 +2499,55 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   manageProfilesCloseButton.addEventListener('click', () => {
     hideManageProfilesDialog();
   });
+
+  manageProfilesImportButton.addEventListener('click', () => {
+    vscode.postMessage({ type: 'requestImportConnectionsSettings' });
+  });
+
+  manageProfilesExportButton.addEventListener('click', () => {
+    showExportBackupDialog();
+  });
+
+  exportBackupCancelButton.addEventListener('click', hideExportBackupDialog);
+  exportBackupApplyButton.addEventListener('click', applyExportBackupDialog);
+  exportBackupBackdrop.addEventListener('mousedown', event => {
+    if (event.target === exportBackupBackdrop) {
+      hideExportBackupDialog();
+    }
+  });
+
+  for (const input of [exportIncludeSettings, exportIncludeConnections, exportIncludeFavorites, exportIncludeUsernames, exportIncludeCredentials]) {
+    input.addEventListener('change', updateExportBackupDialogState);
+  }
+
+  exportCredentialPassword.addEventListener('input', () => {
+    exportBackupValidation.textContent = '';
+    clearBackupFieldError(exportCredentialPassword, exportCredentialPasswordError);
+  });
+  exportCredentialConfirmPassword.addEventListener('input', () => {
+    exportBackupValidation.textContent = '';
+    clearBackupFieldError(exportCredentialConfirmPassword, exportCredentialConfirmPasswordError);
+  });
+  bindTemporaryPasswordReveal(exportCredentialPasswordRevealButton, exportCredentialPassword);
+  bindTemporaryPasswordReveal(exportCredentialConfirmPasswordRevealButton, exportCredentialConfirmPassword);
+
+  importBackupCancelButton.addEventListener('click', hideImportBackupDialog);
+  importBackupApplyButton.addEventListener('click', applyImportBackupDialog);
+  importBackupBackdrop.addEventListener('mousedown', event => {
+    if (event.target === importBackupBackdrop) {
+      hideImportBackupDialog();
+    }
+  });
+
+  for (const input of [importIncludeSettings, importIncludeConnections, importIncludeFavorites, importIncludeUsernames, importRestoreCredentials, importModeMerge, importModeReplace]) {
+    input.addEventListener('change', updateImportBackupDialogState);
+  }
+
+  importCredentialPassword.addEventListener('input', () => {
+    importBackupValidation.textContent = '';
+    clearBackupFieldError(importCredentialPassword, importCredentialPasswordError);
+  });
+  bindTemporaryPasswordReveal(importCredentialPasswordRevealButton, importCredentialPassword);
 
   manageProfilesBackdrop.addEventListener('mousedown', event => {
     if (event.target === manageProfilesBackdrop) {
@@ -2810,7 +3302,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     for (const session of sessions) {
       const tab = document.createElement('button');
       tab.className = 'session-tab has-tooltip tooltip-above' + (session.id === activeConnectionId ? ' active' : '');
-      tab.dataset.tooltip = formatConnectionLabel(session.name, formatSessionTarget(session)) + ' - ' + (session.currentPath || '/');
+      tab.dataset.tooltip = formatSessionTooltipTarget(session);
       tab.innerHTML = '<span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect">×</span>';
       tab.addEventListener('click', () => {
         if (session.id === activeConnectionId) {
@@ -3268,6 +3760,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return userPart + session.host + ':' + session.port;
   }
 
+  function formatSessionTooltipTarget(session) {
+    const userPart = session.username ? session.username + '@' : '';
+    return userPart + session.host;
+  }
+
   function formatConnectionLabel(name, target) {
     return '[' + name + '] ' + target;
   }
@@ -3337,11 +3834,386 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
 
 
+
+
+  function setTemporaryPasswordVisible(input, visible) {
+    if (!input || input.disabled) return;
+    input.type = visible ? 'text' : 'password';
+  }
+
+  function hideTemporaryPassword(input) {
+    if (!input) return;
+    input.type = 'password';
+  }
+
+  function bindTemporaryPasswordReveal(button, input) {
+    if (!button || !input) return;
+
+    const show = event => {
+      if (button.disabled || input.disabled) return;
+      if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      setTemporaryPasswordVisible(input, true);
+    };
+
+    const hide = event => {
+      if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      hideTemporaryPassword(input);
+    };
+
+    button.addEventListener('mousedown', show);
+    button.addEventListener('mouseup', hide);
+    button.addEventListener('mouseleave', hide);
+    button.addEventListener('blur', hide);
+    button.addEventListener('touchstart', show, { passive: false });
+    button.addEventListener('touchend', hide);
+    button.addEventListener('touchcancel', hide);
+    button.addEventListener('keydown', event => {
+      if (event.key === ' ' || event.key === 'Enter') show(event);
+    });
+    button.addEventListener('keyup', event => {
+      if (event.key === ' ' || event.key === 'Enter') hide(event);
+    });
+    button.addEventListener('click', event => event.preventDefault());
+  }
+
+  function setBackupFieldError(input, element, message) {
+    if (!input) return;
+    const hasError = Boolean(String(message || '').trim());
+    if (element) {
+      element.textContent = '';
+      element.classList.remove('visible');
+    }
+    input.classList.toggle('backup-input-invalid', hasError);
+    if (hasError) {
+      input.setAttribute('aria-invalid', 'true');
+    } else {
+      input.removeAttribute('aria-invalid');
+    }
+  }
+
+  function clearBackupFieldError(input, element) {
+    setBackupFieldError(input, element, '');
+  }
+
+  function clearExportBackupFieldErrors() {
+    clearBackupFieldError(exportCredentialPassword, exportCredentialPasswordError);
+    clearBackupFieldError(exportCredentialConfirmPassword, exportCredentialConfirmPasswordError);
+  }
+
+  function clearImportBackupFieldErrors() {
+    clearBackupFieldError(importCredentialPassword, importCredentialPasswordError);
+  }
+
+  function showBackupResult(element, message, isError) {
+    if (!element) return;
+    const text = String(message || '').trim();
+    element.textContent = text;
+    element.classList.toggle('visible', Boolean(text));
+    element.classList.toggle('error', Boolean(isError));
+    element.classList.toggle('success', Boolean(text) && !isError);
+  }
+
+  function clearBackupResult(element) {
+    showBackupResult(element, '', false);
+  }
+
+  function showExportBackupDialog() {
+    exportBackupDialogOpen = true;
+    exportIncludeSettings.checked = true;
+    exportIncludeConnections.checked = true;
+    exportIncludeFavorites.checked = true;
+    exportIncludeUsernames.checked = true;
+    exportIncludeCredentials.checked = false;
+    exportCredentialPassword.value = '';
+    exportCredentialConfirmPassword.value = '';
+    exportBackupValidation.textContent = '';
+    clearExportBackupFieldErrors();
+    clearBackupResult(exportBackupResult);
+    updateExportBackupDialogState();
+    exportBackupBackdrop.classList.add('visible');
+    exportBackupBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => exportIncludeSettings.focus(), 0);
+  }
+
+  function hideExportBackupDialog() {
+    exportBackupDialogOpen = false;
+    exportBackupBackdrop.classList.remove('visible');
+    exportBackupBackdrop.setAttribute('aria-hidden', 'true');
+    exportCredentialPassword.value = '';
+    exportCredentialConfirmPassword.value = '';
+    hideTemporaryPassword(exportCredentialPassword);
+    hideTemporaryPassword(exportCredentialConfirmPassword);
+    exportBackupValidation.textContent = '';
+    clearExportBackupFieldErrors();
+    clearBackupResult(exportBackupResult);
+  }
+
+  function updateExportBackupDialogState() {
+    const includeConnections = Boolean(exportIncludeConnections.checked);
+    exportIncludeFavorites.disabled = !includeConnections;
+    exportIncludeUsernames.disabled = !includeConnections;
+
+    if (!includeConnections) {
+      exportIncludeFavorites.checked = false;
+      exportIncludeUsernames.checked = false;
+      exportIncludeCredentials.checked = false;
+    }
+
+    const canIncludeCredentials = includeConnections && Boolean(exportIncludeUsernames.checked);
+    exportIncludeCredentials.disabled = !canIncludeCredentials;
+
+    if (!canIncludeCredentials) {
+      exportIncludeCredentials.checked = false;
+    }
+
+    const showCredentials = canIncludeCredentials && Boolean(exportIncludeCredentials.checked);
+    exportCredentialsBlock.classList.toggle('visible', showCredentials);
+    exportCredentialPassword.disabled = !showCredentials;
+    exportCredentialConfirmPassword.disabled = !showCredentials;
+    exportCredentialPasswordRevealButton.disabled = !showCredentials;
+    exportCredentialConfirmPasswordRevealButton.disabled = !showCredentials;
+    hideTemporaryPassword(exportCredentialPassword);
+    hideTemporaryPassword(exportCredentialConfirmPassword);
+    exportCredentialsDisabledHelp.textContent = includeConnections && !exportIncludeUsernames.checked
+      ? 'Enable usernames to include encrypted passwords/passphrases.'
+      : '';
+
+    if (!showCredentials) {
+      exportCredentialPassword.value = '';
+      exportCredentialConfirmPassword.value = '';
+    }
+
+    exportBackupValidation.textContent = '';
+    clearExportBackupFieldErrors();
+    clearBackupResult(exportBackupResult);
+  }
+
+  function applyExportBackupDialog() {
+    exportBackupValidation.textContent = '';
+    clearExportBackupFieldErrors();
+    clearBackupResult(exportBackupResult);
+    const includeCredentials = Boolean(exportIncludeCredentials.checked) && !exportIncludeCredentials.disabled;
+    const credentialPassword = String(exportCredentialPassword.value || '');
+    const credentialConfirmPassword = String(exportCredentialConfirmPassword.value || '');
+
+    if (!exportIncludeSettings.checked && !exportIncludeConnections.checked) {
+      showBackupResult(exportBackupResult, 'Select at least one export option.', true);
+      return;
+    }
+
+    if (includeCredentials) {
+      if (!credentialPassword) {
+        setBackupFieldError(exportCredentialPassword, exportCredentialPasswordError, 'Export password is required.');
+        showBackupResult(exportBackupResult, 'Export password is required.', true);
+        exportCredentialPassword.focus();
+        return;
+      }
+
+      if (!credentialConfirmPassword) {
+        setBackupFieldError(exportCredentialConfirmPassword, exportCredentialConfirmPasswordError, 'Confirm password is required.');
+        showBackupResult(exportBackupResult, 'Confirm password is required.', true);
+        exportCredentialConfirmPassword.focus();
+        return;
+      }
+
+      if (credentialPassword !== credentialConfirmPassword) {
+        setBackupFieldError(exportCredentialPassword, exportCredentialPasswordError, 'Passwords do not match.');
+        setBackupFieldError(exportCredentialConfirmPassword, exportCredentialConfirmPasswordError, 'Passwords do not match.');
+        showBackupResult(exportBackupResult, 'Passwords do not match.', true);
+        exportCredentialConfirmPassword.focus();
+        return;
+      }
+    }
+
+    vscode.postMessage({
+      type: 'exportConnectionsSettings',
+      payload: {
+        includeSettings: Boolean(exportIncludeSettings.checked),
+        includeConnections: Boolean(exportIncludeConnections.checked),
+        includeFavorites: Boolean(exportIncludeFavorites.checked) && !exportIncludeFavorites.disabled,
+        includeUsernames: Boolean(exportIncludeUsernames.checked) && !exportIncludeUsernames.disabled,
+        includeCredentials,
+        credentialPassword
+      }
+    });
+
+  }
+
+  function showImportBackupDialog(summary) {
+    importBackupDialogOpen = true;
+    importBackupSummaryState = Object.assign({
+      hasSettings: false,
+      connectionCount: 0,
+      supportedConnectionCount: 0,
+      unsupportedConnectionCount: 0,
+      remotePathFavoriteCount: 0,
+      usernamesIncluded: false,
+      hasEncryptedCredentials: false,
+      importError: ''
+    }, summary || {});
+
+    renderImportBackupSummary(importBackupSummaryState);
+    importIncludeSettings.checked = Boolean(importBackupSummaryState.hasSettings);
+    importIncludeConnections.checked = Number(importBackupSummaryState.supportedConnectionCount || 0) > 0;
+    importIncludeFavorites.checked = Number(importBackupSummaryState.remotePathFavoriteCount || 0) > 0;
+    importIncludeUsernames.checked = Boolean(importBackupSummaryState.usernamesIncluded);
+    importRestoreCredentials.checked = false;
+    importCredentialPassword.value = '';
+    importModeMerge.checked = true;
+    importModeReplace.checked = false;
+    importBackupValidation.textContent = '';
+    clearImportBackupFieldErrors();
+    clearBackupResult(importBackupResult);
+    updateImportBackupDialogState();
+    if (importBackupSummaryState.importError) {
+      showBackupResult(importBackupResult, String(importBackupSummaryState.importError), true);
+    }
+    importBackupBackdrop.classList.add('visible');
+    importBackupBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => (importBackupSummaryState.importError ? importBackupCancelButton : (importIncludeSettings.disabled ? importIncludeConnections : importIncludeSettings)).focus(), 0);
+  }
+
+  function hideImportBackupDialog() {
+    importBackupDialogOpen = false;
+    importBackupBackdrop.classList.remove('visible');
+    importBackupBackdrop.setAttribute('aria-hidden', 'true');
+    importCredentialPassword.value = '';
+    hideTemporaryPassword(importCredentialPassword);
+    importBackupValidation.textContent = '';
+    clearImportBackupFieldErrors();
+    clearBackupResult(importBackupResult);
+  }
+
+  function renderImportBackupSummary(summary) {
+    if (summary.importError) {
+      importBackupSummary.textContent = 'Unable to read selected file.';
+      return;
+    }
+
+    const connectionCount = Number(summary.connectionCount || 0);
+    const favoriteCount = Number(summary.remotePathFavoriteCount || 0);
+    const unsupportedCount = Number(summary.unsupportedConnectionCount || 0);
+    const parts = [
+      summary.hasSettings ? 'Settings included' : 'Settings not included',
+      connectionCount === 1 ? '1 connection' : connectionCount + ' connections',
+      favoriteCount === 1 ? '1 favorite' : favoriteCount + ' favorites',
+      summary.usernamesIncluded ? 'usernames included' : 'usernames not included',
+      summary.hasEncryptedCredentials ? 'passwords/passphrases encrypted' : 'passwords/passphrases not included'
+    ];
+
+    if (unsupportedCount) {
+      parts.splice(2, 0, unsupportedCount === 1 ? '1 unsupported' : unsupportedCount + ' unsupported');
+    }
+
+    importBackupSummary.textContent = parts.join(' · ');
+  }
+
+  function updateImportBackupDialogState() {
+    const summary = importBackupSummaryState || {};
+    const hasImportError = Boolean(summary.importError);
+    const hasSettings = !hasImportError && Boolean(summary.hasSettings);
+    const hasConnections = !hasImportError && Number(summary.supportedConnectionCount || 0) > 0;
+    const hasFavorites = !hasImportError && Number(summary.remotePathFavoriteCount || 0) > 0;
+    const hasUsernames = !hasImportError && Boolean(summary.usernamesIncluded);
+    const hasCredentials = !hasImportError && Boolean(summary.hasEncryptedCredentials);
+
+    importIncludeSettings.disabled = !hasSettings;
+    if (!hasSettings) importIncludeSettings.checked = false;
+
+    importIncludeConnections.disabled = !hasConnections;
+    if (!hasConnections) importIncludeConnections.checked = false;
+
+    const includeConnections = hasConnections && Boolean(importIncludeConnections.checked);
+    importIncludeFavorites.disabled = !includeConnections || !hasFavorites;
+    importIncludeUsernames.disabled = !includeConnections || !hasUsernames;
+
+    if (!includeConnections || !hasFavorites) importIncludeFavorites.checked = false;
+    if (!includeConnections || !hasUsernames) importIncludeUsernames.checked = false;
+
+    const canRestoreCredentials = includeConnections && Boolean(importIncludeUsernames.checked) && hasCredentials;
+    importRestoreCredentials.disabled = !canRestoreCredentials;
+    if (!canRestoreCredentials) importRestoreCredentials.checked = false;
+
+    const showCredentials = canRestoreCredentials && Boolean(importRestoreCredentials.checked);
+    importCredentialsBlock.classList.toggle('visible', showCredentials);
+    importCredentialPassword.disabled = !showCredentials;
+    importCredentialPasswordRevealButton.disabled = !showCredentials;
+    hideTemporaryPassword(importCredentialPassword);
+    if (!showCredentials) importCredentialPassword.value = '';
+
+    importCredentialsDisabledHelp.textContent = hasImportError
+      ? ''
+      : (!hasCredentials
+        ? 'This backup does not contain encrypted passwords/passphrases.'
+        : (includeConnections && !importIncludeUsernames.checked ? 'Enable usernames to restore encrypted passwords/passphrases.' : ''));
+
+    const enableImportMode = includeConnections;
+    importModeBlock.style.opacity = enableImportMode ? '1' : '0.6';
+    importModeMerge.disabled = !enableImportMode;
+    importModeReplace.disabled = !enableImportMode;
+
+    importModeHelp.textContent = hasImportError
+      ? ''
+      : (importModeReplace.checked
+        ? 'Existing connections will be replaced by this backup.'
+        : 'Matching connections are updated. New connections are added.');
+
+    importBackupApplyButton.disabled = hasImportError;
+    importBackupValidation.textContent = '';
+    clearImportBackupFieldErrors();
+    if (!hasImportError) clearBackupResult(importBackupResult);
+  }
+
+  function applyImportBackupDialog() {
+    importBackupValidation.textContent = '';
+    clearImportBackupFieldErrors();
+    clearBackupResult(importBackupResult);
+    const restoreCredentials = Boolean(importRestoreCredentials.checked) && !importRestoreCredentials.disabled;
+    const credentialPassword = String(importCredentialPassword.value || '');
+
+    if (!importIncludeSettings.checked && !importIncludeConnections.checked) {
+      showBackupResult(importBackupResult, 'Select at least one import option.', true);
+      return;
+    }
+
+    if (restoreCredentials && !credentialPassword) {
+      setBackupFieldError(importCredentialPassword, importCredentialPasswordError, 'Export password is required.');
+      showBackupResult(importBackupResult, 'Export password is required.', true);
+      importCredentialPassword.focus();
+      return;
+    }
+
+    vscode.postMessage({
+      type: 'importConnectionsSettings',
+      payload: {
+        includeSettings: Boolean(importIncludeSettings.checked) && !importIncludeSettings.disabled,
+        includeConnections: Boolean(importIncludeConnections.checked) && !importIncludeConnections.disabled,
+        includeFavorites: Boolean(importIncludeFavorites.checked) && !importIncludeFavorites.disabled,
+        includeUsernames: Boolean(importIncludeUsernames.checked) && !importIncludeUsernames.disabled,
+        restoreCredentials,
+        credentialPassword,
+        importMode: importModeReplace.checked ? 'replace' : 'merge'
+      }
+    });
+
+  }
+
+
+  function showManageProfilesFeedback(message, isError) {
+    if (!manageProfilesFeedback) return;
+    const text = String(message || '').trim();
+    manageProfilesFeedback.textContent = text;
+    manageProfilesFeedback.classList.toggle('visible', Boolean(text));
+    manageProfilesFeedback.classList.toggle('error', Boolean(isError));
+    manageProfilesFeedback.classList.toggle('success', Boolean(text) && !isError);
+  }
+
   function showManageProfilesDialog() {
     manageProfilesDialogOpen = true;
     renameProfileId = '';
     manageProfilesFilterText = '';
     if (manageProfilesFilterInput) manageProfilesFilterInput.value = '';
+    showManageProfilesFeedback('', false);
     renderManageProfilesList();
     manageProfilesBackdrop.classList.add('visible');
     manageProfilesBackdrop.setAttribute('aria-hidden', 'false');
@@ -4373,6 +5245,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       : (isFavorite ? 'Remove from favorite remote paths' : 'Add to favorite remote paths');
 
     pathFavoritesButton.disabled = disabled;
+    pathFavoritesButton.classList.toggle('has-favorites', hasSavedConnection && getFavoriteRemotePaths().length > 0);
     pathFavoritesButton.dataset.tooltip = disabled ? unavailableMessage : 'Show favorite remote paths';
 
     if (disabled) {
@@ -5108,7 +5981,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function renderTransferQueueItem(item, actionOptions) {
     const operation = item.operation === 'Upload' ? 'Upload' : 'Download';
     const icon = item.operation === 'Upload' ? '↑' : '↓';
-    const status = item.status === 'Waiting' ? 'Queued' : (item.status || 'Waiting');
+    const status = item.status === 'Waiting' && !item.canCancel ? 'Queued' : (item.status || 'Waiting');
     const progress = item.progress || (status === 'Queued' ? '--' : '');
     const timestamp = getTransferQueueTimestampLine(item, status);
     const timestampHtml = timestamp ? '<div class="transfer-queue-detail">' + escapeHtml(timestamp) + '</div>' : '';
@@ -5120,6 +5993,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const actionHtml = action
       ? '<button class="secondary" type="button" data-transfer-action="' + escapeHtml(action) + '" data-transfer-id="' + escapeHtml(item.id || '') + '"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(actionLabel) + '</button>'
       : '';
+    const failedItemsHtml = renderTransferQueueFailedItems(item);
 
     return '<div class="transfer-queue-item">' +
       '<div class="transfer-queue-item-main">' +
@@ -5130,9 +6004,53 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       timestampHtml +
       '<div class="transfer-queue-status">Status: ' + escapeHtml(formatTransferQueueSentence(status)) + '</div>' +
       '<div class="transfer-queue-progress">Progress: ' + escapeHtml(formatTransferQueueSentence(progress)) + '</div>' +
+      failedItemsHtml +
       '</div>' +
       '<div class="transfer-queue-actions">' + actionHtml + '</div>' +
       '</div>';
+  }
+
+  function renderTransferQueueFailedItems(item) {
+    const failedItems = Array.isArray(item && item.failedItems) ? item.failedItems : [];
+    if (!failedItems.length) return '';
+
+    const visibleItems = failedItems.slice(0, 5);
+    const remainingCount = failedItems.length - visibleItems.length;
+    const failedRows = visibleItems.map(failedItem => {
+      const parsed = parseTransferFailedItem(failedItem);
+      const detailHtml = parsed.detail
+        ? '<div class="transfer-queue-failed-error">' + escapeHtml(parsed.detail) + '</div>'
+        : '';
+
+      return '<div class="transfer-queue-failed-item" title="' + escapeHtml(parsed.raw) + '">' +
+        '<div class="transfer-queue-failed-path">- ' + escapeHtml(parsed.path) + '</div>' +
+        detailHtml +
+        '</div>';
+    }).join('');
+    const moreRow = remainingCount > 0
+      ? '<div class="transfer-queue-failed-more">...and ' + remainingCount + ' more</div>'
+      : '';
+
+    return '<div class="transfer-queue-failed-items">' +
+      '<div class="transfer-queue-failed-title">Failed items</div>' +
+      failedRows +
+      moreRow +
+      '</div>';
+  }
+
+  function parseTransferFailedItem(failedItem) {
+    const raw = String(failedItem || '');
+    const separatorIndex = raw.indexOf(': ');
+
+    if (separatorIndex <= 0) {
+      return { raw, path: raw, detail: '' };
+    }
+
+    return {
+      raw,
+      path: raw.slice(0, separatorIndex),
+      detail: raw.slice(separatorIndex + 2)
+    };
   }
 
   function getTransferQueueTimestampLine(item, status) {

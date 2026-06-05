@@ -21,6 +21,15 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.RenameConnection:
       await handlers.renameConnection(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestImportConnectionsSettings:
+      await handlers.requestImportConnectionsSettings();
+      return true;
+    case RemoteEditIncomingMessageType.ExportConnectionsSettings:
+      await handlers.exportConnectionsSettings(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.ImportConnectionsSettings:
+      await handlers.importConnectionsSettings(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.Connect:
       await handlers.connect(message.payload);
       return true;

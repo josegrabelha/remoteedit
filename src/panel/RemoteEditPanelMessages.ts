@@ -4,6 +4,9 @@ export const RemoteEditIncomingMessageType = {
   PickPrivateKeyPath: 'pickPrivateKeyPath',
   DeleteConnection: 'deleteConnection',
   RenameConnection: 'renameConnection',
+  RequestImportConnectionsSettings: 'requestImportConnectionsSettings',
+  ExportConnectionsSettings: 'exportConnectionsSettings',
+  ImportConnectionsSettings: 'importConnectionsSettings',
   Connect: 'connect',
   CancelConnection: 'cancelConnection',
   Disconnect: 'disconnect',
@@ -42,6 +45,7 @@ export const RemoteEditIncomingMessageType = {
   CopyRemotePath: 'copyRemotePath',
   CopyStatus: 'copyStatus',
   ConfirmDialogResponse: 'confirmDialogResponse',
+  TransferConflictResponse: 'transferConflictResponse',
   Log: 'log'
 } as const;
 
@@ -64,6 +68,14 @@ export const RemoteEditOutboundMessageType = {
   TransferQueueChanged: 'transferQueueChanged',
   Error: 'error',
   ShowConfirmDialog: 'showConfirmDialog',
+  ShowTransferConflictDialog: 'showTransferConflictDialog',
+  ShowImportConnectionsSettingsDialog: 'showImportConnectionsSettingsDialog',
+  HideExportConnectionsSettingsDialog: 'hideExportConnectionsSettingsDialog',
+  HideImportConnectionsSettingsDialog: 'hideImportConnectionsSettingsDialog',
+  ExportConnectionsSettingsValidationError: 'exportConnectionsSettingsValidationError',
+  ImportConnectionsSettingsValidationError: 'importConnectionsSettingsValidationError',
+  BackupOperationResult: 'backupOperationResult',
+  HideTransferConflictDialog: 'hideTransferConflictDialog',
   RemoteCommandStarted: 'remoteCommandStarted',
   RemoteCommandOutput: 'remoteCommandOutput',
   RemoteCommandFinished: 'remoteCommandFinished'

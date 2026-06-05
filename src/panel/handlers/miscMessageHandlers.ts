@@ -12,6 +12,9 @@ export function tryHandleMiscMessage(
     case RemoteEditIncomingMessageType.ConfirmDialogResponse:
       handlers.confirmDialogResponse(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.TransferConflictResponse:
+      handlers.transferConflictResponse(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.Log:
       handlers.log(String(message.payload?.message || ''));
       return true;

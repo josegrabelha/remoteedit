@@ -132,7 +132,9 @@ Sudo passwords are not saved. They are kept only in memory for the active sessio
 
 ## License
 
-MIT License. See `LICENSE` for details.
+Remote Edit is free to use, but its source code is not open source.
+
+The source code is publicly available for transparency and review only. Copying, modifying, redistributing, sublicensing, selling, or creating derivative works from this code requires prior written permission.
 
 ## Other Extensions
 

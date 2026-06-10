@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import { ConnectionManager } from './connection/ConnectionManager';
 import { RemoteEditFileSystemProvider } from './filesystem/RemoteEditFileSystemProvider';
 import { RemoteEditPanel } from './panel/RemoteEditPanel';
-import { SftpSessionManager } from './ssh/SftpSessionManager';
+import type { RemoteSessionManager } from './remote/RemoteSessionManager';
+import { RemoteSessionRouter } from './remote/RemoteSessionRouter';
 import { appendOutputLog } from './utils/outputLogger';
+import { RemoteEditSidebarController } from './sidebar/SidebarController';
 
 type StatusBarButtonStyle = 'iconAndText' | 'iconOnly' | 'textOnly';
-type StatusBarButtonAlignment = 'left' | 'right';
+type StatusBarButtonPosition = 'left' | 'right' | 'hidden';
 
 interface StatusBarButtonState {
   item: vscode.StatusBarItem;
@@ -16,15 +18,16 @@ interface StatusBarButtonState {
 
 const CONFIG_SECTION = 'remoteedit';
 const COMMAND_OPEN = 'remoteedit.open';
-const STATUS_BAR_TOOLTIP = 'Open RemoteEdit';
+const STATUS_BAR_TOOLTIP = 'Open Remote Edit';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const output = vscode.window.createOutputChannel('RemoteEdit');
-  const sessions = new SftpSessionManager();
+  const output = vscode.window.createOutputChannel('Remote Edit');
+  const sessions: RemoteSessionManager = new RemoteSessionRouter();
   const connectionManager = new ConnectionManager(context);
   const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);
   const readOnlyFileSystemProvider = new RemoteEditFileSystemProvider(sessions, output, true);
   let statusBarButton: StatusBarButtonState | undefined;
+  const sidebarController = new RemoteEditSidebarController(context, sessions, connectionManager, output);
 
   const disposeStatusBarButton = (): void => {
     statusBarButton?.item.dispose();
@@ -33,19 +36,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const updateStatusBarButton = (): void => {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const showButton = config.get<boolean>('showStatusBarButton', true);
+    const position = getStatusBarButtonPosition(config);
 
-    if (!showButton) {
+    if (position === 'hidden') {
       disposeStatusBarButton();
       return;
     }
 
     const style = config.get<StatusBarButtonStyle>('statusBarButtonStyle', 'iconAndText');
-    const alignment = getStatusBarAlignment(
-      config.get<StatusBarButtonAlignment>('statusBarButtonAlignment', 'left')
-    );
-    const configuredPriority = config.get<number>('statusBarButtonPriority', 100);
-    const priority = Number.isFinite(configuredPriority) ? configuredPriority : 100;
+    const alignment = getStatusBarAlignment(position);
+    const configuredPriority = config.get<number>('statusBarButtonPriority', 1000);
+    const priority = Number.isFinite(configuredPriority) ? configuredPriority : 1000;
 
     if (!statusBarButton || statusBarButton.alignment !== alignment || statusBarButton.priority !== priority) {
       disposeStatusBarButton();
@@ -62,11 +63,12 @@ export function activate(context: vscode.ExtensionContext): void {
     statusBarButton.item.show();
   };
 
-  appendOutputLog(output, 'INFO', 'RemoteEdit activated.');
+  appendOutputLog(output, 'INFO', 'Remote Edit activated.');
   updateStatusBarButton();
 
   context.subscriptions.push(
     output,
+    sidebarController,
     vscode.workspace.registerFileSystemProvider('remoteedit', fileSystemProvider, {
       isCaseSensitive: true
     }),
@@ -98,13 +100,38 @@ function getStatusBarButtonText(style: StatusBarButtonStyle): string {
     case 'iconOnly':
       return '$(remote-explorer)';
     case 'textOnly':
-      return 'RemoteEdit';
+      return 'Remote Edit';
     case 'iconAndText':
     default:
-      return '$(remote-explorer) RemoteEdit';
+      return '$(remote-explorer) Remote Edit';
   }
 }
 
-function getStatusBarAlignment(alignment: StatusBarButtonAlignment): vscode.StatusBarAlignment {
-  return alignment === 'right' ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left;
+function getStatusBarButtonPosition(config: vscode.WorkspaceConfiguration): StatusBarButtonPosition {
+  const positionInspection = config.inspect<StatusBarButtonPosition>('statusBarButtonPosition');
+  const hasConfiguredPosition = Boolean(
+    positionInspection?.globalValue ||
+    positionInspection?.workspaceValue ||
+    positionInspection?.workspaceFolderValue ||
+    positionInspection?.globalLanguageValue ||
+    positionInspection?.workspaceLanguageValue ||
+    positionInspection?.workspaceFolderLanguageValue
+  );
+  const configuredPosition = config.get<StatusBarButtonPosition>('statusBarButtonPosition');
+
+  if (hasConfiguredPosition && (configuredPosition === 'left' || configuredPosition === 'right' || configuredPosition === 'hidden')) {
+    return configuredPosition;
+  }
+
+  const legacyShowButton = config.get<boolean>('showStatusBarButton', true);
+  if (!legacyShowButton) {
+    return 'hidden';
+  }
+
+  const legacyAlignment = config.get<'left' | 'right'>('statusBarButtonAlignment', 'left');
+  return legacyAlignment === 'right' ? 'right' : 'left';
+}
+
+function getStatusBarAlignment(position: Exclude<StatusBarButtonPosition, 'hidden'>): vscode.StatusBarAlignment {
+  return position === 'right' ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left;
 }

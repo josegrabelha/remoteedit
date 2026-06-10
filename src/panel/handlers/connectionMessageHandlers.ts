@@ -15,6 +15,9 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.PickPrivateKeyPath:
       await handlers.pickPrivateKeyPath();
       return true;
+    case RemoteEditIncomingMessageType.PickCaCertificatePath:
+      await handlers.pickCaCertificatePath();
+      return true;
     case RemoteEditIncomingMessageType.DeleteConnection:
       await handlers.deleteConnection(message.payload);
       return true;

@@ -1,8 +1,8 @@
 {
   "name": "remoteedit",
   "displayName": "Remote Edit",
-  "description": "Browse, edit, and save remote files over SSH/SFTP directly from VS Code.",
-  "version": "1.5.0",
+  "description": "Browse, edit, and save remote files over SSH/SFTP, FTP, and FTPS directly from VS Code.",
+  "version": "1.6.0",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -27,16 +27,377 @@
     "commands": [
       {
         "command": "remoteedit.open",
-        "title": "Remote Edit: Open"
+        "title": "Open",
+        "icon": "$(remote-explorer)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openSettings",
+        "title": "Settings",
+        "icon": "$(settings-gear)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.exportBackup",
+        "title": "Export Backup",
+        "icon": "$(sign-out)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.importBackup",
+        "title": "Import Backup",
+        "icon": "$(sign-in)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.newConnection",
+        "title": "Add Connection",
+        "icon": "$(add)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.quickConnect",
+        "title": "Quick Connect",
+        "icon": "$(zap)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.refreshConnections",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.filterConnections",
+        "title": "Filter Connections",
+        "icon": "$(filter)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.clearConnectionsFilter",
+        "title": "Clear Connection Filter",
+        "icon": "$(clear-all)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openSavedConnection",
+        "title": "Connect",
+        "icon": "$(plug)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.renameSavedConnection",
+        "title": "Rename Connection",
+        "icon": "$(edit)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.deleteSavedConnection",
+        "title": "Delete Connection",
+        "icon": "$(trash)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.copyHostname",
+        "title": "Copy Hostname",
+        "icon": "$(copy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.refreshOpenConnections",
+        "title": "Refresh Open Connections",
+        "icon": "$(refresh)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openConnection",
+        "title": "Open Connection",
+        "icon": "$(remote-explorer)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.disconnectConnection",
+        "title": "Disconnect",
+        "icon": "$(debug-disconnect)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.enableSudoMode",
+        "title": "Enable Sudo Mode",
+        "icon": {
+          "light": "resources/sudo-off-light.svg",
+          "dark": "resources/sudo-off-dark.svg"
+        },
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.disableSudoMode",
+        "title": "Disable Sudo Mode",
+        "icon": {
+          "light": "resources/sudo-on-light.svg",
+          "dark": "resources/sudo-on-dark.svg"
+        },
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openSshTerminal",
+        "title": "Open SSH Terminal",
+        "icon": "$(terminal)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openFavoritePath",
+        "title": "Open",
+        "icon": "$(folder-opened)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.goParentFolder",
+        "title": "Go Parent Folder",
+        "icon": "$(arrow-up)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.copyRemotePath",
+        "title": "Copy Path",
+        "icon": "$(copy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.addFavoritePath",
+        "title": "Add to Favorites",
+        "icon": "$(star-add)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.removeFavoritePath",
+        "title": "Remove",
+        "icon": "$(trash)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+        "title": "Remove from Favorites",
+        "icon": "$(star-full)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openRemoteDirectory",
+        "title": "Open Directory",
+        "icon": "$(folder-opened)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.primary.openDirectoryAsRootDirectory",
+        "title": "Open Directory",
+        "icon": "$(folder-opened)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openRemoteFile",
+        "title": "View/Edit",
+        "icon": "$(go-to-file)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openRemoteFileReadOnly",
+        "title": "View Read-Only",
+        "icon": "$(eye)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.createRemoteFile",
+        "title": "Create File...",
+        "icon": "$(new-file)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.createRemoteDirectory",
+        "title": "Create Directory...",
+        "icon": "$(new-folder)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.renameRemoteEntry",
+        "title": "Rename...",
+        "icon": "$(edit)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.deleteRemoteEntry",
+        "title": "Delete",
+        "icon": "$(trash)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.setRemotePermissions",
+        "title": "Set permissions...",
+        "icon": "$(key)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+        "title": "Upload...",
+        "icon": {
+          "light": "resources/upload-light.svg",
+          "dark": "resources/upload-dark.svg"
+        },
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.downloadRemoteEntry",
+        "title": "Download...",
+        "icon": {
+          "light": "resources/download-light.svg",
+          "dark": "resources/download-dark.svg"
+        },
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.compressToArchive",
+        "title": "Compress to Archive",
+        "icon": "$(archive)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.showRemoteEntryProperties",
+        "title": "File Properties",
+        "icon": "$(info)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.calculateRemoteChecksums",
+        "title": "Calculate Checksums",
+        "icon": "$(shield)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.copyRemoteFilename",
+        "title": "Copy Filename",
+        "icon": "$(copy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.refreshRemoteDirectory",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.refreshTransfers",
+        "title": "Refresh Transfers",
+        "icon": "$(refresh)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openTransferQueue",
+        "title": "Open Transfer Queue",
+        "icon": "$(list-tree)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.cancelTransfer",
+        "title": "Cancel Transfer",
+        "icon": "$(close)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.copyConnectionDetails",
+        "title": "Copy Details",
+        "icon": "$(copy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.copyTransferDetails",
+        "title": "Copy Details",
+        "icon": "$(copy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.clearCompletedTransfers",
+        "title": "Clear Completed Transfers",
+        "icon": "$(clear-all)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.editConnectionDetail",
+        "title": "Edit Connection Detail",
+        "icon": "$(edit)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.selectCaCertificatePath",
+        "title": "Select CA Certificate File",
+        "icon": "$(file)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.manageConnectionCredentials",
+        "title": "Manage Connection Credentials",
+        "icon": "$(lock)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.copyConnectionDetailValue",
+        "title": "Copy Connection Detail",
+        "icon": "$(copy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.connectQuickConnect",
+        "title": "Connect",
+        "icon": "$(plug)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.clearQuickConnect",
+        "title": "Clear Quick Connect",
+        "icon": "$(clear-all)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.saveConnectionChanges",
+        "title": "Save",
+        "icon": "$(save)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.discardConnectionChanges",
+        "title": "Discard Connection Changes",
+        "icon": "$(discard)",
+        "category": "Remote Edit"
       }
     ],
     "configuration": {
       "title": "Remote Edit",
       "properties": {
-        "remoteedit.showStatusBarButton": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show the RemoteEdit button in the status bar."
+        "remoteedit.editorTitleButtonPosition": {
+          "type": "string",
+          "default": "hidden",
+          "enum": [
+            "right",
+            "hidden"
+          ],
+          "enumDescriptions": [
+            "Show the Remote Edit button in the Editor Title area.",
+            "Hide the Remote Edit Editor Title button."
+          ],
+          "description": "Controls whether the Remote Edit button appears in the editor title area."
+        },
+        "remoteedit.statusBarButtonPosition": {
+          "type": "string",
+          "default": "left",
+          "enum": [
+            "left",
+            "right",
+            "hidden"
+          ],
+          "enumDescriptions": [
+            "Show the Remote Edit button on the left side of the Status Bar.",
+            "Show the Remote Edit button on the right side of the Status Bar.",
+            "Hide the Remote Edit Status Bar button."
+          ],
+          "description": "Controls where the Remote Edit status bar button appears."
         },
         "remoteedit.statusBarButtonStyle": {
           "type": "string",
@@ -47,55 +408,56 @@
             "textOnly"
           ],
           "enumDescriptions": [
-            "Show both the icon and the RemoteEdit text.",
-            "Show only the RemoteEdit icon.",
-            "Show only the RemoteEdit text."
+            "Show both the icon and the Remote Edit text.",
+            "Show only the Remote Edit icon.",
+            "Show only the Remote Edit text."
           ],
-          "description": "Controls how the RemoteEdit status bar button is displayed."
-        },
-        "remoteedit.statusBarButtonAlignment": {
-          "type": "string",
-          "default": "left",
-          "enum": [
-            "left",
-            "right"
-          ],
-          "enumDescriptions": [
-            "Show the RemoteEdit button on the left side of the status bar.",
-            "Show the RemoteEdit button on the right side of the status bar."
-          ],
-          "description": "Controls which side of the status bar shows the RemoteEdit button."
+          "description": "Controls how the Remote Edit status bar button is displayed."
         },
         "remoteedit.statusBarButtonPriority": {
           "type": "number",
-          "default": 100,
-          "description": "Controls the RemoteEdit status bar button priority. Higher values appear closer to the left within the selected alignment group."
+          "default": 1000,
+          "description": "Controls the Remote Edit status bar button priority. Higher values appear closer to the left within the selected alignment group."
         },
         "remoteedit.sshReadyTimeout": {
           "type": "number",
           "default": 30000,
           "minimum": 1000,
           "maximum": 300000,
-          "description": "Controls how long RemoteEdit waits, in milliseconds, for an SSH connection to become ready."
+          "description": "Controls how long Remote Edit waits, in milliseconds, for an SSH connection to become ready."
         },
         "remoteedit.sshKeepAliveInterval": {
           "type": "number",
           "default": 30000,
           "minimum": 1000,
           "maximum": 300000,
-          "description": "Controls the SSH keepalive interval, in milliseconds, when Keep connection alive is enabled."
+          "description": "Controls the SSH keep-alive interval, in milliseconds, when Keep Connection Alive is enabled."
         },
         "remoteedit.sshKeepAliveCountMax": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 20,
-          "description": "Controls how many unanswered SSH keepalive messages are allowed before the connection is considered lost."
+          "description": "Controls how many unanswered SSH keep-alive messages are allowed before the connection is considered lost."
+        },
+        "remoteedit.ftpKeepAliveInterval": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Controls the FTP/FTPS keep-alive interval, in milliseconds, when Keep Connection Alive is enabled."
+        },
+        "remoteedit.maxConcurrentTransfers": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Controls how many file transfers Remote Edit can run at the same time. Set to 1 to process transfers sequentially."
         },
         "remoteedit.sudoTempDirectory": {
           "type": "string",
           "default": "/tmp",
-          "description": "Remote directory used for temporary files when sudo mode saves privileged files. The connected SSH/SFTP user must be able to write to this directory."
+          "description": "Remote directory used for temporary files when SFTP sudo mode saves privileged files. The connected SFTP user must be able to write to this directory."
         },
         "remoteedit.restoreSpecialPermissionBits": {
           "type": "boolean",
@@ -125,6 +487,1266 @@
           "workspaceSuffix": "Remote Edit Read-Only"
         }
       }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "remoteedit",
+          "title": "Remote Edit",
+          "icon": "resources/remoteedit.svg"
+        }
+      ]
+    },
+    "views": {
+      "remoteedit": [
+        {
+          "id": "remoteedit.actionsView",
+          "name": "Remote Edit",
+          "visibility": "visible",
+          "initialSize": 1
+        },
+        {
+          "id": "remoteedit.connectionsView",
+          "name": "Connections",
+          "visibility": "visible",
+          "initialSize": 1
+        },
+        {
+          "id": "remoteedit.openConnectionsView",
+          "name": "Open Connections",
+          "visibility": "visible",
+          "initialSize": 10
+        },
+        {
+          "id": "remoteedit.transfersView",
+          "name": "Transfers",
+          "visibility": "visible",
+          "initialSize": 1
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "remoteedit.sidebar.newConnection",
+          "when": "view == remoteedit.connectionsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshConnections",
+          "when": "view == remoteedit.connectionsView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.filterConnections",
+          "when": "view == remoteedit.connectionsView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "remoteedit.sidebar.clearConnectionsFilter",
+          "when": "view == remoteedit.connectionsView && remoteedit.connectionsFilterActive",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshOpenConnections",
+          "when": "view == remoteedit.openConnectionsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshTransfers",
+          "when": "view == remoteedit.transfersView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.clearCompletedTransfers",
+          "when": "view == remoteedit.transfersView",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "remoteedit.sidebar.clearConnectionsFilter",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionsFilter",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.clearConnectionsFilter",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionsFilter",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.connectQuickConnect",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnect",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.connectQuickConnect",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnect",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "remoteedit.sidebar.saveConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.draft",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.draft",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.saveConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.draft",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.draft",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.draft",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "remoteedit.sidebar.saveConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.discardConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.openSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.discardConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "remoteedit.sidebar.saveConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.discardConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.discardConnectionChanges",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetails",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetails",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetails",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.draft",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetails",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.disconnected",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetails",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.modified.connected",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.editConnectionDetail",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.manageConnectionCredentials",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail.credentials",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail.credentials",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.editConnectionDetail",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.manageConnectionCredentials",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.credentials",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.credentials",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.cancelTransfer",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem.cancelable",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.cancelTransfer",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem.pending",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.cancelTransfer",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem.cancelable",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.cancelTransfer",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem.pending",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyTransferDetails",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyTransferDetails",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem.cancelable",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyTransferDetails",
+          "when": "view == remoteedit.transfersView && viewItem == remoteedit.transferItem.pending",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.favoritePath || viewItem == remoteedit.favoritePath.sftp)",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.removeFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.favoritePath || viewItem == remoteedit.favoritePath.sftp)",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.primary.openDirectoryAsRootDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "inline@5"
+        },
+        {
+          "command": "remoteedit.primary.openDirectoryAsRootDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "inline@5"
+        },
+        {
+          "command": "remoteedit.primary.openDirectoryAsRootDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "inline@5"
+        },
+        {
+          "command": "remoteedit.primary.openDirectoryAsRootDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "inline@5"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteFile",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteFileReadOnly",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.copyHostname",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.favoritePath || viewItem == remoteedit.favoritePath.sftp)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.favoritePath || viewItem == remoteedit.favoritePath.sftp)",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.removeFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.favoritePath || viewItem == remoteedit.favoritePath.sftp)",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "remoteedit.sidebar.goParentFolder",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.goParentFolder",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteFile",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "6_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "6_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "7_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
+          "group": "5_transfer@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteFile",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "6_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "6_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "7_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
+          "group": "5_transfer@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemoteFilename",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "remoteedit.sidebar.compressToArchive",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "4_archive@1"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "5_transfer@1"
+        },
+        {
+          "command": "remoteedit.sidebar.showRemoteEntryProperties",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "6_item@1"
+        },
+        {
+          "command": "remoteedit.sidebar.setRemotePermissions",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "6_item@2"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteFile",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "7_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "7_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemoteFilename",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "remoteedit.sidebar.compressToArchive",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "4_archive@1"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "5_transfer@1"
+        },
+        {
+          "command": "remoteedit.sidebar.showRemoteEntryProperties",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "6_item@1"
+        },
+        {
+          "command": "remoteedit.sidebar.setRemotePermissions",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "6_item@2"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteFile",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "7_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "7_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "5_transfer@2"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "8_current@1"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "8_current@2"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteFile",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteFileReadOnly",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemoteFilename",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "remoteedit.sidebar.compressToArchive",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "4_archive@1"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "5_item@1"
+        },
+        {
+          "command": "remoteedit.sidebar.calculateRemoteChecksums",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "5_item@2"
+        },
+        {
+          "command": "remoteedit.sidebar.showRemoteEntryProperties",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "5_item@3"
+        },
+        {
+          "command": "remoteedit.sidebar.setRemotePermissions",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "5_item@4"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "remoteedit.sidebar.showRemoteEntryProperties",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteEntry",
+          "group": "5_item@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteEntry",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemoteFilename",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteEntry",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.enableSudoMode",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.enableSudoMode",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "navigation@3"
+        },
+        {
+          "command": "remoteedit.sidebar.copyHostname",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.disableSudoMode",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.disableSudoMode",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "navigation@3"
+        },
+        {
+          "command": "remoteedit.sidebar.copyHostname",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.favoritePath.sftp",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.sftp",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.favorite.sftp",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.sftp",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.favorite.sftp",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteFile.sftp",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.favoritePath.sftp",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.sftp",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.favorite.sftp",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.sftp",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.favorite.sftp",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteFile.sftp",
+          "group": "navigation@3"
+        },
+        {
+          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail.ftpsCaCertificatePath",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.editConnectionDetail",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail.ftpsCaCertificatePath",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail.ftpsCaCertificatePath",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.connectionDetail.ftpsCaCertificatePath",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.ftpsCaCertificatePath",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteedit.sidebar.editConnectionDetail",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.ftpsCaCertificatePath",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.ftpsCaCertificatePath",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.ftpsCaCertificatePath",
+          "group": "3_copy@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "remoteedit.sidebar.exportBackup",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.importBackup",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.newConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.quickConnect",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshConnections",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.filterConnections",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.clearConnectionsFilter",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openSavedConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.copyHostname",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshOpenConnections",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.disconnectConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.enableSudoMode",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.disableSudoMode",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openFavoritePath",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.goParentFolder",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemotePath",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.addFavoritePath",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.removeFavoritePath",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.removeDirectoryFavoritePath",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteDirectory",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.primary.openDirectoryAsRootDirectory",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteFile",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openRemoteFileReadOnly",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteFile",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.createRemoteDirectory",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.setRemotePermissions",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.downloadRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.compressToArchive",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.showRemoteEntryProperties",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.calculateRemoteChecksums",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.copyRemoteFilename",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshRemoteDirectory",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.refreshTransfers",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openTransferQueue",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.cancelTransfer",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetails",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.copyTransferDetails",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.clearCompletedTransfers",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.editConnectionDetail",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.manageConnectionCredentials",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.copyConnectionDetailValue",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.connectQuickConnect",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.clearQuickConnect",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.saveConnectionChanges",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.discardConnectionChanges",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "when": "false"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "remoteedit.open",
+          "when": "config.remoteedit.editorTitleButtonPosition == right",
+          "group": "navigation@99"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "remoteedit.openConnectionsView",
+        "contents": "No open connections yet."
+      },
+      {
+        "view": "remoteedit.transfersView",
+        "contents": "No active transfers yet."
+      }
+    ],
+    "colors": [
+      {
+        "id": "remoteedit.sudoForeground",
+        "description": "Foreground color used to highlight Remote Edit connections while Sudo Mode is enabled.",
+        "defaults": {
+          "dark": "#B25A5A",
+          "light": "#7A2F2F",
+          "highContrast": "#FF8888"
+        }
+      }
     ]
   },
   "scripts": {
@@ -134,6 +1756,7 @@
     "clean": "rm -rf out"
   },
   "dependencies": {
+    "basic-ftp": "^5.3.1",
     "ssh2-sftp-client": "^12.0.1"
   },
   "devDependencies": {
@@ -146,12 +1769,32 @@
   "keywords": [
     "ssh",
     "sftp",
+    "ftp",
+    "ftps",
+    "secure shell",
+    "ssh client",
+    "remote",
     "remote edit",
     "remote file editor",
+    "remote file editing",
     "remote files",
+    "remote file browser",
+    "remote file manager",
     "file browser",
+    "file transfer",
+    "upload",
+    "download",
     "sudo",
+    "permissions",
+    "chmod",
+    "chown",
+    "remote command",
+    "remote server",
+    "linux server",
     "server",
+    "linux",
+    "unix",
+    "aix",
     "devops",
     "sysadmin"
   ]

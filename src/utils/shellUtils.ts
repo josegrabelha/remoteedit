@@ -23,7 +23,7 @@ export function buildSudoErrorMessage(rawMessage: string): string {
   const lowerMessage = cleanedMessage.toLowerCase();
 
   if (lowerMessage.includes('a terminal is required') || lowerMessage.includes('must have a tty')) {
-    return 'Sudo requires a TTY on this host. RemoteEdit sudo mode currently supports sudo -S without requiretty.';
+    return 'Sudo requires a TTY on this host. Remote Edit sudo mode currently supports sudo -S without requiretty.';
   }
 
   if (lowerMessage.includes('sorry, try again') || lowerMessage.includes('incorrect password') || lowerMessage.includes('authentication failure')) {

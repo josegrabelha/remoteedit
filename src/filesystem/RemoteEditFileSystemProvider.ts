@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SftpSessionManager } from '../ssh/SftpSessionManager';
+import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { withRemoteEditProgress } from '../utils/progressUtils';
 import { appendOutputLog } from '../utils/outputLogger';
 
@@ -9,7 +9,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this.emitter.event;
 
   constructor(
-    private readonly sessions: SftpSessionManager,
+    private readonly sessions: RemoteSessionManager,
     private readonly output?: vscode.OutputChannel,
     private readonly readOnly = false
   ) {}
@@ -77,7 +77,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
     const newInfo = parseRemoteEditUri(newUri);
 
     if (oldInfo.connectionId !== newInfo.connectionId) {
-      throw new Error('Cannot rename files across different RemoteEdit connections.');
+      throw new Error('Cannot rename files across different Remote Edit connections.');
     }
 
     await this.sessions.rename(oldInfo.connectionId, oldInfo.remotePath, newInfo.remotePath);
@@ -88,7 +88,7 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
 
   private assertWritable(): void {
     if (this.readOnly) {
-      throw vscode.FileSystemError.NoPermissions('This RemoteEdit document was opened read-only.');
+      throw vscode.FileSystemError.NoPermissions('This Remote Edit document was opened read-only.');
     }
   }
 
@@ -142,7 +142,7 @@ export function parseRemoteEditUri(uri: vscode.Uri): { connectionId: string; rem
   const connectionId = getQueryValue(uri.query, 'connectionId') || uri.authority;
 
   if (!connectionId) {
-    throw new Error('Missing RemoteEdit connection id in URI.');
+    throw new Error('Missing Remote Edit connection id in URI.');
   }
 
   return {

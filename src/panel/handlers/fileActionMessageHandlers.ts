@@ -46,7 +46,7 @@ export async function tryHandleFileActionMessage(
       handlers.stopRemoteCommand(message.payload);
       return true;
     case RemoteEditIncomingMessageType.CancelTransfer:
-      await handlers.cancelTransfer();
+      await handlers.cancelTransfer(message.payload);
       return true;
     case RemoteEditIncomingMessageType.RemoveQueuedTransfer:
       handlers.removeQueuedTransfer(message.payload);

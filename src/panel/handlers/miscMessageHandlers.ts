@@ -1,13 +1,16 @@
 import { RemoteEditIncomingMessageType, type RemoteEditWebviewMessage } from '../RemoteEditPanelMessages';
 import type { RemoteEditPanelMessageHandlers } from '../RemoteEditPanelHandlerTypes';
 
-export function tryHandleMiscMessage(
+export async function tryHandleMiscMessage(
   message: RemoteEditWebviewMessage,
   handlers: RemoteEditPanelMessageHandlers
-): boolean {
+): Promise<boolean> {
   switch (message.type) {
     case RemoteEditIncomingMessageType.ShowOutput:
       handlers.showOutput();
+      return true;
+    case RemoteEditIncomingMessageType.RequestOpenSshTerminal:
+      await handlers.requestOpenSshTerminal(message.payload);
       return true;
     case RemoteEditIncomingMessageType.ConfirmDialogResponse:
       handlers.confirmDialogResponse(message.payload);

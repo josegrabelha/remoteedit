@@ -1,82 +1,50 @@
 import * as fs from 'fs/promises';
 import { Readable, Writable } from 'stream';
 import SftpClient from 'ssh2-sftp-client';
+import type { Client } from 'ssh2';
 import { expandHomePath } from '../utils/localPathUtils';
 import { getBooleanSetting, getNumberSetting, getStringSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
+import { isSftpConnectionType, SFTP_CONNECTION_TYPE } from '../remote/RemoteConnectionTypes';
+import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
+import type {
+  ActiveConnection,
+  AuthType,
+  ConnectOptions,
+  ConnectionCancellationToken,
+  RemoteArchiveFormat,
+  RemoteChecksumSummary,
+  RemoteChecksumValue,
+  RemoteCommandStreamingCallbacks,
+  RemoteCommandStreamingControl,
+  RemoteCommandStreamingResult,
+  RemoteEntry,
+  RemoteEntryType
+} from '../remote/RemoteSessionTypes';
+
+export type {
+  ActiveConnection,
+  AuthType,
+  ConnectOptions,
+  ConnectionCancellationToken,
+  RemoteArchiveFormat,
+  RemoteChecksumSummary,
+  RemoteChecksumValue,
+  RemoteCommandStreamingCallbacks,
+  RemoteCommandStreamingControl,
+  RemoteCommandStreamingResult,
+  RemoteEntry,
+  RemoteEntryType
+} from '../remote/RemoteSessionTypes';
 
 const SUDO_READ_IDLE_TIMEOUT_MS = 60000;
 const SUDO_SAVE_APPLY_TIMEOUT_MS = 300000;
-
-export type AuthType = 'password' | 'privateKey';
-
-export interface ConnectOptions {
-  connectionId: string;
-  name?: string;
-  host: string;
-  port: number;
-  username: string;
-  authType: AuthType;
-  password?: string;
-  privateKeyPath?: string;
-  passphrase?: string;
-  startPath?: string;
-  keepAlive?: boolean;
-}
-
-export interface ConnectionCancellationToken {
-  readonly isCancellationRequested: boolean;
-  onCancellationRequested(callback: () => void): { dispose(): void };
-}
-
-export type RemoteEntryType = 'file' | 'directory' | 'link' | 'unknown';
-
-export interface RemoteEntry {
-  name: string;
-  type: RemoteEntryType;
-  effectiveType?: RemoteEntryType;
-  linkTarget?: string;
-  size: number;
-  modifyTime: number;
-  accessTime: number;
-  owner: number | string;
-  group: number | string;
-  permissions: string;
-  path: string;
-}
-
-
-export interface RemoteChecksumValue {
-  algorithm: 'SHA-256' | 'MD5';
-  value?: string;
-  command?: string;
-  error?: string;
-}
-
-export interface RemoteChecksumSummary {
-  sha256: RemoteChecksumValue;
-  md5: RemoteChecksumValue;
-}
-
-export type RemoteArchiveFormat = 'tar.gz' | 'tar.bz2' | 'tar.xz' | 'tar.Z';
 
 interface ChecksumCommandAttempt {
   label: string;
   command: (quotedPath: string) => string;
   length: number;
-}
-
-export interface ActiveConnection {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  username: string;
-  authType: AuthType;
-  privateKeyPath?: string;
-  startPath: string;
-  keepAlive: boolean;
 }
 
 interface RemoteExecOptions {
@@ -98,29 +66,11 @@ interface RemoteExecResult {
   signal?: string;
 }
 
-export interface RemoteCommandStreamingControl {
-  stop: () => void;
-  forceKill: () => void;
-}
-
-export interface RemoteCommandStreamingCallbacks {
-  onStdout?: (chunk: string) => void;
-  onStderr?: (chunk: string) => void;
-  onCommand?: (command: string) => void;
-  onCommandStatus?: (index: number, code: number) => void;
-  onControl?: (control: RemoteCommandStreamingControl) => void;
-}
-
 interface RemoteCommandStreamingOptions {
   input?: string;
   remoteProcess?: {
     pidMarkerPrefix: string;
   };
-}
-
-export interface RemoteCommandStreamingResult {
-  code: number;
-  signal?: string;
 }
 
 interface CachedReadFile {
@@ -143,7 +93,7 @@ interface ChmodOptions {
   recursive?: boolean;
 }
 
-export class SftpSessionManager {
+export class SftpSessionManager implements RemoteSessionManager {
   private readonly sessions = new Map<string, SftpClient>();
   private readonly connections = new Map<string, ActiveConnection>();
   private readonly ownerNameCaches = new Map<string, Map<string, string>>();
@@ -152,6 +102,10 @@ export class SftpSessionManager {
   private readonly readFileCache = new Map<string, CachedReadFile>();
 
   async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
+    if (!isSftpConnectionType(options.connectionType)) {
+      throw new Error('SftpSessionManager only supports SFTP connections.');
+    }
+
     await this.disconnect(options.connectionId);
 
     if (cancellationToken?.isCancellationRequested) {
@@ -233,6 +187,7 @@ export class SftpSessionManager {
 
     const connection: ActiveConnection = {
       id: options.connectionId,
+      connectionType: SFTP_CONNECTION_TYPE,
       name: options.name || `${options.username}@${options.host}`,
       host: options.host,
       port: options.port,
@@ -289,11 +244,22 @@ export class SftpSessionManager {
   }
 
   listConnections(): ActiveConnection[] {
-    return Array.from(this.connections.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(this.connections.values());
   }
 
   hasConnection(connectionId: string): boolean {
     return this.sessions.has(connectionId);
+  }
+
+  getSshClientForTerminal(connectionId: string): Client {
+    const client = this.getClient(connectionId);
+    const sshClient = (client as unknown as { client?: Client }).client;
+
+    if (!sshClient) {
+      throw new Error(`No SSH client is available for Remote Edit connection '${connectionId}'.`);
+    }
+
+    return sshClient;
   }
 
   async runRemoteCommandStreaming(
@@ -1293,7 +1259,7 @@ ${result.stdout.toString('utf8')}`.trim();
     const client = this.sessions.get(connectionId);
 
     if (!client) {
-      throw new Error(`RemoteEdit connection '${connectionId}' is not connected.`);
+      throw new Error(`Remote Edit connection '${connectionId}' is not connected.`);
     }
 
     return client;
@@ -1530,13 +1496,13 @@ ${result.stdout.toString('utf8')}`.trim();
     const chmod = (client as any).chmod;
 
     if (typeof chmod !== 'function') {
-      throw new Error('File content was saved, but RemoteEdit could not restore the original special permission bits because the active SFTP client does not support chmod.');
+      throw new Error('File content was saved, but Remote Edit could not restore the original special permission bits because the active SFTP client does not support chmod.');
     }
 
     try {
       await chmod.call(client, remotePath, originalMode);
     } catch (error) {
-      throw new Error(`File content was saved, but RemoteEdit could not restore the original special permission bits (${formatMode(originalMode)}): ${formatErrorMessage(error)}`);
+      throw new Error(`File content was saved, but Remote Edit could not restore the original special permission bits (${formatMode(originalMode)}): ${formatErrorMessage(error)}`);
     }
   }
 
@@ -1564,7 +1530,7 @@ ${result.stdout.toString('utf8')}`.trim();
     try {
       await this.runSudoCommandText(connectionId, `chmod ${shellQuote(modeText)} ${shellQuote(remotePath)}`, 30000);
     } catch (error) {
-      throw new Error(`File content was saved, but RemoteEdit could not restore the original special permission bits (${modeText}) with sudo: ${formatErrorMessage(error)}`);
+      throw new Error(`File content was saved, but Remote Edit could not restore the original special permission bits (${modeText}) with sudo: ${formatErrorMessage(error)}`);
     }
   }
 

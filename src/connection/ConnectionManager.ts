@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import { ConnectOptions } from '../ssh/SftpSessionManager';
+import type { ConnectOptions } from '../remote/RemoteSessionManager';
+import { DEFAULT_CONNECTION_TYPE, getDefaultPortForConnectionType, isKnownConnectionType, normalizeConnectionType, SFTP_CONNECTION_TYPE, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
 
 export type AuthType = 'password' | 'privateKey';
 
 export interface ConnectionProfile {
   id: string;
   name: string;
+  connectionType: RemoteConnectionType;
   host: string;
   port: number;
   username: string;
@@ -16,6 +18,8 @@ export interface ConnectionProfile {
   hasSavedPassword?: boolean;
   hasSavedPassphrase?: boolean;
   keepAlive: boolean;
+  ftpsAllowSelfSignedCertificate?: boolean;
+  ftpsCaCertificatePath?: string;
   favoriteRemotePaths?: string[];
   createdAt: number;
   updatedAt: number;
@@ -46,7 +50,7 @@ export interface ConnectionBackupImportOptions {
 
 export interface RemoteEditBackupConnection {
   id: string;
-  connectionType: 'sftp' | string;
+  connectionType: RemoteConnectionType | string;
   name: string;
   host: string;
   port: number;
@@ -55,6 +59,8 @@ export interface RemoteEditBackupConnection {
   startPath: string;
   privateKeyPath?: string;
   keepAlive: boolean;
+  ftpsAllowSelfSignedCertificate?: boolean;
+  ftpsCaCertificatePath?: string;
   remotePathFavorites?: string[];
   createdAt?: number;
   updatedAt?: number;
@@ -115,15 +121,15 @@ interface StoredCredentialMap {
 
 const CONFIG_SECTION = 'remoteedit';
 const SUPPORTED_BACKUP_VERSION = 1;
-const SFTP_CONNECTION_TYPE = 'sftp';
 const REMOTE_EDIT_SETTING_KEYS = [
-  'showStatusBarButton',
+  'statusBarButtonPosition',
   'statusBarButtonStyle',
-  'statusBarButtonAlignment',
+  'editorTitleButtonPosition',
   'statusBarButtonPriority',
   'sshReadyTimeout',
   'sshKeepAliveInterval',
   'sshKeepAliveCountMax',
+  'ftpKeepAliveInterval',
   'sudoTempDirectory',
   'restoreSpecialPermissionBits'
 ] as const;
@@ -141,6 +147,7 @@ export interface ConnectionProfileInput {
   port?: number | string;
   username?: string;
   authType?: AuthType;
+  connectionType?: RemoteConnectionType | string;
   startPath?: string;
   privateKeyPath?: string;
   password?: string;
@@ -148,10 +155,13 @@ export interface ConnectionProfileInput {
   rememberPassword?: boolean;
   rememberPassphrase?: boolean;
   keepAlive?: boolean;
+  ftpsAllowSelfSignedCertificate?: boolean;
+  ftpsCaCertificatePath?: string;
 }
 
 const CONNECTIONS_KEY = 'remoteedit.connectionProfiles';
 const SECRET_PREFIX = 'remoteedit.connectionSecret';
+const FTPS_CA_CERTIFICATE_REQUIRED_MESSAGE = 'CA certificate path is required for FTPS unless self-signed/untrusted certificates are allowed.';
 
 export class ConnectionManager {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -175,6 +185,7 @@ export class ConnectionManager {
     return profiles.find(profile => profile.id === profileId);
   }
 
+
   async saveProfile(input: ConnectionProfileInput): Promise<ConnectionProfile> {
     const profiles = await this.listProfiles();
     const existing = input.id ? profiles.find(profile => profile.id === input.id) : undefined;
@@ -183,11 +194,14 @@ export class ConnectionManager {
     const host = String(input.host !== undefined ? input.host : existing?.host || '').trim();
     const username = String(input.username !== undefined ? input.username : existing?.username || '').trim();
     const name = resolveProfileName(input.name, existing?.name, host, username);
-    const authType = normalizeAuthType(input.authType || existing?.authType || 'password');
-    const port = normalizePort(input.port ?? existing?.port ?? 22);
+    const connectionType = normalizeConnectionType(input.connectionType ?? existing?.connectionType ?? DEFAULT_CONNECTION_TYPE);
+    const authType = normalizeAuthTypeForConnection(input.authType || existing?.authType || 'password', connectionType);
+    const port = normalizePort(input.port ?? existing?.port ?? getDefaultPortForConnectionType(connectionType));
     const startPath = String(input.startPath ?? existing?.startPath ?? '').trim();
     const privateKeyPath = String(input.privateKeyPath ?? existing?.privateKeyPath ?? '').trim();
     const keepAlive = typeof input.keepAlive === 'boolean' ? input.keepAlive : existing?.keepAlive !== false;
+    const ftpsAllowSelfSignedCertificate = Boolean(input.ftpsAllowSelfSignedCertificate ?? existing?.ftpsAllowSelfSignedCertificate ?? false);
+    const ftpsCaCertificatePath = String(input.ftpsCaCertificatePath ?? existing?.ftpsCaCertificatePath ?? '').trim();
 
     if (!name) {
       throw new Error('Connection name is required.');
@@ -198,20 +212,19 @@ export class ConnectionManager {
     }
 
 
-    if (authType === 'privateKey' && !privateKeyPath) {
-      throw new Error('Private key path is required for private key authentication.');
-    }
-
     const profile: ConnectionProfile = {
       id: existing?.id || buildProfileId(name, host, username),
       name,
       host,
+      connectionType,
       port,
       username,
       authType,
       startPath,
       privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
       keepAlive,
+      ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
+      ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : '',
       favoriteRemotePaths: normalizeFavoriteRemotePaths(existing?.favoriteRemotePaths || []),
       createdAt: existing?.createdAt || now,
       updatedAt: now
@@ -471,7 +484,7 @@ export class ConnectionManager {
   private toBackupConnection(profile: ConnectionProfile, options: ConnectionBackupExportOptions): RemoteEditBackupConnection {
     const backupConnection: RemoteEditBackupConnection = {
       id: profile.id,
-      connectionType: SFTP_CONNECTION_TYPE,
+      connectionType: profile.connectionType || DEFAULT_CONNECTION_TYPE,
       name: profile.name,
       host: profile.host,
       port: profile.port,
@@ -479,6 +492,8 @@ export class ConnectionManager {
       startPath: profile.startPath || '',
       privateKeyPath: profile.authType === 'privateKey' ? profile.privateKeyPath || '' : undefined,
       keepAlive: profile.keepAlive !== false,
+      ftpsAllowSelfSignedCertificate: profile.connectionType === 'ftps' ? Boolean(profile.ftpsAllowSelfSignedCertificate) : undefined,
+      ftpsCaCertificatePath: profile.connectionType === 'ftps' ? String(profile.ftpsCaCertificatePath || '').trim() : undefined,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt
     };
@@ -507,10 +522,21 @@ export class ConnectionManager {
 
   private async importSettings(settings: Record<string, unknown>): Promise<void> {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const normalizedSettings = { ...settings };
+
+    if (
+      !Object.prototype.hasOwnProperty.call(normalizedSettings, 'statusBarButtonPosition') &&
+      (Object.prototype.hasOwnProperty.call(normalizedSettings, 'showStatusBarButton') ||
+        Object.prototype.hasOwnProperty.call(normalizedSettings, 'statusBarButtonAlignment'))
+    ) {
+      const showStatusBarButton = normalizedSettings.showStatusBarButton !== false;
+      const statusBarButtonAlignment = normalizedSettings.statusBarButtonAlignment === 'right' ? 'right' : 'left';
+      normalizedSettings.statusBarButtonPosition = showStatusBarButton ? statusBarButtonAlignment : 'hidden';
+    }
 
     for (const key of REMOTE_EDIT_SETTING_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(settings, key)) {
-        await config.update(key, settings[key], vscode.ConfigurationTarget.Global);
+      if (Object.prototype.hasOwnProperty.call(normalizedSettings, key)) {
+        await config.update(key, normalizedSettings[key], vscode.ConfigurationTarget.Global);
       }
     }
   }
@@ -534,18 +560,22 @@ export class ConnectionManager {
 
       seenIds.add(id);
 
-      const authType = normalizeAuthType(String(connection.authType || 'password'));
+      const connectionType = normalizeConnectionType(connection.connectionType);
+      const authType = normalizeAuthTypeForConnection(String(connection.authType || 'password'), connectionType);
       const privateKeyPath = String(connection.privateKeyPath || '').trim();
       const profile: ConnectionProfile = {
         id,
         name,
         host,
-        port: normalizePort(connection.port),
+        connectionType,
+        port: normalizePort(connection.port || getDefaultPortForConnectionType(connectionType)),
         username: options.includeUsernames ? String(connection.username || '').trim() : '',
         authType,
         startPath: String(connection.startPath || '').trim(),
         privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
         keepAlive: connection.keepAlive !== false,
+        ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(connection.ftpsAllowSelfSignedCertificate) : false,
+        ftpsCaCertificatePath: connectionType === 'ftps' ? String(connection.ftpsCaCertificatePath || '').trim() : '',
         favoriteRemotePaths: options.includeFavorites ? normalizeFavoriteRemotePaths(connection.remotePathFavorites || []) : [],
         createdAt: Number(connection.createdAt || Date.now()),
         updatedAt: Number(connection.updatedAt || Date.now())
@@ -640,12 +670,15 @@ export class ConnectionManager {
     const host = String(input.host || profile?.host || '').trim();
     const username = String(input.username || profile?.username || '').trim();
     const name = resolveProfileName(input.name, profile?.name, host, username);
-    const authType = normalizeAuthType(input.authType || profile?.authType || 'password');
-    const port = normalizePort(input.port ?? profile?.port ?? 22);
+    const connectionType = normalizeConnectionType(input.connectionType ?? profile?.connectionType ?? DEFAULT_CONNECTION_TYPE);
+    const authType = normalizeAuthTypeForConnection(input.authType || profile?.authType || 'password', connectionType);
+    const port = normalizePort(input.port ?? profile?.port ?? getDefaultPortForConnectionType(connectionType));
     const startPath = String(input.startPath ?? profile?.startPath ?? '').trim();
     const privateKeyPath = String(input.privateKeyPath ?? profile?.privateKeyPath ?? '').trim();
     const connectionId = profile?.id || buildProfileId(name || buildDefaultProfileName(host, username), host, username);
     const keepAlive = typeof input.keepAlive === 'boolean' ? input.keepAlive : profile?.keepAlive !== false;
+    const ftpsAllowSelfSignedCertificate = Boolean(input.ftpsAllowSelfSignedCertificate ?? profile?.ftpsAllowSelfSignedCertificate ?? false);
+    const ftpsCaCertificatePath = String(input.ftpsCaCertificatePath ?? profile?.ftpsCaCertificatePath ?? '').trim();
 
     if (!host) {
       throw new Error('Host is required.');
@@ -670,14 +703,17 @@ export class ConnectionManager {
       throw new Error('Password is required for password authentication. Enter it or save it in the connection profile.');
     }
 
-    if (authType === 'privateKey' && !privateKeyPath) {
+    if (connectionType === SFTP_CONNECTION_TYPE && authType === 'privateKey' && !privateKeyPath) {
       throw new Error('Private key path is required for private key authentication.');
     }
+
+    validateFtpsCaCertificateRequirement(connectionType, ftpsAllowSelfSignedCertificate, ftpsCaCertificatePath);
 
     return {
       connectionId,
       name,
       host,
+      connectionType,
       port,
       username,
       authType,
@@ -685,7 +721,9 @@ export class ConnectionManager {
       privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
       passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
       startPath,
-      keepAlive
+      keepAlive,
+      ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
+      ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : undefined
     };
   }
 
@@ -727,14 +765,23 @@ export class ConnectionManager {
   private normalizeStoredProfile(profile: ConnectionProfile): ConnectionProfile {
     return {
       ...profile,
-      port: normalizePort(profile.port),
-      authType: normalizeAuthType(profile.authType),
+      connectionType: normalizeConnectionType(profile.connectionType),
+      port: normalizePort(profile.port || getDefaultPortForConnectionType(profile.connectionType)),
+      authType: normalizeAuthTypeForConnection(profile.authType, profile.connectionType),
       startPath: profile.startPath || '',
       keepAlive: profile.keepAlive !== false,
+      ftpsAllowSelfSignedCertificate: normalizeConnectionType(profile.connectionType) === 'ftps' ? Boolean(profile.ftpsAllowSelfSignedCertificate) : false,
+      ftpsCaCertificatePath: normalizeConnectionType(profile.connectionType) === 'ftps' ? String(profile.ftpsCaCertificatePath || '').trim() : '',
       favoriteRemotePaths: normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []),
       createdAt: Number(profile.createdAt || Date.now()),
       updatedAt: Number(profile.updatedAt || Date.now())
     };
+  }
+}
+
+function validateFtpsCaCertificateRequirement(connectionType: RemoteConnectionType | string | undefined, allowSelfSignedCertificate: boolean, caCertificatePath: string | undefined): void {
+  if (normalizeConnectionType(connectionType) === 'ftps' && !allowSelfSignedCertificate && !String(caCertificatePath || '').trim()) {
+    throw new Error(FTPS_CA_CERTIFICATE_REQUIRED_MESSAGE);
   }
 }
 
@@ -772,8 +819,12 @@ function normalizePort(value: number | string | undefined): number {
   return port;
 }
 
-function normalizeAuthType(value: string): AuthType {
+function normalizeAuthType(value: string | undefined): AuthType {
   return value === 'privateKey' ? 'privateKey' : 'password';
+}
+
+function normalizeAuthTypeForConnection(value: string | undefined, connectionType: RemoteConnectionType | string | undefined): AuthType {
+  return normalizeConnectionType(connectionType) === SFTP_CONNECTION_TYPE ? normalizeAuthType(value) : 'password';
 }
 
 function resolveProfileName(
@@ -838,8 +889,7 @@ function isSupportedBackupConnection(connection: RemoteEditBackupConnection): bo
     return false;
   }
 
-  const connectionType = String(connection.connectionType || SFTP_CONNECTION_TYPE).toLowerCase();
-  return connectionType === SFTP_CONNECTION_TYPE;
+  return isKnownConnectionType(connection.connectionType);
 }
 
 async function encryptCredentials(credentials: StoredCredentialMap, password: string): Promise<RemoteEditEncryptedCredentials> {

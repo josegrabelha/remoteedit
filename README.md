@@ -1,141 +1,224 @@
 # Remote Edit
 
-**Remote Edit** is a Visual Studio Code extension for browsing, editing, and saving remote files over SSH/SFTP directly from VS Code.
+**Remote Edit** is a full-featured remote file manager and editor for Visual Studio Code with SSH/SFTP, FTP, and FTPS support.
 
-Connect to a server, browse directories, open files in the native VS Code editor, and save changes back to the remote system.
+Connect to remote servers, browse files, edit content directly in VS Code, transfer files, manage connections, and choose the workflow that fits you best.
 
-![Remote Edit overview](images/remoteedit-hero.png)
+![Remote Edit Webview](images/remoteedit-hero.png)
 
-## Overview
+## Two Ways to Work
 
-Remote Edit is a lightweight SSH/SFTP file browser and editor for working with remote Linux/Unix servers directly from VS Code.
+### Full-Featured Remote Edit Webview
 
-With Remote Edit, you can:
+The Remote Edit Webview provides the complete visual experience for managing remote servers.
 
-- browse remote directories over SSH/SFTP
-- open and edit remote files directly in VS Code
-- upload and download files or folders
-- make copies, inspect properties, calculate server-side checksums, set permissions, and change owner/group for remote items
-- save frequently used SSH connections as bookmarks
-- work with privileged files using sudo mode
+- Browse remote files and folders
+- Open and edit files directly in VS Code
+- Manage connections
+- Run remote commands
+- Manage permissions and ownership
+- Use Sudo Mode
+- Upload and download files
+- Monitor transfers
 
-## Features
+### Native VS Code Sidebar
 
-### Browse remote files over SSH/SFTP
+Remote Edit also includes a fully native VS Code Sidebar experience.
 
-Connect to a remote host and browse directories from a dedicated Remote Edit panel.
+Use it to manage connections, favorites, transfers, SSH terminals, import/export operations, and open sessions without leaving the VS Code interface.
 
-The file browser shows useful metadata such as type, size, owner, group, permissions, and modified date.
+![Remote Edit Sidebar](images/remoteedit-sidebar.png)
 
-### Open and edit remote files in VS Code
+Choose the workflow that fits you best. Use the full-featured Remote Edit Webview or the native VS Code Sidebar. Both experiences can be used independently.
 
-Open remote files in the native VS Code editor and save changes back to the remote host using the normal save shortcut.
+## When to Use Remote Edit
 
-### Upload and download files or folders
+Remote Edit is useful when you need to quickly browse, edit, upload or download files on remote servers without opening a full remote workspace.
 
-Upload local files or folders to the current remote directory, or download selected remote files and folders to a local folder.
+## Webview or Native Sidebar?
 
-Folder transfers are recursive and keep their directory structure. When a file already exists at the destination, Remote Edit asks whether to overwrite, skip, apply the choice to all conflicts, or cancel.
+Use the Webview when you want a complete visual file browser for remote files and folders.
 
+Use the Native Sidebar when you prefer a compact VS Code workflow for connections, favorites, transfers and terminals.
 
-### Permissions and ownership
+## Highlights
 
-Use the file browser context menu to set permissions or change owner/group for one or more selected remote items.
+- SSH/SFTP, FTP and FTPS support
+- Full-featured Remote File Browser
+- Native VS Code Sidebar
+- Open files directly in VS Code
+- SSH Terminal Access
+- Multiple Simultaneous Transfers
+- Transfer Queue Management
+- Import and Export Backups
+- Sudo Mode
+- Permissions and Ownership Management
+- Favorites and Saved Connections
+- Multiple Active Connections
 
-Permission changes support multi-select and can optionally apply recursively to selected directories. For mixed selections, the permissions dialog shows separate file and directory previews because special permission bits may behave differently for each type.
+## Why Remote Edit?
 
-### Bookmarked connections
+| Capability | Included |
+|---|:---:|
+| SSH/SFTP | ✓ |
+| FTP | ✓ |
+| FTPS | ✓ |
+| Full Visual Webview | ✓ |
+| Native VS Code Sidebar | ✓ |
+| Multiple Active Connections | ✓ |
+| Favorites | ✓ |
+| Transfer Queue | ✓ |
+| Multiple Simultaneous Transfers | ✓ |
+| Import / Export | ✓ |
+| SSH Terminal | ✓ |
+| Remote Commands | ✓ |
+| Sudo Mode | ✓ |
+| Permissions Management | ✓ |
+| Owner / Group Management | ✓ |
+| Checksums | ✓ |
+| Archive Creation | ✓ |
 
-Save frequently used SSH/SFTP connections with host, port, username, authentication type, private key path, and start path.
+## Supported Protocols
 
-### Password and private key authentication
+| Protocol | Browse | Upload | Download | Edit | Terminal |
+|---|:---:|:---:|:---:|:---:|:---:|
+| SSH/SFTP | ✓ | ✓ | ✓ | ✓ | ✓ |
+| FTP | ✓ | ✓ | ✓ | ✓ | - |
+| FTPS | ✓ | ✓ | ✓ | ✓ | - |
 
-Remote Edit supports password authentication and private key authentication, including optional private key passphrases.
+## Transfer Queue
 
-When enabled, saved SSH passwords and private key passphrases are stored using VS Code Secret Storage.
+Upload and download files with built-in queue management.
 
-### Sudo mode
-
-Enable sudo mode when you need to work with files that require elevated permissions.
-
-Sudo mode is used for privileged file operations such as reading, saving, creating files or directories, deleting, renaming, setting permissions recursively, and changing owner/group.
-
-Sudo passwords are kept only in memory for the active session and are forgotten when sudo mode is disabled, the connection is closed, or VS Code is restarted.
-
-### Multiple active connections
-
-Open more than one remote session at the same time and switch between active connections inside the Remote Edit panel.
-
-## Save behavior and file metadata
-
-When saving an existing remote file, Remote Edit updates the file in-place instead of replacing it. This applies to both normal saves and sudo mode saves, helping preserve metadata such as inode, owner, group, permissions, and ACLs.
-
-For new files and folders, Remote Edit does not force a permission mode. The remote server defaults and umask decide the final permissions.
-
-On Unix-like systems, special permission bits such as setuid, setgid, and sticky may be cleared when a file is modified. By default, Remote Edit attempts to restore only the special bits that already existed before saving, when the remote system allows it.
-
-You can disable this behavior with:
+- Current transfers
+- Pending transfers
+- Completed transfers
+- Individual transfer cancellation
+- Progress tracking
+- Multiple simultaneous transfers
+- FTP, FTPS and SFTP support
 
 ```json
-"remoteedit.restoreSpecialPermissionBits": false
+"remoteedit.maxConcurrentTransfers": 2
 ```
 
-## How to Open Remote Edit
+Default: 2  
+Minimum: 1  
+Maximum: 5
 
-Open the Command Palette and run:
+## SSH Terminal
 
-```text
-Remote Edit: Open
-```
+For SSH/SFTP connections, Remote Edit can open native VS Code terminals directly from active connections.
 
-You can also use the Remote Edit status bar button when it is enabled.
+Terminal access is available from both the Webview and the Native Sidebar.
+
+## Sudo Mode
+
+Need to edit protected system files?
+
+Enable Sudo Mode and work with privileged files directly from VS Code.
+
+Sudo passwords are never stored and are only kept in memory during the active session.
+
+## Permissions and Ownership
+
+Manage permissions, owners and groups directly from VS Code.
+
+- Multiple selection support
+- Recursive updates
+- File and folder support
+
+## Upload and Download
+
+Transfer files and folders between your local machine and remote servers.
+
+- Recursive folder transfers
+- Conflict handling
+- Progress tracking
+- Queue management
+- Multiple simultaneous transfers
+
+## Saved Connections
+
+Save frequently used SSH/SFTP, FTP and FTPS connections for quick access.
+
+- Password authentication
+- SSH private key authentication
+- Optional private key passphrases
+- Start paths
+- Connection favorites
+- Secure credential storage
+
+## Import and Export
+
+Create password-protected backups of:
+
+- Remote Edit settings
+- Saved connections
+- Remote path favorites
+- Encrypted credentials
+
+Import supports Merge and Replace modes and provides a summary before changes are applied.
+
+## Quick Access
+
+Open Remote Edit from:
+
+- Command Palette
+- VS Code Primary Sidebar
+- Editor Title Bar Button
+- Status Bar Button
+
+## Multiple Active Connections
+
+Work with multiple remote servers at the same time and quickly switch between active connections.
 
 ## Extension Settings
 
-Remote Edit provides the following settings:
+### User Interface
 
-| Setting | Default | Description |
-|---|---:|---|
-| `remoteedit.showStatusBarButton` | `true` | Shows or hides the Remote Edit status bar button. |
-| `remoteedit.statusBarButtonStyle` | `iconAndText` | Controls whether the status bar button shows icon and text, icon only, or text only. |
-| `remoteedit.statusBarButtonAlignment` | `left` | Controls whether the status bar button appears on the left or right side of the status bar. |
-| `remoteedit.statusBarButtonPriority` | `100` | Controls the status bar button ordering within the selected alignment group. |
-| `remoteedit.sshReadyTimeout` | `30000` | Time, in milliseconds, to wait for an SSH connection to become ready. |
-| `remoteedit.sshKeepAliveInterval` | `30000` | SSH keepalive interval, in milliseconds, when keepalive is enabled for the connection. |
-| `remoteedit.sshKeepAliveCountMax` | `3` | Maximum unanswered SSH keepalive messages before the connection is considered lost. |
-| `remoteedit.sudoTempDirectory` | `/tmp` | Remote directory used for temporary files when sudo mode saves privileged files. The connected SSH/SFTP user must be able to write to this directory. |
-| `remoteedit.restoreSpecialPermissionBits` | `true` | Restores original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it. |
+- `remoteedit.editorTitleButtonPosition`
+- `remoteedit.statusBarButtonPosition`
+- `remoteedit.statusBarButtonStyle`
+- `remoteedit.statusBarButtonPriority`
 
-SSH timeout and keepalive values are validated by Remote Edit. Invalid values entered manually in `settings.json` are ignored or clamped to the supported range.
+### Connections
 
-## Security Notes
+- `remoteedit.sshReadyTimeout`
+- `remoteedit.sshKeepAliveInterval`
+- `remoteedit.sshKeepAliveCountMax`
+- `remoteedit.ftpKeepAliveInterval`
 
-Remote Edit stores bookmarked connection metadata in VS Code global storage.
+### Transfers
 
-When the remember option is enabled, SSH passwords and private key passphrases are stored using VS Code Secret Storage.
+- `remoteedit.maxConcurrentTransfers`
 
-Sudo passwords are not saved. They are kept only in memory for the active session and are forgotten when sudo mode is disabled, the connection is closed, or VS Code is restarted.
+### Sudo
+
+- `remoteedit.sudoTempDirectory`
+
+### File Handling
+
+- `remoteedit.restoreSpecialPermissionBits`
+
+## Security
+
+- Credentials can be stored using VS Code Secret Storage
+- FTPS supports certificate validation
+- Sudo passwords are never saved
+- Password-protected import/export backups
+- SFTP and FTPS are recommended for secure connections
 
 ## Requirements
 
 - VS Code 1.90.0 or newer
-- Access to a remote host over SSH/SFTP
-- Optional: sudo access on the remote host for sudo mode
 
-## Limitations
+## Notes
 
-- Sudo mode may not work on hosts that require a TTY for sudo.
-- Existing files are saved in-place to help preserve metadata, so saves are not atomic and may be partially updated if interrupted.
-- New files and folders use the remote server defaults and umask.
-- Symbolic links are skipped during recursive upload and download.
-- Remote Edit is not a full remote workspace environment.
+- Symbolic links are skipped during recursive transfers.
 
 ## License
 
-Remote Edit is free to use, but its source code is not open source.
+Remote Edit is free to use for personal and professional use through the official Visual Studio Code Marketplace distribution.
 
-The source code is publicly available for transparency and review only. Copying, modifying, redistributing, sublicensing, selling, or creating derivative works from this code requires prior written permission.
-
-## Other Extensions
-
-You may also like my other [VS Code extensions](https://marketplace.visualstudio.com/search?term=josegrabelha&target=VSCode).
+The source code is publicly available for transparency and review only. Copying, modifying, redistributing, sublicensing, selling, or creating derivative works from this source code requires prior written permission from the copyright holder.

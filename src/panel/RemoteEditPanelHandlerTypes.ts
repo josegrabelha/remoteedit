@@ -4,6 +4,7 @@ export interface RemoteEditPanelMessageHandlers {
   onReady(): Promise<void>;
   saveConnection(payload: any): Promise<void>;
   pickPrivateKeyPath(): Promise<void>;
+  pickCaCertificatePath(): Promise<void>;
   deleteConnection(payload: any): Promise<void>;
   renameConnection(payload: any): Promise<void>;
   requestImportConnectionsSettings(): Promise<void>;
@@ -35,11 +36,12 @@ export interface RemoteEditPanelMessageHandlers {
   requestUploadEntries(payload: any): Promise<void>;
   requestDownloadEntries(payload: any): Promise<void>;
   requestCompressArchive(payload: any): Promise<void>;
-  cancelTransfer(): Promise<void>;
+  cancelTransfer(payload?: any): Promise<void>;
   removeQueuedTransfer(payload: any): void;
   requestSetPermissions(payload: any): Promise<void>;
   requestChangeOwnerGroup(payload: any): Promise<void>;
   requestRunRemoteCommand(payload: any): Promise<void>;
+  requestOpenSshTerminal(payload: any): Promise<void>;
   stopRemoteCommand(payload: any): void;
   applyPermissions(payload: any): void;
   cancelPermissions(): void;

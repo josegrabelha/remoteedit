@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.6.0] - 2026-06-10
+
+### Added
+
+* Added FTP and FTPS connection support alongside SSH/SFTP.
+* Added a native VS Code Primary Sidebar experience for Remote Edit.
+* Added SSH Terminal access from open connections.
+* Added support for multiple simultaneous uploads and downloads.
+
+### Improved
+
+* Improved upload/download workflows and transfer queue management.
+* Improved connection editing, favorites, open connections, Quick Connect handling, and overall UI.
+* Updated documentation and configuration organization.
+
 ## [1.5.0] - 2026-06-05
 
 ### Added

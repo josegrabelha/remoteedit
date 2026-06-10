@@ -33,7 +33,7 @@ export async function handleRemoteEditPanelMessage(
     return;
   }
 
-  if (tryHandleMiscMessage(message, handlers)) {
+  if (await tryHandleMiscMessage(message, handlers)) {
     return;
   }
 

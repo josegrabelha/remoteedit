@@ -1,0 +1,532 @@
+import * as vscode from 'vscode';
+import { ConnectionManager, type ConnectionProfile } from '../connection/ConnectionManager';
+import { RemoteEditPanel } from '../panel/RemoteEditPanel';
+import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
+import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
+import { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './SidebarItems';
+
+const COMMAND_OPEN = 'remoteedit.open';
+const COMMAND_OPEN_SETTINGS = 'remoteedit.sidebar.openSettings';
+const COMMAND_EXPORT_BACKUP = 'remoteedit.sidebar.exportBackup';
+const COMMAND_IMPORT_BACKUP = 'remoteedit.sidebar.importBackup';
+
+export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem> {
+  getTreeItem(element: RemoteEditSidebarItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: RemoteEditSidebarItem): vscode.ProviderResult<RemoteEditSidebarItem[]> {
+    if (element) {
+      return [];
+    }
+
+    return [
+      new RemoteEditSidebarItem({
+        label: 'Remote Edit (Advanced View)',
+        kind: 'action',
+        id: 'action:advancedView',
+        icon: new vscode.ThemeIcon('remote-explorer'),
+        tooltip: 'Open the main Remote Edit panel.',
+        command: {
+          command: COMMAND_OPEN,
+          title: 'Remote Edit (Advanced View)'
+        },
+        contextValue: 'remoteedit.action.advancedView'
+      }),
+      new RemoteEditSidebarItem({
+        label: 'Export Backup',
+        kind: 'action',
+        id: 'action:exportBackup',
+        icon: new vscode.ThemeIcon('sign-out'),
+        tooltip: 'Export Remote Edit settings, saved connections, and remote path favorites.',
+        command: {
+          command: COMMAND_EXPORT_BACKUP,
+          title: 'Export Backup'
+        },
+        contextValue: 'remoteedit.action.exportBackup'
+      }),
+      new RemoteEditSidebarItem({
+        label: 'Import Backup',
+        kind: 'action',
+        id: 'action:importBackup',
+        icon: new vscode.ThemeIcon('sign-in'),
+        tooltip: 'Import Remote Edit settings, saved connections, and remote path favorites.',
+        command: {
+          command: COMMAND_IMPORT_BACKUP,
+          title: 'Import Backup'
+        },
+        contextValue: 'remoteedit.action.importBackup'
+      }),
+      new RemoteEditSidebarItem({
+        label: 'Settings',
+        kind: 'action',
+        id: 'action:settings',
+        icon: new vscode.ThemeIcon('settings-gear'),
+        tooltip: 'Open Remote Edit settings.',
+        command: {
+          command: COMMAND_OPEN_SETTINGS,
+          title: 'Settings'
+        },
+        contextValue: 'remoteedit.action.settings'
+      })
+    ];
+  }
+}
+
+export interface ConnectionsTreeProviderOptions {
+  getQuickConnectProfile(): ConnectionProfile;
+  getDraftProfile(profile: ConnectionProfile): ConnectionProfile;
+  getNewDraftProfiles(): ConnectionProfile[];
+  getDraftProfileById(profileId: string): ConnectionProfile | undefined;
+  hasDraft(profileId: string): boolean;
+  isConnected(profileId: string): boolean;
+  isConnecting(profileId: string): boolean;
+}
+
+
+export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem> {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<RemoteEditSidebarItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+  private filterText = '';
+
+  constructor(
+    private readonly connectionManager: ConnectionManager,
+    private readonly options: ConnectionsTreeProviderOptions
+  ) {}
+
+  getTreeItem(element: RemoteEditSidebarItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: RemoteEditSidebarItem): Promise<RemoteEditSidebarItem[]> {
+    if (element?.kind === 'quickConnect') {
+      const profile = this.options.getQuickConnectProfile();
+      return getConnectionDetailFields(profile)
+        .map(field => RemoteEditSidebarItem.connectionDetail(profile, field, { quickConnect: true }));
+    }
+
+    if (element?.kind === 'savedConnection' && element.profileId) {
+      const profile = await this.connectionManager.getProfile(element.profileId);
+      const draftProfile = profile
+        ? this.options.getDraftProfile(profile)
+        : this.options.getDraftProfileById(element.profileId);
+
+      if (!draftProfile) {
+        return [];
+      }
+
+      return getConnectionDetailFields(draftProfile)
+        .map(field => RemoteEditSidebarItem.connectionDetail(draftProfile, field));
+    }
+
+    if (element) {
+      return [];
+    }
+
+    const profiles = await this.connectionManager.listProfiles();
+    const newDraftProfiles = this.options.getNewDraftProfiles();
+    const filterText = this.normalizeFilterText(this.filterText);
+    const filteredNewDraftProfiles = filterText
+      ? newDraftProfiles.filter(profile => this.matchesFilter(profile, filterText))
+      : newDraftProfiles;
+    const filteredProfiles = filterText
+      ? profiles.filter(profile => this.matchesFilter(this.options.getDraftProfile(profile), filterText))
+      : profiles;
+    const items: RemoteEditSidebarItem[] = [];
+
+    if (filterText) {
+      items.push(RemoteEditSidebarItem.connectionsFilter(this.filterText));
+    }
+
+    items.push(RemoteEditSidebarItem.quickConnect(
+      this.options.getQuickConnectProfile(),
+      { connecting: this.options.isConnecting('__remoteeditQuickConnect') }
+    ));
+
+    if (profiles.length === 0 && newDraftProfiles.length === 0) {
+      items.push(new RemoteEditSidebarItem({
+        label: 'No saved connections',
+        kind: 'placeholder',
+        icon: new vscode.ThemeIcon('info'),
+        tooltip: 'Saved connections created in Remote Edit will appear here.',
+        contextValue: 'remoteedit.placeholder'
+      }));
+      return items;
+    }
+
+    if (filterText && filteredProfiles.length === 0 && filteredNewDraftProfiles.length === 0) {
+      items.push(new RemoteEditSidebarItem({
+        label: 'No matching connections',
+        kind: 'placeholder',
+        icon: new vscode.ThemeIcon('search'),
+        description: this.filterText,
+        tooltip: `No saved connections match "${this.filterText}".`,
+        contextValue: 'remoteedit.placeholder'
+      }));
+      return items;
+    }
+
+    items.push(...filteredNewDraftProfiles.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
+      profile,
+      { draft: true, connected: false, connecting: this.options.isConnecting(profile.id) }
+    )));
+
+    items.push(...filteredProfiles.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
+      this.options.getDraftProfile(profile),
+      { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
+    )));
+    return items;
+  }
+
+  getFilterText(): string {
+    return this.filterText;
+  }
+
+  setFilterText(value: string): void {
+    this.filterText = value.trim();
+    this.refresh();
+  }
+
+  refresh(element?: RemoteEditSidebarItem): void {
+    this.onDidChangeTreeDataEmitter.fire(element);
+  }
+
+  private normalizeFilterText(value: string): string {
+    return value.trim().toLowerCase();
+  }
+
+  private matchesFilter(profile: ConnectionProfile, filterText: string): boolean {
+    const searchableText = [
+      profile.name,
+      profile.host,
+      profile.username,
+      profile.connectionType
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return searchableText.includes(filterText);
+  }
+
+  dispose(): void {
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
+}
+
+export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem> {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<RemoteEditSidebarItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+  private readonly rootPaths = new Map<string, string>();
+  private readonly directoryListSequences = new Map<string, number>();
+  private readonly directoryListChains = new Map<string, Promise<void>>();
+
+  constructor(
+    private readonly sessions: RemoteSessionManager,
+    private readonly connectionManager: ConnectionManager
+  ) {}
+
+  getTreeItem(element: RemoteEditSidebarItem): vscode.TreeItem {
+    return element;
+  }
+
+  getParent(element: RemoteEditSidebarItem): vscode.ProviderResult<RemoteEditSidebarItem> {
+    if (element.kind === 'favoritesGroup' || element.kind === 'filesGroup') {
+      const connection = element.connectionId ? this.sessions.getConnection(element.connectionId) : undefined;
+      return connection ? RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) }) : undefined;
+    }
+
+    if (element.kind === 'goParentFolder' && element.connectionId) {
+      const connection = this.sessions.getConnection(element.connectionId);
+      return connection ? RemoteEditSidebarItem.filesGroup(connection, this.getRootPath(connection)) : undefined;
+    }
+
+    if (element.kind === 'favoritePath' && element.connectionId) {
+      const connection = this.sessions.getConnection(element.connectionId);
+      return connection ? RemoteEditSidebarItem.favoritesGroup(connection) : undefined;
+    }
+
+    if ((element.kind === 'remoteDirectory' || element.kind === 'remoteFile' || element.kind === 'remoteEntry') && element.connectionId && element.remotePath) {
+      const connection = this.sessions.getConnection(element.connectionId);
+      const parentPath = getParentRemotePath(element.remotePath);
+
+      if (!connection) {
+        return undefined;
+      }
+
+      const rootPath = this.getRootPath(connection);
+      return parentPath === rootPath || parentPath === '/'
+        ? RemoteEditSidebarItem.filesGroup(connection, rootPath)
+        : RemoteEditSidebarItem.remoteDirectoryPlaceholder(element.connectionId, parentPath, rootPath, { isSftp: isSftpConnection(connection.connectionType) });
+    }
+
+    return undefined;
+  }
+
+  async getChildren(element?: RemoteEditSidebarItem): Promise<RemoteEditSidebarItem[]> {
+    if (!element) {
+      return this.getOpenConnectionItems();
+    }
+
+    if (element.kind === 'openConnection' && element.connectionId) {
+      const connection = this.sessions.getConnection(element.connectionId);
+
+      if (!connection) {
+        return [];
+      }
+
+      const rootPath = this.getRootPath(connection);
+      const favoriteRemotePaths = await this.getFavoriteRemotePaths(element.connectionId);
+
+      return [
+        RemoteEditSidebarItem.favoritesGroup(connection),
+        RemoteEditSidebarItem.filesGroup(connection, rootPath, { isFavorite: isFavoriteRemotePath(rootPath, favoriteRemotePaths) })
+      ];
+    }
+
+    if (element.kind === 'favoritesGroup' && element.connectionId) {
+      return this.getFavoritePathItems(element.connectionId);
+    }
+
+    if ((element.kind === 'filesGroup' || element.kind === 'remoteDirectory') && element.connectionId && element.remotePath) {
+      return this.getRemoteDirectoryItems(element.connectionId, element.remotePath, element.kind === 'filesGroup');
+    }
+
+    return [];
+  }
+
+  async getStartPathItem(connectionId: string): Promise<RemoteEditSidebarItem | undefined> {
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      return undefined;
+    }
+
+    const startPath = this.getRootPath(connection);
+    const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+
+    return RemoteEditSidebarItem.filesGroup(connection, startPath, { isFavorite: isFavoriteRemotePath(startPath, favoriteRemotePaths) });
+  }
+
+  setRootPath(connectionId: string, remotePath: string, source: 'sidebar' | 'webview' | 'session' = 'sidebar'): void {
+    const normalizedPath = normalizeRemotePath(remotePath);
+    this.rootPaths.set(connectionId, normalizedPath);
+    RemoteEditSharedState.setNavigation(connectionId, normalizedPath, normalizedPath, source);
+    this.refresh();
+  }
+
+  getRootPathForConnection(connectionId: string): string | undefined {
+    const connection = this.sessions.getConnection(connectionId);
+    return connection ? this.getRootPath(connection) : undefined;
+  }
+
+  refresh(element?: RemoteEditSidebarItem): void {
+    this.onDidChangeTreeDataEmitter.fire(element);
+  }
+
+  dispose(): void {
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
+
+  private getRootPath(connection: { id: string; startPath?: string }): string {
+    return this.rootPaths.get(connection.id)
+      || RemoteEditSharedState.getNavigation(connection.id)?.rootPath
+      || normalizeRemotePath(connection.startPath || '/');
+  }
+
+  private async getFavoriteRemotePaths(connectionId: string): Promise<string[]> {
+    const profile = await this.connectionManager.getProfile(connectionId);
+    return profile?.favoriteRemotePaths || [];
+  }
+
+  private getOpenConnectionItems(): RemoteEditSidebarItem[] {
+    const connections = this.sessions.listConnections();
+
+    if (connections.length === 0) {
+      return [];
+    }
+
+    return connections.map(connection => RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) }));
+  }
+
+  private async getFavoritePathItems(connectionId: string): Promise<RemoteEditSidebarItem[]> {
+    const profile = await this.connectionManager.getProfile(connectionId);
+    const favoriteRemotePaths = profile?.favoriteRemotePaths || [];
+
+    if (favoriteRemotePaths.length === 0) {
+      return [
+        new RemoteEditSidebarItem({
+          label: 'No favorite paths',
+          kind: 'placeholder',
+          icon: new vscode.ThemeIcon('info'),
+          description: 'Add favorites in Remote Edit',
+          tooltip: 'Favorite remote paths saved in Remote Edit will appear here.',
+          contextValue: 'remoteedit.placeholder'
+        })
+      ];
+    }
+
+    return favoriteRemotePaths.map(remotePath => RemoteEditSidebarItem.favoritePath(connectionId, remotePath, { isSftp: isSftpConnection(profile?.connectionType) }));
+  }
+
+  private async getRemoteDirectoryItems(connectionId: string, remotePath: string, includeGoParent: boolean): Promise<RemoteEditSidebarItem[]> {
+    const requestSequence = this.nextDirectoryListSequence(connectionId);
+    const releaseListSlot = await this.reserveDirectoryListSlot(connectionId);
+
+    try {
+      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+        return [];
+      }
+
+      const entries = await this.sessions.listDirectory(connectionId, remotePath);
+
+      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+        return [];
+      }
+
+      const connection = this.sessions.getConnection(connectionId);
+      const startPath = connection?.startPath || '/';
+      const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+
+      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+        return [];
+      }
+
+      const items = sortRemoteEntries(entries).map(entry =>
+        RemoteEditSidebarItem.fromRemoteEntry(connectionId, entry, startPath, {
+          isFavorite: isFavoriteRemotePath(entry.path || entry.name || '/', favoriteRemotePaths),
+          isSftp: isSftpConnection(connection?.connectionType)
+        })
+      );
+      const normalizedRemotePath = normalizeRemotePath(remotePath);
+
+      if (includeGoParent && normalizedRemotePath !== '/') {
+        items.unshift(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
+      }
+
+      if (items.length === 0) {
+        return [
+          new RemoteEditSidebarItem({
+            label: 'No files',
+            kind: 'placeholder',
+            icon: new vscode.ThemeIcon('info'),
+            tooltip: `${remotePath} is empty.`,
+            contextValue: 'remoteedit.placeholder'
+          })
+        ];
+      }
+
+      return items;
+    } catch (error) {
+      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+        return [];
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+
+      return [
+        new RemoteEditSidebarItem({
+          label: 'Unable to load files',
+          kind: 'placeholder',
+          icon: new vscode.ThemeIcon('warning'),
+          description: message,
+          tooltip: message,
+          contextValue: 'remoteedit.placeholder'
+        })
+      ];
+    } finally {
+      releaseListSlot();
+    }
+  }
+
+  private nextDirectoryListSequence(connectionId: string): number {
+    const nextSequence = (this.directoryListSequences.get(connectionId) || 0) + 1;
+    this.directoryListSequences.set(connectionId, nextSequence);
+    return nextSequence;
+  }
+
+  private isStaleDirectoryListRequest(connectionId: string, requestSequence: number): boolean {
+    return this.directoryListSequences.get(connectionId) !== requestSequence
+      || !this.sessions.hasConnection(connectionId);
+  }
+
+  private async reserveDirectoryListSlot(connectionId: string): Promise<() => void> {
+    const previousChain = this.directoryListChains.get(connectionId) || Promise.resolve();
+    let releaseCurrentChain!: () => void;
+    const currentChain = previousChain
+      .catch(() => undefined)
+      .then(() => new Promise<void>(resolve => {
+        releaseCurrentChain = resolve;
+      }));
+
+    this.directoryListChains.set(connectionId, currentChain);
+    await previousChain.catch(() => undefined);
+
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      releaseCurrentChain();
+
+      if (this.directoryListChains.get(connectionId) === currentChain) {
+        this.directoryListChains.delete(connectionId);
+      }
+    };
+  }
+}
+
+export class TransfersTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem> {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<RemoteEditSidebarItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+
+  getTreeItem(element: RemoteEditSidebarItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: RemoteEditSidebarItem): Promise<RemoteEditSidebarItem[]> {
+    const state = RemoteEditPanel.getTransferQueueState();
+
+    if (!element) {
+      return Promise.resolve([
+        RemoteEditSidebarItem.transferGroup('Current', (state.currentTransfers || []).length, 'current'),
+        RemoteEditSidebarItem.transferGroup('Pending', state.pending.length, 'pending'),
+        RemoteEditSidebarItem.transferGroup('Completed', state.completed.length, 'completed')
+      ]);
+    }
+
+    if (element.kind !== 'transferGroup' || !element.id) {
+      return Promise.resolve([]);
+    }
+
+    if (element.id === 'transferGroup:current') {
+      return Promise.resolve((state.currentTransfers || []).map(item => RemoteEditSidebarItem.transferItem(item, 'current')));
+    }
+
+    if (element.id === 'transferGroup:pending') {
+      return Promise.resolve(state.pending.map(item => RemoteEditSidebarItem.transferItem(item, 'pending')));
+    }
+
+    if (element.id === 'transferGroup:completed') {
+      return Promise.resolve(state.completed.slice().reverse().map(item => RemoteEditSidebarItem.transferItem(item, 'completed')));
+    }
+
+    return Promise.resolve([]);
+  }
+
+  refresh(element?: RemoteEditSidebarItem): void {
+    this.onDidChangeTreeDataEmitter.fire(element);
+  }
+
+  dispose(): void {
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
+}
+
+function isSftpConnection(connectionType: unknown): boolean {
+  return String(connectionType || 'sftp').toLowerCase() === 'sftp';
+}
+
+function isFavoriteRemotePath(remotePath: string, favoriteRemotePaths: string[]): boolean {
+  const normalizedPath = normalizeRemotePath(remotePath);
+  return favoriteRemotePaths.some(favoritePath => normalizeRemotePath(favoritePath) === normalizedPath);
+}

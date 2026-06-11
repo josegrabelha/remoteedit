@@ -339,7 +339,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       id: `files:${connection.id}:${normalizedRoot}`,
       collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
       icon: new vscode.ThemeIcon('root-folder', new vscode.ThemeColor('icon.foreground')),
-      tooltip: `Browse ${normalizedRoot}.`,
+      tooltip: buildRemoteBrowseTooltipOrEmpty(normalizedRoot),
       resourceUri: getSidebarDecorationResourceUri(connection.id, normalizedRoot, 'root'),
       profileId: connection.id,
       connectionId: connection.id,
@@ -361,7 +361,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       id: `goParent:${connectionId}:${normalizedCurrentPath}`,
       collapsibleState: vscode.TreeItemCollapsibleState.None,
       icon: new vscode.ThemeIcon('arrow-up', new vscode.ThemeColor('icon.foreground')),
-      tooltip: `Go to ${parentPath}.`,
+      tooltip: buildGoParentTooltipOrEmpty(parentPath),
       resourceUri: getSidebarDecorationResourceUri(connectionId, parentPath, 'parent'),
       profileId: connectionId,
       connectionId,
@@ -387,7 +387,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       collapsibleState: isPathAncestorOrSelf(normalizedPath, normalizedStartPath)
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.Collapsed,
-      tooltip: normalizedPath,
+      tooltip: buildRemotePathTooltipOrEmpty(normalizedPath),
       resourceUri: getSidebarDecorationResourceUri(connectionId, normalizedPath, 'directory'),
       profileId: connectionId,
       connectionId,
@@ -411,7 +411,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     const remotePath = normalizeRemotePath(entry.path || entry.name || '/');
     const normalizedStartPath = normalizeRemoteRootStartPath(startPath);
     const shouldExpand = isDirectory && isPathAncestorOrSelf(remotePath, normalizedStartPath);
-    const tooltip = buildRemoteEntryTooltip(entry, resolvedType);
+    const tooltip = buildRemoteEntryTooltipOrEmpty(entry, resolvedType);
     const resourceUri = getRemoteEntryResourceUri(entry, resolvedType, remotePath, connectionId);
     const description = buildRemoteEntryDescription(entry, resolvedType);
 
@@ -703,6 +703,38 @@ function buildRemoteEntryDescription(entry: RemoteEntry, resolvedType: RemoteEnt
   }
 
   return undefined;
+}
+
+function shouldShowItemInfoOnHover(): boolean {
+  return vscode.workspace.getConfiguration('remoteedit.sidebar').get<boolean>('showItemInfoOnHover', false);
+}
+
+function buildEmptyHoverTooltip(): vscode.MarkdownString {
+  // VS Code falls back to resourceUri hover text when TreeItem.tooltip is
+  // undefined or an empty string. Keep resourceUri available for file icons and
+  // sidebar decorations, but provide an explicit empty MarkdownString so remote
+  // file/folder rows do not show the automatic URI hover when disabled.
+  const tooltip = new vscode.MarkdownString('', true);
+  tooltip.isTrusted = false;
+  return tooltip;
+}
+
+function buildRemoteEntryTooltipOrEmpty(entry: RemoteEntry, resolvedType: RemoteEntryType): vscode.MarkdownString {
+  return shouldShowItemInfoOnHover()
+    ? buildRemoteEntryTooltip(entry, resolvedType)
+    : buildEmptyHoverTooltip();
+}
+
+function buildRemotePathTooltipOrEmpty(remotePath: string): string | vscode.MarkdownString {
+  return shouldShowItemInfoOnHover() ? remotePath : buildEmptyHoverTooltip();
+}
+
+function buildRemoteBrowseTooltipOrEmpty(remotePath: string): string | vscode.MarkdownString {
+  return shouldShowItemInfoOnHover() ? `Browse ${remotePath}.` : buildEmptyHoverTooltip();
+}
+
+function buildGoParentTooltipOrEmpty(parentPath: string): string | vscode.MarkdownString {
+  return shouldShowItemInfoOnHover() ? `Go to ${parentPath}.` : buildEmptyHoverTooltip();
 }
 
 function buildRemoteEntryTooltip(entry: RemoteEntry, resolvedType: RemoteEntryType): vscode.MarkdownString {

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.2] - 2026-06-11
+
+### Added
+
+* Added `remoteedit.sidebar.showItemInfoOnHover` to control automatic detailed hover tooltips in the Primary Sidebar.
+
+### Improved
+
+* Reorganized Remote Edit settings into dedicated VS Code Settings groups.
+* Improved Primary Sidebar Properties so file and folder details match the Webview Properties content more closely.
+
 ## [1.6.1] - 2026-06-11
 
 ### Added

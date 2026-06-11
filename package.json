@@ -382,7 +382,8 @@
             "Show the Remote Edit button in the Editor Title area.",
             "Hide the Remote Edit Editor Title button."
           ],
-          "description": "Controls whether the Remote Edit button appears in the editor title area."
+          "description": "Controls whether the Remote Edit button appears in the editor title area.",
+          "order": 10
         },
         "remoteedit.statusBarButtonPosition": {
           "type": "string",
@@ -397,7 +398,8 @@
             "Show the Remote Edit button on the right side of the Status Bar.",
             "Hide the Remote Edit Status Bar button."
           ],
-          "description": "Controls where the Remote Edit status bar button appears."
+          "description": "Controls where the Remote Edit status bar button appears.",
+          "order": 20
         },
         "remoteedit.statusBarButtonStyle": {
           "type": "string",
@@ -412,74 +414,92 @@
             "Show only the Remote Edit icon.",
             "Show only the Remote Edit text."
           ],
-          "description": "Controls how the Remote Edit status bar button is displayed."
+          "description": "Controls how the Remote Edit status bar button is displayed.",
+          "order": 30
         },
         "remoteedit.statusBarButtonPriority": {
           "type": "number",
           "default": 1000,
-          "description": "Controls the Remote Edit status bar button priority. Higher values appear closer to the left within the selected alignment group."
+          "description": "Controls the Remote Edit status bar button priority. Higher values appear closer to the left within the selected alignment group.",
+          "order": 40
         },
         "remoteedit.sshReadyTimeout": {
           "type": "number",
           "default": 30000,
           "minimum": 1000,
           "maximum": 300000,
-          "description": "Controls how long Remote Edit waits, in milliseconds, for an SSH connection to become ready."
+          "description": "Controls how long Remote Edit waits, in milliseconds, for an SSH connection to become ready.",
+          "order": 100
         },
         "remoteedit.sshKeepAliveInterval": {
           "type": "number",
           "default": 30000,
           "minimum": 1000,
           "maximum": 300000,
-          "description": "Controls the SSH keep-alive interval, in milliseconds, when Keep Connection Alive is enabled."
+          "description": "Controls the SSH keep-alive interval, in milliseconds, when Keep Connection Alive is enabled.",
+          "order": 110
         },
         "remoteedit.sshKeepAliveCountMax": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 20,
-          "description": "Controls how many unanswered SSH keep-alive messages are allowed before the connection is considered lost."
+          "description": "Controls how many unanswered SSH keep-alive messages are allowed before the connection is considered lost.",
+          "order": 120
         },
         "remoteedit.sftpResolveOwnerGroupNames": {
           "type": "boolean",
           "default": false,
-          "description": "Resolve numeric SFTP owner/group IDs to readable names during file listing. Enable this if owner/group appears as numbers. May slow down directory browsing on some servers."
-        },
-        "remoteedit.diagnostics.performanceLogs": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable performance logs for Remote Edit diagnostics."
-        },
-        "remoteedit.directoryListingCacheTtl": {
-          "type": "number",
-          "default": 30,
-          "minimum": 0,
-          "maximum": 300,
-          "description": "Time in seconds to reuse recently loaded remote directory listings. Set to 0 to disable cache. Manual refresh always reloads from the server."
+          "description": "Resolve numeric SFTP owner/group IDs to readable names during file listing. Enable this if owner/group appears as numbers. May slow down directory browsing on some servers.",
+          "order": 130
         },
         "remoteedit.ftpKeepAliveInterval": {
           "type": "number",
           "default": 30000,
           "minimum": 1000,
           "maximum": 300000,
-          "description": "Controls the FTP/FTPS keep-alive interval, in milliseconds, when Keep Connection Alive is enabled."
+          "description": "Controls the FTP/FTPS keep-alive interval, in milliseconds, when Keep Connection Alive is enabled.",
+          "order": 200
         },
         "remoteedit.maxConcurrentTransfers": {
           "type": "number",
           "default": 2,
           "minimum": 1,
           "maximum": 5,
-          "description": "Controls how many file transfers Remote Edit can run at the same time. Set to 1 to process transfers sequentially."
+          "description": "Controls how many file transfers Remote Edit can run at the same time. Set to 1 to process transfers sequentially.",
+          "order": 300
         },
         "remoteedit.sudoTempDirectory": {
           "type": "string",
           "default": "/tmp",
-          "description": "Remote directory used for temporary files when SFTP sudo mode saves privileged files. The connected SFTP user must be able to write to this directory."
+          "description": "Remote directory used for temporary files when SFTP sudo mode saves privileged files. The connected SFTP user must be able to write to this directory.",
+          "order": 400
         },
         "remoteedit.restoreSpecialPermissionBits": {
           "type": "boolean",
           "default": true,
-          "description": "Restore original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it."
+          "description": "Restore original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it.",
+          "order": 410
+        },
+        "remoteedit.directoryListingCacheTtl": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "maximum": 300,
+          "description": "Time in seconds to reuse recently loaded remote directory listings. Set to 0 to disable cache. Manual refresh always reloads from the server.",
+          "order": 500
+        },
+        "remoteedit.diagnostics.debugLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable detailed debug logs for Remote Edit diagnostics.",
+          "order": 900
+        },
+        "remoteedit.diagnostics.performanceLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable performance logs for directory listing, rendering, cache, and transfer diagnostics.",
+          "order": 910
         }
       }
     },

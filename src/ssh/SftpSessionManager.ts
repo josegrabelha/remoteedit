@@ -6,7 +6,7 @@ import type { Client } from 'ssh2';
 import { expandHomePath } from '../utils/localPathUtils';
 import { getBooleanSetting, getNumberSetting, getStringSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
-import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
+import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { isSftpConnectionType, SFTP_CONNECTION_TYPE } from '../remote/RemoteConnectionTypes';
 import type { RemoteSessionManager, RemoteListDirectoryOptions } from '../remote/RemoteSessionManager';
@@ -1336,15 +1336,31 @@ ${result.stdout.toString('utf8')}`.trim();
 
   private clearDirectoryListingCache(connectionId: string, remotePath?: string): void {
     if (remotePath) {
-      this.directoryListingCache.delete(this.buildDirectoryListingCacheKey(connectionId, remotePath));
+      const key = this.buildDirectoryListingCacheKey(connectionId, remotePath);
+      const deleted = this.directoryListingCache.delete(key);
+      if (deleted) {
+        appendDebugLog(this.output, 'Cache', 'invalidated directory listing', {
+          connection: connectionId,
+          path: normalizeRemotePath(remotePath)
+        });
+      }
       return;
     }
 
+    let deletedCount = 0;
     const prefix = `${connectionId}:`;
     for (const key of Array.from(this.directoryListingCache.keys())) {
       if (key.startsWith(prefix)) {
         this.directoryListingCache.delete(key);
+        deletedCount += 1;
       }
+    }
+
+    if (deletedCount > 0) {
+      appendDebugLog(this.output, 'Cache', 'cleared directory listing cache', {
+        connection: connectionId,
+        entries: deletedCount
+      });
     }
   }
 

@@ -11,7 +11,7 @@ import { SshTerminalService } from '../ssh/SshTerminalService';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
 import { formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
-import { appendOutputLog, appendPerformanceLog, type OutputLogDetails } from '../utils/outputLogger';
+import { appendDebugLog, appendOutputLog, appendPerformanceLog, type OutputLogDetails } from '../utils/outputLogger';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
 import { handleRemoteEditPanelMessage } from './RemoteEditPanelHandlers';
@@ -1567,7 +1567,7 @@ export class RemoteEditPanel {
     });
     this.sendSessions();
 
-    this.logInfo('Listed remote directory.', { Connection: connectionId, Path: normalizedPath, Items: entries.length });
+    this.logDebug('Listed remote directory.', { Connection: connectionId, Path: normalizedPath, Items: entries.length });
     this.postBusy(false, `Loaded ${this.formatCount(entries.length, 'item')}.`);
   }
 
@@ -5118,7 +5118,7 @@ export class RemoteEditPanel {
   }
 
   private logDebug(message: string, details?: OutputLogDetails): void {
-    appendOutputLog(this.output, 'DEBUG', message, details);
+    appendDebugLog(this.output, 'Panel', message, details);
   }
 
   private logWebviewPerformance(payload: any): void {

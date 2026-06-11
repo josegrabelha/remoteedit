@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import { Client as FtpClient, FileInfo, FileType } from 'basic-ftp';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { getNumberSetting } from '../utils/settingsUtils';
-import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
+import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { normalizeConnectionType } from '../remote/RemoteConnectionTypes';
 import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from '../remote/RemoteSessionManager';
 import type {
@@ -674,6 +674,8 @@ export class FtpSessionManager implements RemoteSessionManager {
 
     const client = new FtpClient(30000);
 
+    appendDebugLog(this.output, 'FTP', `reconnecting client ${connectionId}`);
+
     try {
       const secureOptions = await buildFtpsSecureOptions(options);
       await client.access({
@@ -690,13 +692,13 @@ export class FtpSessionManager implements RemoteSessionManager {
       this.startKeepAlive(connectionId, client, connection.keepAlive !== false);
       this.touchConnectionActivity(connectionId);
 
-      appendPerformanceLog(this.output, 'FTP', `reconnect ${connectionId}`, {
+      appendDebugLog(this.output, 'FTP', `reconnected client ${connectionId}`, {
         status: 'success'
       });
     } catch (error) {
       this.closeClient(client);
       this.reconnectRequired.add(connectionId);
-      appendPerformanceLog(this.output, 'FTP', `reconnect ${connectionId}`, {
+      appendDebugLog(this.output, 'FTP', `reconnect failed ${connectionId}`, {
         status: 'failed',
         error: error instanceof Error ? error.message : String(error)
       });
@@ -727,7 +729,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.clearInFlightDirectoryListings(connectionId);
     this.stopKeepAliveTimerOnly(connectionId);
 
-    appendPerformanceLog(this.output, 'FTP', `client marked for reconnect ${connectionId}`, {
+    appendDebugLog(this.output, 'FTP', `client marked for reconnect ${connectionId}`, {
       reason
     });
   }
@@ -1008,15 +1010,31 @@ export class FtpSessionManager implements RemoteSessionManager {
 
   private clearDirectoryListingCache(connectionId: string, remotePath?: string): void {
     if (remotePath) {
-      this.directoryListingCache.delete(this.buildDirectoryListingCacheKey(connectionId, remotePath));
+      const key = this.buildDirectoryListingCacheKey(connectionId, remotePath);
+      const deleted = this.directoryListingCache.delete(key);
+      if (deleted) {
+        appendDebugLog(this.output, 'Cache', 'invalidated directory listing', {
+          connection: connectionId,
+          path: normalizeRemotePath(remotePath)
+        });
+      }
       return;
     }
 
+    let deletedCount = 0;
     const prefix = `${connectionId}:`;
     for (const key of Array.from(this.directoryListingCache.keys())) {
       if (key.startsWith(prefix)) {
         this.directoryListingCache.delete(key);
+        deletedCount += 1;
       }
+    }
+
+    if (deletedCount > 0) {
+      appendDebugLog(this.output, 'Cache', 'cleared directory listing cache', {
+        connection: connectionId,
+        entries: deletedCount
+      });
     }
   }
 

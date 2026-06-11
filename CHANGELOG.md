@@ -5,11 +5,13 @@
 ### Added
 
 * Added `remoteedit.sftpResolveOwnerGroupNames` to optionally resolve numeric SFTP owner/group IDs to readable names.
-* Added `remoteedit.diagnostics.performanceLogs` to help diagnose directory listing and rendering performance.
+* Added `remoteedit.diagnostics.debugLogs` to help collect detailed diagnostic information for troubleshooting.
+* Added `remoteedit.diagnostics.performanceLogs` to help diagnose directory listing, rendering, cache, and transfer performance.
 * Added `remoteedit.directoryListingCacheTtl` to control how long recently loaded remote directory listings are reused.
 
 ### Improved
 
+* Improved Remote Edit Output logging by keeping frequent directory listing logs behind diagnostics settings.
 * Improved FTP/FTPS transfer cancellation recovery so cancelled file opens keep the Remote Edit connection open and reconnect the FTP client automatically if the server closes it.
 * Improved SFTP directory browsing performance by disabling owner/group name resolution by default.
 * Improved remote directory navigation performance by reusing recently loaded directory listings across the Webview and Primary Sidebar.

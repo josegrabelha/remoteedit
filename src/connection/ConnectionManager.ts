@@ -130,6 +130,7 @@ const REMOTE_EDIT_SETTING_KEYS = [
   'sshKeepAliveInterval',
   'sshKeepAliveCountMax',
   'sftpResolveOwnerGroupNames',
+  'diagnostics.debugLogs',
   'diagnostics.performanceLogs',
   'ftpKeepAliveInterval',
   'sudoTempDirectory',

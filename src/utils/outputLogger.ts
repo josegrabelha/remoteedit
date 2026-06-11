@@ -25,8 +25,32 @@ export function appendOutputLog(
   }
 }
 
+export function isDebugLoggingEnabled(): boolean {
+  return getBooleanSetting('diagnostics.debugLogs', false);
+}
+
 export function isPerformanceLoggingEnabled(): boolean {
   return getBooleanSetting('diagnostics.performanceLogs', false);
+}
+
+export function appendDebugLog(
+  output: vscode.OutputChannel | undefined,
+  source: string,
+  message: string,
+  details?: OutputLogDetails
+): void {
+  if (!output || !isDebugLoggingEnabled()) {
+    return;
+  }
+
+  const inlineDetails = details
+    ? Object.entries(details)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(' | ')
+    : '';
+
+  output.appendLine(`[${formatLocalTimestamp()}] [DEBUG] [${source}] ${message}${inlineDetails ? ` | ${inlineDetails}` : ''}`);
 }
 
 export function appendPerformanceLog(

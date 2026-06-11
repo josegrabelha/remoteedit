@@ -182,18 +182,16 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.statusBarButtonStyle`
 - `remoteedit.statusBarButtonPriority`
 
-### Connections
+### SSH/SFTP
 
 - `remoteedit.sshReadyTimeout`
 - `remoteedit.sshKeepAliveInterval`
 - `remoteedit.sshKeepAliveCountMax`
 - `remoteedit.sftpResolveOwnerGroupNames`
+
+### FTP/FTPS
+
 - `remoteedit.ftpKeepAliveInterval`
-
-### Diagnostics
-
-- `remoteedit.diagnostics.performanceLogs`
-- `remoteedit.directoryListingCacheTtl`
 
 ### Transfers
 
@@ -202,10 +200,18 @@ Work with multiple remote servers at the same time and quickly switch between ac
 ### Sudo
 
 - `remoteedit.sudoTempDirectory`
-
-### File Handling
-
 - `remoteedit.restoreSpecialPermissionBits`
+
+### Cache
+
+- `remoteedit.directoryListingCacheTtl`
+
+### Diagnostics
+
+- `remoteedit.diagnostics.debugLogs`
+- `remoteedit.diagnostics.performanceLogs`
+
+Enable debug and performance logs when troubleshooting. Then reproduce the issue and copy the relevant entries from the `Remote Edit` Output channel when opening a GitHub issue.
 
 ## Security
 

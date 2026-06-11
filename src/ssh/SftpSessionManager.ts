@@ -636,7 +636,10 @@ export class SftpSessionManager implements RemoteSessionManager {
           effectiveType: undefined
         }));
 
-      await this.resolveEntryOwnerGroups(client, connectionId, entries);
+      if (getBooleanSetting('sftpResolveOwnerGroupNames', false)) {
+        await this.resolveEntryOwnerGroups(client, connectionId, entries);
+      }
+
       return sortRemoteEntries(entries);
     } catch (error) {
       if (!this.isSudoModeEnabled(connectionId)) {

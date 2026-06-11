@@ -440,6 +440,11 @@
           "maximum": 20,
           "description": "Controls how many unanswered SSH keep-alive messages are allowed before the connection is considered lost."
         },
+        "remoteedit.sftpResolveOwnerGroupNames": {
+          "type": "boolean",
+          "default": false,
+          "description": "Resolve numeric SFTP owner/group IDs to readable names during file listing. Enable this if owner/group appears as numbers. May slow down directory browsing on some servers."
+        },
         "remoteedit.ftpKeepAliveInterval": {
           "type": "number",
           "default": 30000,

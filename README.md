@@ -187,6 +187,7 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.sshReadyTimeout`
 - `remoteedit.sshKeepAliveInterval`
 - `remoteedit.sshKeepAliveCountMax`
+- `remoteedit.sftpResolveOwnerGroupNames`
 - `remoteedit.ftpKeepAliveInterval`
 
 ### Transfers

@@ -2,8 +2,13 @@
 
 ## [1.6.1] - 2026-06-11
 
+### Added
+
+* Added `remoteedit.sftpResolveOwnerGroupNames` to optionally resolve numeric SFTP owner/group IDs to readable names.
+
 ### Improved
 
+* Improved SFTP directory browsing performance by disabling owner/group name resolution by default.
 * Improved FTP/FTPS directory metadata handling by merging MLSD listing data with LIST metadata when both are available.
 * Preserved FTP/FTPS owner, group, and permissions from LIST while keeping MLSD size and modification date when supported.
 

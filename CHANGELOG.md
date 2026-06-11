@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1] - 2026-06-11
+
+### Improved
+
+* Improved FTP/FTPS directory metadata handling by merging MLSD listing data with LIST metadata when both are available.
+* Preserved FTP/FTPS owner, group, and permissions from LIST while keeping MLSD size and modification date when supported.
+
 ## [1.6.0] - 2026-06-10
 
 ### Added

@@ -22,6 +22,11 @@ interface CachedReadFile {
   expiresAt: number;
 }
 
+interface FtpListResult {
+  items: FileInfo[];
+  command: string;
+}
+
 export class FtpSessionManager implements RemoteSessionManager {
   private readonly sessions = new Map<string, FtpClient>();
   private readonly connections = new Map<string, ActiveConnection>();
@@ -139,13 +144,54 @@ export class FtpSessionManager implements RemoteSessionManager {
   async listDirectory(connectionId: string, remotePath: string): Promise<RemoteEntry[]> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
-    const items = await client.list(normalizedPath);
+    const items = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
 
     return sortRemoteEntries(
       items
         .filter(item => item.name !== '.' && item.name !== '..')
         .map(item => mapFtpFileInfo(item, normalizedPath))
     );
+  }
+
+
+  private async listDirectoryWithMergedMetadata(client: FtpClient, remotePath: string): Promise<FileInfo[]> {
+    const primaryListing = await this.listDirectoryWithCommandDetails(client, remotePath);
+
+    if (!isMlsdListCommand(primaryListing.command)) {
+      return primaryListing.items;
+    }
+
+    const listListing = await this.tryListDirectoryWithCommands(client, remotePath, ['LIST -a', 'LIST']);
+
+    if (!listListing) {
+      return primaryListing.items;
+    }
+
+    return mergeFtpMetadata(primaryListing.items, listListing.items);
+  }
+
+  private async listDirectoryWithCommandDetails(client: FtpClient, remotePath: string): Promise<FtpListResult> {
+    const items = await client.list(remotePath);
+    const command = Array.isArray(client.availableListCommands) && client.availableListCommands.length > 0
+      ? String(client.availableListCommands[0] || '')
+      : '';
+
+    return { items, command };
+  }
+
+  private async tryListDirectoryWithCommands(client: FtpClient, remotePath: string, commands: string[]): Promise<FtpListResult | undefined> {
+    const originalCommands = Array.isArray(client.availableListCommands)
+      ? [...client.availableListCommands]
+      : [];
+
+    try {
+      client.availableListCommands = [...commands];
+      return await this.listDirectoryWithCommandDetails(client, remotePath);
+    } catch {
+      return undefined;
+    } finally {
+      client.availableListCommands = originalCommands;
+    }
   }
 
   async prepareFileForOpen(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<void> {
@@ -660,6 +706,76 @@ export class FtpSessionManager implements RemoteSessionManager {
       }
     }
   }
+}
+
+
+function isMlsdListCommand(command: string): boolean {
+  return String(command || '').trim().toUpperCase().startsWith('MLSD');
+}
+
+function mergeFtpMetadata(primaryItems: FileInfo[], listItems: FileInfo[]): FileInfo[] {
+  const listItemsByName = new Map<string, FileInfo>();
+
+  for (const item of listItems) {
+    if (item.name && !listItemsByName.has(item.name)) {
+      listItemsByName.set(item.name, item);
+    }
+  }
+
+  return primaryItems.map(primaryItem => {
+    const listItem = listItemsByName.get(primaryItem.name);
+
+    if (!listItem) {
+      return primaryItem;
+    }
+
+    return mergeFtpFileInfo(primaryItem, listItem);
+  });
+}
+
+function mergeFtpFileInfo(primaryItem: FileInfo, listItem: FileInfo): FileInfo {
+  if (hasListMetadata(listItem)) {
+    if (hasPositiveSize(listItem) && !hasPositiveSize(primaryItem)) {
+      primaryItem.size = listItem.size;
+    }
+
+    if (listItem.modifiedAt && !primaryItem.modifiedAt) {
+      primaryItem.modifiedAt = listItem.modifiedAt;
+    }
+
+    if (listItem.user) {
+      primaryItem.user = listItem.user;
+    }
+
+    if (listItem.group) {
+      primaryItem.group = listItem.group;
+    }
+
+    if (listItem.permissions) {
+      primaryItem.permissions = listItem.permissions;
+    }
+
+    if (listItem.link && !primaryItem.link) {
+      primaryItem.link = listItem.link;
+    }
+  }
+
+  return primaryItem;
+}
+
+function hasListMetadata(item: FileInfo): boolean {
+  return Boolean(
+    hasPositiveSize(item) ||
+    item.modifiedAt ||
+    item.user ||
+    item.group ||
+    item.permissions ||
+    item.link
+  );
+}
+
+function hasPositiveSize(item: FileInfo): boolean {
+  return Number.isFinite(Number(item.size)) && Number(item.size) > 0;
 }
 
 function mapFtpFileInfo(item: FileInfo, parentPath: string): RemoteEntry {

@@ -29,6 +29,17 @@ interface CachedDirectoryListing {
   expiresAt: number;
 }
 
+interface StoredFtpConnectOptions extends ConnectOptions {
+  connectionType: 'ftp' | 'ftps';
+  authType: 'password';
+  password: string;
+}
+
+interface InFlightDirectoryListing {
+  promise: Promise<RemoteEntry[]>;
+  startedAt: number;
+}
+
 interface FtpListResult {
   items: FileInfo[];
   command: string;
@@ -47,8 +58,12 @@ export class FtpSessionManager implements RemoteSessionManager {
 
   private readonly sessions = new Map<string, FtpClient>();
   private readonly connections = new Map<string, ActiveConnection>();
+  private readonly connectOptions = new Map<string, StoredFtpConnectOptions>();
+  private readonly reconnectRequired = new Set<string>();
   private readonly readFileCache = new Map<string, CachedReadFile>();
   private readonly directoryListingCache = new Map<string, CachedDirectoryListing>();
+  private readonly inFlightDirectoryListings = new Map<string, InFlightDirectoryListing>();
+  private readonly operationQueues = new Map<string, Promise<unknown>>();
   private readonly keepAliveTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly keepAliveInFlight = new Set<string>();
   private readonly busyConnectionCounts = new Map<string, number>();
@@ -114,6 +129,8 @@ export class FtpSessionManager implements RemoteSessionManager {
       };
 
       this.connections.set(options.connectionId, connection);
+      this.connectOptions.set(options.connectionId, this.createStoredConnectOptions(options, connectionType));
+      this.reconnectRequired.delete(options.connectionId);
       this.startKeepAlive(options.connectionId, client, options.keepAlive !== false);
       return connection;
     } catch (error) {
@@ -139,8 +156,12 @@ export class FtpSessionManager implements RemoteSessionManager {
 
     this.sessions.delete(connectionId);
     this.connections.delete(connectionId);
+    this.connectOptions.delete(connectionId);
+    this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearDirectoryListingCache(connectionId);
+    this.clearInFlightDirectoryListings(connectionId);
+    this.operationQueues.delete(connectionId);
   }
 
   async disconnectAll(): Promise<void> {
@@ -161,7 +182,6 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   async listDirectory(connectionId: string, remotePath: string, options: RemoteListDirectoryOptions = {}): Promise<RemoteEntry[]> {
-    const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
     const totalTimer = createPerformanceTimer();
     const cacheTtlSeconds = getNumberSetting('directoryListingCacheTtl', 30, 0, 300);
@@ -181,39 +201,70 @@ export class FtpSessionManager implements RemoteSessionManager {
       }
     }
 
-    const cacheState = cacheEnabled ? (options.forceRefresh ? 'refresh' : 'miss') : 'disabled';
-    const listing = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
-
-    const mapTimer = createPerformanceTimer();
-    const entries = listing.items
-      .filter(item => item.name !== '.' && item.name !== '..')
-      .map(item => mapFtpFileInfo(item, normalizedPath));
-    const mapMs = mapTimer();
-
-    const sortTimer = createPerformanceTimer();
-    const sortedEntries = sortRemoteEntries(entries);
-    const sortMs = sortTimer();
-
-    if (cacheEnabled) {
-      this.directoryListingCache.set(cacheKey, {
-        entries: cloneRemoteEntries(sortedEntries),
-        expiresAt: Date.now() + cacheTtlSeconds * 1000
+    const inFlight = this.inFlightDirectoryListings.get(cacheKey);
+    if (inFlight) {
+      const entries = await inFlight.promise;
+      const clonedEntries = cloneRemoteEntries(entries);
+      appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
+        cache: 'inflight',
+        items: clonedEntries.length,
+        wait: `${Date.now() - inFlight.startedAt}ms`,
+        total: `${totalTimer()}ms`
       });
+      return clonedEntries;
     }
 
-    appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
-      cache: cacheState,
-      items: sortedEntries.length,
-      command: listing.primaryCommand || 'unknown',
-      list: `${listing.primaryListMs}ms`,
-      merge: `${listing.listMergeMs}ms`,
-      merged: listing.merged,
-      map: `${mapMs}ms`,
-      sort: `${sortMs}ms`,
-      total: `${totalTimer()}ms`
+    const listingPromise = this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      const cacheState = cacheEnabled ? (options.forceRefresh ? 'refresh' : 'miss') : 'disabled';
+      const queuedTotalTimer = createPerformanceTimer();
+      const listing = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
+
+      const mapTimer = createPerformanceTimer();
+      const entries = listing.items
+        .filter(item => item.name !== '.' && item.name !== '..')
+        .map(item => mapFtpFileInfo(item, normalizedPath));
+      const mapMs = mapTimer();
+
+      const sortTimer = createPerformanceTimer();
+      const sortedEntries = sortRemoteEntries(entries);
+      const sortMs = sortTimer();
+
+      if (cacheEnabled) {
+        this.directoryListingCache.set(cacheKey, {
+          entries: cloneRemoteEntries(sortedEntries),
+          expiresAt: Date.now() + cacheTtlSeconds * 1000
+        });
+      }
+
+      appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
+        cache: cacheState,
+        items: sortedEntries.length,
+        command: listing.primaryCommand || 'unknown',
+        list: `${listing.primaryListMs}ms`,
+        merge: `${listing.listMergeMs}ms`,
+        merged: listing.merged,
+        map: `${mapMs}ms`,
+        sort: `${sortMs}ms`,
+        total: `${queuedTotalTimer()}ms`
+      });
+
+      return cloneRemoteEntries(sortedEntries);
     });
 
-    return cloneRemoteEntries(sortedEntries);
+    this.inFlightDirectoryListings.set(cacheKey, {
+      promise: listingPromise,
+      startedAt: Date.now()
+    });
+
+    try {
+      return cloneRemoteEntries(await listingPromise);
+    } finally {
+      const current = this.inFlightDirectoryListings.get(cacheKey);
+      if (current?.promise === listingPromise) {
+        this.inFlightDirectoryListings.delete(cacheKey);
+      }
+    }
   }
 
 
@@ -305,52 +356,65 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   async writeFile(connectionId: string, remotePath: string, content: Uint8Array, progress?: RemoteEditProgressReporter, cancellationToken?: ConnectionCancellationToken): Promise<void> {
-    const client = this.getClient(connectionId);
-    const endConnectionOperation = this.beginConnectionOperation(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
     const buffer = Buffer.from(content);
-    let reportedBytes = 0;
 
-    throwIfOperationCancelled(cancellationToken);
-    client.trackProgress(info => {
-      if (info.type !== 'upload') {
-        return;
-      }
+    await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      let reportedBytes = 0;
 
-      reportedBytes = Math.max(reportedBytes, Number(info.bytes || 0));
-      progress?.reportBytes('Saving remote file...', reportedBytes, buffer.length);
-    });
-
-    const cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
-      this.closeConnectionAfterCancellation(connectionId, client);
-    });
-
-    try {
-      await client.uploadFrom(Readable.from(buffer), normalizedPath);
       throwIfOperationCancelled(cancellationToken);
-      progress?.reportBytes('Saving remote file...', buffer.length, buffer.length);
-      this.clearReadFileCache(connectionId, normalizedPath);
-    } catch (error) {
-      if (cancellationToken?.isCancellationRequested) {
-        throw new RemoteEditOperationCancelledError('Operation cancelled.');
-      }
+      client.trackProgress(info => {
+        if (info.type !== 'upload') {
+          return;
+        }
 
-      throw error;
-    } finally {
-      cancellationSubscription?.dispose();
+        reportedBytes = Math.max(reportedBytes, Number(info.bytes || 0));
+        progress?.reportBytes('Saving remote file...', reportedBytes, buffer.length);
+      });
+
+      const cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
+        this.abortActiveTransfer(client);
+      });
+
       try {
-        client.trackProgress();
-      } catch {
-        // Ignore cleanup errors.
+        await client.uploadFrom(Readable.from(buffer), normalizedPath);
+        throwIfOperationCancelled(cancellationToken);
+        progress?.reportBytes('Saving remote file...', buffer.length, buffer.length);
+        this.clearReadFileCache(connectionId, normalizedPath);
+      } catch (error) {
+        if (cancellationToken?.isCancellationRequested) {
+          if (client.closed) {
+            this.markClientForReconnect(connectionId, client, 'cancelled-upload');
+          }
+          throw new RemoteEditOperationCancelledError('Operation cancelled.');
+        }
+
+        throw error;
+      } finally {
+        cancellationSubscription?.dispose();
+        if (cancellationToken?.isCancellationRequested && client.closed) {
+          this.markClientForReconnect(connectionId, client, 'cancelled-upload');
+        }
+        try {
+          client.trackProgress();
+        } catch {
+          // Ignore cleanup errors.
+        }
       }
-      endConnectionOperation();
-    }
+    });
   }
 
   async stat(connectionId: string, remotePath: string): Promise<RemoteStat> {
-    const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
 
+    return await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      return await this.statUnqueued(client, normalizedPath);
+    });
+  }
+
+  private async statUnqueued(client: FtpClient, normalizedPath: string): Promise<RemoteStat> {
     if (normalizedPath === '/') {
       return {
         type: 'directory',
@@ -412,62 +476,79 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   async createFile(connectionId: string, remotePath: string): Promise<void> {
-    const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
 
-    if (await this.pathExists(client, normalizedPath)) {
-      throw new Error(`Remote path already exists: ${normalizedPath}`);
-    }
+    await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
 
-    await client.uploadFrom(Readable.from(Buffer.alloc(0)), normalizedPath);
-    this.clearReadFileCache(connectionId, normalizedPath);
+      if (await this.pathExists(client, normalizedPath)) {
+        throw new Error(`Remote path already exists: ${normalizedPath}`);
+      }
+
+      await client.uploadFrom(Readable.from(Buffer.alloc(0)), normalizedPath);
+      this.clearReadFileCache(connectionId, normalizedPath);
+    });
   }
 
   async createDirectory(connectionId: string, remotePath: string): Promise<void> {
-    const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
-    const previousPath = await this.safePwd(client);
 
-    try {
-      await client.ensureDir(normalizedPath);
-    } finally {
-      await this.tryCd(client, previousPath);
-    }
+    await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      const previousPath = await this.safePwd(client);
 
-    this.clearReadFileCache(connectionId, normalizedPath);
+      try {
+        await client.ensureDir(normalizedPath);
+      } finally {
+        await this.tryCd(client, previousPath);
+      }
+
+      this.clearReadFileCache(connectionId, normalizedPath);
+    });
   }
 
   async delete(connectionId: string, remotePath: string): Promise<void> {
-    const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
-    const stat = await this.stat(connectionId, normalizedPath);
 
-    if (stat.type === 'directory') {
-      await client.removeDir(normalizedPath);
-    } else {
-      await client.remove(normalizedPath);
-    }
+    await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      const stat = await this.statUnqueued(client, normalizedPath);
 
-    this.clearReadFileCache(connectionId, normalizedPath);
+      if (stat.type === 'directory') {
+        await client.removeDir(normalizedPath);
+      } else {
+        await client.remove(normalizedPath);
+      }
+
+      this.clearReadFileCache(connectionId, normalizedPath);
+    });
   }
 
   async rename(connectionId: string, oldPath: string, newPath: string): Promise<void> {
-    const client = this.getClient(connectionId);
     const normalizedOldPath = normalizeRemotePath(oldPath);
     const normalizedNewPath = normalizeRemotePath(newPath);
 
-    await client.rename(normalizedOldPath, normalizedNewPath);
-    this.clearReadFileCache(connectionId, normalizedOldPath);
-    this.clearReadFileCache(connectionId, normalizedNewPath);
+    await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      await client.rename(normalizedOldPath, normalizedNewPath);
+      this.clearReadFileCache(connectionId, normalizedOldPath);
+      this.clearReadFileCache(connectionId, normalizedNewPath);
+    });
   }
 
   async copyFile(connectionId: string, sourcePath: string, targetPath: string, overwrite = false, cancellationToken?: ConnectionCancellationToken): Promise<void> {
-    const client = this.getClient(connectionId);
     const normalizedSourcePath = normalizeRemotePath(sourcePath);
     const normalizedTargetPath = normalizeRemotePath(targetPath);
 
-    if (!overwrite && await this.pathExists(client, normalizedTargetPath)) {
-      throw new Error('Target already exists.');
+    if (!overwrite) {
+      const exists = await this.runQueued(connectionId, async () => {
+        const client = this.getClient(connectionId);
+        return await this.pathExists(client, normalizedTargetPath);
+      });
+
+      if (exists) {
+        throw new Error('Target already exists.');
+      }
     }
 
     const content = await this.readRemoteFile(connectionId, normalizedSourcePath, cancellationToken);
@@ -520,6 +601,32 @@ export class FtpSessionManager implements RemoteSessionManager {
     throw createUnsupportedError('Run Command');
   }
 
+  private async runQueued<T>(connectionId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.operationQueues.get(connectionId) || Promise.resolve();
+
+    const current = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const endConnectionOperation = this.beginConnectionOperation(connectionId);
+        try {
+          await this.ensureClientReady(connectionId);
+          return await operation();
+        } finally {
+          endConnectionOperation();
+        }
+      });
+
+    const tracked = current.catch(() => undefined);
+    this.operationQueues.set(connectionId, tracked);
+    void tracked.finally(() => {
+      if (this.operationQueues.get(connectionId) === tracked) {
+        this.operationQueues.delete(connectionId);
+      }
+    });
+
+    return await current;
+  }
+
   private getClient(connectionId: string): FtpClient {
     const client = this.sessions.get(connectionId);
 
@@ -531,11 +638,118 @@ export class FtpSessionManager implements RemoteSessionManager {
     return client;
   }
 
+  private async ensureClientReady(connectionId: string): Promise<void> {
+    const connection = this.connections.get(connectionId);
+
+    if (!connection) {
+      throw new Error(`Remote Edit connection '${connectionId}' is not connected.`);
+    }
+
+    const client = this.sessions.get(connectionId);
+
+    if (client && !client.closed && !this.reconnectRequired.has(connectionId)) {
+      this.touchConnectionActivity(connectionId);
+      return;
+    }
+
+    await this.reconnectClient(connectionId);
+  }
+
+  private async reconnectClient(connectionId: string): Promise<void> {
+    const options = this.connectOptions.get(connectionId);
+    const connection = this.connections.get(connectionId);
+
+    if (!options || !connection) {
+      throw new Error(`Remote Edit connection '${connectionId}' is not connected.`);
+    }
+
+    const oldClient = this.sessions.get(connectionId);
+
+    if (oldClient) {
+      this.closeClient(oldClient);
+    }
+
+    this.stopKeepAliveTimerOnly(connectionId);
+    this.sessions.delete(connectionId);
+
+    const client = new FtpClient(30000);
+
+    try {
+      const secureOptions = await buildFtpsSecureOptions(options);
+      await client.access({
+        host: options.host,
+        port: options.port,
+        user: options.username,
+        password: options.password,
+        secure: options.connectionType === 'ftps',
+        secureOptions
+      });
+
+      this.sessions.set(connectionId, client);
+      this.reconnectRequired.delete(connectionId);
+      this.startKeepAlive(connectionId, client, connection.keepAlive !== false);
+      this.touchConnectionActivity(connectionId);
+
+      appendPerformanceLog(this.output, 'FTP', `reconnect ${connectionId}`, {
+        status: 'success'
+      });
+    } catch (error) {
+      this.closeClient(client);
+      this.reconnectRequired.add(connectionId);
+      appendPerformanceLog(this.output, 'FTP', `reconnect ${connectionId}`, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  private createStoredConnectOptions(options: ConnectOptions, connectionType: 'ftp' | 'ftps'): StoredFtpConnectOptions {
+    return {
+      ...options,
+      connectionType,
+      authType: 'password',
+      password: options.password || ''
+    };
+  }
+
+  private markClientForReconnect(connectionId: string, client: FtpClient, reason: string): void {
+    if (this.sessions.get(connectionId) !== client) {
+      return;
+    }
+
+    if (this.reconnectRequired.has(connectionId)) {
+      return;
+    }
+
+    this.reconnectRequired.add(connectionId);
+    this.clearReadFileCache(connectionId);
+    this.clearInFlightDirectoryListings(connectionId);
+    this.stopKeepAliveTimerOnly(connectionId);
+
+    appendPerformanceLog(this.output, 'FTP', `client marked for reconnect ${connectionId}`, {
+      reason
+    });
+  }
+
   private closeClient(client: FtpClient): void {
     try {
       client.close();
     } catch {
       // Ignore cleanup errors.
+    }
+  }
+
+  private abortActiveTransfer(client: FtpClient): void {
+    try {
+      const ftpContext = (client as any).ftp;
+      const dataSocket = ftpContext?.dataSocket;
+
+      if (dataSocket && !dataSocket.destroyed) {
+        dataSocket.destroy();
+      }
+    } catch {
+      // Ignore best-effort transfer abort errors.
     }
   }
 
@@ -557,6 +771,13 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   private stopKeepAlive(connectionId: string): void {
+    this.stopKeepAliveTimerOnly(connectionId);
+    this.keepAliveInFlight.delete(connectionId);
+    this.busyConnectionCounts.delete(connectionId);
+    this.lastActivityTimes.delete(connectionId);
+  }
+
+  private stopKeepAliveTimerOnly(connectionId: string): void {
     const timer = this.keepAliveTimers.get(connectionId);
 
     if (timer) {
@@ -564,9 +785,6 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
 
     this.keepAliveTimers.delete(connectionId);
-    this.keepAliveInFlight.delete(connectionId);
-    this.busyConnectionCounts.delete(connectionId);
-    this.lastActivityTimes.delete(connectionId);
   }
 
   private touchConnectionActivity(connectionId: string): void {
@@ -602,7 +820,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       return;
     }
 
-    if ((this.busyConnectionCounts.get(connectionId) || 0) > 0 || this.keepAliveInFlight.has(connectionId)) {
+    if ((this.busyConnectionCounts.get(connectionId) || 0) > 0 || this.keepAliveInFlight.has(connectionId) || this.operationQueues.has(connectionId)) {
       return;
     }
 
@@ -638,7 +856,11 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.stopKeepAlive(connectionId);
     this.sessions.delete(connectionId);
     this.connections.delete(connectionId);
+    this.connectOptions.delete(connectionId);
+    this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
+    this.clearInFlightDirectoryListings(connectionId);
+    this.operationQueues.delete(connectionId);
   }
 
   private closeConnectionAfterCancellation(connectionId: string, client: FtpClient): void {
@@ -646,7 +868,11 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.stopKeepAlive(connectionId);
     this.sessions.delete(connectionId);
     this.connections.delete(connectionId);
+    this.connectOptions.delete(connectionId);
+    this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
+    this.clearInFlightDirectoryListings(connectionId);
+    this.operationQueues.delete(connectionId);
   }
 
   private async safePwd(client: FtpClient): Promise<string> {
@@ -686,58 +912,58 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   private async readRemoteFile(connectionId: string, normalizedPath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<Buffer> {
-    const client = this.getClient(connectionId);
-    const endConnectionOperation = this.beginConnectionOperation(connectionId);
-    const totalBytes = await client.size(normalizedPath).catch(() => 0);
-    const chunks: Buffer[] = [];
-    let transferredBytes = 0;
+    return await this.runQueued(connectionId, async () => {
+      const client = this.getClient(connectionId);
+      const totalBytes = await client.size(normalizedPath).catch(() => 0);
+      const chunks: Buffer[] = [];
+      let transferredBytes = 0;
 
-    throwIfOperationCancelled(cancellationToken);
+      throwIfOperationCancelled(cancellationToken);
 
-    const sink = new Writable({
-      write(chunk, _encoding, callback) {
+      const sink = new Writable({
+        write(chunk, _encoding, callback) {
+          if (cancellationToken?.isCancellationRequested) {
+            callback();
+            return;
+          }
+
+          const bufferChunk = Buffer.isBuffer(chunk)
+            ? chunk
+            : chunk instanceof Uint8Array
+              ? Buffer.from(chunk)
+              : Buffer.from(String(chunk));
+
+          chunks.push(bufferChunk);
+          transferredBytes += bufferChunk.length;
+          progress?.reportBytes('Opening remote file...', transferredBytes, Number(totalBytes || 0));
+          callback();
+        }
+      });
+
+      const cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
+        this.abortActiveTransfer(client);
+      });
+
+      try {
+        await client.downloadTo(sink, normalizedPath);
+        throwIfOperationCancelled(cancellationToken);
+        return Buffer.concat(chunks);
+      } catch (error) {
         if (cancellationToken?.isCancellationRequested) {
-          callback(new RemoteEditOperationCancelledError('Operation cancelled.'));
-          return;
+          if (client.closed) {
+            this.markClientForReconnect(connectionId, client, 'cancelled-download');
+          }
+          throw new RemoteEditOperationCancelledError('Operation cancelled.');
         }
 
-        const bufferChunk = Buffer.isBuffer(chunk)
-          ? chunk
-          : chunk instanceof Uint8Array
-            ? Buffer.from(chunk)
-            : Buffer.from(String(chunk));
-
-        chunks.push(bufferChunk);
-        transferredBytes += bufferChunk.length;
-        progress?.reportBytes('Opening remote file...', transferredBytes, Number(totalBytes || 0));
-        callback();
+        throw error;
+      } finally {
+        cancellationSubscription?.dispose();
+        if (cancellationToken?.isCancellationRequested && client.closed) {
+          this.markClientForReconnect(connectionId, client, 'cancelled-download');
+        }
       }
     });
-
-    const cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
-      try {
-        sink.destroy(new RemoteEditOperationCancelledError('Operation cancelled.'));
-      } catch {
-        // Ignore cancellation cleanup errors.
-      }
-
-      this.closeConnectionAfterCancellation(connectionId, client);
-    });
-
-    try {
-      await client.downloadTo(sink, normalizedPath);
-      throwIfOperationCancelled(cancellationToken);
-      return Buffer.concat(chunks);
-    } catch (error) {
-      if (cancellationToken?.isCancellationRequested) {
-        throw new RemoteEditOperationCancelledError('Operation cancelled.');
-      }
-
-      throw error;
-    } finally {
-      cancellationSubscription?.dispose();
-      endConnectionOperation();
-    }
   }
 
   private async findEntry(client: FtpClient, normalizedPath: string): Promise<FileInfo | undefined> {
@@ -798,6 +1024,22 @@ export class FtpSessionManager implements RemoteSessionManager {
     const normalizedPath = normalizeRemotePath(remotePath);
     this.clearDirectoryListingCache(connectionId, normalizedPath);
     this.clearDirectoryListingCache(connectionId, dirnameRemotePath(normalizedPath));
+    this.clearInFlightDirectoryListings(connectionId, normalizedPath);
+    this.clearInFlightDirectoryListings(connectionId, dirnameRemotePath(normalizedPath));
+  }
+
+  private clearInFlightDirectoryListings(connectionId: string, remotePath?: string): void {
+    if (remotePath) {
+      this.inFlightDirectoryListings.delete(this.buildDirectoryListingCacheKey(connectionId, remotePath));
+      return;
+    }
+
+    const prefix = `${connectionId}:`;
+    for (const key of Array.from(this.inFlightDirectoryListings.keys())) {
+      if (key.startsWith(prefix)) {
+        this.inFlightDirectoryListings.delete(key);
+      }
+    }
   }
 
   private buildReadFileCacheKey(connectionId: string, remotePath: string): string {

@@ -10,6 +10,7 @@
 
 ### Improved
 
+* Improved FTP/FTPS transfer cancellation recovery so cancelled file opens keep the Remote Edit connection open and reconnect the FTP client automatically if the server closes it.
 * Improved SFTP directory browsing performance by disabling owner/group name resolution by default.
 * Improved remote directory navigation performance by reusing recently loaded directory listings across the Webview and Primary Sidebar.
 * Manual refresh and file operations now bypass or invalidate cached directory listings to keep remote views up to date.

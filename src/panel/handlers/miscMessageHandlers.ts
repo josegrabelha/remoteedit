@@ -21,6 +21,9 @@ export async function tryHandleMiscMessage(
     case RemoteEditIncomingMessageType.Log:
       handlers.log(String(message.payload?.message || ''));
       return true;
+    case RemoteEditIncomingMessageType.PerformanceLog:
+      handlers.performanceLog(message.payload);
+      return true;
     default:
       return false;
   }

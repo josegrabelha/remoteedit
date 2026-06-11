@@ -16,7 +16,7 @@ export interface RemoteEditPanelMessageHandlers {
   switchSession(connectionId: string): Promise<void>;
   enableSudoMode(): Promise<void>;
   disableSudoMode(connectionId: string): void;
-  listDirectory(remotePath: string): Promise<void>;
+  listDirectory(remotePath: string, options?: { forceRefresh?: boolean }): Promise<void>;
   requestBreadcrumbDirectories(payload: any): Promise<void>;
   openParent(): Promise<void>;
   openEntry(payload: any): Promise<void>;
@@ -51,5 +51,6 @@ export interface RemoteEditPanelMessageHandlers {
   confirmDialogResponse(payload: any): void;
   transferConflictResponse(payload: any): void;
   log(message: string): void;
+  performanceLog(payload: any): void;
   unknown(messageType: string): void;
 }

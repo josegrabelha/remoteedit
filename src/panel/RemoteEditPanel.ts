@@ -11,7 +11,7 @@ import { SshTerminalService } from '../ssh/SshTerminalService';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
 import { formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
-import { appendOutputLog, type OutputLogDetails } from '../utils/outputLogger';
+import { appendOutputLog, appendPerformanceLog, type OutputLogDetails } from '../utils/outputLogger';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
 import { handleRemoteEditPanelMessage } from './RemoteEditPanelHandlers';
@@ -628,7 +628,7 @@ export class RemoteEditPanel {
         switchSession: connectionId => this.switchSession(connectionId),
         enableSudoMode: () => this.enableSudoMode(),
         disableSudoMode: connectionId => this.disableSudoMode(connectionId),
-        listDirectory: remotePath => this.listDirectory(remotePath),
+        listDirectory: (remotePath, options) => this.listDirectory(remotePath, options),
         requestBreadcrumbDirectories: payload => this.requestBreadcrumbDirectories(payload),
         openParent: () => this.listDirectory(dirnameRemotePath(this.getActivePath())),
         openEntry: payload => this.openEntry(payload),
@@ -663,6 +663,7 @@ export class RemoteEditPanel {
         confirmDialogResponse: payload => this.handleConfirmDialogResponse(payload),
         transferConflictResponse: payload => this.handleTransferConflictResponse(payload),
         log: logMessage => this.logDebug(logMessage),
+        performanceLog: payload => this.logWebviewPerformance(payload),
         unknown: messageType => this.postError(`Unknown webview message: ${messageType}`)
       });
     } catch (error) {
@@ -1532,7 +1533,7 @@ export class RemoteEditPanel {
     void vscode.window.showErrorMessage(message);
   }
 
-  private async listDirectory(remotePath: string): Promise<void> {
+  private async listDirectory(remotePath: string, options: { forceRefresh?: boolean } = {}): Promise<void> {
     const connectionId = this.requireActiveConnectionId();
     const normalizedPath = normalizeRemotePath(remotePath);
     const requestSequence = ++this.directoryListRequestSequence;
@@ -1542,7 +1543,7 @@ export class RemoteEditPanel {
     let entries: RemoteEntry[];
 
     try {
-      entries = await this.sessions.listDirectory(connectionId, normalizedPath);
+      entries = await this.sessions.listDirectory(connectionId, normalizedPath, { forceRefresh: Boolean(options.forceRefresh) });
     } catch (error) {
       if (this.isStaleDirectoryListRequest(requestSequence, connectionId)) {
         return;
@@ -5118,6 +5119,17 @@ export class RemoteEditPanel {
 
   private logDebug(message: string, details?: OutputLogDetails): void {
     appendOutputLog(this.output, 'DEBUG', message, details);
+  }
+
+  private logWebviewPerformance(payload: any): void {
+    const message = String(payload?.message || 'renderEntries');
+    const items = Number(payload?.items || 0);
+    const renderMs = Number(payload?.renderMs || 0);
+
+    appendPerformanceLog(this.output, 'Webview', message, {
+      items,
+      render: `${Math.round(renderMs)}ms`
+    });
   }
 
   private logTransferEvent(job: QueuedTransferJob, message: string, details?: OutputLogDetails): void {

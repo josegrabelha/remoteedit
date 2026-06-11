@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { FtpSessionManager } from '../ftp/FtpSessionManager';
 import { SftpSessionManager } from '../ssh/SftpSessionManager';
 import { normalizeConnectionType, SFTP_CONNECTION_TYPE } from './RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteStat, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from './RemoteSessionManager';
+import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from './RemoteSessionManager';
 import type { Client } from 'ssh2';
 import type {
   ActiveConnection,
@@ -25,9 +25,12 @@ export class RemoteSessionRouter implements RemoteSessionManager {
   private readonly sessionRoutes = new Map<string, RemoteSessionManager>();
 
   constructor(
-    sftpSessions: RemoteSessionManager = new SftpSessionManager(),
-    ftpSessions: RemoteSessionManager = new FtpSessionManager()
+    output?: vscode.OutputChannel,
+    sftpSessions?: RemoteSessionManager,
+    ftpSessions?: RemoteSessionManager
   ) {
+    sftpSessions = sftpSessions || new SftpSessionManager(output);
+    ftpSessions = ftpSessions || new FtpSessionManager(output);
     this.sftpSessions = sftpSessions;
     this.ftpSessions = ftpSessions;
   }
@@ -112,8 +115,8 @@ export class RemoteSessionRouter implements RemoteSessionManager {
     return manager.getSshClientForTerminal(connectionId);
   }
 
-  listDirectory(connectionId: string, remotePath: string): Promise<RemoteEntry[]> {
-    return this.getManagerForActiveConnection(connectionId).listDirectory(connectionId, remotePath);
+  listDirectory(connectionId: string, remotePath: string, options?: RemoteListDirectoryOptions): Promise<RemoteEntry[]> {
+    return this.getManagerForActiveConnection(connectionId).listDirectory(connectionId, remotePath, options);
   }
 
   prepareFileForOpen(

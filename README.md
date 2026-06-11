@@ -190,6 +190,11 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.sftpResolveOwnerGroupNames`
 - `remoteedit.ftpKeepAliveInterval`
 
+### Diagnostics
+
+- `remoteedit.diagnostics.performanceLogs`
+- `remoteedit.directoryListingCacheTtl`
+
 ### Transfers
 
 - `remoteedit.maxConcurrentTransfers`

@@ -5,10 +5,14 @@
 ### Added
 
 * Added `remoteedit.sftpResolveOwnerGroupNames` to optionally resolve numeric SFTP owner/group IDs to readable names.
+* Added `remoteedit.diagnostics.performanceLogs` to help diagnose directory listing and rendering performance.
+* Added `remoteedit.directoryListingCacheTtl` to control how long recently loaded remote directory listings are reused.
 
 ### Improved
 
 * Improved SFTP directory browsing performance by disabling owner/group name resolution by default.
+* Improved remote directory navigation performance by reusing recently loaded directory listings across the Webview and Primary Sidebar.
+* Manual refresh and file operations now bypass or invalidate cached directory listings to keep remote views up to date.
 * Improved FTP/FTPS directory metadata handling by merging MLSD listing data with LIST metadata when both are available.
 * Preserved FTP/FTPS owner, group, and permissions from LIST while keeping MLSD size and modification date when supported.
 

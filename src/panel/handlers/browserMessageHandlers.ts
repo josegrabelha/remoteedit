@@ -7,7 +7,7 @@ export async function tryHandleBrowserMessage(
 ): Promise<boolean> {
   switch (message.type) {
     case RemoteEditIncomingMessageType.ListDirectory:
-      await handlers.listDirectory(String(message.payload?.path || handlers.getActivePath()));
+      await handlers.listDirectory(String(message.payload?.path || handlers.getActivePath()), { forceRefresh: Boolean(message.payload?.forceRefresh) });
       return true;
     case RemoteEditIncomingMessageType.RequestBreadcrumbDirectories:
       await handlers.requestBreadcrumbDirectories(message.payload);

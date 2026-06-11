@@ -48,7 +48,8 @@ export const RemoteEditIncomingMessageType = {
   CopyStatus: 'copyStatus',
   ConfirmDialogResponse: 'confirmDialogResponse',
   TransferConflictResponse: 'transferConflictResponse',
-  Log: 'log'
+  Log: 'log',
+  PerformanceLog: 'performanceLog'
 } as const;
 
 export const RemoteEditOutboundMessageType = {

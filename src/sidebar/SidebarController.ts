@@ -59,7 +59,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       isConnected: profileId => this.sessions.hasConnection(profileId),
       isConnecting: profileId => this.connectingProfileIds.has(profileId)
     });
-    this.openConnectionsProvider = new OpenConnectionsTreeProvider(sessions, connectionManager);
+    this.openConnectionsProvider = new OpenConnectionsTreeProvider(sessions, connectionManager, output);
     this.sudoModeDecorationProvider = new SudoModeDecorationProvider(sessions);
     this.sshTerminalService = new SshTerminalService(sessions);
     this.connectionsTreeView = vscode.window.createTreeView('remoteedit.connectionsView', {
@@ -1532,7 +1532,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private refreshRemoteDirectory(item: RemoteEditSidebarItem | undefined): void {
-    this.openConnectionsProvider.refresh(item);
+    this.openConnectionsProvider.refresh(item, { forceRefresh: true });
   }
 
   private async copyHostname(item: RemoteEditSidebarItem | string | undefined): Promise<void> {

@@ -1,10 +1,12 @@
 import { Readable, Writable } from 'stream';
+import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import { Client as FtpClient, FileInfo, FileType } from 'basic-ftp';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { getNumberSetting } from '../utils/settingsUtils';
+import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { normalizeConnectionType } from '../remote/RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteStat, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from '../remote/RemoteSessionManager';
+import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from '../remote/RemoteSessionManager';
 import type {
   ActiveConnection,
   ConnectOptions,
@@ -22,15 +24,31 @@ interface CachedReadFile {
   expiresAt: number;
 }
 
+interface CachedDirectoryListing {
+  entries: RemoteEntry[];
+  expiresAt: number;
+}
+
 interface FtpListResult {
   items: FileInfo[];
   command: string;
 }
 
+interface FtpMergedListResult {
+  items: FileInfo[];
+  primaryCommand: string;
+  primaryListMs: number;
+  listMergeMs: number;
+  merged: boolean;
+}
+
 export class FtpSessionManager implements RemoteSessionManager {
+  constructor(private readonly output?: vscode.OutputChannel) {}
+
   private readonly sessions = new Map<string, FtpClient>();
   private readonly connections = new Map<string, ActiveConnection>();
   private readonly readFileCache = new Map<string, CachedReadFile>();
+  private readonly directoryListingCache = new Map<string, CachedDirectoryListing>();
   private readonly keepAliveTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly keepAliveInFlight = new Set<string>();
   private readonly busyConnectionCounts = new Map<string, number>();
@@ -122,6 +140,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.sessions.delete(connectionId);
     this.connections.delete(connectionId);
     this.clearReadFileCache(connectionId);
+    this.clearDirectoryListingCache(connectionId);
   }
 
   async disconnectAll(): Promise<void> {
@@ -141,33 +160,99 @@ export class FtpSessionManager implements RemoteSessionManager {
     return this.sessions.has(connectionId);
   }
 
-  async listDirectory(connectionId: string, remotePath: string): Promise<RemoteEntry[]> {
+  async listDirectory(connectionId: string, remotePath: string, options: RemoteListDirectoryOptions = {}): Promise<RemoteEntry[]> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
-    const items = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
+    const totalTimer = createPerformanceTimer();
+    const cacheTtlSeconds = getNumberSetting('directoryListingCacheTtl', 30, 0, 300);
+    const cacheEnabled = cacheTtlSeconds > 0;
+    const cacheKey = this.buildDirectoryListingCacheKey(connectionId, normalizedPath);
 
-    return sortRemoteEntries(
-      items
-        .filter(item => item.name !== '.' && item.name !== '..')
-        .map(item => mapFtpFileInfo(item, normalizedPath))
-    );
+    if (cacheEnabled && !options.forceRefresh) {
+      const cached = this.directoryListingCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        const cachedEntries = cloneRemoteEntries(cached.entries);
+        appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
+          cache: 'hit',
+          items: cachedEntries.length,
+          total: `${totalTimer()}ms`
+        });
+        return cachedEntries;
+      }
+    }
+
+    const cacheState = cacheEnabled ? (options.forceRefresh ? 'refresh' : 'miss') : 'disabled';
+    const listing = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
+
+    const mapTimer = createPerformanceTimer();
+    const entries = listing.items
+      .filter(item => item.name !== '.' && item.name !== '..')
+      .map(item => mapFtpFileInfo(item, normalizedPath));
+    const mapMs = mapTimer();
+
+    const sortTimer = createPerformanceTimer();
+    const sortedEntries = sortRemoteEntries(entries);
+    const sortMs = sortTimer();
+
+    if (cacheEnabled) {
+      this.directoryListingCache.set(cacheKey, {
+        entries: cloneRemoteEntries(sortedEntries),
+        expiresAt: Date.now() + cacheTtlSeconds * 1000
+      });
+    }
+
+    appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
+      cache: cacheState,
+      items: sortedEntries.length,
+      command: listing.primaryCommand || 'unknown',
+      list: `${listing.primaryListMs}ms`,
+      merge: `${listing.listMergeMs}ms`,
+      merged: listing.merged,
+      map: `${mapMs}ms`,
+      sort: `${sortMs}ms`,
+      total: `${totalTimer()}ms`
+    });
+
+    return cloneRemoteEntries(sortedEntries);
   }
 
 
-  private async listDirectoryWithMergedMetadata(client: FtpClient, remotePath: string): Promise<FileInfo[]> {
+  private async listDirectoryWithMergedMetadata(client: FtpClient, remotePath: string): Promise<FtpMergedListResult> {
+    const primaryTimer = createPerformanceTimer();
     const primaryListing = await this.listDirectoryWithCommandDetails(client, remotePath);
+    const primaryListMs = primaryTimer();
 
     if (!isMlsdListCommand(primaryListing.command)) {
-      return primaryListing.items;
+      return {
+        items: primaryListing.items,
+        primaryCommand: primaryListing.command,
+        primaryListMs,
+        listMergeMs: 0,
+        merged: false
+      };
     }
 
+    const mergeTimer = createPerformanceTimer();
     const listListing = await this.tryListDirectoryWithCommands(client, remotePath, ['LIST -a', 'LIST']);
+    const listMergeMs = mergeTimer();
 
     if (!listListing) {
-      return primaryListing.items;
+      return {
+        items: primaryListing.items,
+        primaryCommand: primaryListing.command,
+        primaryListMs,
+        listMergeMs,
+        merged: false
+      };
     }
 
-    return mergeFtpMetadata(primaryListing.items, listListing.items);
+    return {
+      items: mergeFtpMetadata(primaryListing.items, listListing.items),
+      primaryCommand: primaryListing.command,
+      primaryListMs,
+      listMergeMs,
+      merged: true
+    };
   }
 
   private async listDirectoryWithCommandDetails(client: FtpClient, remotePath: string): Promise<FtpListResult> {
@@ -348,6 +433,8 @@ export class FtpSessionManager implements RemoteSessionManager {
     } finally {
       await this.tryCd(client, previousPath);
     }
+
+    this.clearReadFileCache(connectionId, normalizedPath);
   }
 
   async delete(connectionId: string, remotePath: string): Promise<void> {
@@ -689,6 +776,30 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
   }
 
+  private buildDirectoryListingCacheKey(connectionId: string, remotePath: string): string {
+    return `${connectionId}:${normalizeRemotePath(remotePath)}`;
+  }
+
+  private clearDirectoryListingCache(connectionId: string, remotePath?: string): void {
+    if (remotePath) {
+      this.directoryListingCache.delete(this.buildDirectoryListingCacheKey(connectionId, remotePath));
+      return;
+    }
+
+    const prefix = `${connectionId}:`;
+    for (const key of Array.from(this.directoryListingCache.keys())) {
+      if (key.startsWith(prefix)) {
+        this.directoryListingCache.delete(key);
+      }
+    }
+  }
+
+  private invalidateDirectoryListingForPath(connectionId: string, remotePath: string): void {
+    const normalizedPath = normalizeRemotePath(remotePath);
+    this.clearDirectoryListingCache(connectionId, normalizedPath);
+    this.clearDirectoryListingCache(connectionId, dirnameRemotePath(normalizedPath));
+  }
+
   private buildReadFileCacheKey(connectionId: string, remotePath: string): string {
     return `${connectionId}:${normalizeRemotePath(remotePath)}`;
   }
@@ -696,6 +807,7 @@ export class FtpSessionManager implements RemoteSessionManager {
   private clearReadFileCache(connectionId: string, remotePath?: string): void {
     if (remotePath) {
       this.readFileCache.delete(this.buildReadFileCacheKey(connectionId, remotePath));
+      this.invalidateDirectoryListingForPath(connectionId, remotePath);
       return;
     }
 
@@ -705,6 +817,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         this.readFileCache.delete(key);
       }
     }
+    this.clearDirectoryListingCache(connectionId);
   }
 }
 
@@ -846,6 +959,10 @@ function formatPermissionBits(value: number): string {
 function getFtpModifyTime(item: FileInfo): number {
   const modifiedAt = item.modifiedAt?.getTime();
   return Number.isFinite(modifiedAt) ? Number(modifiedAt) : 0;
+}
+
+function cloneRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {
+  return entries.map(entry => ({ ...entry }));
 }
 
 function sortRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {

@@ -25,6 +25,10 @@ export type {
   RemoteEntryType
 } from './RemoteSessionTypes';
 
+export interface RemoteListDirectoryOptions {
+  forceRefresh?: boolean;
+}
+
 export interface RemoteStat {
   type: 'file' | 'directory' | 'unknown';
   size: number;
@@ -50,7 +54,7 @@ export interface RemoteSessionManager {
   listConnections(): ActiveConnection[];
   hasConnection(connectionId: string): boolean;
 
-  listDirectory(connectionId: string, remotePath: string): Promise<RemoteEntry[]>;
+  listDirectory(connectionId: string, remotePath: string, options?: RemoteListDirectoryOptions): Promise<RemoteEntry[]>;
   prepareFileForOpen(
     connectionId: string,
     remotePath: string,

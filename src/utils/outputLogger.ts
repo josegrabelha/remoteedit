@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getBooleanSetting } from './settingsUtils';
 
 export type OutputLogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 export type OutputLogDetails = Record<string, string | number | boolean | undefined | null>;
@@ -22,6 +23,35 @@ export function appendOutputLog(
 
     output.appendLine(`    ${key}: ${String(value)}`);
   }
+}
+
+export function isPerformanceLoggingEnabled(): boolean {
+  return getBooleanSetting('diagnostics.performanceLogs', false);
+}
+
+export function appendPerformanceLog(
+  output: vscode.OutputChannel | undefined,
+  source: string,
+  message: string,
+  details?: OutputLogDetails
+): void {
+  if (!output || !isPerformanceLoggingEnabled()) {
+    return;
+  }
+
+  const inlineDetails = details
+    ? Object.entries(details)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(' | ')
+    : '';
+
+  output.appendLine(`[${formatLocalTimestamp()}] [DEBUG] [Perf][${source}] ${message}${inlineDetails ? ` | ${inlineDetails}` : ''}`);
+}
+
+export function createPerformanceTimer(): () => number {
+  const start = Date.now();
+  return () => Date.now() - start;
 }
 
 function formatLocalTimestamp(date = new Date()): string {

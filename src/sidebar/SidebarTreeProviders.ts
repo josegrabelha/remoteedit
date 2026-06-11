@@ -4,6 +4,7 @@ import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './SidebarItems';
+import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 const COMMAND_OPEN = 'remoteedit.open';
 const COMMAND_OPEN_SETTINGS = 'remoteedit.sidebar.openSettings';
@@ -217,10 +218,12 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   private readonly rootPaths = new Map<string, string>();
   private readonly directoryListSequences = new Map<string, number>();
   private readonly directoryListChains = new Map<string, Promise<void>>();
+  private readonly forceRefreshPaths = new Set<string>();
 
   constructor(
     private readonly sessions: RemoteSessionManager,
-    private readonly connectionManager: ConnectionManager
+    private readonly connectionManager: ConnectionManager,
+    private readonly output?: vscode.OutputChannel
   ) {}
 
   getTreeItem(element: RemoteEditSidebarItem): vscode.TreeItem {
@@ -317,12 +320,19 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     return connection ? this.getRootPath(connection) : undefined;
   }
 
-  refresh(element?: RemoteEditSidebarItem): void {
+  refresh(element?: RemoteEditSidebarItem, options: { forceRefresh?: boolean } = {}): void {
+    if (options.forceRefresh && element?.connectionId && element.remotePath) {
+      this.forceRefreshPaths.add(this.buildRefreshKey(element.connectionId, element.remotePath));
+    }
     this.onDidChangeTreeDataEmitter.fire(element);
   }
 
   dispose(): void {
     this.onDidChangeTreeDataEmitter.dispose();
+  }
+
+  private buildRefreshKey(connectionId: string, remotePath: string): string {
+    return `${connectionId}:${normalizeRemotePath(remotePath)}`;
   }
 
   private getRootPath(connection: { id: string; startPath?: string }): string {
@@ -369,13 +379,24 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   private async getRemoteDirectoryItems(connectionId: string, remotePath: string, includeGoParent: boolean): Promise<RemoteEditSidebarItem[]> {
     const requestSequence = this.nextDirectoryListSequence(connectionId);
     const releaseListSlot = await this.reserveDirectoryListSlot(connectionId);
+    const totalTimer = createPerformanceTimer();
+    let listMs = 0;
+    let favoriteMs = 0;
+    let buildItemsMs = 0;
+    let entriesCount = 0;
+    let forceRefresh = false;
 
     try {
       if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
         return [];
       }
 
-      const entries = await this.sessions.listDirectory(connectionId, remotePath);
+      const forceRefreshKey = this.buildRefreshKey(connectionId, remotePath);
+      forceRefresh = this.forceRefreshPaths.delete(forceRefreshKey);
+      const listTimer = createPerformanceTimer();
+      const entries = await this.sessions.listDirectory(connectionId, remotePath, { forceRefresh });
+      listMs = listTimer();
+      entriesCount = entries.length;
 
       if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
         return [];
@@ -383,12 +404,15 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
 
       const connection = this.sessions.getConnection(connectionId);
       const startPath = connection?.startPath || '/';
+      const favoriteTimer = createPerformanceTimer();
       const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+      favoriteMs = favoriteTimer();
 
       if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
         return [];
       }
 
+      const buildItemsTimer = createPerformanceTimer();
       const items = sortRemoteEntries(entries).map(entry =>
         RemoteEditSidebarItem.fromRemoteEntry(connectionId, entry, startPath, {
           isFavorite: isFavoriteRemotePath(entry.path || entry.name || '/', favoriteRemotePaths),
@@ -400,6 +424,17 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       if (includeGoParent && normalizedRemotePath !== '/') {
         items.unshift(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
       }
+      buildItemsMs = buildItemsTimer();
+
+      appendPerformanceLog(this.output, 'Sidebar', `getRemoteDirectoryItems ${normalizedRemotePath}`, {
+        items: items.length,
+        entries: entriesCount,
+        forceRefresh,
+        list: `${listMs}ms`,
+        favorites: `${favoriteMs}ms`,
+        buildItems: `${buildItemsMs}ms`,
+        total: `${totalTimer()}ms`
+      });
 
       if (items.length === 0) {
         return [
@@ -418,6 +453,15 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
         return [];
       }
+
+      appendPerformanceLog(this.output, 'Sidebar', `getRemoteDirectoryItems failed ${normalizeRemotePath(remotePath)}`, {
+        entries: entriesCount,
+        forceRefresh,
+        list: `${listMs}ms`,
+        favorites: `${favoriteMs}ms`,
+        buildItems: `${buildItemsMs}ms`,
+        total: `${totalTimer()}ms`
+      });
 
       const message = error instanceof Error ? error.message : String(error);
 

@@ -2607,7 +2607,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   contextRefresh.addEventListener('click', () => {
     hideContextMenu();
-    listDirectory(currentPath.value || '/');
+    listDirectory(currentPath.value || '/', { forceRefresh: true });
   });
 
   contextRunRemoteCommand.addEventListener('click', () => {
@@ -5807,7 +5807,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       openPath(path);
       return;
     }
-    listDirectory(path);
+    listDirectory(path, { forceRefresh: true });
   }
 
   function updatePathFavoriteControls() {
@@ -6103,10 +6103,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateFtpsCertificateFields();
   }
 
-  function listDirectory(path) {
+  function listDirectory(path, options = {}) {
     if (!activeConnectionId || busy) return;
     setBusy(true, 'Loading ' + path + '...');
-    vscode.postMessage({ type: 'listDirectory', payload: { path } });
+    vscode.postMessage({ type: 'listDirectory', payload: { path, forceRefresh: Boolean(options.forceRefresh) } });
   }
 
   function openPath(path) {
@@ -6281,11 +6281,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function renderEntries(entries) {
+    const renderStart = performance.now();
     entriesBody.innerHTML = '';
 
     if (!entries.length) {
       const message = filterText ? 'No items match the current filter.' : 'This folder is empty.';
       entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">' + message + '</div></td></tr>';
+      postRenderPerformance(entries.length, performance.now() - renderStart);
       return;
     }
 
@@ -6341,6 +6343,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
       entriesBody.appendChild(row);
     }
+
+    postRenderPerformance(entries.length, performance.now() - renderStart);
+  }
+
+  function postRenderPerformance(itemCount, renderMs) {
+    vscode.postMessage({
+      type: 'performanceLog',
+      payload: {
+        message: 'renderEntries',
+        items: itemCount,
+        renderMs: renderMs
+      }
+    });
   }
 
   function selectEntry(entryPath) {

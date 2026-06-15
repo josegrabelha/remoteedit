@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, and save remote files over SSH/SFTP, FTP, and FTPS directly from VS Code.",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -505,8 +505,8 @@
           },
           "remoteedit.ftp.enableModifiedDateFallback": {
             "type": "boolean",
-            "default": true,
-            "description": "Enable FTP/FTPS MDTM fallback to detect modified dates for items missing timestamps. Disable this if directory browsing becomes slow on some FTP/FTPS servers.",
+            "default": false,
+            "description": "Enable FTP/FTPS MDTM fallback to detect modified dates for items missing timestamps. Disabled by default to avoid slowing directory browsing on some FTP/FTPS servers.",
             "order": 20
           }
         }

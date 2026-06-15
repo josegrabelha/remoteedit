@@ -497,7 +497,7 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   private isModifiedDateFallbackEnabled(): boolean {
-    return getBooleanSetting('ftp.enableModifiedDateFallback', true);
+    return getBooleanSetting('ftp.enableModifiedDateFallback', false);
   }
 
   private createDisabledModifiedTimeHydrationSummary(): ModifiedTimeHydrationSummary {

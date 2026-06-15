@@ -1,4 +1,10 @@
 # Changelog
+## [1.7.3] - 2026-06-15
+
+### Changed
+
+* Disabled FTP/FTPS MDTM modified date fallback by default to avoid slowing directory browsing on servers with inconsistent MDTM support.
+
 ## [1.7.2] - 2026-06-15
 
 ### Fixed

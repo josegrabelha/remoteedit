@@ -2010,7 +2010,7 @@ ${result.stdout.toString('utf8')}`.trim();
     const password = this.sudoPasswords.get(connectionId);
 
     if (!password) {
-      throw new Error('Sudo mode is not enabled for this connection.');
+      throw new Error('Sudo Mode is not enabled for this connection.');
     }
 
     const client = this.getClient(connectionId);

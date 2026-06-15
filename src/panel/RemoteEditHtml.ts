@@ -19,21 +19,30 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .shell { width: 100%; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .session-strip { display: flex; gap: 6px; align-items: center; min-height: 30px; margin-top: 10px; overflow-x: auto; padding: 1px 0; flex: 0 0 auto; }
   .session-label { color: var(--vscode-descriptionForeground); font-size: 12px; margin-right: 2px; white-space: nowrap; }
-  .session-tabs { display: flex; gap: 6px; align-items: center; min-width: 0; }
-  .session-tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 28px; min-height: 28px; max-width: 220px; border: 1px solid var(--vscode-tab-border, var(--vscode-panel-border)); background: var(--vscode-tab-inactiveBackground, var(--vscode-sideBar-background)); color: var(--vscode-tab-inactiveForeground, var(--vscode-foreground)); border-radius: 999px; padding: 0 6px 0 10px; cursor: pointer; white-space: nowrap; line-height: 1; font-size: 12px; }
-  .session-tab:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
-  .session-tab.active { border-color: var(--vscode-panel-border); border-color: color-mix(in srgb, var(--vscode-focusBorder) 45%, var(--vscode-panel-border)); background: var(--vscode-tab-activeBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-tab-activeForeground, var(--vscode-list-activeSelectionForeground)); }
-  .session-tab.active:hover:not(:disabled) { background: var(--vscode-tab-activeBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-tab-activeForeground, var(--vscode-list-activeSelectionForeground)); }
-  .session-name { display: block; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .session-close { width: 18px; min-width: 18px; height: 18px; min-height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 -2px 0 0; border-radius: 50%; background: transparent; color: inherit; opacity: 0.82; line-height: 18px; font-size: 14px; flex: 0 0 auto; }
+  .session-tabs { position: relative; display: flex; gap: 0; align-items: flex-end; min-width: 0; overflow-y: hidden; }
+  .session-tab { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 34px; min-height: 34px; max-width: 220px; border: 1px solid var(--vscode-panel-border); border-bottom: 0; background: var(--vscode-editor-background); color: var(--vscode-tab-inactiveForeground, var(--vscode-foreground)); border-radius: 0; padding: 0 8px 0 10px; cursor: pointer; white-space: nowrap; line-height: normal; font-size: 12px; }
+  .session-tab:hover:not(:disabled) { background: var(--vscode-tab-hoverBackground, var(--vscode-list-hoverBackground)); border-color: var(--vscode-panel-border); color: var(--vscode-foreground); }
+  .session-tab + .session-tab { margin-left: -1px; }
+  .session-tab.active { position: relative; z-index: 4; border: 1px solid var(--vscode-panel-border); border-bottom: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); color: var(--vscode-tab-activeForeground, var(--vscode-foreground)); box-shadow: none; }
+  .session-tab.active::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--vscode-tab-activeBorderTop, var(--vscode-focusBorder)); border-radius: 0; pointer-events: none; }
+  .session-tab.active:hover:not(:disabled) { background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-color: var(--vscode-panel-border); color: var(--vscode-tab-activeForeground, var(--vscode-foreground)); }
+  .session-tab.dragging { opacity: 0.58; }
+  .session-tab-drop-line { position: absolute; bottom: 0; width: 1px; height: 33px; background: var(--vscode-focusBorder); display: none; pointer-events: none; z-index: 12; transform: none; }
+  .session-icon { width: 16px; min-width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: inherit; opacity: 0.82; flex: 0 0 auto; font-size: 16px; line-height: 16px; }
+  .session-icon svg { width: 16px; height: 16px; display: block; fill: currentColor; }
+  .session-name { display: inline-flex; align-items: center; height: 100%; overflow: hidden; text-overflow: ellipsis; min-width: 0; line-height: 1; }
+  .session-close { position: relative; width: 20px; min-width: 20px; height: 20px; min-height: 20px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 -3px 0 0; border-radius: 3px; background: transparent; color: inherit; opacity: 0.72; line-height: 0; font-size: 0; font-weight: 400; transform: none; flex: 0 0 auto; }
+  .session-close::before, .session-close::after { content: ''; position: absolute; left: 50%; top: 50%; width: 11px; height: 1px; background: currentColor; transform-origin: center; }
+  .session-close::before { transform: translate(-50%, -50%) rotate(45deg); }
+  .session-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
   .session-close:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); opacity: 1; }
-  .session-empty { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 28px; }
+  .session-empty { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 34px; }
   .layout { position: relative; display: grid; grid-template-columns: var(--connection-panel-width, 320px) minmax(0, 1fr); gap: 16px; margin-top: 0; align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; }
   .layout.connection-collapsed { grid-template-columns: 0px minmax(0, 1fr); gap: 0; }
   .layout.connection-collapsed .connection-card { opacity: 0; transform: translateX(-12px); pointer-events: none; border-color: transparent; }
-  .connection-panel-handle { width: 20px; min-width: 20px; height: 48px; min-height: 48px; pointer-events: none; }
-  .connection-panel-handle .tooltip-anchor { display: block; width: 20px; height: 48px; pointer-events: auto; }
-  .connection-panel-handle .panel-toggle-button { width: 20px; min-width: 20px; height: 48px; min-height: 48px; padding: 0; background: var(--vscode-sideBar-background); color: var(--vscode-descriptionForeground); opacity: 0.68; box-shadow: 0 1px 3px rgb(0 0 0 / 14%); }
+  .connection-panel-handle { width: 20px; min-width: 20px; height: 40px; min-height: 40px; pointer-events: none; }
+  .connection-panel-handle .tooltip-anchor { display: flex; align-items: center; justify-content: center; width: 20px; height: 40px; line-height: 0; pointer-events: auto; }
+  .connection-panel-handle .panel-toggle-button { width: 20px; min-width: 20px; height: 40px; min-height: 40px; padding: 0; background: var(--vscode-sideBar-background); color: var(--vscode-descriptionForeground); opacity: 0.68; box-shadow: 0 1px 3px rgb(0 0 0 / 14%); }
   .connection-panel-handle .panel-toggle-button:hover:not(:disabled) { color: var(--vscode-foreground); opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .connection-panel-handle .panel-toggle-button svg { width: 14px; height: 14px; }
   .connection-rail { position: fixed; left: 0; top: var(--connection-rail-top, 150px); z-index: 50; opacity: 0; transform: translateX(-6px); }
@@ -41,7 +50,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .layout.connection-collapsed .connection-rail { opacity: 1; transform: translateX(0); }
   .layout.connection-collapsed .connection-rail .tooltip-anchor { pointer-events: auto; }
   .connection-rail .panel-toggle-button { border-left: 0; border-radius: 0 5px 5px 0; }
-  .connection-collapse-handle { position: absolute; right: 0; top: 8px; z-index: 30; }
+  .connection-collapse-handle { position: absolute; right: 0; top: 6px; z-index: 30; }
   .connection-collapse-handle .panel-toggle-button { border-right: 0; border-radius: 5px 0 0 5px; }
   @media (prefers-reduced-motion: no-preference) {
     .layout.connection-transition-ready { transition: grid-template-columns 150ms ease-out, gap 150ms ease-out; }
@@ -51,13 +60,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
   .browser-column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .browser-card { flex: 1 1 auto; }
-  .browser-open-section { display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); column-gap: 14px; align-items: center; min-height: 63px; padding: 13px 14px; background: var(--vscode-editor-background); }
+  .browser-open-section { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); column-gap: 14px; align-items: center; min-height: 52px; padding: 8px 14px; background: var(--vscode-editor-background); }
   .browser-open-text { min-width: 0; }
   .browser-open-section .card-subtitle { margin-top: 3px; }
   .browser-title-section { padding: 13px 14px; background: var(--vscode-editor-background); }
-  .open-connections-row { display: flex; align-items: center; min-width: 0; min-height: 32px; }
-  .browser-session-strip { margin-top: 0; min-height: 32px; padding-bottom: 0; flex: 1 1 auto; min-width: 0; justify-content: flex-start; }
-  .browser-section-divider { height: 1px; background: var(--vscode-panel-border); flex: 0 0 auto; }
+  .open-connections-row { display: flex; align-items: stretch; align-self: stretch; min-width: 0; min-height: 0; margin-bottom: -8px; }
+  .browser-session-strip { margin-top: 0; min-height: 0; height: 100%; padding: 0; flex: 1 1 auto; min-width: 0; justify-content: flex-start; align-items: flex-end; border-bottom: 0; overflow-y: hidden; }
+  .browser-session-strip .session-tabs { align-items: flex-end; height: 100%; overflow-x: auto; overflow-y: hidden; gap: 0; }
+  .browser-session-strip .session-tabs.empty { align-items: center; overflow-x: hidden; }
+  .browser-session-strip .session-tabs.empty .session-empty { display: inline-flex; align-items: center; height: 100%; line-height: normal; }
+  .browser-section-divider { position: relative; z-index: 1; height: 1px; background: linear-gradient(to right, var(--vscode-panel-border) 0, var(--vscode-panel-border) var(--active-tab-left, 0px), transparent var(--active-tab-left, 0px), transparent calc(var(--active-tab-left, 0px) + var(--active-tab-width, 0px)), var(--vscode-panel-border) calc(var(--active-tab-left, 0px) + var(--active-tab-width, 0px)), var(--vscode-panel-border) 100%); flex: 0 0 auto; }
   .card { border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .connection-card { position: relative; opacity: 1; transform: translateX(0); }
   .connection-resize-handle { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; z-index: 20; cursor: col-resize; background: transparent; }
@@ -72,9 +84,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     body.resizing-connection-panel .layout.connection-transition-ready.connection-collapse-animating .connection-panel-handle { transition: opacity 150ms ease-out, transform 150ms ease-out; }
   }
   .card-header { padding: 13px 14px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
-  .connection-card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; min-height: 63px; padding-right: 36px; }
+  .card-header.connection-card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; min-height: 52px; padding: 8px 36px 8px 14px; }
   .connection-card-title-text { min-width: 0; }
   .panel-toggle-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 4px; border-radius: 3px; flex: 0 0 auto; }
+  .connection-card-header .panel-toggle-button { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 3px; }
   .panel-toggle-button svg { width: 16px; height: 16px; }
   .browser-open-text-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .card-title { font-weight: 650; margin: 0; }
@@ -102,7 +115,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .input-icon-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .input-icon-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
   .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-  .connection-actions { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: center; width: 100%; min-width: 0; margin-top: 0; }
+  .connection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: center; width: 100%; min-width: 0; margin-top: 0; }
+  .connection-actions .connection-action-full { grid-column: 1 / -1; }
   .connection-actions button { width: 100%; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
   button { min-height: 31px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 6px 12px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
   button.icon-only { min-width: 32px; width: 32px; height: 32px; min-height: 32px; padding: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
@@ -132,10 +146,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .profile-dropdown-chevron { width: 15px; height: 15px; display: block; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.78; transition: transform 120ms ease; }
   .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
   .profile-dropdown-menu { position: absolute; z-index: 130; top: calc(100% + 4px); left: 0; right: 0; display: none; width: 100%; max-width: 100%; box-sizing: border-box; max-height: 300px; overflow-y: auto; overflow-x: hidden; padding: 5px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+  .connection-profile-dropdown-menu { max-height: 340px; overflow: hidden; }
   .profile-dropdown-filter { padding: 2px 2px 5px; position: sticky; top: -5px; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
+  .connection-profile-dropdown-menu .profile-dropdown-filter { position: static; flex: 0 0 auto; }
   .profile-dropdown-filter input { width: 100%; height: 28px; box-sizing: border-box; padding: 4px 7px; }
+  .profile-dropdown-pinned { flex: 0 0 auto; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
+  .profile-dropdown-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   .profile-dropdown-empty { color: var(--vscode-descriptionForeground); padding: 10px 7px; font-size: 12px; }
   .profile-picker.open .profile-dropdown-menu, .auth-picker.open .profile-dropdown-menu, .connection-type-picker.open .profile-dropdown-menu { display: block; }
+  .profile-picker.open .connection-profile-dropdown-menu { display: flex; flex-direction: column; }
   .auth-select-native, .connection-type-select-native { display: none; }
   .auth-picker, .connection-type-picker { position: relative; min-width: 0; }
   .auth-method-block.hidden { display: none; }
@@ -326,7 +345,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .manage-profiles-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .manage-profiles-filter { flex: 0 0 auto; margin-bottom: 10px; }
   .manage-profiles-filter input { width: 100%; box-sizing: border-box; }
-  .manage-profiles-list { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 6px; overflow: auto; padding-right: 0; }
+  .manage-profiles-list { position: relative; flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 6px; overflow: auto; padding: 3px 0; }
+  .manage-profiles-drop-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--vscode-focusBorder); pointer-events: none; z-index: 8; display: none; }
   .manage-profiles-empty { color: var(--vscode-descriptionForeground); padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .manage-profiles-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
   .manage-profiles-header-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
@@ -370,7 +390,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .backup-mode-help { margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; opacity: 0.78; }
   .backup-validation { min-height: 16px; color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground)); font-size: 12px; line-height: 1.35; }
   @media (max-width: 560px) { .manage-profiles-header-row { flex-direction: column; } .backup-credential-fields { grid-template-columns: 1fr; } .backup-summary-line { white-space: normal; } }
-  .manage-profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .manage-profile-row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .manage-profile-row.can-reorder { cursor: grab; }
+  .manage-profile-row.dragging { opacity: 0.55; cursor: grabbing; }
+  .manage-profile-row.drag-over-before,
+  .manage-profile-row.drag-over-after { border-color: var(--vscode-panel-border); box-shadow: none; }
+  .manage-profile-drag-handle { width: 18px; min-width: 18px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: var(--vscode-descriptionForeground); opacity: 0.62; cursor: grab; line-height: 0; }
+  .manage-profile-row.can-reorder:hover .manage-profile-drag-handle { opacity: 0.95; }
+  .manage-profile-row.dragging .manage-profile-drag-handle { cursor: grabbing; }
+  .manage-profile-drag-handle.disabled { opacity: 0.25; cursor: default; }
+  .manage-profile-drag-handle svg { width: 16px; height: 16px; display: block; fill: currentColor; }
   .manage-profile-main { min-width: 0; }
   .manage-profile-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .manage-profile-meta { color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.72; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -396,24 +425,36 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   .remote-command-backdrop { position: fixed; inset: 0; z-index: 230; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .remote-command-backdrop.visible { display: flex; }
-  .remote-command-dialog { width: min(860px, calc(100vw - 48px)); height: min(660px, calc(100vh - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
+  .remote-command-dialog { width: min(1180px, calc(100vw - 48px)); height: min(720px, calc(100vh - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
   .remote-command-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   .remote-command-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
   .remote-command-subtitle { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; }
-  .remote-command-body { flex: 1 1 auto; min-height: 0; padding: 12px 18px 16px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; overflow: hidden; }
-  .remote-command-field-grid { display: grid; gap: 14px; }
+  .remote-command-body { flex: 1 1 auto; min-height: 0; padding: 12px 18px 16px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; overflow: hidden; }
+  .remote-command-main { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; overflow: hidden; }
+  .remote-command-field-grid { display: grid; gap: 12px; }
   .remote-command-meta-block { display: grid; gap: 1px; }
   .remote-command-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; align-items: baseline; font-size: 11px; line-height: 1.22; min-width: 0; }
   .remote-command-meta-label { color: var(--vscode-descriptionForeground); font-weight: 500; white-space: nowrap; }
-  .remote-command-connected-to, .remote-command-working-directory { min-width: 0; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-command-connected-to { min-width: 0; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .remote-command-run-as { min-width: 0; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .remote-command-run-as.sudo { color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground)); }
-  .remote-command-field label { margin-bottom: 5px; font-size: 12px; font-weight: 650; color: var(--vscode-descriptionForeground); }
+  .remote-command-field { display: grid; gap: 5px; min-width: 0; }
+  .remote-command-field label, .remote-command-section-title { margin: 0; font-size: 12px; font-weight: 650; color: var(--vscode-descriptionForeground); }
   .remote-command-input-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
-  .remote-command-input-row textarea { width: 100%; min-height: 54px; max-height: 96px; box-sizing: border-box; resize: vertical; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 5px 8px; outline: none; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-font-size); line-height: 1.4; }
-  .remote-command-input-row textarea:focus { border-color: var(--vscode-focusBorder); }
-  .remote-command-input-row textarea:disabled { opacity: 0.68; }
-  .remote-command-run-row { display: flex; justify-content: flex-end; }
+  .remote-command-input-row textarea { width: 100%; min-height: 82px; max-height: 150px; box-sizing: border-box; resize: vertical; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 5px 8px; outline: none; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-font-size); line-height: 1.4; }
+  .remote-command-input-row textarea:focus, .remote-command-working-directory-row input:focus { border-color: var(--vscode-focusBorder); }
+  .remote-command-input-row textarea:disabled, .remote-command-working-directory-row input:disabled { opacity: 0.68; }
+  .remote-command-working-directory-wrap { position: relative; z-index: 6; display: grid; gap: 5px; }
+  .remote-command-working-directory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .remote-command-working-directory-row.input-with-button { display: flex; gap: 0; align-items: center; }
+  .remote-command-working-directory-row.input-with-button input { padding-right: 34px; }
+  .remote-command-working-directory-row input { width: 100%; box-sizing: border-box; height: 28px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 4px 8px; outline: none; font-family: var(--vscode-editor-font-family); }
+  .remote-command-sudo-row { display: flex; align-items: center; gap: 8px; min-height: 24px; color: var(--vscode-foreground); font-size: 12px; user-select: none; }
+  .remote-command-command-field + .remote-command-sudo-row { margin-top: -9px; }
+  .remote-command-sudo-row.hidden { display: none; }
+  .remote-command-sudo-note { color: var(--vscode-descriptionForeground); font-size: 11px; opacity: 0.8; }
+  .remote-command-sudo-row + .remote-command-run-row { margin-top: -5px; }
+  .remote-command-run-row { display: flex; justify-content: flex-end; margin-bottom: -3px; }
   .remote-command-run-row button { min-width: var(--remote-command-close-button-width, auto); }
   .remote-command-helper { color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.78; }
   .remote-command-output-section { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -426,41 +467,137 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .remote-command-output { min-height: 100%; margin: 0; padding: 10px 12px; color: var(--vscode-editor-foreground, var(--vscode-foreground)); font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
   .remote-command-output-command { color: var(--vscode-terminal-ansiGreen, #89d185); }
   .remote-command-output-system { color: var(--vscode-descriptionForeground); opacity: 0.82; }
+  .remote-command-side { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; overflow: hidden; }
+  .remote-command-side-section { min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); overflow: hidden; }
+  .remote-command-side-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .remote-command-side-title { margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.03em; }
+  .remote-command-side-list { min-height: 0; overflow: auto; padding: 3px; display: grid; align-content: start; gap: 2px; }
+  .remote-command-empty { color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; padding: 4px 2px; opacity: 0.82; }
+  .remote-command-card { display: grid; gap: 0; padding: 2px 4px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-editor-background); cursor: pointer; }
+  .remote-command-card:hover { background: var(--vscode-list-hoverBackground); }
+  .remote-command-card-main { min-width: 0; display: grid; gap: 1px; }
+  .remote-command-card-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 2px; align-items: center; }
+  .remote-command-card-header-compact { grid-template-columns: minmax(0, 1fr) auto; }
+  .remote-command-card-name { min-width: 0; font-size: 10.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-command-card-details, .remote-command-card-meta { color: var(--vscode-descriptionForeground); font-size: 9.5px; line-height: 1.1; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-command-card-command { color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 9.5px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .remote-command-icon-button { width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; }
+  .remote-command-compact-button, .remote-command-edit-actions button { min-height: 21px; height: 21px; padding: 0 7px; font-size: 10.5px; line-height: 1; }
+  .remote-command-delete-confirm { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); font-size: 10.5px; line-height: 1.2; cursor: default; }
+  .remote-command-delete-confirm-actions { display: inline-flex; gap: 4px; flex: 0 0 auto; }
+  .remote-command-delete-confirm-actions button { min-width: auto; height: 19px; min-height: 19px; padding: 0 6px; font-size: 10.5px; }
+  .remote-command-edit-form { display: grid; gap: 3px; padding: 4px; border: 1px solid var(--vscode-focusBorder, var(--vscode-panel-border)); border-radius: 4px; background: var(--vscode-editor-background); }
+  .remote-command-edit-form label { display: grid; gap: 2px; color: var(--vscode-descriptionForeground); font-size: 10.5px; font-weight: 650; }
+  .remote-command-edit-form input, .remote-command-edit-form textarea { width: 100%; box-sizing: border-box; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 2px 5px; outline: none; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .remote-command-edit-form input { height: 24px; }
+  .remote-command-edit-form textarea { min-height: 42px; resize: vertical; }
+  .remote-command-edit-actions { display: flex; justify-content: flex-end; gap: 4px; }
   .remote-command-close-warning, .remote-command-stop-warning { display: none; align-items: center; justify-content: space-between; gap: 12px; margin: 0 18px 12px; padding: 10px 12px; border: 1px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border)); border-radius: 6px; background: var(--vscode-inputValidation-warningBackground, var(--vscode-editor-background)); color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground)); }
   .remote-command-close-warning.visible, .remote-command-stop-warning.visible { display: flex; }
   .remote-command-close-warning-text { min-width: 0; font-size: 12px; line-height: 1.35; }
   .remote-command-close-warning-actions, .remote-command-stop-warning-actions { display: inline-flex; gap: 8px; flex: 0 0 auto; }
   .remote-command-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+  @media (max-width: 920px) { .remote-command-body { grid-template-columns: 1fr; overflow: auto; } .remote-command-side { grid-template-rows: auto auto; overflow: visible; } .remote-command-side-section { max-height: 240px; } }
+
+  .remote-search-backdrop { z-index: 235; }
+  .remote-search-dialog { width: min(940px, calc(100vw - 48px)); height: min(720px, calc(100vh - 48px)); max-height: calc(100vh - 48px); min-width: 0; }
+  .remote-search-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: stretch; gap: 10px; overflow: hidden; }
+  .remote-search-dialog .file-properties-path { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; }
+  .remote-search-section { display: grid; gap: 10px; min-width: 0; }
+  .remote-search-scope-wrap { position: relative; z-index: 5; }
+  .remote-search-scope-row.input-with-button { display: flex; gap: 0; align-items: center; }
+  .remote-search-scope-row.input-with-button input { padding-right: 34px; }
+  .remote-search-field { min-width: 0; }
+  .remote-search-field label { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 650; color: var(--vscode-descriptionForeground); }
+  .remote-search-field input[type='text'] { width: 100%; box-sizing: border-box; }
+  .remote-search-field input[type='text'].remote-search-input-invalid { border-color: var(--remoteedit-validation-error); }
+  .remote-search-field input[type='text'].remote-search-input-invalid:focus, .remote-search-field input[type='text'].remote-search-input-invalid:focus-visible { border-color: var(--remoteedit-validation-error); outline: none; box-shadow: none; }
+  .remote-search-scope-row input:focus { border-color: var(--vscode-focusBorder); }
+  .remote-search-validation-line { height: 16px; line-height: 16px; color: var(--remoteedit-validation-error); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; visibility: hidden; }
+  .remote-search-options-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 14px; }
+  .remote-search-options-grid .modal-checkbox-line { min-width: 0; }
+  .remote-search-options-grid .modal-checkbox-line span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .remote-search-ssh-only.hidden, .remote-search-text-field.hidden { display: none; }
+  .remote-search-scope-picker.hidden { display: none; }
+  .remote-search-scope-picker { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-input-background, var(--vscode-sideBar-background)); overflow: hidden; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28); font-size: 11px; }
+  .remote-search-scope-picker-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background, var(--vscode-input-background)); }
+  .remote-search-scope-picker-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 11px; }
+  .remote-search-scope-picker-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+  .remote-search-scope-picker-actions button { min-height: 24px; padding: 3px 8px; font-size: 11px; }
+  .remote-search-scope-picker-list { max-height: 180px; overflow: auto; padding: 3px 0; }
+  .remote-search-scope-picker-empty { padding: 8px 10px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+  .remote-search-scope-picker-empty.error { color: var(--remoteedit-validation-error); }
+  .remote-search-scope-picker-item { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 24px; border: 0; background: transparent; color: var(--vscode-foreground); text-align: left; padding: 3px 9px; cursor: pointer; font: inherit; font-size: 11px; }
+  .remote-search-scope-picker-item:hover { background: var(--vscode-list-hoverBackground); }
+  .remote-search-scope-picker-item-path { margin-left: auto; min-width: 0; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); }
+  .remote-search-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+  .remote-search-actions button { width: 72px; min-width: 72px; padding-left: 8px; padding-right: 8px; }
+  .remote-search-results-section { min-height: 0; min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .remote-search-results-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; max-width: 100%; color: var(--vscode-descriptionForeground); font-size: 12px; font-weight: 650; }
+  .remote-search-results-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-search-results-status.error { color: var(--remoteedit-validation-error); }
+  .remote-search-results { flex: 1 1 auto; min-height: 0; min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); overflow: auto; padding: 6px 0; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); user-select: none; -webkit-user-select: none; }
+  .remote-search-show-more { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 8px 12px 4px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); font-size: 12px; border-top: 1px solid var(--vscode-panel-border); }
+  .remote-search-show-more span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .remote-search-show-more button { min-width: 88px; min-height: 26px; padding: 3px 10px; }
+  .remote-search-empty { padding: 14px 12px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); font-size: 12px; }
+  .remote-search-result-row { min-width: 0; max-width: 100%; box-sizing: border-box; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .remote-search-result-row:hover { background: var(--vscode-list-hoverBackground); }
+  .remote-search-result-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  .remote-search-result-row.selected:hover { background: var(--vscode-list-activeSelectionBackground); }
+  .remote-search-file-result { padding: 4px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .remote-search-result-group { min-width: 0; max-width: 100%; overflow: hidden; box-sizing: border-box; padding: 5px 0 7px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .remote-search-result-group:last-child { border-bottom: none; }
+  .remote-search-result-path { padding: 2px 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .remote-search-match-count { color: var(--vscode-descriptionForeground); font-weight: 400; }
+  .remote-search-match { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 1px 12px; font-size: 11px; line-height: 1.45; color: var(--vscode-descriptionForeground); }
+  .remote-search-result-row.selected .remote-search-match-count,
+  .remote-search-result-row.selected .remote-search-line-number,
+  .remote-search-result-row.selected .remote-search-line-text { color: inherit; opacity: 0.78; }
+  .remote-search-line-number { color: var(--vscode-descriptionForeground); text-align: right; }
+  .remote-search-line-text { min-width: 0; color: var(--vscode-descriptionForeground); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .remote-search-hit { background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 214, 10, 0.22)); color: var(--vscode-descriptionForeground); border-radius: 3px; padding: 0 2px; }
+  .remote-search-ellipsis { color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground)); }
+  .remote-search-badge { position: absolute; right: -4px; top: -4px; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box; border-radius: 8px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-size: 9px; line-height: 14px; text-align: center; display: none; }
+  .remote-search-context-menu { z-index: 270; }
+  .text-edit-context-menu { z-index: 290; width: 158px; }
+  .remote-search-button-wrap { position: relative; display: inline-flex; }
+  @media (max-width: 760px) { .remote-search-options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
   .transfer-queue-backdrop { position: fixed; inset: 0; z-index: 220; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .transfer-queue-backdrop.visible { display: flex; }
-  .transfer-queue-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
-  @media (min-height: 900px) { .transfer-queue-dialog { max-height: 720px; } }
+  .transfer-queue-dialog { width: min(940px, calc(100vw - 48px)); height: min(720px, calc(100vh - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
   .transfer-queue-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   .transfer-queue-title { margin: 0; font-size: 17px; font-weight: 650; }
   .transfer-queue-close { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; background: transparent; color: inherit; border: 0; font-size: 18px; line-height: 28px; }
   .transfer-queue-close:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
-  .transfer-queue-body { flex: 1 1 auto; min-height: 0; max-height: calc(100vh - 154px); overflow-x: hidden; overflow-y: scroll; padding: 14px 16px 16px; display: grid; gap: 14px; scrollbar-gutter: stable; }
-  @media (min-height: 900px) { .transfer-queue-body { max-height: 566px; } }
-  .transfer-queue-section { border: 1px solid var(--vscode-panel-border); border-radius: 7px; overflow: hidden; background: var(--vscode-editor-background); }
-  .transfer-queue-section-title { margin: 0; padding: 9px 11px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); font-weight: 600; }
-  .transfer-queue-items { display: grid; gap: 0; }
-  .transfer-queue-empty { padding: 18px 12px; color: var(--vscode-descriptionForeground); text-align: center; }
-  .transfer-queue-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .transfer-queue-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 14px; display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 10px; align-content: stretch; }
+  .transfer-queue-section { min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--vscode-panel-border); border-radius: 7px; overflow: hidden; background: var(--vscode-editor-background); }
+  .transfer-queue-section-title { flex: 0 0 auto; margin: 0; padding: 5px 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); font-size: 11px; font-weight: 600; }
+  .transfer-queue-items { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
+  .transfer-queue-section-scroll .transfer-queue-items { overflow-y: auto; }
+  .transfer-queue-empty { padding: 8px 8px; color: var(--vscode-descriptionForeground); text-align: center; font-size: 11px; }
+  .transfer-queue-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--vscode-panel-border); font-size: 11.5px; }
   .transfer-queue-item:last-child { border-bottom: 0; }
-  .transfer-queue-item-main { display: grid; gap: 4px; min-width: 0; }
-  .transfer-queue-item-title { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 600; }
-  .transfer-queue-icon { width: 18px; min-width: 18px; text-align: center; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+  .transfer-queue-item-main { display: grid; gap: 1px; min-width: 0; }
+  .transfer-queue-item-title { display: flex; align-items: center; gap: 4px; min-width: 0; font-weight: 600; font-size: 11.5px; }
+  .transfer-queue-icon { width: 13px; min-width: 13px; text-align: center; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
   .transfer-queue-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .transfer-queue-detail, .transfer-queue-status, .transfer-queue-progress { color: var(--vscode-descriptionForeground); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .transfer-queue-failed-items { margin-top: 6px; padding: 7px 9px; display: grid; gap: 4px; min-width: 0; border: 1px solid var(--vscode-panel-border); border-left: 2px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border)); border-radius: 6px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; }
+  .transfer-queue-detail, .transfer-queue-status, .transfer-queue-progress { color: var(--vscode-descriptionForeground); font-size: 10.5px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-queue-failed-items { margin-top: 3px; padding: 4px 6px; display: grid; gap: 1px; min-width: 0; border: 1px solid var(--vscode-panel-border); border-left: 2px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); color: var(--vscode-descriptionForeground); font-size: 10px; line-height: 1.2; }
   .transfer-queue-failed-title { color: var(--vscode-descriptionForeground); font-weight: 500; opacity: 0.92; }
   .transfer-queue-failed-item { display: grid; gap: 1px; min-width: 0; padding: 1px 0; }
   .transfer-queue-failed-path { color: var(--vscode-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .transfer-queue-failed-error { color: var(--vscode-descriptionForeground); opacity: 0.82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }
+  .transfer-queue-failed-error { color: var(--vscode-descriptionForeground); opacity: 0.82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 8px; }
   .transfer-queue-failed-more { color: var(--vscode-descriptionForeground); opacity: 0.78; }
-  .transfer-queue-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
-  .transfer-queue-actions button { min-height: 27px; padding: 4px 9px; }
+  .transfer-queue-canceled-items { margin-top: 3px; padding: 4px 6px; display: grid; gap: 1px; min-width: 0; border: 1px solid var(--vscode-panel-border); border-left: 2px solid var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); color: var(--vscode-descriptionForeground); font-size: 10px; line-height: 1.2; }
+  .transfer-queue-canceled-title { color: var(--vscode-descriptionForeground); font-weight: 500; opacity: 0.92; }
+  .transfer-queue-canceled-item { display: grid; gap: 1px; min-width: 0; padding: 1px 0; }
+  .transfer-queue-canceled-path { color: var(--vscode-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-queue-canceled-error { color: var(--vscode-descriptionForeground); opacity: 0.82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 8px; }
+  .transfer-queue-canceled-more { color: var(--vscode-descriptionForeground); opacity: 0.78; }
+  .transfer-queue-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .transfer-queue-actions button { min-height: 21px; padding: 1px 6px; font-size: 10.5px; }
   .transfer-queue-footer { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
 
   .confirm-dialog-backdrop { position: fixed; inset: 0; z-index: 240; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
@@ -548,7 +685,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   code { font-family: var(--vscode-editor-font-family); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout, .layout.connection-collapsed { grid-template-columns: 1fr; flex: 0 0 auto; } .connection-resize-handle { display: none; } .connection-rail { left: 0; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .remote-path-resize-handle { display: none; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .filter-sudo-separator { display: none; } .sudo-toggle { justify-self: flex-start; } .browser-header { align-items: flex-start; flex-direction: column; } }
-  @media (max-height: 720px) and (min-width: 981px) { .hint-list { display: none; } .card-header, .card-body, .browser-open-section, .browser-title-section { padding: 11px 12px; } }
+  @media (max-height: 720px) and (min-width: 981px) { .hint-list { display: none; } .card-header, .card-body, .browser-title-section { padding: 11px 12px; } .card-header.connection-card-header { padding: 8px 36px 8px 14px; } .browser-open-section { padding: 8px 14px; } }
   @media (max-width: 760px) { .open-connections-row { align-items: flex-start; flex-direction: column; gap: 6px; } .browser-session-strip { width: 100%; } }
   </style>
 </head>
@@ -578,12 +715,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <label for="profileDropdownButton">Connection profile</label>
               <div class="profile-picker">
                 <button id="profileDropdownButton" type="button" class="profile-dropdown-button" aria-haspopup="listbox" aria-expanded="false">
-                  <span id="profileDropdownLabel" class="profile-dropdown-label">New unsaved connection</span>
+                  <span id="profileDropdownLabel" class="profile-dropdown-label">New / Quick Connection</span>
                   <svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg>
                 </button>
-                <div id="profileDropdownMenu" class="profile-dropdown-menu" role="listbox" aria-label="Connection Profiles"></div>
+                <div id="profileDropdownMenu" class="profile-dropdown-menu connection-profile-dropdown-menu" role="listbox" aria-label="Connection Profiles"></div>
               </div>
-              <select id="profileSelect" class="profile-select-native" aria-hidden="true" tabindex="-1"><option value="">New unsaved connection</option></select>
+              <select id="profileSelect" class="profile-select-native" aria-hidden="true" tabindex="-1"><option value="">New / Quick Connection</option></select>
               <input id="profileName" type="hidden" autocomplete="off" />
             </div>
             <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Manage Saved Connections" data-tooltip="Manage Saved Connections">
@@ -699,8 +836,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           <div class="connection-panel-divider" aria-hidden="true"></div>
           <div class="connection-actions-section">
             <div class="button-row connection-actions">
-              <button id="connectButton">Connect</button>
-              <button id="saveProfileButton" class="secondary">Save</button>
+              <button id="connectButton" class="connection-action-full">Connect</button>
+              <button id="saveProfileButton" class="secondary connection-action-full">Save</button>
+              <button id="showSettingsButton" class="secondary">Settings</button>
               <button id="showOutputButton" class="secondary">Output</button>
             </div>
           </div>
@@ -726,7 +864,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </div>
             <div class="open-connections-row">
               <div class="session-strip browser-session-strip">
-                <div id="sessionTabs" class="session-tabs"><span class="session-empty">No active connections.</span></div>
+                <div id="sessionTabs" class="session-tabs"></div>
               </div>
             </div>
           </div>
@@ -767,20 +905,26 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </div>
             <span id="commandActionsSeparator" class="toolbar-separator filter-sudo-separator" aria-hidden="true"></span>
             <div id="commandActions" class="path-actions command-actions">
-              <span class="tooltip-anchor" data-tooltip="Run Remote Command">
-                <button id="runRemoteCommandButton" class="secondary icon-only" type="button" aria-label="Run Remote Command" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.5 13.8845 9.6923 9.6923 5.5 5.5l-.7078.7078 3.4848 3.4845-3.4848 3.4845L5.5 13.8845ZM12 18v-1h8v1h-8Z" /></svg></button>
+              <span class="tooltip-anchor remote-search-button-wrap" data-tooltip="Remote Search">
+                <button id="remoteSearchButton" class="secondary icon-only" type="button" aria-label="Remote Search" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10.5 4a6.5 6.5 0 0 1 5.18 10.43l4.45 4.44-.71.71-4.44-4.45A6.5 6.5 0 1 1 10.5 4Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z" /></svg><span id="remoteSearchBadge" class="remote-search-badge" aria-hidden="true"></span></button>
               </span>
-              <span class="tooltip-anchor" data-tooltip="Open SSH Terminal">
+              <span id="runRemoteCommandAction" class="tooltip-anchor remote-search-button-wrap" data-tooltip="Run Remote Command">
+                <button id="runRemoteCommandButton" class="secondary icon-only" type="button" aria-label="Run Remote Command" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.5 13.8845 9.6923 9.6923 5.5 5.5l-.7078.7078 3.4848 3.4845-3.4848 3.4845L5.5 13.8845ZM12 18v-1h8v1h-8Z" /></svg><span id="remoteCommandBadge" class="remote-search-badge" aria-hidden="true"></span></button>
+              </span>
+              <span id="openSshTerminalAction" class="tooltip-anchor" data-tooltip="Open SSH Terminal">
                 <button id="openSshTerminalButton" class="secondary icon-only" type="button" aria-label="Open SSH Terminal" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 5.5C4 4.6716 4.6716 4 5.5 4h13c.8284 0 1.5.6716 1.5 1.5v13c0 .8284-.6716 1.5-1.5 1.5h-13C4.6716 20 4 19.3284 4 18.5v-13ZM5.5 5C5.2239 5 5 5.2239 5 5.5v13c0 .2761.2239.5.5.5h13c.2761 0 .5-.2239.5-.5v-13c0-.2761-.2239-.5-.5-.5h-13Zm2.8536 4.1464L11.2071 12l-2.8535 2.8536-.7072-.7072L9.7929 12 7.6464 9.8536l.7072-.7072ZM12 15h5v1h-5v-1Z" /></svg></button>
+              </span>
+              <span id="openLogViewerAction" class="tooltip-anchor remote-search-button-wrap" data-tooltip="Log Viewer">
+                <button id="openLogViewerButton" class="secondary icon-only" type="button" aria-label="Log Viewer" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 4h14v16H5V4Zm1 1v14h12V5H6Zm2 3h8v1H8V8Zm0 3h8v1H8v-1Zm0 3h5v1H8v-1Z" /></svg><span id="logViewerBadge" class="remote-search-badge" aria-hidden="true"></span></button>
               </span>
             </div>
             <span id="transferActionsSeparator" class="toolbar-separator filter-sudo-separator" aria-hidden="true"></span>
             <div class="path-actions transfer-actions">
-              <span class="tooltip-anchor" data-tooltip="Upload Files or Folders">
-                <button id="uploadButton" class="secondary icon-only" aria-label="Upload Files or Folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm200-160v-370L342-572l-28-28 166-166 166 166-28 28-118-118v370h-40Z" /></svg></button>
-              </span>
               <span class="tooltip-anchor" data-tooltip="Download Selected Files or Folders">
                 <button id="downloadButton" class="secondary icon-only" aria-label="Download Selected Files or Folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm220-146L314-472l28-28 118 118v-370h40v370l118-118 28 28-166 166Z" /></svg></button>
+              </span>
+              <span class="tooltip-anchor" data-tooltip="Upload Files or Folders">
+                <button id="uploadButton" class="secondary icon-only" aria-label="Upload Files or Folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm200-160v-370L342-572l-28-28 166-166 166 166-28 28-118-118v370h-40Z" /></svg></button>
               </span>
               <span id="transferQueueTooltip" class="tooltip-anchor" data-tooltip="Transfer Queue">
                 <button id="transferQueueButton" class="secondary icon-only transfer-queue-button" type="button" aria-label="Transfer Queue"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M340-596.38h40v359.3l83.54-83.54 28.77 28.31L360-160 227.69-292.31l28.77-28.31L340-237.08v-359.3ZM620-421h-40v-302.38l-84 84-28.31-28.31L600-800l132.31 132.31L704-639.38l-84-84V-421Z" /></svg><span id="transferQueueCount" class="transfer-queue-count" aria-hidden="true">0</span></button>
@@ -851,7 +995,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       <div class="file-properties-header manage-profiles-header-row">
         <div>
           <h2 id="manageProfilesTitle" class="file-properties-title">Manage Saved Connections</h2>
-          <div class="file-properties-path">Rename or remove saved connection profiles.</div>
+          <div class="file-properties-path">Rename, reorder, or remove saved connection profiles.</div>
         </div>
         <div class="manage-profiles-header-actions">
           <button id="manageProfilesImportButton" class="secondary" type="button">Import</button>
@@ -998,7 +1142,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           <h3 id="transferQueuePendingTitle" class="transfer-queue-section-title">Pending transfers</h3>
           <div id="transferQueuePending" class="transfer-queue-items"></div>
         </section>
-        <section class="transfer-queue-section" aria-labelledby="transferQueueCompletedTitle">
+        <section class="transfer-queue-section transfer-queue-section-scroll" aria-labelledby="transferQueueCompletedTitle">
           <h3 id="transferQueueCompletedTitle" class="transfer-queue-section-title">Completed transfers</h3>
           <div id="transferQueueCompleted" class="transfer-queue-items"></div>
         </section>
@@ -1007,6 +1151,90 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         <button id="transferQueueFooterCloseButton" class="secondary" type="button">Close</button>
       </div>
     </div>
+  </div>
+
+  <div id="remoteSearchBackdrop" class="file-properties-backdrop remote-search-backdrop" role="dialog" aria-modal="true" aria-labelledby="remoteSearchTitle" aria-hidden="true">
+    <section class="file-properties-dialog remote-search-dialog">
+      <div class="file-properties-header">
+        <h2 id="remoteSearchTitle" class="file-properties-title">Remote Search</h2>
+        <div class="file-properties-path">Search remote files by name. SSH/SFTP connections can also search inside files and use Sudo Mode.</div>
+      </div>
+      <div class="file-properties-body">
+        <section class="remote-search-section">
+          <div class="remote-command-meta-block">
+            <div class="remote-command-meta">
+              <span class="remote-command-meta-label">Connected to:</span>
+              <span id="remoteSearchConnectedTo" class="remote-command-connected-to">-</span>
+            </div>
+            <div class="remote-command-meta">
+              <span class="remote-command-meta-label">Run as:</span>
+              <span id="remoteSearchRunAs" class="remote-command-run-as">SSH user</span>
+            </div>
+          </div>
+          <div class="remote-search-scope-wrap">
+            <div class="remote-search-field remote-search-scope-field">
+              <label for="remoteSearchScopePath">Remote path</label>
+              <div class="input-with-button remote-search-scope-row">
+                <input id="remoteSearchScopePath" type="text" value="/" spellcheck="false" autocomplete="off" />
+                <button id="remoteSearchBrowseButton" class="input-icon-button has-tooltip" type="button" aria-label="Browse Remote Path" data-tooltip="Browse Remote Path">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.44c.4 0 .78.16 1.06.44L8.56 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4Zm1-.01v7.51c0 .28.22.5.5.5h10a.5.5 0 0 0 .5-.5v-6A.5.5 0 0 0 13 5H8.15L6.8 3.65a.5.5 0 0 0-.36-.15H3a.5.5 0 0 0-.5.49Z" /></svg>
+                </button>
+              </div>
+            </div>
+            <div id="remoteSearchScopePicker" class="remote-search-scope-picker hidden" aria-hidden="true">
+              <div class="remote-search-scope-picker-header">
+                <div id="remoteSearchScopePickerPath" class="remote-search-scope-picker-path">/</div>
+                <div class="remote-search-scope-picker-actions">
+                  <button id="remoteSearchScopeSelectButton" class="secondary" type="button">Select This Folder</button>
+                  <button id="remoteSearchScopeCancelButton" class="secondary" type="button">Cancel</button>
+                </div>
+              </div>
+              <div id="remoteSearchScopePickerList" class="remote-search-scope-picker-list"><div class="remote-search-scope-picker-empty">Loading...</div></div>
+            </div>
+          </div>
+          <div class="remote-search-options-grid">
+            <label class="modal-checkbox-line"><input id="remoteSearchSubdirectories" class="dialog-checkbox" type="checkbox" checked><span>Include subdirectories</span></label>
+            <label class="modal-checkbox-line"><input id="remoteSearchHiddenFiles" class="dialog-checkbox" type="checkbox"><span>Include hidden files</span></label>
+            <label class="modal-checkbox-line"><input id="remoteSearchCaseSensitive" class="dialog-checkbox" type="checkbox"><span>Case sensitive</span></label>
+            <label id="remoteSearchSudoRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchUseSudo" class="dialog-checkbox" type="checkbox"><span>Use Sudo Mode</span></label>
+          </div>
+          <div class="remote-search-field">
+            <label for="remoteSearchFileName">File name</label>
+            <input id="remoteSearchFileName" type="text" value="*" placeholder="*.conf" spellcheck="false" autocomplete="off" />
+            <div class="modal-helper-text">Use wildcards: *, ?, [abc]. Separate multiple patterns with commas.</div>
+          </div>
+          <label id="remoteSearchInsideRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchInsideFiles" class="dialog-checkbox" type="checkbox"><span>Search inside files</span></label>
+          <div id="remoteSearchTextField" class="remote-search-field remote-search-text-field hidden">
+            <label for="remoteSearchTextToFind">Text to Find</label>
+            <input id="remoteSearchTextToFind" type="text" spellcheck="false" autocomplete="off" />
+          </div>
+          <div id="remoteSearchValidation" class="remote-search-validation-line" role="alert" aria-live="polite"></div>
+        </section>
+        <section class="remote-search-results-section" aria-labelledby="remoteSearchResultsTitle">
+          <div class="remote-search-results-header">
+            <span id="remoteSearchResultsTitle">Results</span>
+            <span id="remoteSearchResultsStatus" class="remote-search-results-status">Idle</span>
+          </div>
+          <div id="remoteSearchResults" class="remote-search-results"><div class="remote-search-empty">No results.</div></div>
+        </section>
+      </div>
+      <div class="file-properties-actions remote-search-actions">
+        <button id="remoteSearchPrimaryButton" class="remote-search-primary-button" type="button">Search</button>
+        <button id="remoteSearchCopyButton" class="secondary" type="button">Copy</button>
+        <button id="remoteSearchClearButton" class="secondary" type="button">Clear</button>
+        <button id="remoteSearchCloseButton" class="secondary" type="button">Close</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="remoteSearchResultContextMenu" class="context-menu remote-search-context-menu" role="menu" aria-label="Search Result Actions">
+    <button id="remoteSearchContextOpen" type="button" role="menuitem">View/Edit</button>
+    <button id="remoteSearchContextOpenReadOnly" type="button" role="menuitem">View Read-Only</button>
+    <div id="remoteSearchContextFileSeparator" class="context-menu-separator" role="separator"></div>
+    <button id="remoteSearchContextCopyPath" type="button" role="menuitem">Copy Path</button>
+    <button id="remoteSearchContextCopyName" type="button" role="menuitem">Copy Filename</button>
+    <div id="remoteSearchContextResultsSeparator" class="context-menu-separator" role="separator"></div>
+    <button id="remoteSearchContextCopyResults" type="button" role="menuitem">Copy Results</button>
   </div>
 
   <div id="confirmDialogBackdrop" class="confirm-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-hidden="true">
@@ -1140,47 +1368,84 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         <div class="remote-command-subtitle">Run non-interactive remote commands with streaming output.</div>
       </div>
       <div class="remote-command-body">
-        <div class="remote-command-field-grid">
-          <div class="remote-command-meta-block">
-            <div class="remote-command-meta">
-              <span class="remote-command-meta-label">Connected to:</span>
-              <span id="remoteCommandConnectedTo" class="remote-command-connected-to">-</span>
-            </div>
-            <div class="remote-command-meta">
-              <span class="remote-command-meta-label">Working directory:</span>
-              <span id="remoteCommandWorkingDirectory" class="remote-command-working-directory">/</span>
-            </div>
-            <div class="remote-command-meta">
-              <span class="remote-command-meta-label">Run as:</span>
-              <span id="remoteCommandRunAs" class="remote-command-run-as">SSH user</span>
-            </div>
-          </div>
-          <div class="remote-command-field">
-            <label for="remoteCommandInput">Command</label>
-            <div class="remote-command-input-row">
-              <textarea id="remoteCommandInput" spellcheck="false" autocomplete="off"></textarea>
-              <div class="remote-command-run-row">
-                <button id="remoteCommandRunButton" type="button">Run</button>
+        <div class="remote-command-main">
+          <div class="remote-command-field-grid">
+            <div class="remote-command-meta-block">
+              <div class="remote-command-meta">
+                <span class="remote-command-meta-label">Connected to:</span>
+                <span id="remoteCommandConnectedTo" class="remote-command-connected-to">-</span>
+              </div>
+              <div class="remote-command-meta">
+                <span class="remote-command-meta-label">Run as:</span>
+                <span id="remoteCommandRunAs" class="remote-command-run-as">SSH user</span>
               </div>
             </div>
+            <div class="remote-command-working-directory-wrap">
+              <label class="remote-command-section-title" for="remoteCommandWorkingDirectory">Remote path</label>
+              <div class="input-with-button remote-command-working-directory-row">
+                <input id="remoteCommandWorkingDirectory" type="text" value="/" spellcheck="false" autocomplete="off" />
+                <button id="remoteCommandBrowseWorkingDirectoryButton" class="input-icon-button has-tooltip" type="button" aria-label="Browse Remote Path" data-tooltip="Browse Remote Path">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.44c.4 0 .78.16 1.06.44L8.56 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4Zm1-.01v7.51c0 .28.22.5.5.5h10a.5.5 0 0 0 .5-.5v-6A.5.5 0 0 0 13 5H8.15L6.8 3.65a.5.5 0 0 0-.36-.15H3a.5.5 0 0 0-.5.49Z" /></svg>
+                </button>
+              </div>
+              <div id="remoteCommandWorkingDirectoryPicker" class="remote-search-scope-picker hidden" aria-hidden="true">
+                <div class="remote-search-scope-picker-header">
+                  <div id="remoteCommandWorkingDirectoryPickerPath" class="remote-search-scope-picker-path">/</div>
+                  <div class="remote-search-scope-picker-actions">
+                    <button id="remoteCommandWorkingDirectorySelectButton" class="secondary" type="button">Select This Folder</button>
+                    <button id="remoteCommandWorkingDirectoryCancelButton" class="secondary" type="button">Cancel</button>
+                  </div>
+                </div>
+                <div id="remoteCommandWorkingDirectoryPickerList" class="remote-search-scope-picker-list"><div class="remote-search-scope-picker-empty">Loading...</div></div>
+              </div>
+            </div>
+            <div class="remote-command-field remote-command-command-field">
+              <label for="remoteCommandInput">Command</label>
+              <div class="remote-command-input-row">
+                <textarea id="remoteCommandInput" spellcheck="false" autocomplete="off"></textarea>
+              </div>
+            </div>
+            <label id="remoteCommandSudoRow" class="remote-command-sudo-row">
+              <input id="remoteCommandUseSudo" class="dialog-checkbox" type="checkbox">
+              <span>Use Sudo Mode</span>
+              <span id="remoteCommandSudoNote" class="remote-command-sudo-note"></span>
+            </label>
+            <div class="remote-command-run-row">
+              <button id="remoteCommandRunButton" type="button">Run</button>
+            </div>
+          </div>
+          <div class="remote-command-output-section">
+            <div class="remote-command-output-header">
+              <div class="remote-command-output-title">Output</div>
+              <div id="remoteCommandOutputNotice" class="remote-command-output-notice"></div>
+            </div>
+            <div id="remoteCommandOutputWrap" class="remote-command-output-wrap" tabindex="0" aria-label="Command Output">
+              <pre id="remoteCommandOutput" class="remote-command-output"></pre>
+            </div>
+            <div id="remoteCommandStatus" class="remote-command-status"></div>
           </div>
         </div>
-        <div class="remote-command-output-section">
-          <div class="remote-command-output-header">
-            <div class="remote-command-output-title">Output</div>
-            <div id="remoteCommandOutputNotice" class="remote-command-output-notice"></div>
-          </div>
-          <div id="remoteCommandOutputWrap" class="remote-command-output-wrap" tabindex="0" aria-label="Command Output">
-            <pre id="remoteCommandOutput" class="remote-command-output"></pre>
-          </div>
-          <div id="remoteCommandStatus" class="remote-command-status"></div>
-        </div>
+        <aside class="remote-command-side" aria-label="Saved Commands and Command History">
+          <section class="remote-command-side-section" aria-labelledby="remoteCommandSavedTitle">
+            <div class="remote-command-side-header">
+              <h3 id="remoteCommandSavedTitle" class="remote-command-side-title">Saved Commands</h3>
+              <button id="remoteCommandSaveCurrentButton" class="secondary remote-command-compact-button" type="button">+ Save current</button>
+            </div>
+            <div id="remoteCommandSavedList" class="remote-command-side-list"></div>
+          </section>
+          <section class="remote-command-side-section" aria-labelledby="remoteCommandHistoryTitle">
+            <div class="remote-command-side-header">
+              <h3 id="remoteCommandHistoryTitle" class="remote-command-side-title">Command History</h3>
+            </div>
+            <div id="remoteCommandHistoryList" class="remote-command-side-list"></div>
+          </section>
+        </aside>
       </div>
       <div id="remoteCommandCloseWarning" class="remote-command-close-warning" role="alert">
-        <div class="remote-command-close-warning-text">Command is still running. Closing this window will stop it.</div>
+        <div class="remote-command-close-warning-text">Command is still running. Closing this window will keep it running.</div>
         <div class="remote-command-close-warning-actions">
-          <button id="remoteCommandKeepRunningButton" class="secondary" type="button">Keep running</button>
-          <button id="remoteCommandStopAndCloseButton" type="button">Stop command and close</button>
+          <button id="remoteCommandKeepRunningButton" class="secondary" type="button">Return to command</button>
+          <button id="remoteCommandStopAndCloseButton" type="button">Stop command</button>
         </div>
       </div>
       <div id="remoteCommandStopWarning" class="remote-command-stop-warning" role="alert">
@@ -1232,10 +1497,23 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <button id="contextCopyCurrentPath" type="button" role="menuitem">Copy Current Path</button>
   <div id="contextEmptyRefreshSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextRefresh" type="button" role="menuitem">Refresh</button>
+  <button id="contextOpenLogViewer" type="button" role="menuitem">Open in Log Viewer</button>
   <button id="contextRunRemoteCommand" type="button" role="menuitem">Run Remote Command...</button>
   <button id="contextOpenSshTerminal" type="button" role="menuitem">Open SSH Terminal</button>
   <div id="contextDeleteSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextDelete" type="button" role="menuitem">Delete</button>
+  </div>
+
+
+  <div id="textEditContextMenu" class="context-menu text-edit-context-menu" role="menu" aria-label="Text Edit Actions">
+    <button id="textEditContextUndo" type="button" role="menuitem">Undo</button>
+    <button id="textEditContextRedo" type="button" role="menuitem">Redo</button>
+    <div class="context-menu-separator" role="separator"></div>
+    <button id="textEditContextCut" type="button" role="menuitem">Cut</button>
+    <button id="textEditContextCopy" type="button" role="menuitem">Copy</button>
+    <button id="textEditContextPaste" type="button" role="menuitem">Paste</button>
+    <div class="context-menu-separator" role="separator"></div>
+    <button id="textEditContextSelectAll" type="button" role="menuitem">Select All</button>
   </div>
 
 
@@ -1345,9 +1623,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const privateKeyBlock = document.getElementById('privateKeyBlock');
   const passphraseBlock = document.getElementById('passphraseBlock');
   const sessionTabs = document.getElementById('sessionTabs');
+  const browserSectionDivider = document.querySelector('.browser-section-divider');
   const pathbar = document.querySelector('.pathbar');
   const currentPath = document.getElementById('currentPath');
   const remotePathLeadingIcon = document.querySelector('.remote-path-leading-icon');
+  const SESSION_TAB_REMOTE_ICON = '<svg focusable="false" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12 11.5C12 11.5989 11.9707 11.6956 11.9157 11.7778C11.8608 11.86 11.7827 11.9241 11.6913 11.9619C11.6 11.9998 11.4994 12.0097 11.4025 11.9904C11.3055 11.9711 11.2164 11.9235 11.1464 11.8536C11.0765 11.7836 11.0289 11.6945 11.0096 11.5975C10.9903 11.5006 11.0002 11.4 11.0381 11.3087C11.0759 11.2173 11.14 11.1392 11.2222 11.0843C11.3044 11.0293 11.4011 11 11.5 11C11.6326 11 11.7598 11.0527 11.8536 11.1464C11.9473 11.2402 12 11.3674 12 11.5ZM11.5 8C11.5989 8 11.6956 7.97068 11.7778 7.91573C11.86 7.86079 11.9241 7.7827 11.9619 7.69134C11.9998 7.59998 12.0097 7.49945 11.9904 7.40245C11.9711 7.30546 11.9235 7.21637 11.8536 7.14645C11.7836 7.07652 11.6945 7.0289 11.5975 7.00961C11.5006 6.99031 11.4 7.00022 11.3087 7.03806C11.2173 7.0759 11.1392 7.13999 11.0843 7.22221C11.0293 7.30444 11 7.40111 11 7.5C11 7.63261 11.0527 7.75979 11.1464 7.85355C11.2402 7.94732 11.3674 8 11.5 8ZM14 4.5C13.999 4.87026 13.86 5.22685 13.61 5.5C13.86 5.77315 13.999 6.12974 14 6.5V8.5C13.999 8.87026 13.86 9.22685 13.61 9.5C13.86 9.77315 13.999 10.1297 14 10.5V12.5C14 12.8978 13.842 13.2794 13.5607 13.5607C13.2794 13.842 12.8978 14 12.5 14H3.5C3.10218 14 2.72064 13.842 2.43934 13.5607C2.15804 13.2794 2 12.8978 2 12.5V10.5C2.00097 10.1297 2.14003 9.77315 2.39 9.5C2.14003 9.22685 2.00097 8.87026 2 8.5V6.5C2.00097 6.12974 2.14003 5.77315 2.39 5.5C2.14003 5.22685 2.00097 4.87026 2 4.5V2.5C2 2.10218 2.15804 1.72064 2.43934 1.43934C2.72064 1.15804 3.10218 1 3.5 1H12.5C12.8978 1 13.2794 1.15804 13.5607 1.43934C13.842 1.72064 14 2.10218 14 2.5V4.5ZM3 4.5C3 4.63261 3.05268 4.75979 3.14645 4.85355C3.24021 4.94732 3.36739 5 3.5 5H12.5C12.6326 5 12.7598 4.94732 12.8536 4.85355C12.9473 4.75979 13 4.63261 13 4.5V2.5C13 2.36739 12.9473 2.24021 12.8536 2.14645C12.7598 2.05268 12.6326 2 12.5 2H3.5C3.36739 2 3.24021 2.05268 3.14645 2.14645C3.05268 2.24021 3 2.36739 3 2.5V4.5ZM12.5 6H3.5C3.36739 6 3.24021 6.05268 3.14645 6.14645C3.05268 6.24021 3 6.36739 3 6.5V8.5C3 8.63261 3.05268 8.75979 3.14645 8.85355C3.24021 8.94732 3.36739 9 3.5 9H12.5C12.6326 9 12.7598 8.94732 12.8536 8.85355C12.9473 8.75979 13 8.63261 13 8.5V6.5C13 6.36739 12.9473 6.24021 12.8536 6.14645C12.7598 6.05268 12.6326 6 12.5 6ZM13 10.5C13 10.3674 12.9473 10.2402 12.8536 10.1464C12.7598 10.0527 12.6326 10 12.5 10H3.5C3.36739 10 3.24021 10.0527 3.14645 10.1464C3.05268 10.2402 3 10.3674 3 10.5V12.5C3 12.6326 3.05268 12.7598 3.14645 12.8536C3.24021 12.9473 3.36739 13 3.5 13H12.5C12.6326 13 12.7598 12.9473 12.8536 12.8536C12.9473 12.7598 13 12.6326 13 12.5V10.5ZM11.5 4C11.5989 4 11.6956 3.97068 11.7778 3.91573C11.86 3.86079 11.9241 3.7827 11.9619 3.69134C11.9998 3.59998 12.0097 3.49945 11.9904 3.40245C11.9711 3.30546 11.9235 3.21637 11.8536 3.14645C11.7836 3.07652 11.6945 3.0289 11.5975 3.00961C11.5006 2.99031 11.4 3.00022 11.3087 3.03806C11.2173 3.0759 11.1392 3.13999 11.0843 3.22221C11.0293 3.30444 11 3.40111 11 3.5C11 3.63261 11.0527 3.75979 11.1464 3.85355C11.2402 3.94732 11.3674 4 11.5 4Z"/></svg>';
   const remotePathBox = document.getElementById('remotePathBox');
   const remotePathResizeHandle = document.getElementById('remotePathResizeHandle');
   const remotePathBreadcrumb = document.getElementById('remotePathBreadcrumb');
@@ -1383,9 +1663,53 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   const saveProfileButton = document.getElementById('saveProfileButton');
   const connectButton = document.getElementById('connectButton');
+  const showSettingsButton = document.getElementById('showSettingsButton');
   const showOutputButton = document.getElementById('showOutputButton');
+  const runRemoteCommandAction = document.getElementById('runRemoteCommandAction');
+  const openSshTerminalAction = document.getElementById('openSshTerminalAction');
+  const openLogViewerAction = document.getElementById('openLogViewerAction');
   const runRemoteCommandButton = document.getElementById('runRemoteCommandButton');
+  const remoteCommandBadge = document.getElementById('remoteCommandBadge');
   const openSshTerminalButton = document.getElementById('openSshTerminalButton');
+  const openLogViewerButton = document.getElementById('openLogViewerButton');
+  const logViewerBadge = document.getElementById('logViewerBadge');
+  const remoteSearchButton = document.getElementById('remoteSearchButton');
+  const remoteSearchBadge = document.getElementById('remoteSearchBadge');
+  const remoteSearchBackdrop = document.getElementById('remoteSearchBackdrop');
+  const remoteSearchConnectedTo = document.getElementById('remoteSearchConnectedTo');
+  const remoteSearchRunAs = document.getElementById('remoteSearchRunAs');
+  const remoteSearchScopePath = document.getElementById('remoteSearchScopePath');
+  const remoteSearchBrowseButton = document.getElementById('remoteSearchBrowseButton');
+  const remoteSearchScopePicker = document.getElementById('remoteSearchScopePicker');
+  const remoteSearchScopePickerPath = document.getElementById('remoteSearchScopePickerPath');
+  const remoteSearchScopePickerList = document.getElementById('remoteSearchScopePickerList');
+  const remoteSearchScopeSelectButton = document.getElementById('remoteSearchScopeSelectButton');
+  const remoteSearchScopeCancelButton = document.getElementById('remoteSearchScopeCancelButton');
+  const remoteSearchSubdirectories = document.getElementById('remoteSearchSubdirectories');
+  const remoteSearchHiddenFiles = document.getElementById('remoteSearchHiddenFiles');
+  const remoteSearchCaseSensitive = document.getElementById('remoteSearchCaseSensitive');
+  const remoteSearchSudoRow = document.getElementById('remoteSearchSudoRow');
+  const remoteSearchUseSudo = document.getElementById('remoteSearchUseSudo');
+  const remoteSearchInsideRow = document.getElementById('remoteSearchInsideRow');
+  const remoteSearchInsideFiles = document.getElementById('remoteSearchInsideFiles');
+  const remoteSearchFileName = document.getElementById('remoteSearchFileName');
+  const remoteSearchTextField = document.getElementById('remoteSearchTextField');
+  const remoteSearchTextToFind = document.getElementById('remoteSearchTextToFind');
+  const remoteSearchValidation = document.getElementById('remoteSearchValidation');
+  const remoteSearchResultsStatus = document.getElementById('remoteSearchResultsStatus');
+  const remoteSearchResults = document.getElementById('remoteSearchResults');
+  const remoteSearchPrimaryButton = document.getElementById('remoteSearchPrimaryButton');
+  const remoteSearchCopyButton = document.getElementById('remoteSearchCopyButton');
+  const remoteSearchClearButton = document.getElementById('remoteSearchClearButton');
+  const remoteSearchCloseButton = document.getElementById('remoteSearchCloseButton');
+  const remoteSearchResultContextMenu = document.getElementById('remoteSearchResultContextMenu');
+  const remoteSearchContextOpen = document.getElementById('remoteSearchContextOpen');
+  const remoteSearchContextOpenReadOnly = document.getElementById('remoteSearchContextOpenReadOnly');
+  const remoteSearchContextFileSeparator = document.getElementById('remoteSearchContextFileSeparator');
+  const remoteSearchContextCopyPath = document.getElementById('remoteSearchContextCopyPath');
+  const remoteSearchContextCopyName = document.getElementById('remoteSearchContextCopyName');
+  const remoteSearchContextResultsSeparator = document.getElementById('remoteSearchContextResultsSeparator');
+  const remoteSearchContextCopyResults = document.getElementById('remoteSearchContextCopyResults');
   const uploadButton = document.getElementById('uploadButton');
   const downloadButton = document.getElementById('downloadButton');
   const transferQueueButton = document.getElementById('transferQueueButton');
@@ -1449,11 +1773,31 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const contextRefreshSeparator = document.getElementById('contextRefreshSeparator');
   const contextRefresh = document.getElementById('contextRefresh');
   const contextRunRemoteCommand = document.getElementById('contextRunRemoteCommand');
+  const contextOpenLogViewer = document.getElementById('contextOpenLogViewer');
   const contextOpenSshTerminal = document.getElementById('contextOpenSshTerminal');
+  const textEditContextMenu = document.getElementById('textEditContextMenu');
+  const textEditContextUndo = document.getElementById('textEditContextUndo');
+  const textEditContextRedo = document.getElementById('textEditContextRedo');
+  const textEditContextCut = document.getElementById('textEditContextCut');
+  const textEditContextCopy = document.getElementById('textEditContextCopy');
+  const textEditContextPaste = document.getElementById('textEditContextPaste');
+  const textEditContextSelectAll = document.getElementById('textEditContextSelectAll');
 
   const remoteCommandBackdrop = document.getElementById('remoteCommandBackdrop');
   const remoteCommandConnectedTo = document.getElementById('remoteCommandConnectedTo');
   const remoteCommandWorkingDirectory = document.getElementById('remoteCommandWorkingDirectory');
+  const remoteCommandBrowseWorkingDirectoryButton = document.getElementById('remoteCommandBrowseWorkingDirectoryButton');
+  const remoteCommandWorkingDirectoryPicker = document.getElementById('remoteCommandWorkingDirectoryPicker');
+  const remoteCommandWorkingDirectoryPickerPath = document.getElementById('remoteCommandWorkingDirectoryPickerPath');
+  const remoteCommandWorkingDirectoryPickerList = document.getElementById('remoteCommandWorkingDirectoryPickerList');
+  const remoteCommandWorkingDirectorySelectButton = document.getElementById('remoteCommandWorkingDirectorySelectButton');
+  const remoteCommandWorkingDirectoryCancelButton = document.getElementById('remoteCommandWorkingDirectoryCancelButton');
+  const remoteCommandSudoRow = document.getElementById('remoteCommandSudoRow');
+  const remoteCommandUseSudo = document.getElementById('remoteCommandUseSudo');
+  const remoteCommandSudoNote = document.getElementById('remoteCommandSudoNote');
+  const remoteCommandSaveCurrentButton = document.getElementById('remoteCommandSaveCurrentButton');
+  const remoteCommandSavedList = document.getElementById('remoteCommandSavedList');
+  const remoteCommandHistoryList = document.getElementById('remoteCommandHistoryList');
   const remoteCommandRunAs = document.getElementById('remoteCommandRunAs');
   const remoteCommandInput = document.getElementById('remoteCommandInput');
   const remoteCommandRunButton = document.getElementById('remoteCommandRunButton');
@@ -1580,6 +1924,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   let profiles = [];
   let sessions = [];
+  let draggedSessionId = '';
+  let sessionDragOverId = '';
+  let sessionDragOverPosition = '';
+  let sessionDragDropIndex = -1;
+  let sessionTabDragging = false;
+  let draggedManageProfileId = '';
+  let manageProfileDragOverId = '';
+  let manageProfileDragOverPosition = '';
+  let manageProfileDragging = false;
   let selectedProfileId = '';
   let pendingConnectionNameResolver = null;
   let profileDropdownOpen = false;
@@ -1593,6 +1946,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let manageProfilesFilterText = '';
   let renameProfileId = '';
   let activeConnectionId = '';
+  let logViewerActiveSessionCount = 0;
   let currentEntries = [];
   let selectedEntryPath = '';
   let selectedEntryPaths = new Set();
@@ -1616,19 +1970,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let permissionsDialogOpen = false;
   let permissionPreviewKind = 'file';
   let transferQueueState = { current: null, currentTransfers: [], pending: [], completed: [] };
+  const transferQueueCancelingIds = new Set();
+  const transferQueueRemovingIds = new Set();
   let transferQueueModalOpen = false;
   let remoteCommandDialogOpen = false;
-  let remoteCommandRunning = false;
-  let remoteCommandStopping = false;
-  let remoteCommandForceKilling = false;
-  let remoteCommandId = '';
-  let remoteCommandClosingAfterStop = false;
+  let remoteCommandDialogConnectionId = '';
+  let remoteCommandWorkingDirectoryPickerOpen = false;
+  let remoteCommandWorkingDirectoryPickerPathValue = '/';
+  let remoteCommandEditingSavedId = '';
+  let remoteCommandDeletingSavedId = '';
   let remoteCommandStopEscalationTimer = null;
-  let remoteCommandOutputText = '';
-  let remoteCommandFinalMessage = '';
-  let remoteCommandOutputViewLimited = false;
+  const REMOTE_COMMAND_STORAGE_KEY = 'remoteedit.savedRemoteCommands';
+  const REMOTE_COMMAND_HISTORY_STORAGE_KEY = 'remoteedit.remoteCommandHistory';
   const REMOTE_COMMAND_STOP_ESCALATION_MS = 10000;
   const REMOTE_COMMAND_MAX_OUTPUT_CHARS = 500000;
+  const REMOTE_COMMAND_MAX_HISTORY_PER_CONNECTION = 50;
+  const remoteCommandSessionsByConnectionId = new Map();
+  const remoteCommandSavedByConnectionId = new Map();
+  const remoteCommandHistoryByConnectionId = new Map();
   let confirmDialogOpen = false;
   let confirmDialogRequestId = '';
   let transferConflictDialogOpen = false;
@@ -1672,6 +2031,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let remotePathResetTransitionTimer = 0;
   let toolbarLayoutTransitionTimer = 0;
   let toolbarCapabilityState = '';
+  let remoteSearchDialogOpen = false;
+  let remoteSearchScopePickerOpen = false;
+  let remoteSearchScopePickerPathValue = '/';
+  let remoteSearchContextPath = '';
+  let remoteSearchContextKind = '';
+  const remoteSearchStatesByConnectionId = new Map();
+  const remoteSearchFormsByConnectionId = new Map();
+  let remoteSearchState = { status: 'idle', connectionId: '', results: [], totalResults: 0, options: {} };
+  const remoteSearchExpandedResultPaths = new Set();
+  let remoteSearchSelectedResultKeys = new Set();
+  let remoteSearchSelectionAnchorKey = '';
+  const remoteSearchVisibleLimitsByConnectionId = new Map();
+  let remoteSearchRenderTimer = 0;
+  const REMOTE_SEARCH_INITIAL_VISIBLE_RESULTS = 2000;
+  const REMOTE_SEARCH_SHOW_MORE_STEP = 2000;
   let connectionPanelTransitionTimer = 0;
 
   restoreNavigationHistoryFromState(initialWebviewState.navigationHistoryByConnectionId);
@@ -1710,7 +2084,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function showWebviewTooltip(target) {
-    if (!webviewTooltip || !target) return;
+    if (!webviewTooltip || !target || sessionTabDragging || manageProfileDragging) return;
     const text = String(target.getAttribute('data-tooltip') || '').trim();
     if (!text) return;
 
@@ -1731,6 +2105,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function getTooltipTarget(eventTarget) {
+    if (sessionTabDragging || manageProfileDragging) return null;
     return eventTarget && eventTarget.closest ? eventTarget.closest('[data-tooltip]') : null;
   }
 
@@ -1762,6 +2137,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   window.addEventListener('resize', () => {
     hideWebviewTooltip();
     hideRemotePathDropdown();
+    updateActiveSessionTabDivider();
   });
 
   function showConfirmDialog(payload) {
@@ -1963,6 +2339,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         sessions = payload.sessions || [];
         pruneNavigationHistoryForSessions();
         const previousActiveConnectionId = activeConnectionId;
+        if (previousActiveConnectionId && remoteSearchDialogOpen) saveRemoteSearchFormForConnection(previousActiveConnectionId);
         activeConnectionId = payload.activeConnectionId || '';
         connectionButtonState = '';
         renderSessionTabs();
@@ -1973,7 +2350,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         }
         updateRemotePathNavigationControls();
         setControls();
-        if (remoteCommandDialogOpen) updateRemoteCommandRunAs();
+        if (activeConnectionId !== previousActiveConnectionId) {
+          remoteSearchState = getRemoteSearchStateForActiveConnection();
+          applyRemoteSearchFormForActiveConnection();
+          renderRemoteSearchState();
+          if (activeConnectionId) vscode.postMessage({ type: 'requestRemoteSearchState' });
+        }
+        if (remoteCommandDialogOpen) renderRemoteCommandSession();
+        renderRemoteCommandBadge();
+        if (remoteSearchDialogOpen) updateRemoteSearchProtocolFields();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
       }
@@ -1984,12 +2369,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           session.sudoModeEnabled = Boolean(payload.enabled);
         }
         updateSudoToggle();
-        if (remoteCommandDialogOpen) updateRemoteCommandRunAs();
+        if (remoteCommandDialogOpen) renderRemoteCommandSession();
+        renderRemoteCommandBadge();
+        if (remoteSearchDialogOpen) updateRemoteSearchProtocolFields();
         setControls();
         break;
       }
       case 'disconnected':
         sessions = [];
+        remoteSearchFormsByConnectionId.clear();
+        remoteSearchStatesByConnectionId.clear();
         navigationHistoryByConnectionId.clear();
         persistNavigationHistory();
         pendingNavigationHistoryMode = '';
@@ -2005,13 +2394,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         hideContextMenu();
         hideFilePropertiesDialog();
         hideChecksumsDialog();
+        if (remoteSearchDialogOpen) hideRemoteSearchDialog();
+        remoteSearchState = createEmptyRemoteSearchState('', 'sftp');
+        renderRemoteSearchState();
+        remoteCommandSessionsByConnectionId.clear();
         if (remoteCommandDialogOpen) {
-          remoteCommandRunning = false;
-          remoteCommandStopping = false;
-          remoteCommandForceKilling = false;
           clearRemoteCommandStopEscalationTimer();
           hideRemoteCommandDialog();
         }
+        renderRemoteCommandBadge();
         hidePathFavoritesPopover();
         hideRemotePathDropdown();
         renderSessionTabs();
@@ -2075,6 +2466,33 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         break;
       case 'remoteCommandFinished':
         handleRemoteCommandFinished(payload);
+        break;
+      case 'remoteSearchState':
+      case 'remoteSearchStarted':
+        applyRemoteSearchSnapshot(payload);
+        break;
+      case 'remoteSearchResult':
+        appendRemoteSearchResult(payload || {});
+        break;
+      case 'remoteSearchResultsBatch':
+        appendRemoteSearchResultsBatch(payload || {});
+        break;
+      case 'remoteSearchFinished':
+        applyRemoteSearchSnapshot(payload);
+        break;
+      case 'remoteSearchScopeEntriesListed':
+        if (!handleRemoteCommandWorkingDirectoryEntriesListed(payload || {})) {
+          handleRemoteSearchScopeEntriesListed(payload || {});
+        }
+        break;
+      case 'remoteSearchScopeSelected':
+        if (!payload.connectionId || payload.connectionId === activeConnectionId) {
+          remoteSearchScopePath.value = normalizeSearchScopePath(payload.path || '/');
+        }
+        break;
+      case 'logViewerActiveSessionCount':
+        logViewerActiveSessionCount = Math.max(0, Number(payload.count || 0));
+        renderLogViewerBadge();
         break;
       case 'error':
         connectionButtonState = '';
@@ -2192,6 +2610,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     vscode.postMessage({ type: 'connect', payload: collectConnectionPayload() });
   });
 
+  showSettingsButton.addEventListener('click', () => vscode.postMessage({ type: 'showSettings' }));
   showOutputButton.addEventListener('click', () => vscode.postMessage({ type: 'showOutput' }));
   if (browserCard) {
     browserCard.addEventListener('click', event => {
@@ -2206,20 +2625,89 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   sudoToggle.addEventListener('change', () => {
     if (!activeConnectionId) {
       updateSudoToggle();
-      setStatus('Connect to a host before enabling sudo mode.', true);
+      setStatus('Connect to a host before enabling Sudo Mode.', true);
       return;
     }
 
     if (sudoToggle.checked) {
       sudoToggle.checked = false;
-      setBusy(true, 'Enabling sudo mode...');
+      setBusy(true, 'Enabling Sudo Mode...');
       vscode.postMessage({ type: 'enableSudoMode', payload: { connectionId: activeConnectionId } });
       return;
     }
 
-    setBusy(true, 'Disabling sudo mode...');
+    setBusy(true, 'Disabling Sudo Mode...');
     vscode.postMessage({ type: 'disableSudoMode', payload: { connectionId: activeConnectionId } });
   });
+  if (remoteSearchButton) remoteSearchButton.addEventListener('click', showRemoteSearchDialog);
+  if (remoteSearchPrimaryButton) remoteSearchPrimaryButton.addEventListener('click', startOrCancelRemoteSearch);
+  if (remoteSearchCopyButton) remoteSearchCopyButton.addEventListener('click', copyRemoteSearchResults);
+  if (remoteSearchClearButton) remoteSearchClearButton.addEventListener('click', clearRemoteSearch);
+  if (remoteSearchCloseButton) remoteSearchCloseButton.addEventListener('click', hideRemoteSearchDialog);
+  if (remoteSearchBrowseButton) remoteSearchBrowseButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); browseRemoteSearchScope(); });
+  if (remoteSearchScopePicker) {
+    remoteSearchScopePicker.addEventListener('mousedown', event => event.stopPropagation());
+    remoteSearchScopePicker.addEventListener('click', event => event.stopPropagation());
+  }
+  if (remoteSearchScopeSelectButton) remoteSearchScopeSelectButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); selectRemoteSearchScopePickerPath(); });
+  if (remoteSearchScopeCancelButton) remoteSearchScopeCancelButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); hideRemoteSearchScopePicker(); });
+  if (remoteSearchScopePickerList) remoteSearchScopePickerList.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.target && event.target.closest ? event.target.closest('[data-remote-search-scope-path]') : null;
+    if (!target) return;
+    const path = target.getAttribute('data-remote-search-scope-path') || '/';
+    requestRemoteSearchScopeEntries(path);
+  });
+  if (remoteSearchInsideFiles) remoteSearchInsideFiles.addEventListener('change', () => { updateRemoteSearchTextField(); saveRemoteSearchFormForActiveConnection(); clearRemoteSearchValidation(); });
+  for (const control of [remoteSearchScopePath, remoteSearchFileName, remoteSearchTextToFind]) {
+    if (control) control.addEventListener('input', () => { saveRemoteSearchFormForActiveConnection(); clearRemoteSearchValidation(control); });
+  }
+  for (const control of [remoteSearchSubdirectories, remoteSearchHiddenFiles, remoteSearchCaseSensitive, remoteSearchUseSudo]) {
+    if (control) control.addEventListener('change', () => { saveRemoteSearchFormForActiveConnection(); clearRemoteSearchValidation(); updateRemoteSearchMeta(); });
+  }
+  if (remoteSearchResults) remoteSearchResults.addEventListener('click', event => {
+    const showMoreTarget = event.target && event.target.closest ? event.target.closest('[data-remote-search-show-more]') : null;
+    if (showMoreTarget) {
+      showMoreRemoteSearchResults();
+      return;
+    }
+    const target = event.target && event.target.closest ? event.target.closest('.remote-search-result-row[data-remote-search-result-key]') : null;
+    if (!target) return;
+    const key = target.getAttribute('data-remote-search-result-key') || '';
+    const path = target.getAttribute('data-remote-search-result-path') || '';
+    if (!key) return;
+
+    if (event.shiftKey && remoteSearchSelectionAnchorKey) {
+      selectRemoteSearchResultRange(remoteSearchSelectionAnchorKey, key);
+    } else if (event.metaKey || event.ctrlKey) {
+      toggleRemoteSearchResultSelection(key);
+    } else {
+      selectRemoteSearchResult(key);
+    }
+
+    if (!event.shiftKey && !event.metaKey && !event.ctrlKey && target.classList.contains('remote-search-result-path') && path) {
+      if (remoteSearchExpandedResultPaths.has(path)) {
+        remoteSearchExpandedResultPaths.delete(path);
+      } else {
+        remoteSearchExpandedResultPaths.add(path);
+      }
+      renderRemoteSearchResults();
+    }
+  });
+  if (remoteSearchResults) remoteSearchResults.addEventListener('contextmenu', event => {
+    const target = event.target && event.target.closest ? event.target.closest('.remote-search-result-row[data-remote-search-result-key]') : null;
+    const key = target ? (target.getAttribute('data-remote-search-result-key') || '') : '';
+    const path = target ? (target.getAttribute('data-remote-search-result-path') || '') : '';
+    const kind = target ? (target.getAttribute('data-remote-search-result-kind') || '') : '';
+    event.preventDefault();
+    event.stopPropagation();
+    if (key && !remoteSearchSelectedResultKeys.has(key)) {
+      selectRemoteSearchResult(key);
+    }
+    showRemoteSearchResultContextMenu(path, kind, event.clientX, event.clientY);
+  });
+  if (remoteSearchBackdrop) remoteSearchBackdrop.addEventListener('mousedown', event => { if (event.target === remoteSearchBackdrop) hideRemoteSearchDialog(); });
   uploadButton.addEventListener('click', () => { if (activeConnectionId && canStartTransferAction()) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } }); });
   downloadButton.addEventListener('click', () => { const entries = getSelectedActionEntries(); if (entries.length && canStartTransferAction()) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } }); });
   transferQueueButton.addEventListener('click', showTransferQueueModal);
@@ -2249,16 +2737,42 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
   confirmDialogBackdrop.addEventListener('keydown', trapConfirmDialogFocus);
-  transferQueueCurrent.addEventListener('click', event => {
+  transferQueueModal.addEventListener('pointerdown', handleTransferQueueActionPointerDown, true);
+
+  function handleTransferQueueActionPointerDown(event) {
+    if (event.button !== undefined && event.button !== 0) return;
     const button = event.target && event.target.closest ? event.target.closest('[data-transfer-action]') : null;
-    if (!button || button.dataset.transferAction !== 'cancel-current') return;
-    vscode.postMessage({ type: 'cancelTransfer', payload: { transferId: button.dataset.transferId || '' } });
-  });
-  transferQueuePending.addEventListener('click', event => {
-    const button = event.target && event.target.closest ? event.target.closest('[data-transfer-action]') : null;
-    if (!button || button.dataset.transferAction !== 'remove-pending') return;
-    vscode.postMessage({ type: 'removeQueuedTransfer', payload: { transferId: button.dataset.transferId || '' } });
-  });
+    if (!button || button.disabled) return;
+    const action = button.dataset.transferAction || '';
+    const transferId = button.dataset.transferId || '';
+    if (!action || !transferId) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (action === 'cancel-current') {
+      requestTransferCancel(transferId);
+      return;
+    }
+
+    if (action === 'remove-pending') {
+      requestQueuedTransferRemoval(transferId);
+    }
+  }
+
+  function requestTransferCancel(transferId) {
+    if (!transferId || transferQueueCancelingIds.has(transferId)) return;
+    transferQueueCancelingIds.add(transferId);
+    renderTransferQueueModal();
+    vscode.postMessage({ type: 'cancelTransfer', payload: { transferId } });
+  }
+
+  function requestQueuedTransferRemoval(transferId) {
+    if (!transferId || transferQueueRemovingIds.has(transferId)) return;
+    transferQueueRemovingIds.add(transferId);
+    renderTransferQueueModal();
+    vscode.postMessage({ type: 'removeQueuedTransfer', payload: { transferId } });
+  }
+
   statusCancelButton.addEventListener('click', () => {
     if (!statusCancelAction) return;
     const action = statusCancelAction;
@@ -2517,9 +3031,28 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       hideFilePropertiesDialog();
       return;
     }
+    if (event.key === 'Escape' && remoteCommandWorkingDirectoryPickerOpen) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      hideRemoteCommandWorkingDirectoryPicker();
+      return;
+    }
     if (event.key === 'Escape' && remoteCommandDialogOpen) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      attemptCloseRemoteCommandDialog();
+      return;
+    }
+    if (event.key === 'Escape' && remoteSearchScopePickerOpen) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      hideRemoteSearchScopePicker();
+      return;
+    }
+    if (event.key === 'Escape' && remoteSearchDialogOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideRemoteSearchDialog();
       return;
     }
     if (event.key === 'Escape' && transferQueueModalOpen) {
@@ -2557,17 +3090,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   contextCreateFile.addEventListener('click', () => {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateFile', payload: { path: currentPath.value || '/' } });
+    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateFile', payload: { path: getContextWorkingDirectory() } });
   });
 
   contextCreateDirectory.addEventListener('click', () => {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateDirectory', payload: { path: currentPath.value || '/' } });
+    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateDirectory', payload: { path: getContextWorkingDirectory() } });
   });
 
   function requestContextUpload() {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } });
+    if (activeConnectionId) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: getContextWorkingDirectory() } });
   }
 
   contextUpload.addEventListener('click', requestContextUpload);
@@ -2596,6 +3129,35 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     copySelectedEntryText(entries, 'name');
   });
 
+  if (remoteSearchContextOpen) remoteSearchContextOpen.addEventListener('click', () => {
+    const entry = getRemoteSearchContextEntry();
+    hideRemoteSearchResultContextMenu();
+    if (entry) vscode.postMessage({ type: 'openEntries', payload: { entries: [entry] } });
+  });
+
+  if (remoteSearchContextOpenReadOnly) remoteSearchContextOpenReadOnly.addEventListener('click', () => {
+    const entry = getRemoteSearchContextEntry();
+    hideRemoteSearchResultContextMenu();
+    if (entry) vscode.postMessage({ type: 'openEntriesReadOnly', payload: { entries: [entry] } });
+  });
+
+  if (remoteSearchContextCopyPath) remoteSearchContextCopyPath.addEventListener('click', () => {
+    const text = formatRemoteSearchSelectedPathsForCopy('path');
+    hideRemoteSearchResultContextMenu();
+    if (text) vscode.postMessage({ type: 'copyStatus', payload: { text, message: text.indexOf('\\n') >= 0 ? 'Copied paths' : 'Copied path' } });
+  });
+
+  if (remoteSearchContextCopyName) remoteSearchContextCopyName.addEventListener('click', () => {
+    const text = formatRemoteSearchSelectedPathsForCopy('name');
+    hideRemoteSearchResultContextMenu();
+    if (text) vscode.postMessage({ type: 'copyStatus', payload: { text, message: text.indexOf('\\n') >= 0 ? 'Copied filenames' : 'Copied filename' } });
+  });
+
+  if (remoteSearchContextCopyResults) remoteSearchContextCopyResults.addEventListener('click', () => {
+    hideRemoteSearchResultContextMenu();
+    copyRemoteSearchResults();
+  });
+
   for (const button of entryContextMenu.querySelectorAll('[data-archive-format]')) {
     button.addEventListener('click', () => {
       const entries = getSelectedActionEntries();
@@ -2608,6 +3170,18 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   contextRefresh.addEventListener('click', () => {
     hideContextMenu();
     listDirectory(currentPath.value || '/', { forceRefresh: true });
+  });
+
+  if (contextOpenLogViewer) contextOpenLogViewer.addEventListener('click', () => {
+    const selectedEntries = getSelectedActionEntries();
+    const entry = selectedEntries.length === 1 ? selectedEntries[0] : null;
+    const path = entry && getEffectiveEntryType(entry) === 'file' ? entry.path : '';
+    hideContextMenu();
+    if (!activeConnectionId || !getActiveRemoteCapabilities().canRunCommand) return;
+    vscode.postMessage({
+      type: 'requestOpenLogViewer',
+      payload: { connectionId: activeConnectionId, path }
+    });
   });
 
   contextRunRemoteCommand.addEventListener('click', () => {
@@ -2631,6 +3205,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     });
   });
 
+  if (openLogViewerButton) openLogViewerButton.addEventListener('click', () => {
+    const capabilities = getActiveRemoteCapabilities();
+    if (!activeConnectionId || openLogViewerButton.disabled || !capabilities.canOpenSshTerminal) return;
+    vscode.postMessage({
+      type: 'requestOpenLogViewer',
+      payload: { connectionId: activeConnectionId }
+    });
+  });
+
   runRemoteCommandButton.addEventListener('click', () => {
     if (activeConnectionId && !runRemoteCommandButton.disabled && getActiveRemoteCapabilities().canRunCommand) showRemoteCommandDialog();
   });
@@ -2649,8 +3232,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   remoteCommandRunButton.addEventListener('click', () => {
-    if (remoteCommandRunning) {
-      stopRemoteCommandFromDialog(false);
+    if (getCurrentRemoteCommandSession().status === 'running') {
+      stopRemoteCommandFromDialog();
       return;
     }
     runRemoteCommandFromDialog();
@@ -2662,7 +3245,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteCommandCloseWarning.classList.remove('visible');
     remoteCommandRunButton.focus();
   });
-  remoteCommandStopAndCloseButton.addEventListener('click', () => stopRemoteCommandFromDialog(true));
+  remoteCommandStopAndCloseButton.addEventListener('click', () => stopRemoteCommandFromDialog());
   remoteCommandKeepStoppingButton.addEventListener('click', () => {
     remoteCommandStopWarning.classList.remove('visible');
     remoteCommandRunButton.focus();
@@ -2680,7 +3263,113 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
   remoteCommandInput.addEventListener('input', () => {
-    if (!remoteCommandRunning) updateRemoteCommandControls();
+    const state = getCurrentRemoteCommandSession();
+    if (state.status !== 'running') {
+      state.command = String(remoteCommandInput.value || '');
+      updateRemoteCommandControls();
+    }
+  });
+
+  remoteCommandWorkingDirectory.addEventListener('input', () => {
+    const state = getCurrentRemoteCommandSession();
+    if (state.status !== 'running') {
+      state.workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || '/');
+      updateRemoteCommandControls();
+    }
+  });
+  remoteCommandUseSudo.addEventListener('change', () => {
+    const state = getCurrentRemoteCommandSession();
+    if (state.status !== 'running') {
+      state.useSudo = collectRemoteCommandUseSudo();
+      updateRemoteCommandRunAs();
+    }
+  });
+  remoteCommandBrowseWorkingDirectoryButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); browseRemoteCommandWorkingDirectory(); });
+  if (remoteCommandWorkingDirectoryPicker) {
+    remoteCommandWorkingDirectoryPicker.addEventListener('mousedown', event => event.stopPropagation());
+    remoteCommandWorkingDirectoryPicker.addEventListener('click', event => event.stopPropagation());
+  }
+  remoteCommandWorkingDirectorySelectButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); selectRemoteCommandWorkingDirectoryPickerPath(); });
+  remoteCommandWorkingDirectoryCancelButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); hideRemoteCommandWorkingDirectoryPicker(); });
+  remoteCommandWorkingDirectoryPickerList.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const item = event.target.closest('[data-remote-command-working-directory-path]');
+    if (!item) return;
+    const path = item.getAttribute('data-remote-command-working-directory-path') || '/';
+    requestRemoteCommandWorkingDirectoryEntries(path);
+  });
+  remoteCommandSaveCurrentButton.addEventListener('click', () => {
+    if (getCurrentRemoteCommandSession().status === 'running') return;
+    remoteCommandEditingSavedId = '__new__';
+    remoteCommandDeletingSavedId = '';
+    renderRemoteCommandSavedList();
+  });
+  remoteCommandSavedList.addEventListener('click', event => {
+    const editButton = event.target.closest('[data-remote-command-edit-action]');
+    if (editButton) {
+      const form = editButton.closest('.remote-command-edit-form');
+      const action = editButton.getAttribute('data-remote-command-edit-action');
+      if (action === 'cancel') {
+        remoteCommandEditingSavedId = '';
+        remoteCommandDeletingSavedId = '';
+        renderRemoteCommandSavedList();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    const actionButton = event.target.closest('[data-remote-command-action]');
+    const card = event.target.closest('[data-remote-command-saved-id]');
+    if (!card) return;
+    const id = card.getAttribute('data-remote-command-saved-id') || '';
+    const item = getRemoteCommandSavedList(remoteCommandDialogConnectionId || activeConnectionId).find(command => command.id === id);
+    if (!item) return;
+    if (actionButton) {
+      const action = actionButton.getAttribute('data-remote-command-action');
+      if (action === 'append') loadRemoteCommandIntoEditor(item, true);
+      if (action === 'edit') {
+        remoteCommandEditingSavedId = id;
+        remoteCommandDeletingSavedId = '';
+        renderRemoteCommandSavedList();
+      }
+      if (action === 'delete') {
+        remoteCommandDeletingSavedId = id;
+        remoteCommandEditingSavedId = '';
+        renderRemoteCommandSavedList();
+      }
+      if (action === 'cancel-delete') {
+        remoteCommandDeletingSavedId = '';
+        renderRemoteCommandSavedList();
+      }
+      if (action === 'confirm-delete') deleteRemoteCommandSaved(id);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    loadRemoteCommandIntoEditor(item, false);
+  });
+  remoteCommandSavedList.addEventListener('submit', event => {
+    const form = event.target.closest('.remote-command-edit-form');
+    if (!form) return;
+    event.preventDefault();
+    saveRemoteCommandEditForm(form);
+  });
+  remoteCommandHistoryList.addEventListener('click', event => {
+    const card = event.target.closest('[data-remote-command-history-id]');
+    if (!card) return;
+    const id = card.getAttribute('data-remote-command-history-id') || '';
+    const item = getRemoteCommandHistoryList(remoteCommandDialogConnectionId || activeConnectionId).find(command => command.id === id);
+    if (!item) return;
+    const actionButton = event.target.closest('[data-remote-command-action]');
+    if (actionButton && actionButton.getAttribute('data-remote-command-action') === 'save-history') {
+      saveHistoryItemAsSavedCommand(item);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    loadRemoteCommandIntoEditor({ command: item.command }, false);
   });
 
   remoteCommandOutputWrap.addEventListener('keydown', event => {
@@ -2829,6 +3518,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   manageProfilesList.addEventListener('click', handleManageProfilesClick);
+  manageProfilesList.addEventListener('dragover', handleManageProfilesDragOver);
+  manageProfilesList.addEventListener('drop', handleManageProfilesDrop);
+  document.addEventListener('dragover', handleManageProfilesDragOver);
+  document.addEventListener('drop', handleManageProfilesDrop);
 
   contextMakeCopy.addEventListener('click', () => {
     const entry = getSelectedActionEntry();
@@ -2912,27 +3605,246 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
 
-  function isEditableContextTarget(target) {
-    return target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+  let activeTextEditTarget = null;
+
+  function isTextEditableInput(element) {
+    if (!(element instanceof HTMLInputElement)) return false;
+    const type = String(element.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(type);
   }
 
+  function getTextEditableTarget(target) {
+    if (!(target instanceof Element)) return null;
+    const editable = target.closest('textarea, input, [contenteditable="true"]');
+    if (!editable) return null;
+    if (editable instanceof HTMLTextAreaElement) return editable;
+    if (isTextEditableInput(editable)) return editable;
+    if (editable instanceof HTMLElement && editable.isContentEditable) return editable;
+    return null;
+  }
+
+  function editableHasValue(element) {
+    if (!element) return false;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return String(element.value || '').length > 0;
+    }
+    return String(element.textContent || '').length > 0;
+  }
+
+  function editableIsReadOnly(element) {
+    if (!element) return true;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return Boolean(element.disabled || element.readOnly);
+    }
+    return !(element instanceof HTMLElement) || !element.isContentEditable;
+  }
+
+  function editableHasSelection(element) {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return typeof element.selectionStart === 'number' && typeof element.selectionEnd === 'number' && element.selectionEnd > element.selectionStart;
+    }
+    const selection = window.getSelection ? window.getSelection() : null;
+    return Boolean(selection && !selection.isCollapsed && element instanceof Node && element.contains(selection.anchorNode) && element.contains(selection.focusNode));
+  }
+
+  function getEditableSelectionText(element) {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      if (typeof element.selectionStart !== 'number' || typeof element.selectionEnd !== 'number') return '';
+      return String(element.value || '').slice(element.selectionStart, element.selectionEnd);
+    }
+    const selection = window.getSelection ? window.getSelection() : null;
+    if (!selection || selection.isCollapsed || !(element instanceof Node) || !element.contains(selection.anchorNode) || !element.contains(selection.focusNode)) return '';
+    return selection.toString();
+  }
+
+  function replaceEditableSelection(element, text) {
+    if (!element || editableIsReadOnly(element)) return;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      const start = typeof element.selectionStart === 'number' ? element.selectionStart : String(element.value || '').length;
+      const end = typeof element.selectionEnd === 'number' ? element.selectionEnd : start;
+      if (typeof element.setRangeText === 'function') {
+        element.setRangeText(text, start, end, 'end');
+      } else {
+        const value = String(element.value || '');
+        element.value = value.slice(0, start) + text + value.slice(end);
+        const pos = start + text.length;
+        element.selectionStart = pos;
+        element.selectionEnd = pos;
+      }
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.focus();
+      return;
+    }
+    element.focus();
+    document.execCommand('insertText', false, text);
+  }
+
+  function selectAllEditable(element) {
+    if (!element) return;
+    element.focus();
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      if (typeof element.select === 'function') element.select();
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection ? window.getSelection() : null;
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+
+  async function copyTextFromEditableMenu(text) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch (error) {
+      // Fall back to the extension host clipboard helper.
+    }
+    vscode.postMessage({ type: 'copyStatus', payload: { text } });
+  }
+
+  async function readTextForEditablePaste() {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        return await navigator.clipboard.readText();
+      }
+    } catch (error) {
+      return '';
+    }
+    return '';
+  }
+
+  function positionTextEditContextMenu(clientX, clientY) {
+    if (!textEditContextMenu) return;
+    textEditContextMenu.classList.add('visible');
+    textEditContextMenu.style.left = '0px';
+    textEditContextMenu.style.top = '0px';
+    const margin = 6;
+    const rect = textEditContextMenu.getBoundingClientRect();
+    const left = Math.max(margin, Math.min(clientX, window.innerWidth - rect.width - margin));
+    const top = Math.max(margin, Math.min(clientY, window.innerHeight - rect.height - margin));
+    textEditContextMenu.style.left = left + 'px';
+    textEditContextMenu.style.top = top + 'px';
+  }
+
+  function showTextEditContextMenu(element, clientX, clientY) {
+    if (!textEditContextMenu) return;
+    hideContextMenu();
+    hideRemoteSearchResultContextMenu();
+    activeTextEditTarget = element;
+    const readOnly = editableIsReadOnly(element);
+    const hasSelection = editableHasSelection(element);
+    const hasValue = editableHasValue(element);
+    if (textEditContextUndo) textEditContextUndo.disabled = readOnly;
+    if (textEditContextRedo) textEditContextRedo.disabled = readOnly;
+    if (textEditContextCut) textEditContextCut.disabled = readOnly || !hasSelection;
+    if (textEditContextCopy) textEditContextCopy.disabled = !hasSelection;
+    if (textEditContextPaste) textEditContextPaste.disabled = readOnly;
+    if (textEditContextSelectAll) textEditContextSelectAll.disabled = !hasValue;
+    positionTextEditContextMenu(clientX, clientY);
+  }
+
+  function hideTextEditContextMenu() {
+    activeTextEditTarget = null;
+    if (textEditContextMenu) textEditContextMenu.classList.remove('visible');
+  }
+
+  async function handleTextEditContextAction(action) {
+    const target = activeTextEditTarget;
+    if (!target) return;
+    if (action === 'undo' || action === 'redo') {
+      if (!editableIsReadOnly(target)) {
+        target.focus();
+        document.execCommand(action);
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    } else if (action === 'cut') {
+      const text = getEditableSelectionText(target);
+      if (text && !editableIsReadOnly(target)) {
+        await copyTextFromEditableMenu(text);
+        replaceEditableSelection(target, '');
+      }
+    } else if (action === 'copy') {
+      await copyTextFromEditableMenu(getEditableSelectionText(target));
+    } else if (action === 'paste') {
+      if (!editableIsReadOnly(target)) {
+        const text = await readTextForEditablePaste();
+        if (text) {
+          replaceEditableSelection(target, text);
+        } else {
+          target.focus();
+          try { document.execCommand('paste'); } catch (error) { /* ignore */ }
+        }
+      }
+    } else if (action === 'selectAll') {
+      selectAllEditable(target);
+    }
+    hideTextEditContextMenu();
+  }
+
+  function bindTextEditContextButton(button, action) {
+    if (!button) return;
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleTextEditContextAction(action);
+    });
+  }
+
+  bindTextEditContextButton(textEditContextUndo, 'undo');
+  bindTextEditContextButton(textEditContextRedo, 'redo');
+  bindTextEditContextButton(textEditContextCut, 'cut');
+  bindTextEditContextButton(textEditContextCopy, 'copy');
+  bindTextEditContextButton(textEditContextPaste, 'paste');
+  bindTextEditContextButton(textEditContextSelectAll, 'selectAll');
+
   document.addEventListener('contextmenu', event => {
-    if (isEditableContextTarget(event.target)) return;
+    const editable = getTextEditableTarget(event.target);
+    if (editable) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      showTextEditContextMenu(editable, event.clientX, event.clientY);
+      return;
+    }
+    hideTextEditContextMenu();
     if (event.target instanceof Element && event.target.closest('#entriesTableWrap')) return;
     event.preventDefault();
     hideContextMenu();
+    hideRemoteSearchResultContextMenu();
   }, true);
 
   document.addEventListener('click', event => {
     if (!entryContextMenu.contains(event.target)) hideContextMenu();
+    if (textEditContextMenu && !textEditContextMenu.contains(event.target)) hideTextEditContextMenu();
+    if (remoteSearchResultContextMenu && !remoteSearchResultContextMenu.contains(event.target)) hideRemoteSearchResultContextMenu();
     if (remotePathBox && !remotePathBox.contains(event.target)) hidePathFavoritesPopover();
+    const remoteSearchPickerWrap = remoteSearchScopePicker ? remoteSearchScopePicker.closest('.remote-search-scope-wrap') : null;
+    if (remoteSearchScopePickerOpen && remoteSearchPickerWrap && event.target instanceof Node && !remoteSearchPickerWrap.contains(event.target)) {
+      hideRemoteSearchScopePicker();
+    }
+    const remoteCommandPickerWrap = remoteCommandWorkingDirectoryPicker ? remoteCommandWorkingDirectoryPicker.closest('.remote-command-working-directory-wrap') : null;
+    if (remoteCommandWorkingDirectoryPickerOpen && remoteCommandPickerWrap && event.target instanceof Node && !remoteCommandPickerWrap.contains(event.target)) {
+      hideRemoteCommandWorkingDirectoryPicker();
+    }
   });
 
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') {
+      if (remoteCommandWorkingDirectoryPickerOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideRemoteCommandWorkingDirectoryPicker();
+        return;
+      }
       if (remoteCommandDialogOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        attemptCloseRemoteCommandDialog();
         return;
       }
       if (permissionsDialogOpen) {
@@ -2940,6 +3852,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         return;
       }
       hideContextMenu();
+      hideTextEditContextMenu();
+      hideRemoteSearchResultContextMenu();
       hidePathFavoritesPopover();
     }
   });
@@ -3471,7 +4385,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function updateConnectionRailPosition() {
     if (!mainLayout || !connectionRail || !connectionPanelCollapsed) return;
     const layoutRect = mainLayout.getBoundingClientRect();
-    connectionRail.style.top = Math.max(8, Math.round(layoutRect.top + 8)) + 'px';
+    connectionRail.style.top = Math.max(6, Math.round(layoutRect.top + 6)) + 'px';
   }
 
   function updateConnectionPanelLayout(options = {}) {
@@ -3515,7 +4429,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   function renderProfiles(preferredId) {
     const previousId = preferredId || selectedProfileId || '';
-    profileSelect.innerHTML = '<option value="">New unsaved connection</option>';
+    profileSelect.innerHTML = '<option value="">New / Quick Connection</option>';
 
     for (const profile of profiles) {
       const option = document.createElement('option');
@@ -3552,8 +4466,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   function updateProfileDropdownLabel() {
     const profile = selectedProfileId ? profiles.find(item => item.id === selectedProfileId) : undefined;
-    profileDropdownLabel.textContent = profile ? profile.name : 'New unsaved connection';
-    profileDropdownButton.title = profile ? formatProfileTarget(profile) : 'Use the form below without saving first';
+    profileDropdownLabel.textContent = profile ? profile.name : 'New / Quick Connection';
+    profileDropdownButton.title = profile ? formatProfileTarget(profile) : 'Use the form below';
   }
 
   function normalizeConnectionFilter(value) {
@@ -3593,24 +4507,31 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     filterWrap.appendChild(filterInput);
     profileDropdownMenu.appendChild(filterWrap);
 
-    const quick = buildProfileDropdownItem('', 'New unsaved connection', 'Use the form below without saving first');
-    profileDropdownMenu.appendChild(quick);
+    const pinnedWrap = document.createElement('div');
+    pinnedWrap.className = 'profile-dropdown-pinned';
+    const quick = buildProfileDropdownItem('', 'New / Quick Connection', 'Use the form below', { suppressSelectedVisual: true });
+    pinnedWrap.appendChild(quick);
 
     if (profiles.length) {
       const separator = document.createElement('div');
       separator.className = 'profile-dropdown-separator';
-      profileDropdownMenu.appendChild(separator);
+      pinnedWrap.appendChild(separator);
     }
+    profileDropdownMenu.appendChild(pinnedWrap);
+
+    const listWrap = document.createElement('div');
+    listWrap.className = 'profile-dropdown-list';
+    profileDropdownMenu.appendChild(listWrap);
 
     const filteredProfiles = profiles.filter(profile => profileMatchesFilter(profile, filterTextBeforeRender));
     if (profiles.length && !filteredProfiles.length) {
       const empty = document.createElement('div');
       empty.className = 'profile-dropdown-empty';
       empty.textContent = 'No saved connections found.';
-      profileDropdownMenu.appendChild(empty);
+      listWrap.appendChild(empty);
     } else {
       for (const profile of filteredProfiles) {
-        profileDropdownMenu.appendChild(buildProfileDropdownItem(profile.id, profile.name, formatProfileTarget(profile)));
+        listWrap.appendChild(buildProfileDropdownItem(profile.id, profile.name, formatProfileTarget(profile)));
       }
     }
 
@@ -3627,13 +4548,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   }
 
-  function buildProfileDropdownItem(id, name, meta) {
+  function buildProfileDropdownItem(id, name, meta, options = {}) {
+    const isSelected = String(id || '') === selectedProfileId;
+    const showSelectedVisual = isSelected && !options.suppressSelectedVisual;
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'profile-dropdown-item' + (String(id || '') === selectedProfileId ? ' selected' : '');
+    button.className = 'profile-dropdown-item' + (showSelectedVisual ? ' selected' : '');
     button.dataset.profileId = id || '';
     button.setAttribute('role', 'option');
-    button.setAttribute('aria-selected', String(String(id || '') === selectedProfileId));
+    button.setAttribute('aria-selected', String(isSelected));
 
     const nameElement = document.createElement('span');
     nameElement.className = 'profile-dropdown-name';
@@ -3674,19 +4597,191 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (picker) picker.classList.remove('open');
   }
 
-  function renderSessionTabs() {
-    if (!sessions.length) {
-      sessionTabs.innerHTML = '<span class="session-empty">No active connections.</span>';
+  function updateActiveSessionTabDivider() {
+    if (!browserSectionDivider || !sessionTabs) return;
+    const activeTab = sessionTabs.querySelector('.session-tab.active');
+    if (!activeTab) {
+      browserSectionDivider.style.setProperty('--active-tab-left', '0px');
+      browserSectionDivider.style.setProperty('--active-tab-width', '0px');
+      return;
+    }
+    const tabRect = activeTab.getBoundingClientRect();
+    const dividerRect = browserSectionDivider.getBoundingClientRect();
+    const left = Math.max(0, Math.round(tabRect.left - dividerRect.left));
+    const width = Math.max(0, Math.round(tabRect.width));
+    const gapLeft = left + 1;
+    const gapWidth = Math.max(0, width - 2);
+    browserSectionDivider.style.setProperty('--active-tab-left', gapLeft + 'px');
+    browserSectionDivider.style.setProperty('--active-tab-width', gapWidth + 'px');
+  }
+
+  function getSessionTabOrder() {
+    return sessions.map(session => session.id).filter(Boolean);
+  }
+
+  function ensureSessionTabDropLine() {
+    if (!sessionTabs) return null;
+    let line = sessionTabs.querySelector('.session-tab-drop-line');
+    if (!line) {
+      line = document.createElement('div');
+      line.className = 'session-tab-drop-line';
+      line.setAttribute('aria-hidden', 'true');
+      sessionTabs.appendChild(line);
+    }
+    return line;
+  }
+
+  function hideSessionTabDropLine() {
+    if (!sessionTabs) return;
+    const line = sessionTabs.querySelector('.session-tab-drop-line');
+    if (line) {
+      line.style.display = 'none';
+      line.style.left = '';
+    }
+  }
+
+  function clearSessionTabDragState() {
+    draggedSessionId = '';
+    sessionDragOverId = '';
+    sessionDragOverPosition = '';
+    sessionDragDropIndex = -1;
+    sessionTabDragging = false;
+    if (!sessionTabs) return;
+    for (const tab of Array.from(sessionTabs.querySelectorAll('.session-tab'))) {
+      tab.classList.remove('dragging', 'drag-over-before', 'drag-over-after');
+    }
+    hideSessionTabDropLine();
+  }
+
+  function getSessionTabButtons() {
+    if (!sessionTabs) return [];
+    return Array.from(sessionTabs.querySelectorAll('.session-tab[data-session-id]'));
+  }
+
+  function getSessionTabDropZoneRect() {
+    if (!sessionTabs) return null;
+    const zone = sessionTabs.closest('.browser-open-section') || sessionTabs.closest('.open-connections-row') || sessionTabs;
+    return zone.getBoundingClientRect();
+  }
+
+  function getSessionDropIndex(event) {
+    const tabs = getSessionTabButtons();
+    if (!tabs.length || !sessionTabs) return -1;
+
+    const zoneRect = getSessionTabDropZoneRect();
+    if (zoneRect) {
+      const verticalPadding = 12;
+      const horizontalPadding = 24;
+      const insideZone = event.clientX >= zoneRect.left - horizontalPadding && event.clientX <= zoneRect.right + horizontalPadding && event.clientY >= zoneRect.top - verticalPadding && event.clientY <= zoneRect.bottom + verticalPadding;
+      if (!insideZone) return -1;
+    }
+
+    const firstRect = tabs[0].getBoundingClientRect();
+    const lastRect = tabs[tabs.length - 1].getBoundingClientRect();
+    if (event.clientX <= firstRect.left) return 0;
+    if (event.clientX >= lastRect.right) return tabs.length;
+
+    for (let index = 0; index < tabs.length; index += 1) {
+      const rect = tabs[index].getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      if (event.clientX < centerX) return index;
+    }
+    return tabs.length;
+  }
+
+  function showSessionTabDropLine(insertionIndex) {
+    const tabs = getSessionTabButtons();
+    if (!sessionTabs || !tabs.length || insertionIndex < 0) return;
+    const line = ensureSessionTabDropLine();
+    if (!line) return;
+
+    const clampedIndex = Math.max(0, Math.min(insertionIndex, tabs.length));
+    let left = 0;
+    if (clampedIndex <= 0) {
+      left = tabs[0].offsetLeft;
+    } else if (clampedIndex >= tabs.length) {
+      const lastTab = tabs[tabs.length - 1];
+      left = lastTab.offsetLeft + lastTab.offsetWidth;
+    } else {
+      const previousTab = tabs[clampedIndex - 1];
+      const nextTab = tabs[clampedIndex];
+      left = ((previousTab.offsetLeft + previousTab.offsetWidth) + nextTab.offsetLeft) / 2;
+    }
+
+    const maxLeft = Math.max(0, sessionTabs.scrollWidth - 1);
+    line.style.left = Math.max(0, Math.min(Math.round(left), maxLeft)) + 'px';
+    line.style.display = 'block';
+  }
+
+  function setSessionTabDropIndicator(insertionIndex) {
+    if (insertionIndex < 0) {
+      sessionDragDropIndex = -1;
+      hideSessionTabDropLine();
+      return;
+    }
+    if (sessionDragDropIndex !== insertionIndex) {
+      sessionDragOverId = '';
+      sessionDragOverPosition = '';
+      sessionDragDropIndex = insertionIndex;
+    }
+    showSessionTabDropLine(insertionIndex);
+  }
+
+  function reorderSessionTabsByIndex(draggedId, insertionIndex) {
+    if (!draggedId || insertionIndex < 0) return;
+    const orderedIds = getSessionTabOrder();
+    const fromIndex = orderedIds.indexOf(draggedId);
+    if (fromIndex < 0) return;
+
+    const clampedIndex = Math.max(0, Math.min(insertionIndex, orderedIds.length));
+    orderedIds.splice(fromIndex, 1);
+    let insertIndex = clampedIndex;
+    if (fromIndex < clampedIndex) insertIndex -= 1;
+    insertIndex = Math.max(0, Math.min(insertIndex, orderedIds.length));
+    orderedIds.splice(insertIndex, 0, draggedId);
+
+    const currentOrder = getSessionTabOrder();
+    if (orderedIds.length === currentOrder.length && orderedIds.every((id, index) => id === currentOrder[index])) {
       return;
     }
 
+    const sessionById = new Map(sessions.map(session => [session.id, session]));
+    sessions = orderedIds.map(id => sessionById.get(id)).filter(Boolean);
+    renderSessionTabs();
+    vscode.postMessage({ type: 'reorderSessions', payload: { connectionIds: orderedIds } });
+  }
+
+  function getSessionDropPosition(event, tab) {
+    const rect = tab.getBoundingClientRect();
+    return event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+  }
+
+  function reorderSessionTabs(draggedId, targetId, position) {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    const orderedIds = getSessionTabOrder();
+    const targetIndex = orderedIds.indexOf(targetId);
+    if (targetIndex < 0) return;
+    reorderSessionTabsByIndex(draggedId, position === 'after' ? targetIndex + 1 : targetIndex);
+  }
+
+  function renderSessionTabs() {
+    if (!sessions.length) {
+      sessionTabs.classList.add('empty');
+      sessionTabs.innerHTML = '';
+      updateActiveSessionTabDivider();
+      return;
+    }
+
+    sessionTabs.classList.remove('empty');
     sessionTabs.innerHTML = '';
 
     for (const session of sessions) {
       const tab = document.createElement('button');
       tab.className = 'session-tab has-tooltip tooltip-above' + (session.id === activeConnectionId ? ' active' : '');
+      tab.dataset.sessionId = session.id || '';
       tab.dataset.tooltip = formatSessionTooltipTarget(session);
-      tab.innerHTML = '<span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect">×</span>';
+      tab.draggable = true;
+      tab.innerHTML = '<span class="session-icon" aria-hidden="true">' + SESSION_TAB_REMOTE_ICON + '</span><span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect"></span>';
       tab.addEventListener('click', () => {
         if (session.id === activeConnectionId) {
           syncConnectionFormWithActiveSession({ preserveStatus: true });
@@ -3696,7 +4791,28 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id } });
       });
 
+      tab.addEventListener('dragstart', event => {
+        if (event.target && event.target.closest && event.target.closest('.session-close')) {
+          event.preventDefault();
+          return;
+        }
+        draggedSessionId = session.id || '';
+        sessionDragOverId = '';
+        sessionDragOverPosition = '';
+        sessionTabDragging = true;
+        hideWebviewTooltip();
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', draggedSessionId);
+        }
+        tab.classList.add('dragging');
+      });
+
+      tab.addEventListener('dragend', clearSessionTabDragState);
+
       const close = tab.querySelector('.session-close');
+      close.addEventListener('pointerdown', event => { event.stopPropagation(); });
+      close.addEventListener('dragstart', event => { event.preventDefault(); event.stopPropagation(); });
       close.addEventListener('click', event => {
         event.stopPropagation();
         connectionButtonState = 'disconnecting';
@@ -3706,6 +4822,48 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
       sessionTabs.appendChild(tab);
     }
+    updateActiveSessionTabDivider();
+  }
+
+  function handleSessionTabsDragOver(event) {
+    if (!draggedSessionId) return;
+    const insertionIndex = getSessionDropIndex(event);
+    if (insertionIndex < 0) {
+      setSessionTabDropIndicator(-1);
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    setSessionTabDropIndicator(insertionIndex);
+  }
+
+  function handleSessionTabsDrop(event) {
+    if (!draggedSessionId) return;
+    const insertionIndex = getSessionDropIndex(event);
+    if (insertionIndex < 0) return;
+    event.preventDefault();
+    const droppedSessionId = draggedSessionId;
+    clearSessionTabDragState();
+    reorderSessionTabsByIndex(droppedSessionId, insertionIndex);
+  }
+
+  function handleSessionTabsDragLeave(event) {
+    if (!draggedSessionId || !sessionTabs) return;
+    const zone = sessionTabs.closest('.browser-open-section') || sessionTabs.closest('.open-connections-row') || sessionTabs;
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget && zone.contains(relatedTarget)) return;
+    hideSessionTabDropLine();
+  }
+
+  if (sessionTabs) {
+    sessionTabs.addEventListener('scroll', () => {
+      updateActiveSessionTabDivider();
+      if (sessionDragDropIndex >= 0) showSessionTabDropLine(sessionDragDropIndex);
+    });
+    const sessionDropZone = sessionTabs.closest('.browser-open-section') || sessionTabs.closest('.open-connections-row') || sessionTabs;
+    sessionDropZone.addEventListener('dragover', handleSessionTabsDragOver);
+    sessionDropZone.addEventListener('drop', handleSessionTabsDrop);
+    sessionDropZone.addEventListener('dragleave', handleSessionTabsDragLeave);
   }
 
   function updateSudoToggle() {
@@ -4804,6 +5962,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const MANAGE_ICON_SAVE = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M382-267.69 194.69-455l28.31-28.31 159 159 355-355L765.31-651 382-267.69Z"></path></svg>';
   const MANAGE_ICON_CANCEL = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="m256-227.69-28.31-28.31 224-224-224-224L256-732.31l224 224 224-224 28.31 28.31-224 224 224 224L704-227.69l-224-224-224 224Z"></path></svg>';
   const MANAGE_ICON_DELETE = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M292.31-140q-29.83 0-51.07-21.24Q220-182.48 220-212.31V-720h-40v-40h180v-40h240v40h180v40h-40v507.69q0 29.83-21.24 51.07Q697.52-140 667.69-140H292.31ZM700-720H260v507.69q0 13.85 9.23 23.08 9.23 9.23 23.08 9.23h375.38q13.85 0 23.08-9.23 9.23-9.23 9.23-23.08V-720ZM376.92-266.15h40v-367.7h-40v367.7Zm166.16 0h40v-367.7h-40v367.7ZM260-720v540-540Z"></path></svg>';
+  const MANAGE_ICON_DRAG = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M360-220q-24.75 0-42.37-17.63Q300-255.25 300-280q0-24.75 17.63-42.37Q335.25-340 360-340q24.75 0 42.38 17.63Q420-304.75 420-280q0 24.75-17.62 42.37Q384.75-220 360-220Zm240 0q-24.75 0-42.37-17.63Q540-255.25 540-280q0-24.75 17.63-42.37Q575.25-340 600-340q24.75 0 42.38 17.63Q660-304.75 660-280q0 24.75-17.62 42.37Q624.75-220 600-220ZM360-420q-24.75 0-42.37-17.63Q300-455.25 300-480q0-24.75 17.63-42.37Q335.25-540 360-540q24.75 0 42.38 17.63Q420-504.75 420-480q0 24.75-17.62 42.37Q384.75-420 360-420Zm240 0q-24.75 0-42.37-17.63Q540-455.25 540-480q0-24.75 17.63-42.37Q575.25-540 600-540q24.75 0 42.38 17.63Q660-504.75 660-480q0 24.75-17.62 42.37Q624.75-420 600-420ZM360-620q-24.75 0-42.37-17.63Q300-655.25 300-680q0-24.75 17.63-42.37Q335.25-740 360-740q24.75 0 42.38 17.63Q420-704.75 420-680q0 24.75-17.62 42.37Q384.75-620 360-620Zm240 0q-24.75 0-42.37-17.63Q540-655.25 540-680q0-24.75 17.63-42.37Q575.25-740 600-740q24.75 0 42.38 17.63Q660-704.75 660-680q0 24.75-17.62 42.37Q624.75-620 600-620Z"></path></svg>';
 
   function createManageProfileIconButton(action, label, iconMarkup, extraClass) {
     const button = document.createElement('button');
@@ -4814,6 +5973,207 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     button.setAttribute('aria-label', label);
     button.innerHTML = iconMarkup;
     return button;
+  }
+
+  function getManageProfileOrder() {
+    return profiles.map(profile => profile.id).filter(Boolean);
+  }
+
+  function ensureManageProfileDropLine() {
+    if (!manageProfilesList) return null;
+    let line = manageProfilesList.querySelector('.manage-profiles-drop-line');
+    if (!line) {
+      line = document.createElement('div');
+      line.className = 'manage-profiles-drop-line';
+      line.setAttribute('aria-hidden', 'true');
+      manageProfilesList.appendChild(line);
+    }
+    return line;
+  }
+
+  function hideManageProfileDropLine() {
+    if (!manageProfilesList) return;
+    const line = manageProfilesList.querySelector('.manage-profiles-drop-line');
+    if (line) {
+      line.style.display = 'none';
+      line.style.top = '';
+    }
+  }
+
+  function clearManageProfileDropIndicators() {
+    if (!manageProfilesList) return;
+    for (const row of Array.from(manageProfilesList.querySelectorAll('.manage-profile-row'))) {
+      row.classList.remove('drag-over-before', 'drag-over-after');
+    }
+    hideManageProfileDropLine();
+  }
+
+  function clearManageProfileDragState() {
+    draggedManageProfileId = '';
+    manageProfileDragOverId = '';
+    manageProfileDragOverPosition = '';
+    manageProfileDragging = false;
+    hideManageProfileDropLine();
+    if (!manageProfilesList) return;
+    for (const row of Array.from(manageProfilesList.querySelectorAll('.manage-profile-row'))) {
+      row.classList.remove('dragging', 'drag-over-before', 'drag-over-after');
+    }
+  }
+
+  function getManageProfileRows() {
+    if (!manageProfilesList) return [];
+    return Array.from(manageProfilesList.querySelectorAll('.manage-profile-row[data-profile-id]'));
+  }
+
+  function getManageProfileInsertionIndex(profileId, position) {
+    const rows = getManageProfileRows();
+    const index = rows.findIndex(row => (row.dataset.profileId || '') === profileId);
+    if (index < 0) return -1;
+    return position === 'after' ? index + 1 : index;
+  }
+
+  function showManageProfileDropLine(insertionIndex) {
+    const rows = getManageProfileRows();
+    if (!manageProfilesList || !rows.length || insertionIndex < 0) return;
+    const line = ensureManageProfileDropLine();
+    if (!line) return;
+    const clampedIndex = Math.max(0, Math.min(insertionIndex, rows.length));
+    const lineHeight = Math.max(1, line.offsetHeight || 1);
+    let top = 0;
+    if (clampedIndex <= 0) {
+      const firstRow = rows[0];
+      top = (firstRow.offsetTop - lineHeight) / 2;
+    } else if (clampedIndex >= rows.length) {
+      const lastRow = rows[rows.length - 1];
+      const listHeight = manageProfilesList.scrollHeight || manageProfilesList.clientHeight || (lastRow.offsetTop + lastRow.offsetHeight);
+      top = ((lastRow.offsetTop + lastRow.offsetHeight) + listHeight - lineHeight) / 2;
+    } else {
+      const previousRow = rows[clampedIndex - 1];
+      const nextRow = rows[clampedIndex];
+      top = ((previousRow.offsetTop + previousRow.offsetHeight) + nextRow.offsetTop - lineHeight) / 2;
+    }
+    line.style.top = Math.max(0, top) + 'px';
+    line.style.display = 'block';
+  }
+
+  function setManageProfileDropIndicator(profileId, position) {
+    if (!profileId || !position) return;
+    const insertionIndex = getManageProfileInsertionIndex(profileId, position);
+    if (insertionIndex < 0) return;
+    if (manageProfileDragOverId === profileId && manageProfileDragOverPosition === position) {
+      showManageProfileDropLine(insertionIndex);
+      return;
+    }
+    clearManageProfileDropIndicators();
+    manageProfileDragOverId = profileId;
+    manageProfileDragOverPosition = position;
+    showManageProfileDropLine(insertionIndex);
+  }
+
+  function getManageProfileDropPosition(event, row) {
+    const rect = row.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+  }
+
+  function isManageProfileReorderDragActive() {
+    return Boolean(manageProfilesDialogOpen && draggedManageProfileId && !String(manageProfilesFilterText || '').trim());
+  }
+
+  function getManageProfilesDialogRect() {
+    const dialog = manageProfilesBackdrop ? manageProfilesBackdrop.querySelector('.manage-profiles-dialog') : null;
+    return dialog ? dialog.getBoundingClientRect() : null;
+  }
+
+  function getManageProfileDropTarget(event) {
+    const rows = getManageProfileRows();
+    if (!rows.length || !manageProfilesList) return null;
+
+    const dialogRect = getManageProfilesDialogRect();
+    if (dialogRect) {
+      const horizontalPadding = 24;
+      const verticalPadding = 8;
+      const insideDialog = event.clientX >= dialogRect.left - horizontalPadding && event.clientX <= dialogRect.right + horizontalPadding && event.clientY >= dialogRect.top - verticalPadding && event.clientY <= dialogRect.bottom + verticalPadding;
+      if (!insideDialog) return null;
+    }
+
+    const firstRow = rows[0];
+    const lastRow = rows[rows.length - 1];
+    const firstRect = firstRow.getBoundingClientRect();
+    const lastRect = lastRow.getBoundingClientRect();
+
+    let insertionIndex = rows.length;
+    if (event.clientY <= firstRect.top) {
+      insertionIndex = 0;
+    } else if (event.clientY >= lastRect.bottom) {
+      insertionIndex = rows.length;
+    } else {
+      for (let index = 0; index < rows.length; index += 1) {
+        const rect = rows[index].getBoundingClientRect();
+        const centerY = rect.top + rect.height / 2;
+        if (event.clientY < centerY) {
+          insertionIndex = index;
+          break;
+        }
+      }
+    }
+
+    if (insertionIndex <= 0) {
+      return { profileId: firstRow.dataset.profileId || '', position: 'before' };
+    }
+    if (insertionIndex >= rows.length) {
+      return { profileId: lastRow.dataset.profileId || '', position: 'after' };
+    }
+    return { profileId: rows[insertionIndex].dataset.profileId || '', position: 'before' };
+  }
+
+  function handleManageProfilesDragOver(event) {
+    if (!isManageProfileReorderDragActive()) return;
+    const dropTarget = getManageProfileDropTarget(event);
+    if (!dropTarget || !dropTarget.profileId) {
+      clearManageProfileDropIndicators();
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    setManageProfileDropIndicator(dropTarget.profileId, dropTarget.position);
+  }
+
+  function handleManageProfilesDrop(event) {
+    if (!isManageProfileReorderDragActive()) {
+      clearManageProfileDragState();
+      return;
+    }
+    const dropTarget = getManageProfileDropTarget(event);
+    event.preventDefault();
+    const droppedProfileId = draggedManageProfileId;
+    clearManageProfileDragState();
+    if (!dropTarget || !dropTarget.profileId) return;
+    if (dropTarget.profileId === droppedProfileId) return;
+    reorderManageProfiles(droppedProfileId, dropTarget.profileId, dropTarget.position);
+  }
+
+  function reorderManageProfiles(draggedId, targetId, position) {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    const orderedIds = getManageProfileOrder();
+    const fromIndex = orderedIds.indexOf(draggedId);
+    const targetIndex = orderedIds.indexOf(targetId);
+    if (fromIndex < 0 || targetIndex < 0) return;
+
+    orderedIds.splice(fromIndex, 1);
+    let insertIndex = orderedIds.indexOf(targetId);
+    if (insertIndex < 0) return;
+    if (position === 'after') insertIndex += 1;
+    orderedIds.splice(insertIndex, 0, draggedId);
+
+    const currentOrder = getManageProfileOrder();
+    if (orderedIds.length === currentOrder.length && orderedIds.every((id, index) => id === currentOrder[index])) {
+      return;
+    }
+
+    const profileById = new Map(profiles.map(profile => [profile.id, profile]));
+    profiles = orderedIds.map(id => profileById.get(id)).filter(Boolean);
+    renderProfiles(selectedProfileId);
+    vscode.postMessage({ type: 'reorderConnections', payload: { profileIds: orderedIds, selectedId: selectedProfileId } });
   }
 
   function renderManageProfilesList() {
@@ -4840,10 +6200,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     for (const profile of filteredProfiles) {
       const row = document.createElement('div');
-      row.className = 'manage-profile-row';
+      const canReorderProfiles = !String(manageProfilesFilterText || '').trim();
+      row.className = 'manage-profile-row' + (canReorderProfiles ? ' can-reorder' : '');
       row.dataset.profileId = profile.id;
+      row.draggable = canReorderProfiles;
 
       if (renameProfileId === profile.id) {
+        const dragPlaceholder = document.createElement('span');
+        dragPlaceholder.className = 'manage-profile-drag-handle disabled';
+        dragPlaceholder.setAttribute('aria-hidden', 'true');
+        row.appendChild(dragPlaceholder);
+
         const form = document.createElement('div');
         form.className = 'manage-profile-rename-form';
 
@@ -4878,6 +6245,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         continue;
       }
 
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'manage-profile-drag-handle' + (canReorderProfiles ? '' : ' disabled');
+      dragHandle.innerHTML = MANAGE_ICON_DRAG;
+      dragHandle.setAttribute('aria-hidden', 'true');
+      if (!canReorderProfiles) {
+        dragHandle.title = 'Clear the filter to reorder saved connections.';
+      }
+      row.appendChild(dragHandle);
+
       const main = document.createElement('div');
       main.className = 'manage-profile-main';
 
@@ -4899,8 +6275,49 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const deleteButton = createManageProfileIconButton('delete', 'Delete', MANAGE_ICON_DELETE, 'secondary');
       row.appendChild(deleteButton);
 
+      row.addEventListener('dragstart', event => {
+        if (!canReorderProfiles) {
+          event.preventDefault();
+          return;
+        }
+        if (event.target && event.target.closest && event.target.closest('[data-manage-action], input, button')) {
+          event.preventDefault();
+          return;
+        }
+        draggedManageProfileId = profile.id || '';
+        manageProfileDragOverId = '';
+        manageProfileDragOverPosition = '';
+        manageProfileDragging = true;
+        hideWebviewTooltip();
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', draggedManageProfileId);
+        }
+        row.classList.add('dragging');
+      });
+
+      row.addEventListener('dragover', event => {
+        if (!canReorderProfiles || !draggedManageProfileId) return;
+        handleManageProfilesDragOver(event);
+      });
+
+      row.addEventListener('dragleave', event => {
+        if (draggedManageProfileId) return;
+        const relatedTarget = event.relatedTarget;
+        if (relatedTarget && row.contains(relatedTarget)) return;
+        row.classList.remove('drag-over-before', 'drag-over-after');
+      });
+
+      row.addEventListener('drop', event => {
+        if (!canReorderProfiles || !draggedManageProfileId) return;
+        handleManageProfilesDrop(event);
+      });
+
+      row.addEventListener('dragend', clearManageProfileDragState);
+
       manageProfilesList.appendChild(row);
     }
+    ensureManageProfileDropLine();
   }
 
   function handleManageProfilesClick(event) {
@@ -4953,10 +6370,123 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
 
 
+  function readRemoteCommandCollection(storageKey) {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const map = new Map();
+      if (parsed && typeof parsed === 'object') {
+        for (const key of Object.keys(parsed)) {
+          map.set(key, Array.isArray(parsed[key]) ? parsed[key] : []);
+        }
+      }
+      return map;
+    } catch (_) {
+      return new Map();
+    }
+  }
+
+  function persistRemoteCommandCollection(storageKey, map) {
+    try {
+      const raw = {};
+      for (const [key, value] of map.entries()) {
+        raw[key] = Array.isArray(value) ? value : [];
+      }
+      localStorage.setItem(storageKey, JSON.stringify(raw));
+    } catch (_) {
+      // Ignore localStorage failures.
+    }
+  }
+
+  function hydrateRemoteCommandStorage() {
+    if (!remoteCommandSavedByConnectionId.size) {
+      for (const [key, value] of readRemoteCommandCollection(REMOTE_COMMAND_STORAGE_KEY).entries()) {
+        remoteCommandSavedByConnectionId.set(key, value);
+      }
+    }
+    if (!remoteCommandHistoryByConnectionId.size) {
+      for (const [key, value] of readRemoteCommandCollection(REMOTE_COMMAND_HISTORY_STORAGE_KEY).entries()) {
+        remoteCommandHistoryByConnectionId.set(key, value);
+      }
+    }
+  }
+
+  function persistRemoteCommandSaved() {
+    persistRemoteCommandCollection(REMOTE_COMMAND_STORAGE_KEY, remoteCommandSavedByConnectionId);
+  }
+
+  function persistRemoteCommandHistory() {
+    persistRemoteCommandCollection(REMOTE_COMMAND_HISTORY_STORAGE_KEY, remoteCommandHistoryByConnectionId);
+  }
+
+  hydrateRemoteCommandStorage();
+
+  function createRemoteCommandSession(connectionId) {
+    return {
+      connectionId: String(connectionId || ''),
+      status: 'idle',
+      commandId: '',
+      command: '',
+      workingDirectory: normalizeUiRemotePath(currentPath.value || '/'),
+      useSudo: false,
+      outputText: '',
+      finalMessage: '',
+      outputViewLimited: false,
+      stopping: false,
+      forceKilling: false,
+      exitCode: undefined,
+      error: '',
+      startedAt: 0,
+      finishedAt: 0,
+      finishedBadgeVisible: false,
+      commandCount: 0,
+      failedCommandCount: 0
+    };
+  }
+
+  function getRemoteCommandSession(connectionId) {
+    const key = String(connectionId || activeConnectionId || '');
+    if (!key) return createRemoteCommandSession('');
+    let session = remoteCommandSessionsByConnectionId.get(key);
+    if (!session) {
+      session = createRemoteCommandSession(key);
+      remoteCommandSessionsByConnectionId.set(key, session);
+    }
+    return session;
+  }
+
+  function findRemoteCommandSessionByCommandId(commandId) {
+    const id = String(commandId || '');
+    if (!id) return null;
+    for (const session of remoteCommandSessionsByConnectionId.values()) {
+      if (session.commandId === id) return session;
+    }
+    return null;
+  }
+
+  function getCurrentRemoteCommandSession() {
+    return getRemoteCommandSession(remoteCommandDialogConnectionId || activeConnectionId);
+  }
+
+  function getRemoteCommandSavedList(connectionId) {
+    const key = String(connectionId || activeConnectionId || '');
+    if (!key) return [];
+    if (!remoteCommandSavedByConnectionId.has(key)) remoteCommandSavedByConnectionId.set(key, []);
+    return remoteCommandSavedByConnectionId.get(key);
+  }
+
+  function getRemoteCommandHistoryList(connectionId) {
+    const key = String(connectionId || activeConnectionId || '');
+    if (!key) return [];
+    if (!remoteCommandHistoryByConnectionId.has(key)) remoteCommandHistoryByConnectionId.set(key, []);
+    return remoteCommandHistoryByConnectionId.get(key);
+  }
+
   function updateRemoteCommandConnectedTo() {
     if (!remoteCommandConnectedTo) return;
 
-    const active = getActiveSession();
+    const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
+    const active = sessions.find(item => item.id === connectionId) || getActiveSession();
     const hostValue = active ? String(active.host || '').trim() : String(host.value || '').trim();
     remoteCommandConnectedTo.textContent = hostValue || '-';
     remoteCommandConnectedTo.title = hostValue || '';
@@ -4965,10 +6495,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function updateRemoteCommandRunAs() {
     if (!remoteCommandRunAs) return;
 
-    const active = getActiveSession();
+    const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
+    const active = sessions.find(item => item.id === connectionId) || getActiveSession();
     const username = active ? String(active.username || '').trim() : '';
     const isRootConnection = username.toLowerCase() === 'root';
-    const useSudo = Boolean(active && active.sudoModeEnabled && !isRootConnection);
+    const connectionSudoEnabled = Boolean(active && active.sudoModeEnabled && !isRootConnection);
+    const state = getRemoteCommandSession(connectionId);
+    const useSudo = connectionSudoEnabled || Boolean(state.useSudo && !isRootConnection);
 
     remoteCommandRunAs.textContent = useSudo
       ? 'root via sudo'
@@ -4976,6 +6509,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         ? 'root'
         : (username || 'SSH user');
     remoteCommandRunAs.classList.toggle('sudo', useSudo);
+
+    if (remoteCommandUseSudo) {
+      remoteCommandUseSudo.checked = useSudo;
+      remoteCommandUseSudo.disabled = connectionSudoEnabled || state.status === 'running';
+    }
+    if (remoteCommandSudoNote) {
+      remoteCommandSudoNote.textContent = connectionSudoEnabled ? 'Enabled by connection Sudo Mode' : '';
+    }
   }
 
   function syncRemoteCommandRunButtonMinWidth() {
@@ -4990,53 +6531,68 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (!activeConnectionId || !getActiveRemoteCapabilities().canRunCommand) return;
 
     remoteCommandDialogOpen = true;
-    remoteCommandClosingAfterStop = false;
-    remoteCommandStopping = false;
-    remoteCommandForceKilling = false;
+    remoteCommandDialogConnectionId = activeConnectionId;
+    remoteCommandEditingSavedId = '';
+    hideRemoteCommandWorkingDirectoryPicker();
     clearRemoteCommandStopEscalationTimer();
-    remoteCommandStopWarning.classList.remove('visible');
-    updateRemoteCommandConnectedTo();
-    remoteCommandWorkingDirectory.textContent = normalizeUiRemotePath(workingDirectory || currentPath.value || '/');
-    updateRemoteCommandRunAs();
     remoteCommandCloseWarning.classList.remove('visible');
+    remoteCommandStopWarning.classList.remove('visible');
+
+    const state = getCurrentRemoteCommandSession();
+    if (state.status === 'idle') {
+      state.workingDirectory = normalizeUiRemotePath(workingDirectory || currentPath.value || state.workingDirectory || '/');
+    } else if (workingDirectory && state.status !== 'running') {
+      state.workingDirectory = normalizeUiRemotePath(workingDirectory);
+    }
+
+    updateRemoteCommandConnectedTo();
+    renderRemoteCommandSession();
     remoteCommandBackdrop.classList.add('visible');
     remoteCommandBackdrop.setAttribute('aria-hidden', 'false');
     requestAnimationFrame(syncRemoteCommandRunButtonMinWidth);
-    updateRemoteCommandControls();
-    setTimeout(() => remoteCommandInput.focus(), 0);
+    setTimeout(() => {
+      if (state.status === 'running') {
+        remoteCommandRunButton.focus();
+      } else {
+        remoteCommandInput.focus();
+      }
+    }, 0);
   }
 
   function attemptCloseRemoteCommandDialog() {
     if (!remoteCommandDialogOpen) return;
-
-    if (remoteCommandRunning) {
-      remoteCommandCloseWarning.classList.add('visible');
-      setTimeout(() => remoteCommandKeepRunningButton.focus(), 0);
-      return;
-    }
-
     hideRemoteCommandDialog();
   }
 
   function hideRemoteCommandDialog() {
+    const state = getCurrentRemoteCommandSession();
+    if (state.status !== 'running' && state.finishedBadgeVisible) {
+      state.finishedBadgeVisible = false;
+    }
     remoteCommandDialogOpen = false;
-    remoteCommandClosingAfterStop = false;
-    remoteCommandStopping = false;
-    remoteCommandForceKilling = false;
+    remoteCommandEditingSavedId = '';
+    hideRemoteCommandWorkingDirectoryPicker();
     clearRemoteCommandStopEscalationTimer();
     remoteCommandCloseWarning.classList.remove('visible');
     remoteCommandStopWarning.classList.remove('visible');
     remoteCommandBackdrop.classList.remove('visible');
     remoteCommandBackdrop.setAttribute('aria-hidden', 'true');
-    remoteCommandInput.value = '';
-    remoteCommandFinalMessage = '';
-    setRemoteCommandOutputText('');
-    setRemoteCommandStatus('');
-    updateRemoteCommandControls();
+    renderRemoteCommandBadge();
+  }
+
+  function collectRemoteCommandUseSudo() {
+    const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
+    const active = sessions.find(item => item.id === connectionId) || getActiveSession();
+    const username = active ? String(active.username || '').trim() : '';
+    const isRootConnection = username.toLowerCase() === 'root';
+    if (isRootConnection) return false;
+    if (active && active.sudoModeEnabled) return true;
+    return Boolean(remoteCommandUseSudo && remoteCommandUseSudo.checked);
   }
 
   function runRemoteCommandFromDialog() {
-    if (remoteCommandRunning) return;
+    const state = getCurrentRemoteCommandSession();
+    if (state.status === 'running') return;
 
     if (!getActiveRemoteCapabilities().canRunCommand) {
       setRemoteCommandStatus('Run Remote Command is available only for SFTP connections.', true);
@@ -5044,7 +6600,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
 
     const command = String(remoteCommandInput.value || '').trim();
-    const workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.textContent || currentPath.value || '/');
+    const workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || currentPath.value || '/');
 
     if (!command) {
       setRemoteCommandStatus('Enter a command to run.', true);
@@ -5052,59 +6608,71 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       return;
     }
 
-    remoteCommandId = Date.now() + '-' + Math.random().toString(36).slice(2);
-    remoteCommandRunning = true;
-    remoteCommandClosingAfterStop = false;
-    remoteCommandStopping = false;
-    remoteCommandForceKilling = false;
-    clearRemoteCommandStopEscalationTimer();
+    state.commandId = Date.now() + '-' + Math.random().toString(36).slice(2);
+    state.status = 'running';
+    state.command = command;
+    state.workingDirectory = workingDirectory;
+    state.useSudo = collectRemoteCommandUseSudo();
+    state.outputText = '';
+    state.finalMessage = '';
+    state.outputViewLimited = false;
+    state.stopping = false;
+    state.forceKilling = false;
+    state.exitCode = undefined;
+    state.error = '';
+    state.startedAt = Date.now();
+    state.finishedAt = 0;
+    state.finishedBadgeVisible = false;
+    state.commandCount = 0;
+    state.failedCommandCount = 0;
     remoteCommandCloseWarning.classList.remove('visible');
     remoteCommandStopWarning.classList.remove('visible');
-    remoteCommandFinalMessage = '';
-    setRemoteCommandOutputText('');
-    setRemoteCommandStatus('Starting...');
-    updateRemoteCommandControls();
+    renderRemoteCommandSession();
     scrollRemoteCommandOutputToBottom();
 
     vscode.postMessage({
       type: 'requestRunRemoteCommand',
       payload: {
-        commandId: remoteCommandId,
+        commandId: state.commandId,
+        connectionId: state.connectionId,
         workingDirectory,
-        command
+        command,
+        useSudo: state.useSudo
       }
     });
   }
 
-  function stopRemoteCommandFromDialog(closeAfterStop) {
-    if (!remoteCommandRunning || !remoteCommandId) return;
+  function stopRemoteCommandFromDialog() {
+    const state = getCurrentRemoteCommandSession();
+    if (state.status !== 'running' || !state.commandId) return;
 
-    remoteCommandClosingAfterStop = Boolean(closeAfterStop);
-    remoteCommandStopping = true;
-    remoteCommandForceKilling = false;
+    state.stopping = true;
+    state.forceKilling = false;
     remoteCommandCloseWarning.classList.remove('visible');
     remoteCommandStopWarning.classList.remove('visible');
     setRemoteCommandStatus('Stopping...');
     updateRemoteCommandControls();
-    vscode.postMessage({ type: 'stopRemoteCommand', payload: { commandId: remoteCommandId } });
+    vscode.postMessage({ type: 'stopRemoteCommand', payload: { commandId: state.commandId, connectionId: state.connectionId } });
     startRemoteCommandStopEscalationTimer();
   }
 
   function forceKillRemoteCommandFromDialog() {
-    if (!remoteCommandRunning || !remoteCommandId) return;
+    const state = getCurrentRemoteCommandSession();
+    if (state.status !== 'running' || !state.commandId) return;
 
-    remoteCommandForceKilling = true;
+    state.forceKilling = true;
     remoteCommandStopWarning.classList.remove('visible');
     setRemoteCommandStatus('Force killing...');
     updateRemoteCommandControls();
-    vscode.postMessage({ type: 'stopRemoteCommand', payload: { commandId: remoteCommandId, force: true } });
+    vscode.postMessage({ type: 'stopRemoteCommand', payload: { commandId: state.commandId, connectionId: state.connectionId, force: true } });
   }
 
   function startRemoteCommandStopEscalationTimer() {
     clearRemoteCommandStopEscalationTimer();
     remoteCommandStopEscalationTimer = setTimeout(() => {
       remoteCommandStopEscalationTimer = null;
-      if (!remoteCommandRunning || !remoteCommandStopping) return;
+      const state = getCurrentRemoteCommandSession();
+      if (state.status !== 'running' || !state.stopping) return;
       remoteCommandStopWarning.classList.add('visible');
       setRemoteCommandStatus('Still stopping...');
       setTimeout(() => remoteCommandForceKillButton.focus(), 0);
@@ -5119,161 +6687,201 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function clearRemoteCommandOutput() {
-    if (remoteCommandRunning) return;
-    remoteCommandFinalMessage = '';
+    const state = getCurrentRemoteCommandSession();
+    if (state.status === 'running') return;
+    state.outputText = '';
+    state.finalMessage = '';
+    state.error = '';
+    state.status = 'idle';
+    state.finishedBadgeVisible = false;
     setRemoteCommandOutputText('');
     setRemoteCommandStatus('');
-  }
-
-  function handleRemoteCommandStarted(payload) {
-    if (!payload || payload.commandId !== remoteCommandId) return;
-    remoteCommandRunning = true;
-    remoteCommandStopping = false;
-    remoteCommandForceKilling = false;
-    clearRemoteCommandStopEscalationTimer();
-    remoteCommandStopWarning.classList.remove('visible');
-    setRemoteCommandStatus('Running...');
+    renderRemoteCommandBadge();
     updateRemoteCommandControls();
   }
 
+  function handleRemoteCommandStarted(payload) {
+    if (!payload) return;
+    const state = findRemoteCommandSessionByCommandId(payload.commandId) || getRemoteCommandSession(payload.connectionId || activeConnectionId);
+    state.commandId = payload.commandId || state.commandId;
+    state.connectionId = payload.connectionId || state.connectionId;
+    state.status = 'running';
+    state.command = payload.command || state.command;
+    state.workingDirectory = normalizeUiRemotePath(payload.workingDirectory || state.workingDirectory || '/');
+    state.useSudo = Boolean(payload.useSudo);
+    state.stopping = false;
+    state.forceKilling = false;
+    clearRemoteCommandStopEscalationTimer();
+    remoteCommandStopWarning.classList.remove('visible');
+    if (remoteCommandDialogOpen && state.connectionId === remoteCommandDialogConnectionId) {
+      renderRemoteCommandSession();
+      setRemoteCommandStatus('Running...');
+    }
+    renderRemoteCommandBadge();
+  }
+
   function handleRemoteCommandOutput(payload) {
-    if (!payload || payload.commandId !== remoteCommandId) return;
+    if (!payload) return;
+    const state = findRemoteCommandSessionByCommandId(payload.commandId);
+    if (!state) return;
 
+    const wasNearBottom = remoteCommandDialogOpen && state.connectionId === remoteCommandDialogConnectionId && isRemoteCommandOutputNearBottom();
     if (payload.kind === 'command') {
-      appendRemoteCommandCommand(String(payload.text || ''));
-      return;
+      appendRemoteCommandCommand(String(payload.text || ''), state);
+    } else if (payload.kind === 'commandStatus') {
+      appendRemoteCommandCommandStatus(Number(payload.code || 0), state);
+    } else {
+      appendRemoteCommandOutput(String(payload.text || ''), state);
     }
 
-    if (payload.kind === 'commandStatus') {
-      appendRemoteCommandCommandStatus(Number(payload.code || 0));
-      return;
+    if (remoteCommandDialogOpen && state.connectionId === remoteCommandDialogConnectionId) {
+      renderRemoteCommandOutputText(state);
+      updateRemoteCommandOutputNotice(state);
+      updateRemoteCommandCopyButton();
+      if (wasNearBottom) scrollRemoteCommandOutputToBottom();
     }
-
-    appendRemoteCommandOutput(String(payload.text || ''));
   }
 
   function handleRemoteCommandFinished(payload) {
-    if (!payload || payload.commandId !== remoteCommandId) return;
+    if (!payload) return;
+    const state = findRemoteCommandSessionByCommandId(payload.commandId) || getRemoteCommandSession(payload.connectionId || remoteCommandDialogConnectionId || activeConnectionId);
+    if (payload.commandId && state.commandId !== payload.commandId) return;
 
-    remoteCommandRunning = false;
-    remoteCommandStopping = false;
-    remoteCommandForceKilling = false;
+    state.status = 'finished';
+    state.stopping = false;
+    state.forceKilling = false;
+    state.finishedAt = Date.now();
+    state.finishedBadgeVisible = true;
+    state.exitCode = typeof payload.code === 'number' ? payload.code : undefined;
+    state.commandCount = Number(payload.commandCount || 0);
+    state.failedCommandCount = Number(payload.failedCommandCount || 0);
+    state.error = String(payload.error || '');
     clearRemoteCommandStopEscalationTimer();
     remoteCommandCloseWarning.classList.remove('visible');
     remoteCommandStopWarning.classList.remove('visible');
 
     if (payload.stopped) {
-      remoteCommandFinalMessage = payload.forceKilled ? 'Force killed by user.' : 'Stopped by user.';
-      renderRemoteCommandOutputText();
-      setRemoteCommandStatus(remoteCommandFinalMessage);
+      state.finalMessage = payload.forceKilled ? 'Force killed by user.' : 'Stopped by user.';
+      appendRemoteCommandSystemLine(state.finalMessage, state);
     } else if (payload.error) {
-      setRemoteCommandStatus('Error: ' + payload.error, true);
+      state.finalMessage = 'Error: ' + String(payload.error || 'Remote command failed.');
+      appendRemoteCommandSystemLine(state.finalMessage, state);
+    } else if (typeof payload.code === 'number' && payload.signal) {
+      state.finalMessage = 'Command exited with code ' + payload.code + ' and signal ' + payload.signal + '.';
+      appendRemoteCommandSystemLine(state.finalMessage, state);
     } else {
-      const exitCode = typeof payload.code === 'number' ? payload.code : 0;
-      const signal = payload.signal ? ' · signal ' + payload.signal : '';
-      const failedCommandCount = Number(payload.failedCommandCount || 0);
-      if (failedCommandCount > 0) {
-        const label = failedCommandCount === 1 ? '1 command failed' : failedCommandCount + ' commands failed';
-        setRemoteCommandStatus('Finished with errors. ' + label + '. Last exit code: ' + exitCode + signal, true);
-      } else {
-        setRemoteCommandStatus('Exit code: ' + exitCode + signal, exitCode !== 0);
-      }
+      state.finalMessage = '';
     }
 
-    updateRemoteCommandControls();
+    addRemoteCommandHistoryItem(state);
 
-    if (remoteCommandClosingAfterStop) {
-      hideRemoteCommandDialog();
-    } else if (remoteCommandDialogOpen) {
+    if (remoteCommandDialogOpen && state.connectionId === remoteCommandDialogConnectionId) {
+      renderRemoteCommandSession();
+      if (payload.stopped) {
+        setRemoteCommandStatus(state.finalMessage);
+      } else if (payload.error) {
+        setRemoteCommandStatus(String(payload.error || 'Remote command failed.'), true);
+      } else {
+        const failedCount = Number(payload.failedCommandCount || 0);
+        setRemoteCommandStatus(failedCount > 0 ? (failedCount + ' command' + (failedCount === 1 ? '' : 's') + ' failed.') : 'Finished.');
+      }
       setTimeout(() => {
         remoteCommandInput.focus();
         remoteCommandInput.select();
       }, 0);
     }
+    renderRemoteCommandBadge();
+    renderRemoteCommandHistoryList();
   }
 
   function formatRemoteCommandPrompt(command) {
-    const lines = String(command || '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n').split('\\n');
-    return lines.map((line, index) => (index === 0 ? '$ ' : '> ') + line).join('\\n') + '\\n';
+    return '$ ' + String(command || '').trim() + '\\n';
   }
 
-  function appendRemoteCommandCommand(command) {
-    const current = remoteCommandOutputText || '';
+  function appendRemoteCommandCommand(command, state) {
+    const target = state || getCurrentRemoteCommandSession();
+    const current = target.outputText || '';
     const prefix = current && !current.endsWith('\\n') ? '\\n' : '';
-    setRemoteCommandOutputText(current + prefix + formatRemoteCommandPrompt(command));
-    scrollRemoteCommandOutputToBottom();
+    setRemoteCommandOutputText(current + prefix + formatRemoteCommandPrompt(command), target);
   }
 
-  function appendRemoteCommandCommandStatus(code) {
-    const current = remoteCommandOutputText || '';
+  function appendRemoteCommandCommandStatus(code, state) {
+    const target = state || getCurrentRemoteCommandSession();
+    const current = target.outputText || '';
     const prefix = current && !current.endsWith('\\n') ? '\\n' : '';
-    setRemoteCommandOutputText(current + prefix + '[Command exited with code ' + code + ']\\n');
-    scrollRemoteCommandOutputToBottom();
+    setRemoteCommandOutputText(current + prefix + '[Command finished with exit code ' + code + ']\\n', target);
   }
 
-  function appendRemoteCommandOutput(text) {
+  function appendRemoteCommandSystemLine(message, state) {
+    const target = state || getCurrentRemoteCommandSession();
+    const current = target.outputText || '';
+    const prefix = current && !current.endsWith('\\n') ? '\\n' : '';
+    setRemoteCommandOutputText(current + prefix + '[' + String(message || '') + ']\\n', target);
+  }
+
+  function appendRemoteCommandOutput(text, state) {
     if (!text) return;
+    const target = state || getCurrentRemoteCommandSession();
+    setRemoteCommandOutputText((target.outputText || '') + text, target);
+  }
 
-    const shouldStickToBottom = isRemoteCommandOutputNearBottom();
-    setRemoteCommandOutputText(remoteCommandOutputText + text);
+  function setRemoteCommandOutputText(text, state) {
+    const target = state || getCurrentRemoteCommandSession();
+    target.outputText = String(text || '');
+    target.outputViewLimited = target.outputText.length > REMOTE_COMMAND_MAX_OUTPUT_CHARS;
 
-    if (shouldStickToBottom) {
-      scrollRemoteCommandOutputToBottom();
+    if (target.outputViewLimited) {
+      target.outputText = target.outputText.slice(-REMOTE_COMMAND_MAX_OUTPUT_CHARS);
+    }
+
+    if (remoteCommandDialogOpen && target.connectionId === remoteCommandDialogConnectionId) {
+      renderRemoteCommandOutputText(target);
+      updateRemoteCommandOutputNotice(target);
+      updateRemoteCommandCopyButton();
     }
   }
 
-  function setRemoteCommandOutputText(text) {
-    remoteCommandOutputText = String(text || '');
-    remoteCommandOutputViewLimited = remoteCommandOutputText.length > REMOTE_COMMAND_MAX_OUTPUT_CHARS;
-
-    if (remoteCommandOutputViewLimited) {
-      remoteCommandOutputText = remoteCommandOutputText.slice(-REMOTE_COMMAND_MAX_OUTPUT_CHARS);
-    }
-
-    renderRemoteCommandOutputText();
-    updateRemoteCommandOutputNotice();
-    updateRemoteCommandCopyButton();
+  function getRemoteCommandOutputTextForDisplay(state) {
+    const target = state || getCurrentRemoteCommandSession();
+    const output = String(target.outputText || '');
+    const finalMessage = String(target.finalMessage || '').trim();
+    if (!finalMessage || output.includes(finalMessage)) return output;
+    const separator = output && !output.endsWith('\\n') ? '\\n' : '';
+    return output + separator + '[' + finalMessage + ']\\n';
   }
 
-  function getRemoteCommandOutputTextForDisplay() {
-    const output = String(remoteCommandOutputText || '');
-    const finalMessage = String(remoteCommandFinalMessage || '').trim();
-    if (!finalMessage) return output;
-    const prefix = output && !output.endsWith('\\n') ? '\\n' : '';
-    return output + prefix + finalMessage + '\\n';
-  }
-
-  function renderRemoteCommandOutputText() {
-    remoteCommandOutput.innerHTML = renderRemoteCommandOutput(getRemoteCommandOutputTextForDisplay());
+  function renderRemoteCommandOutputText(state) {
+    const target = state || getCurrentRemoteCommandSession();
+    remoteCommandOutput.innerHTML = renderRemoteCommandOutput(getRemoteCommandOutputTextForDisplay(target));
   }
 
   function renderRemoteCommandOutput(text) {
-    const source = String(text || '');
-    const lines = source.match(/[^\\n]*\\n|[^\\n]+$/g) || [];
-
-    return lines.map((line, index) => {
-      const hasNewline = line.endsWith('\\n');
-      const value = hasNewline ? line.slice(0, -1) : line;
-      const newline = hasNewline ? '\\n' : '';
-      const escaped = escapeHtml(value) + newline;
-
-      if (value.startsWith('$ ') || value.startsWith('> ')) {
-        return '<span class="remote-command-output-command">' + escaped + '</span>';
-      }
-
-      if (/^(Stopped by user\\.|Force killed by user\\.|\\[(Command stopped by user\\.|Command finished with exit code |Command exited with code |Error: ))/.test(value)) {
-        return '<span class="remote-command-output-system">' + escaped + '</span>';
-      }
-
-      return escaped;
-    }).join('');
+    const escaped = escapeHtml(String(text || ''));
+    return escaped
+      .split('\\n')
+      .map(line => {
+        if (!line) return '';
+        const value = line.replace(/&amp;/g, '&');
+        if (value.startsWith('$ ')) {
+          return '<span class="remote-command-output-command">' + line + '</span>';
+        }
+        const remoteCommandSystemMessage = value === 'Stopped by user.'
+          || value === 'Force killed by user.'
+          || value.startsWith('[Command stopped by user.')
+          || value.startsWith('[Command finished with exit code ')
+          || value.startsWith('[Command exited with code ')
+          || value.startsWith('[Error: ');
+        if (remoteCommandSystemMessage) {
+          return '<span class="remote-command-output-system">' + line + '</span>';
+        }
+        return line;
+      })
+      .join('\\n');
   }
-
-
 
   function selectRemoteCommandOutputText() {
     if (!remoteCommandOutput) return;
-    const selection = window.getSelection ? window.getSelection() : null;
+    const selection = window.getSelection();
     if (!selection) return;
     const range = document.createRange();
     range.selectNodeContents(remoteCommandOutput);
@@ -5282,17 +6890,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function getRemoteCommandOutputCopyText() {
-    const output = getRemoteCommandOutputTextForDisplay().replace(/\\s+$/g, '');
+    const state = getCurrentRemoteCommandSession();
+    const output = getRemoteCommandOutputTextForDisplay(state).trim();
     const statusText = remoteCommandStatus ? String(remoteCommandStatus.textContent || '').trim() : '';
-    const finalMessage = String(remoteCommandFinalMessage || '').trim();
-    if (output && statusText && statusText !== finalMessage) return output + '\\n\\n' + statusText;
-    return output || statusText;
+    if (!output) return statusText;
+    return statusText ? output + '\\n' + statusText : output;
   }
 
   function copyRemoteCommandOutput() {
     const text = getRemoteCommandOutputCopyText();
     if (!text) return;
-    vscode.postMessage({ type: 'copyStatus', payload: { text, message: 'Copied output' } });
+    vscode.postMessage({ type: 'copyStatus', payload: { text, message: 'Remote command output copied.' } });
   }
 
   function updateRemoteCommandCopyButton() {
@@ -5300,10 +6908,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteCommandCopyButton.disabled = !getRemoteCommandOutputCopyText();
   }
 
-  function updateRemoteCommandOutputNotice() {
-    remoteCommandOutputNotice.textContent = remoteCommandOutputViewLimited ? 'Showing latest output only.' : '';
+  function updateRemoteCommandOutputNotice(state) {
+    const target = state || getCurrentRemoteCommandSession();
+    remoteCommandOutputNotice.textContent = target.outputViewLimited ? 'Showing latest output only.' : '';
   }
-
 
   function setRemoteCommandStatus(message, isError) {
     remoteCommandStatus.textContent = message || '';
@@ -5311,21 +6919,49 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateRemoteCommandCopyButton();
   }
 
-  function updateRemoteCommandControls() {
-    remoteCommandInput.disabled = remoteCommandRunning;
+  function renderRemoteCommandSession() {
+    const state = getCurrentRemoteCommandSession();
+    updateRemoteCommandConnectedTo();
+    if (remoteCommandWorkingDirectory) remoteCommandWorkingDirectory.value = normalizeUiRemotePath(state.workingDirectory || currentPath.value || '/');
+    if (remoteCommandInput) remoteCommandInput.value = state.command || '';
+    renderRemoteCommandOutputText(state);
+    updateRemoteCommandOutputNotice(state);
+    updateRemoteCommandRunAs();
+    renderRemoteCommandSavedList();
+    renderRemoteCommandHistoryList();
+    updateRemoteCommandControls();
+    const status = state.status === 'running'
+      ? (state.stopping ? 'Stopping...' : 'Running...')
+      : state.status === 'finished'
+        ? (state.error ? state.error : (typeof state.exitCode === 'number' ? 'Finished with exit code ' + state.exitCode : 'Finished.'))
+        : 'Ready';
+    setRemoteCommandStatus(status, state.status === 'finished' && Boolean(state.error));
+    renderRemoteCommandBadge();
+  }
 
-    if (remoteCommandRunning) {
-      remoteCommandRunButton.textContent = remoteCommandStopping ? 'Stopping…' : 'Stop';
+  function updateRemoteCommandControls() {
+    const state = getCurrentRemoteCommandSession();
+    const running = state.status === 'running';
+    if (remoteCommandInput) remoteCommandInput.disabled = running;
+    if (remoteCommandWorkingDirectory) remoteCommandWorkingDirectory.disabled = running;
+    if (remoteCommandBrowseWorkingDirectoryButton) remoteCommandBrowseWorkingDirectoryButton.disabled = running;
+
+    if (running) {
+      remoteCommandRunButton.textContent = state.stopping ? 'Stopping…' : 'Stop';
       remoteCommandRunButton.classList.add('secondary');
-      remoteCommandRunButton.disabled = remoteCommandStopping;
+      remoteCommandRunButton.disabled = state.stopping;
     } else {
       remoteCommandRunButton.textContent = 'Run';
       remoteCommandRunButton.classList.remove('secondary');
       remoteCommandRunButton.disabled = !activeConnectionId || !getActiveRemoteCapabilities().canRunCommand;
     }
 
-    remoteCommandForceKillButton.disabled = !remoteCommandRunning || !remoteCommandStopping || remoteCommandForceKilling;
-    remoteCommandClearButton.disabled = remoteCommandRunning || !(remoteCommandOutputText || remoteCommandFinalMessage || '');
+    if (remoteCommandSaveCurrentButton) {
+      remoteCommandSaveCurrentButton.disabled = running || !String(remoteCommandInput.value || '').trim();
+    }
+    remoteCommandForceKillButton.disabled = !running || !state.stopping || state.forceKilling;
+    remoteCommandClearButton.disabled = running || !(state.outputText || state.finalMessage || state.error || state.status === 'finished');
+    updateRemoteCommandRunAs();
     updateRemoteCommandCopyButton();
   }
 
@@ -5335,6 +6971,287 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   function scrollRemoteCommandOutputToBottom() {
     remoteCommandOutputWrap.scrollTop = remoteCommandOutputWrap.scrollHeight;
+  }
+
+  function renderLogViewerBadge() {
+    if (!logViewerBadge) return;
+    if (logViewerActiveSessionCount > 0) {
+      logViewerBadge.textContent = String(Math.min(99, logViewerActiveSessionCount));
+      logViewerBadge.style.display = 'block';
+    } else {
+      logViewerBadge.style.display = 'none';
+    }
+  }
+
+  function renderRemoteCommandBadge() {
+    if (!remoteCommandBadge) return;
+    const state = getRemoteCommandSession(activeConnectionId);
+    if (state.status === 'running') {
+      remoteCommandBadge.textContent = '●';
+      remoteCommandBadge.style.display = 'block';
+    } else if (state.finishedBadgeVisible) {
+      remoteCommandBadge.textContent = state.error || (typeof state.exitCode === 'number' && state.exitCode !== 0) || state.failedCommandCount > 0 ? '!' : '✓';
+      remoteCommandBadge.style.display = 'block';
+    } else {
+      remoteCommandBadge.style.display = 'none';
+    }
+  }
+
+  function createRemoteCommandId() {
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+  }
+
+  function firstRemoteCommandLine(command) {
+    const lines = String(command || '').split(/\\r?\\n/).map(line => line.trim()).filter(Boolean);
+    return lines[0] || '';
+  }
+
+  function truncateRemoteCommandText(text, maxLength) {
+    const value = String(text || '').replace(/\\s+/g, ' ').trim();
+    return value.length > maxLength ? value.slice(0, Math.max(0, maxLength - 1)) + '…' : value;
+  }
+
+  function formatRemoteCommandRelativeTime(timestamp) {
+    const value = Number(timestamp || 0);
+    if (!value) return '';
+    const seconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + ' min ago';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + ' h ago';
+    const days = Math.floor(hours / 24);
+    return days + ' d ago';
+  }
+
+  function loadRemoteCommandIntoEditor(item, append) {
+    if (!item || getCurrentRemoteCommandSession().status === 'running') return;
+    const command = String(item.command || '').trim();
+    if (!command) return;
+    const current = String(remoteCommandInput.value || '').trimEnd();
+    remoteCommandInput.value = append && current ? current + '\\n' + command : command;
+    const state = getCurrentRemoteCommandSession();
+    state.command = remoteCommandInput.value;
+    state.workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || state.workingDirectory || '/');
+    state.useSudo = collectRemoteCommandUseSudo();
+    updateRemoteCommandControls();
+    remoteCommandInput.focus();
+  }
+
+  function renderRemoteCommandSavedList() {
+    if (!remoteCommandSavedList) return;
+    const list = getRemoteCommandSavedList(remoteCommandDialogConnectionId || activeConnectionId);
+    if (remoteCommandEditingSavedId === '__new__') {
+      remoteCommandSavedList.innerHTML = renderRemoteCommandEditForm({ id: '__new__', name: '', details: '', command: String(remoteCommandInput.value || '').trim() }, true);
+      wireRemoteCommandEditForm();
+      return;
+    }
+    if (!list.length) {
+      remoteCommandSavedList.innerHTML = '<div class="remote-command-empty">No saved commands for this connection.</div>';
+      return;
+    }
+    remoteCommandSavedList.innerHTML = list.map(item => {
+      if (remoteCommandEditingSavedId === item.id) return renderRemoteCommandEditForm(item, false);
+      return '<div class="remote-command-card" data-remote-command-saved-id="' + escapeHtml(item.id) + '" title="Load command">'
+        + '<div class="remote-command-card-header">'
+        + '<div class="remote-command-card-name">' + escapeHtml(item.name || firstRemoteCommandLine(item.command) || 'Saved command') + '</div>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="append" title="Add to editor">+</button>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="edit" title="Edit saved command">✎</button>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="delete" title="Delete saved command">×</button>'
+        + '</div>'
+        + (item.details ? '<div class="remote-command-card-details">' + escapeHtml(item.details) + '</div>' : '')
+        + '<div class="remote-command-card-command">' + escapeHtml(truncateRemoteCommandText(item.command, 120)) + '</div>'
+        + (remoteCommandDeletingSavedId === item.id ? '<div class="remote-command-delete-confirm" role="alert"><span>Delete saved command?</span><span class="remote-command-delete-confirm-actions"><button class="secondary" type="button" data-remote-command-action="cancel-delete">Cancel</button><button type="button" data-remote-command-action="confirm-delete">Delete</button></span></div>' : '')
+        + '</div>';
+    }).join('');
+    wireRemoteCommandEditForm();
+  }
+
+  function renderRemoteCommandEditForm(item, isNew) {
+    return '<form class="remote-command-edit-form" data-remote-command-edit-id="' + escapeHtml(item.id || '') + '">'
+      + '<label>Name<input type="text" name="name" value="' + escapeHtml(item.name || '') + '" autocomplete="off" spellcheck="false" placeholder="Restart nginx"></label>'
+      + '<label>Details<input type="text" name="details" value="' + escapeHtml(item.details || '') + '" autocomplete="off" spellcheck="false" placeholder="Explain what this command does"></label>'
+      + '<label>Command<textarea name="command" spellcheck="false">' + escapeHtml(item.command || '') + '</textarea></label>'
+      + '<div class="remote-command-edit-actions">'
+      + '<button class="secondary" type="button" data-remote-command-edit-action="cancel">Cancel</button>'
+      + '<button type="submit">Save</button>'
+      + '</div>'
+      + '</form>';
+  }
+
+  function wireRemoteCommandEditForm() {
+    const form = remoteCommandSavedList ? remoteCommandSavedList.querySelector('.remote-command-edit-form') : null;
+    if (!form) return;
+    const nameInput = form.querySelector('input[name="name"]');
+    if (nameInput) setTimeout(() => nameInput.focus(), 0);
+  }
+
+  function saveRemoteCommandEditForm(form) {
+    const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
+    const list = getRemoteCommandSavedList(connectionId);
+    const id = String(form.getAttribute('data-remote-command-edit-id') || '').trim();
+    const name = String((form.querySelector('input[name="name"]') || {}).value || '').trim();
+    const details = String((form.querySelector('input[name="details"]') || {}).value || '').trim();
+    const command = String((form.querySelector('textarea[name="command"]') || {}).value || '').trim();
+    if (!command) return;
+    const now = Date.now();
+    const existingIndex = list.findIndex(item => item.id === id && id !== '__new__');
+    const item = {
+      id: existingIndex >= 0 ? list[existingIndex].id : createRemoteCommandId(),
+      name: name || firstRemoteCommandLine(command) || 'Saved command',
+      details,
+      command,
+      createdAt: existingIndex >= 0 ? list[existingIndex].createdAt || now : now,
+      updatedAt: now
+    };
+    if (existingIndex >= 0) list[existingIndex] = item;
+    else list.unshift(item);
+    remoteCommandSavedByConnectionId.set(connectionId, list);
+    persistRemoteCommandSaved();
+    remoteCommandEditingSavedId = '';
+    remoteCommandDeletingSavedId = '';
+    renderRemoteCommandSavedList();
+  }
+
+  function deleteRemoteCommandSaved(id) {
+    const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
+    const list = getRemoteCommandSavedList(connectionId).filter(item => item.id !== id);
+    remoteCommandSavedByConnectionId.set(connectionId, list);
+    persistRemoteCommandSaved();
+    remoteCommandEditingSavedId = '';
+    remoteCommandDeletingSavedId = '';
+    renderRemoteCommandSavedList();
+  }
+
+  function addRemoteCommandHistoryItem(state) {
+    if (!state || !state.connectionId || !state.command) return;
+    const list = getRemoteCommandHistoryList(state.connectionId);
+    const command = String(state.command || '').trim();
+    const previous = list[0];
+    if (previous && String(previous.command || '').trim() === command) {
+      previous.ranAt = Date.now();
+      previous.exitCode = typeof state.exitCode === 'number' ? state.exitCode : undefined;
+      previous.error = state.error || '';
+      previous.usedSudo = Boolean(state.useSudo);
+    } else {
+      list.unshift({
+        id: createRemoteCommandId(),
+        command,
+        workingDirectory: normalizeUiRemotePath(state.workingDirectory || '/'),
+        usedSudo: Boolean(state.useSudo),
+        exitCode: typeof state.exitCode === 'number' ? state.exitCode : undefined,
+        error: state.error || '',
+        ranAt: Date.now()
+      });
+    }
+    if (list.length > REMOTE_COMMAND_MAX_HISTORY_PER_CONNECTION) list.length = REMOTE_COMMAND_MAX_HISTORY_PER_CONNECTION;
+    remoteCommandHistoryByConnectionId.set(state.connectionId, list);
+    persistRemoteCommandHistory();
+  }
+
+  function renderRemoteCommandHistoryList() {
+    if (!remoteCommandHistoryList) return;
+    const list = getRemoteCommandHistoryList(remoteCommandDialogConnectionId || activeConnectionId);
+    if (!list.length) {
+      remoteCommandHistoryList.innerHTML = '<div class="remote-command-empty">No command history yet.</div>';
+      return;
+    }
+    remoteCommandHistoryList.innerHTML = list.map(item => {
+      const exitLabel = item.error ? 'failed' : (typeof item.exitCode === 'number' ? 'exit ' + item.exitCode : 'finished');
+      return '<div class="remote-command-card" data-remote-command-history-id="' + escapeHtml(item.id) + '" title="Load command">'
+        + '<div class="remote-command-card-header remote-command-card-header-compact">'
+        + '<div class="remote-command-card-name">' + escapeHtml(truncateRemoteCommandText(firstRemoteCommandLine(item.command) || item.command, 90)) + '</div>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="save-history" title="Save as command">☆</button>'
+        + '</div>'
+        + '<div class="remote-command-card-meta">' + escapeHtml(formatRemoteCommandRelativeTime(item.ranAt) + ' · ' + exitLabel) + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  function saveHistoryItemAsSavedCommand(item) {
+    if (!item) return;
+    const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
+    const list = getRemoteCommandSavedList(connectionId);
+    const command = String(item.command || '').trim();
+    if (!command) return;
+    list.unshift({
+      id: createRemoteCommandId(),
+      name: firstRemoteCommandLine(command) || 'Saved command',
+      details: '',
+      command,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+    remoteCommandSavedByConnectionId.set(connectionId, list);
+    persistRemoteCommandSaved();
+    renderRemoteCommandSavedList();
+  }
+
+  function browseRemoteCommandWorkingDirectory() {
+    const state = getCurrentRemoteCommandSession();
+    if (!activeConnectionId || state.status === 'running') return;
+    const path = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || currentPath.value || '/');
+    showRemoteCommandWorkingDirectoryPicker(path);
+    requestRemoteCommandWorkingDirectoryEntries(path);
+  }
+
+  function showRemoteCommandWorkingDirectoryPicker(path) {
+    remoteCommandWorkingDirectoryPickerOpen = true;
+    remoteCommandWorkingDirectoryPickerPathValue = normalizeUiRemotePath(path || '/');
+    if (remoteCommandWorkingDirectoryPicker) {
+      remoteCommandWorkingDirectoryPicker.classList.remove('hidden');
+      remoteCommandWorkingDirectoryPicker.setAttribute('aria-hidden', 'false');
+    }
+    if (remoteCommandWorkingDirectoryPickerPath) remoteCommandWorkingDirectoryPickerPath.textContent = remoteCommandWorkingDirectoryPickerPathValue;
+    if (remoteCommandWorkingDirectoryPickerList) remoteCommandWorkingDirectoryPickerList.innerHTML = '<div class="remote-search-scope-picker-empty">Loading...</div>';
+  }
+
+  function hideRemoteCommandWorkingDirectoryPicker() {
+    remoteCommandWorkingDirectoryPickerOpen = false;
+    if (remoteCommandWorkingDirectoryPicker) {
+      remoteCommandWorkingDirectoryPicker.classList.add('hidden');
+      remoteCommandWorkingDirectoryPicker.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function selectRemoteCommandWorkingDirectoryPickerPath() {
+    const state = getCurrentRemoteCommandSession();
+    if (state.status === 'running') return;
+    remoteCommandWorkingDirectory.value = normalizeUiRemotePath(remoteCommandWorkingDirectoryPickerPathValue || '/');
+    state.workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || '/');
+    hideRemoteCommandWorkingDirectoryPicker();
+    updateRemoteCommandControls();
+  }
+
+  function requestRemoteCommandWorkingDirectoryEntries(path) {
+    const state = getCurrentRemoteCommandSession();
+    if (!activeConnectionId || state.status === 'running') return;
+    const scopePath = normalizeUiRemotePath(path || '/');
+    remoteCommandWorkingDirectoryPickerPathValue = scopePath;
+    if (remoteCommandWorkingDirectoryPickerPath) remoteCommandWorkingDirectoryPickerPath.textContent = scopePath;
+    if (remoteCommandWorkingDirectoryPickerList) remoteCommandWorkingDirectoryPickerList.innerHTML = '<div class="remote-search-scope-picker-empty">Loading...</div>';
+    vscode.postMessage({ type: 'browseRemoteSearchScope', payload: { scopePath } });
+  }
+
+  function handleRemoteCommandWorkingDirectoryEntriesListed(payload) {
+    if (!remoteCommandWorkingDirectoryPickerOpen) return false;
+    if (payload.connectionId && activeConnectionId && payload.connectionId !== activeConnectionId) return true;
+    const path = normalizeUiRemotePath(payload.path || '/');
+    const parentPath = normalizeUiRemotePath(payload.parentPath || '/');
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    remoteCommandWorkingDirectoryPickerPathValue = path;
+    if (remoteCommandWorkingDirectoryPickerPath) remoteCommandWorkingDirectoryPickerPath.textContent = path;
+    if (!remoteCommandWorkingDirectoryPickerList) return true;
+    const parentItem = '<button class="remote-search-scope-picker-item" type="button" data-remote-command-working-directory-path="' + escapeHtml(parentPath) + '"><span>..</span></button>';
+    const directoryItems = entries
+      .filter(entry => entry && getEffectiveEntryType(entry) === 'directory')
+      .map(entry => {
+        const entryPath = normalizeUiRemotePath(entry.path || entry.name || '/');
+        return '<button class="remote-search-scope-picker-item" type="button" data-remote-command-working-directory-path="' + escapeHtml(entryPath) + '"><span>' + escapeHtml(entry.name || entryPath) + '</span></button>';
+      })
+      .join('');
+    remoteCommandWorkingDirectoryPickerList.innerHTML = parentItem + (directoryItems || '<div class="remote-search-scope-picker-empty">No folders.</div>');
+    return true;
   }
 
   function showOwnerGroupDialog(entries) {
@@ -6103,6 +8020,775 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateFtpsCertificateFields();
   }
 
+
+  function normalizeSearchScopePath(path) {
+    const trimmed = String(path || '/').trim() || '/';
+    return trimmed.startsWith('/') ? trimmed.replace(new RegExp('/+', 'g'), '/') : '/' + trimmed.replace(new RegExp('/+', 'g'), '/');
+  }
+
+  function getActiveConnectionType() {
+    const session = getActiveSession();
+    return String((session && session.connectionType) || 'sftp').toLowerCase();
+  }
+
+  function createEmptyRemoteSearchState(connectionId, connectionType) {
+    return {
+      status: 'idle',
+      connectionId: connectionId || '',
+      connectionType: connectionType || getActiveConnectionType(),
+      results: [],
+      totalResults: 0,
+      options: {
+        connectionId: connectionId || '',
+        connectionType: connectionType || getActiveConnectionType(),
+        scopePath: currentPath.value || '/',
+        includeSubdirectories: true,
+        includeHiddenFiles: false,
+        caseSensitive: false,
+        fileName: '*',
+        searchInsideFiles: false,
+        textToFind: '',
+        useSudo: false
+      }
+    };
+  }
+
+  function getRemoteSearchStateForActiveConnection() {
+    if (!activeConnectionId) return createEmptyRemoteSearchState('', 'sftp');
+    return remoteSearchStatesByConnectionId.get(activeConnectionId) || createEmptyRemoteSearchState(activeConnectionId, getActiveConnectionType());
+  }
+
+  function storeRemoteSearchSnapshot(snapshot) {
+    const normalized = snapshot || createEmptyRemoteSearchState(activeConnectionId, getActiveConnectionType());
+    const connectionId = normalized.connectionId || activeConnectionId || '';
+    normalized.connectionId = connectionId;
+    if (!normalized.connectionType) normalized.connectionType = getActiveConnectionType();
+    if (!Array.isArray(normalized.results)) normalized.results = [];
+    if (!normalized.options) normalized.options = {};
+    if (connectionId) remoteSearchStatesByConnectionId.set(connectionId, normalized);
+    return normalized;
+  }
+
+  function isRemoteSearchSftp() {
+    return getActiveConnectionType() === 'sftp';
+  }
+
+  function updateRemoteSearchConnectedTo() {
+    if (!remoteSearchConnectedTo) return;
+
+    const active = getActiveSession();
+    const hostValue = active ? String(active.host || '').trim() : String(host.value || '').trim();
+    remoteSearchConnectedTo.textContent = hostValue || '-';
+    remoteSearchConnectedTo.title = hostValue || '';
+  }
+
+  function updateRemoteSearchRunAs() {
+    if (!remoteSearchRunAs) return;
+
+    const active = getActiveSession();
+    const username = active ? String(active.username || '').trim() : '';
+    const connectionType = String((active && active.connectionType) || getActiveConnectionType() || 'sftp').toLowerCase();
+    const isRootConnection = username.toLowerCase() === 'root';
+    const isSftp = connectionType === 'sftp';
+    const connectionSudoEnabled = Boolean(active && active.sudoModeEnabled && !isRootConnection && isSftp);
+    const useSudo = connectionSudoEnabled || Boolean(isSftp && remoteSearchUseSudo && remoteSearchUseSudo.checked && !isRootConnection);
+
+    remoteSearchRunAs.textContent = useSudo
+      ? 'root via sudo'
+      : isRootConnection
+        ? 'root'
+        : (username || (isSftp ? 'SSH user' : 'FTP user'));
+    remoteSearchRunAs.classList.toggle('sudo', useSudo);
+  }
+
+  function updateRemoteSearchMeta() {
+    updateRemoteSearchConnectedTo();
+    updateRemoteSearchRunAs();
+  }
+
+  function updateRemoteSearchProtocolFields() {
+    const isSftp = isRemoteSearchSftp();
+    if (remoteSearchSudoRow) remoteSearchSudoRow.classList.toggle('hidden', !isSftp);
+    if (remoteSearchInsideRow) remoteSearchInsideRow.classList.toggle('hidden', !isSftp);
+    if (!isSftp) {
+      if (remoteSearchUseSudo) remoteSearchUseSudo.checked = false;
+      if (remoteSearchInsideFiles) remoteSearchInsideFiles.checked = false;
+    }
+    updateRemoteSearchTextField();
+    updateRemoteSearchMeta();
+  }
+
+  function updateRemoteSearchTextField() {
+    const visible = isRemoteSearchSftp() && Boolean(remoteSearchInsideFiles.checked);
+    if (remoteSearchTextField) remoteSearchTextField.classList.toggle('hidden', !visible);
+    if (remoteSearchTextToFind) remoteSearchTextToFind.disabled = !visible || remoteSearchState.status === 'running';
+  }
+
+  function setRemoteSearchValidation(message, field) {
+    for (const control of [remoteSearchScopePath, remoteSearchFileName, remoteSearchTextToFind]) {
+      if (!control) continue;
+      control.classList.remove('remote-search-input-invalid');
+      control.removeAttribute('aria-invalid');
+    }
+
+    const text = String(message || '');
+    if (remoteSearchValidation) {
+      remoteSearchValidation.textContent = text;
+      remoteSearchValidation.style.visibility = text ? 'visible' : 'hidden';
+    }
+
+    if (field) {
+      field.classList.add('remote-search-input-invalid');
+      field.setAttribute('aria-invalid', 'true');
+      window.setTimeout(() => field.focus(), 0);
+    }
+  }
+
+  function clearRemoteSearchValidation(field) {
+    if (field) {
+      field.classList.remove('remote-search-input-invalid');
+      field.removeAttribute('aria-invalid');
+    } else {
+      for (const control of [remoteSearchScopePath, remoteSearchFileName, remoteSearchTextToFind]) {
+        if (!control) continue;
+        control.classList.remove('remote-search-input-invalid');
+        control.removeAttribute('aria-invalid');
+      }
+    }
+    if (remoteSearchValidation) {
+      remoteSearchValidation.textContent = '';
+      remoteSearchValidation.style.visibility = 'hidden';
+    }
+  }
+
+  function getDefaultRemoteSearchFormForConnection(connectionId) {
+    const session = sessions.find(item => item.id === connectionId);
+    const scopePath = normalizeSearchScopePath((session && session.currentPath) || currentPath.value || '/');
+    return {
+      scopePath,
+      includeSubdirectories: true,
+      includeHiddenFiles: false,
+      caseSensitive: false,
+      fileName: '*',
+      searchInsideFiles: false,
+      textToFind: '',
+      useSudo: Boolean(session && session.sudoModeEnabled && String(session.connectionType || '').toLowerCase() === 'sftp')
+    };
+  }
+
+  function getRemoteSearchFormForConnection(connectionId) {
+    const key = String(connectionId || '');
+    if (!key) return getDefaultRemoteSearchFormForConnection('');
+    const saved = remoteSearchFormsByConnectionId.get(key);
+    if (saved) return Object.assign(getDefaultRemoteSearchFormForConnection(key), saved);
+    const snapshot = remoteSearchStatesByConnectionId.get(key);
+    if (snapshot && snapshot.status !== 'idle' && snapshot.options) {
+      return Object.assign(getDefaultRemoteSearchFormForConnection(key), snapshot.options);
+    }
+    return getDefaultRemoteSearchFormForConnection(key);
+  }
+
+  function applyRemoteSearchForm(form) {
+    const options = form || getDefaultRemoteSearchFormForConnection(activeConnectionId);
+    if (remoteSearchScopePath) remoteSearchScopePath.value = normalizeSearchScopePath(options.scopePath || currentPath.value || '/');
+    if (remoteSearchSubdirectories) remoteSearchSubdirectories.checked = Boolean(options.includeSubdirectories);
+    if (remoteSearchHiddenFiles) remoteSearchHiddenFiles.checked = Boolean(options.includeHiddenFiles);
+    if (remoteSearchCaseSensitive) remoteSearchCaseSensitive.checked = Boolean(options.caseSensitive);
+    if (remoteSearchFileName) remoteSearchFileName.value = String(options.fileName || '*');
+    if (remoteSearchUseSudo) remoteSearchUseSudo.checked = Boolean(options.useSudo);
+    if (remoteSearchInsideFiles) remoteSearchInsideFiles.checked = Boolean(options.searchInsideFiles);
+    if (remoteSearchTextToFind) remoteSearchTextToFind.value = String(options.textToFind || '');
+    updateRemoteSearchProtocolFields();
+  }
+
+  function applyRemoteSearchFormForActiveConnection() {
+    applyRemoteSearchForm(getRemoteSearchFormForConnection(activeConnectionId));
+  }
+
+  function saveRemoteSearchFormForConnection(connectionId) {
+    const key = String(connectionId || '');
+    if (!key) return;
+    remoteSearchFormsByConnectionId.set(key, collectRemoteSearchPayload());
+  }
+
+  function saveRemoteSearchFormForActiveConnection() {
+    saveRemoteSearchFormForConnection(activeConnectionId);
+  }
+
+  function showRemoteSearchDialog() {
+    if (!activeConnectionId) return;
+    remoteSearchDialogOpen = true;
+    remoteSearchState = getRemoteSearchStateForActiveConnection();
+    if (remoteSearchState.status !== 'running') {
+      const key = String(activeConnectionId || '');
+      const currentForm = getRemoteSearchFormForConnection(key);
+      remoteSearchFormsByConnectionId.set(key, Object.assign({}, currentForm, { scopePath: normalizeSearchScopePath(currentPath.value || '/') }));
+    }
+    applyRemoteSearchFormForActiveConnection();
+    clearRemoteSearchValidation();
+    updateRemoteSearchMeta();
+    renderRemoteSearchState();
+    remoteSearchBackdrop.classList.add('visible');
+    remoteSearchBackdrop.setAttribute('aria-hidden', 'false');
+    window.setTimeout(() => remoteSearchFileName.focus(), 0);
+    vscode.postMessage({ type: 'requestRemoteSearchState' });
+  }
+
+  function hideRemoteSearchDialog() {
+    saveRemoteSearchFormForActiveConnection();
+    remoteSearchDialogOpen = false;
+    hideRemoteSearchScopePicker();
+    remoteSearchBackdrop.classList.remove('visible');
+    remoteSearchBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function collectRemoteSearchPayload() {
+    return {
+      scopePath: normalizeSearchScopePath(remoteSearchScopePath.value || currentPath.value || '/'),
+      includeSubdirectories: Boolean(remoteSearchSubdirectories.checked),
+      includeHiddenFiles: Boolean(remoteSearchHiddenFiles.checked),
+      caseSensitive: Boolean(remoteSearchCaseSensitive.checked),
+      fileName: String(remoteSearchFileName.value || '*').trim() || '*',
+      searchInsideFiles: isRemoteSearchSftp() && Boolean(remoteSearchInsideFiles.checked),
+      textToFind: String(remoteSearchTextToFind.value || ''),
+      useSudo: isRemoteSearchSftp() && Boolean(remoteSearchUseSudo.checked)
+    };
+  }
+
+  function startOrCancelRemoteSearch() {
+    if (remoteSearchState.status === 'running') {
+      remoteSearchState = Object.assign({}, remoteSearchState, { status: 'cancelled', finishedAt: Date.now() });
+      storeRemoteSearchSnapshot(remoteSearchState);
+      renderRemoteSearchState();
+      vscode.postMessage({ type: 'cancelRemoteSearch' });
+      return;
+    }
+
+    const payload = collectRemoteSearchPayload();
+    if (!String(remoteSearchScopePath.value || '').trim()) {
+      setRemoteSearchValidation('Remote path is required.', remoteSearchScopePath);
+      return;
+    }
+    if (payload.searchInsideFiles && !payload.textToFind.trim()) {
+      setRemoteSearchValidation('Text to find is required when searching inside files.', remoteSearchTextToFind);
+      return;
+    }
+
+    clearRemoteSearchValidation();
+    saveRemoteSearchFormForActiveConnection();
+    remoteSearchExpandedResultPaths.clear();
+    remoteSearchSelectedResultKeys.clear();
+    remoteSearchSelectionAnchorKey = '';
+    vscode.postMessage({ type: 'startRemoteSearch', payload });
+  }
+
+  function clearRemoteSearch() {
+    if (remoteSearchState.status === 'running') return;
+    clearRemoteSearchValidation();
+    remoteSearchExpandedResultPaths.clear();
+    remoteSearchSelectedResultKeys.clear();
+    remoteSearchSelectionAnchorKey = '';
+    vscode.postMessage({ type: 'clearRemoteSearch' });
+  }
+
+  function browseRemoteSearchScope() {
+    if (!activeConnectionId || remoteSearchState.status === 'running') return;
+    const path = normalizeSearchScopePath(remoteSearchScopePath.value || currentPath.value || '/');
+    showRemoteSearchScopePicker(path);
+    requestRemoteSearchScopeEntries(path);
+  }
+
+  function showRemoteSearchScopePicker(path) {
+    remoteSearchScopePickerOpen = true;
+    remoteSearchScopePickerPathValue = normalizeSearchScopePath(path || '/');
+    if (remoteSearchScopePicker) {
+      remoteSearchScopePicker.classList.remove('hidden');
+      remoteSearchScopePicker.setAttribute('aria-hidden', 'false');
+    }
+    if (remoteSearchScopePickerPath) remoteSearchScopePickerPath.textContent = remoteSearchScopePickerPathValue;
+    if (remoteSearchScopePickerList) remoteSearchScopePickerList.innerHTML = '<div class="remote-search-scope-picker-empty">Loading...</div>';
+  }
+
+  function hideRemoteSearchScopePicker() {
+    remoteSearchScopePickerOpen = false;
+    if (remoteSearchScopePicker) {
+      remoteSearchScopePicker.classList.add('hidden');
+      remoteSearchScopePicker.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function selectRemoteSearchScopePickerPath() {
+    if (remoteSearchState.status === 'running') return;
+    remoteSearchScopePath.value = normalizeSearchScopePath(remoteSearchScopePickerPathValue || '/');
+    saveRemoteSearchFormForActiveConnection();
+    clearRemoteSearchValidation(remoteSearchScopePath);
+    hideRemoteSearchScopePicker();
+  }
+
+  function requestRemoteSearchScopeEntries(path) {
+    if (!activeConnectionId || remoteSearchState.status === 'running') return;
+    const scopePath = normalizeSearchScopePath(path || '/');
+    remoteSearchScopePickerPathValue = scopePath;
+    if (remoteSearchScopePickerPath) remoteSearchScopePickerPath.textContent = scopePath;
+    if (remoteSearchScopePickerList) remoteSearchScopePickerList.innerHTML = '<div class="remote-search-scope-picker-empty">Loading...</div>';
+    vscode.postMessage({ type: 'browseRemoteSearchScope', payload: { scopePath } });
+  }
+
+  function handleRemoteSearchScopeEntriesListed(payload) {
+    if (!remoteSearchScopePickerOpen) return;
+    if (payload.connectionId && activeConnectionId && payload.connectionId !== activeConnectionId) return;
+    const path = normalizeSearchScopePath(payload.path || '/');
+    const parentPath = normalizeSearchScopePath(payload.parentPath || '/');
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    remoteSearchScopePickerPathValue = path;
+    if (remoteSearchScopePickerPath) remoteSearchScopePickerPath.textContent = path;
+    if (!remoteSearchScopePickerList) return;
+    const parentItem = '<button class="remote-search-scope-picker-item" type="button" data-remote-search-scope-path="' + escapeHtml(parentPath) + '"><span>..</span></button>';
+    if (payload.error) {
+      remoteSearchScopePickerList.innerHTML = parentItem + '<div class="remote-search-scope-picker-empty error">' + escapeHtml(payload.error || 'Unable to list this directory.') + '</div>';
+      return;
+    }
+    const directoryItems = entries.map(entry => {
+      const entryPath = normalizeSearchScopePath(entry.path || '/');
+      const name = entry.name || entryPath;
+      return '<button class="remote-search-scope-picker-item" type="button" data-remote-search-scope-path="' + escapeHtml(entryPath) + '"><span aria-hidden="true">▸</span><span>' + escapeHtml(name) + '</span><span class="remote-search-scope-picker-item-path">' + escapeHtml(entryPath) + '</span></button>';
+    }).join('');
+    remoteSearchScopePickerList.innerHTML = parentItem + (directoryItems || '<div class="remote-search-scope-picker-empty">No subdirectories.</div>');
+  }
+
+  function applyRemoteSearchSnapshot(snapshot) {
+    const normalized = storeRemoteSearchSnapshot(snapshot);
+    if (normalized.status === 'running' || normalized.status === 'idle') {
+      resetRemoteSearchVisibleLimit(normalized.connectionId || activeConnectionId || '');
+    }
+    if (normalized.connectionId && activeConnectionId && normalized.connectionId !== activeConnectionId) {
+      renderRemoteSearchBadge();
+      return;
+    }
+
+    remoteSearchState = normalized;
+    const options = remoteSearchState.options || {};
+    if (remoteSearchState.status !== 'idle') {
+      remoteSearchFormsByConnectionId.set(remoteSearchState.connectionId || activeConnectionId || '', Object.assign(getDefaultRemoteSearchFormForConnection(remoteSearchState.connectionId || activeConnectionId || ''), options));
+      applyRemoteSearchForm(options);
+      clearRemoteSearchValidation();
+    } else if (remoteSearchDialogOpen) {
+      applyRemoteSearchFormForActiveConnection();
+    }
+    updateRemoteSearchProtocolFields();
+    renderRemoteSearchStateNow();
+    setControls();
+  }
+
+  function appendRemoteSearchResult(payload) {
+    appendRemoteSearchResultsBatch(Object.assign({}, payload, { results: payload && payload.result ? [payload.result] : [] }));
+  }
+
+  function appendRemoteSearchResultsBatch(payload) {
+    const connectionId = payload.connectionId || activeConnectionId || '';
+    const snapshot = remoteSearchStatesByConnectionId.get(connectionId) || createEmptyRemoteSearchState(connectionId, getActiveConnectionType());
+    const incomingResults = Array.isArray(payload.results) ? payload.results : [];
+    if (!snapshot.results) snapshot.results = [];
+    if (snapshot.status === 'cancelled' && payload.status === 'running') {
+      return;
+    }
+    if (payload.searchId && snapshot.id && payload.searchId !== snapshot.id) {
+      return;
+    }
+    snapshot.status = payload.status || snapshot.status || 'running';
+    if (incomingResults.length) {
+      snapshot.results.push.apply(snapshot.results, incomingResults);
+    }
+    snapshot.totalResults = payload.totalResults || snapshot.results.length;
+    remoteSearchStatesByConnectionId.set(connectionId, snapshot);
+
+    if (!activeConnectionId || connectionId === activeConnectionId) {
+      remoteSearchState = snapshot;
+      scheduleRemoteSearchRender();
+    } else {
+      renderRemoteSearchBadge();
+    }
+  }
+
+  function scheduleRemoteSearchRender() {
+    if (remoteSearchRenderTimer) return;
+    remoteSearchRenderTimer = setTimeout(() => {
+      remoteSearchRenderTimer = 0;
+      renderRemoteSearchStateNow();
+      setControls();
+    }, 100);
+  }
+
+  function renderRemoteSearchStateNow() {
+    if (remoteSearchRenderTimer) {
+      clearTimeout(remoteSearchRenderTimer);
+      remoteSearchRenderTimer = 0;
+    }
+    const statusText = remoteSearchState.status === 'running'
+      ? 'Running... ' + (remoteSearchState.totalResults || 0) + ' found'
+      : remoteSearchState.status === 'completed'
+        ? 'Completed - ' + (remoteSearchState.totalResults || 0) + ' found'
+        : remoteSearchState.status === 'cancelled'
+          ? 'Cancelled - ' + (remoteSearchState.totalResults || 0) + ' found'
+          : remoteSearchState.status === 'failed'
+            ? 'Failed - ' + (remoteSearchState.error || 'Search failed.')
+            : 'Idle';
+
+    if (remoteSearchResultsStatus) {
+      remoteSearchResultsStatus.textContent = statusText;
+      remoteSearchResultsStatus.classList.toggle('error', remoteSearchState.status === 'failed');
+    }
+    if (remoteSearchState.status === 'failed' && remoteSearchState.error) {
+      setRemoteSearchValidation(remoteSearchState.error, null);
+    } else if (remoteSearchState.status !== 'failed') {
+      clearRemoteSearchValidation();
+    }
+
+    if (remoteSearchPrimaryButton) remoteSearchPrimaryButton.textContent = remoteSearchState.status === 'running' ? 'Cancel' : 'Search';
+    if (remoteSearchCopyButton) remoteSearchCopyButton.disabled = !Array.isArray(remoteSearchState.results) || remoteSearchState.results.length === 0;
+    if (remoteSearchClearButton) remoteSearchClearButton.disabled = remoteSearchState.status === 'running';
+
+    const running = remoteSearchState.status === 'running';
+    if (running) hideRemoteSearchScopePicker();
+    for (const control of [remoteSearchScopePath, remoteSearchBrowseButton, remoteSearchSubdirectories, remoteSearchHiddenFiles, remoteSearchCaseSensitive, remoteSearchUseSudo, remoteSearchInsideFiles, remoteSearchFileName]) {
+      if (control) control.disabled = running;
+    }
+    updateRemoteSearchTextField();
+    updateRemoteSearchMeta();
+    renderRemoteSearchBadge();
+    renderRemoteSearchResults();
+  }
+
+  function renderRemoteSearchState() {
+    renderRemoteSearchStateNow();
+  }
+
+  function getRemoteSearchVisibleLimit(connectionId) {
+    const key = connectionId || activeConnectionId || '';
+    return remoteSearchVisibleLimitsByConnectionId.get(key) || REMOTE_SEARCH_INITIAL_VISIBLE_RESULTS;
+  }
+
+  function resetRemoteSearchVisibleLimit(connectionId) {
+    const key = connectionId || activeConnectionId || '';
+    if (key) remoteSearchVisibleLimitsByConnectionId.set(key, REMOTE_SEARCH_INITIAL_VISIBLE_RESULTS);
+  }
+
+  function showMoreRemoteSearchResults() {
+    const key = remoteSearchState.connectionId || activeConnectionId || '';
+    const current = getRemoteSearchVisibleLimit(key);
+    remoteSearchVisibleLimitsByConnectionId.set(key, current + REMOTE_SEARCH_SHOW_MORE_STEP);
+    renderRemoteSearchResults();
+  }
+
+  function renderRemoteSearchBadge() {
+    if (!remoteSearchBadge) return;
+    const activeState = getRemoteSearchStateForActiveConnection();
+    const status = activeState.status;
+    if (status === 'running') {
+      remoteSearchBadge.textContent = '●';
+      remoteSearchBadge.style.display = 'block';
+    } else if (status === 'completed') {
+      remoteSearchBadge.textContent = String(Math.min(99, activeState.totalResults || 0));
+      remoteSearchBadge.style.display = 'block';
+    } else if (status === 'failed') {
+      remoteSearchBadge.textContent = '!';
+      remoteSearchBadge.style.display = 'block';
+    } else {
+      remoteSearchBadge.style.display = 'none';
+    }
+  }
+
+  function findRemoteSearchTextMatches(text, needle, caseSensitive) {
+    const source = String(text || '');
+    const query = String(needle || '');
+    if (!query) return [];
+    const haystack = caseSensitive ? source : source.toLowerCase();
+    const target = caseSensitive ? query : query.toLowerCase();
+    const matches = [];
+    let index = 0;
+    while (index <= haystack.length) {
+      const found = haystack.indexOf(target, index);
+      if (found < 0) break;
+      matches.push({ start: found, end: found + target.length });
+      index = Math.max(found + target.length, found + 1);
+      if (matches.length >= 50) break;
+    }
+    return matches;
+  }
+
+  function buildRemoteSearchSnippetRanges(text, matches) {
+    const source = String(text || '');
+    const maxFullLength = 220;
+    const before = 70;
+    const after = 90;
+    const maxRanges = 3;
+    if (source.length <= maxFullLength || !matches.length) {
+      return [{ start: 0, end: Math.min(source.length, maxFullLength), leading: false, trailing: source.length > maxFullLength }];
+    }
+
+    const ranges = [];
+    for (const match of matches.slice(0, maxRanges)) {
+      const start = Math.max(0, match.start - before);
+      const end = Math.min(source.length, match.end + after);
+      const previous = ranges[ranges.length - 1];
+      if (previous && start <= previous.end + 12) {
+        previous.end = Math.max(previous.end, end);
+      } else {
+        ranges.push({ start, end, leading: start > 0, trailing: false });
+      }
+    }
+    ranges.forEach((range, index) => {
+      range.leading = range.start > 0;
+      range.trailing = range.end < source.length || index < ranges.length - 1;
+    });
+    return ranges;
+  }
+
+  function renderRemoteSearchMatchSnippet(text, query, caseSensitive) {
+    const source = String(text || '');
+    const matches = findRemoteSearchTextMatches(source, query, caseSensitive);
+    const ranges = buildRemoteSearchSnippetRanges(source, matches);
+    if (!matches.length) {
+      const plain = source.length > 220 ? source.slice(0, 220) + '…' : source;
+      return escapeHtml(plain);
+    }
+
+    let html = '';
+    for (const range of ranges) {
+      if (range.leading) html += '<span class="remote-search-ellipsis">…</span>';
+      let cursor = range.start;
+      for (const match of matches) {
+        if (match.end <= range.start || match.start >= range.end) continue;
+        const highlightStart = Math.max(match.start, range.start);
+        const highlightEnd = Math.min(match.end, range.end);
+        if (highlightStart > cursor) {
+          html += escapeHtml(source.slice(cursor, highlightStart));
+        }
+        html += '<span class="remote-search-hit">' + escapeHtml(source.slice(highlightStart, highlightEnd)) + '</span>';
+        cursor = highlightEnd;
+      }
+      if (cursor < range.end) {
+        html += escapeHtml(source.slice(cursor, range.end));
+      }
+      if (range.trailing) html += '<span class="remote-search-ellipsis">…</span>';
+    }
+    return html;
+  }
+
+  function getRemoteSearchSelectedRows() {
+    const rows = getRemoteSearchResultRows();
+    if (!remoteSearchSelectedResultKeys.size) return [];
+    return rows.filter(row => remoteSearchSelectedResultKeys.has(row.key));
+  }
+
+  function getRemoteSearchSelectedOrContextPaths() {
+    const selectedRows = getRemoteSearchSelectedRows();
+    const rawPaths = selectedRows.length
+      ? selectedRows.map(row => row.path)
+      : [remoteSearchContextPath];
+    const paths = [];
+    const seen = new Set();
+    for (const rawPath of rawPaths) {
+      const path = normalizeUiRemotePath(rawPath || '');
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      paths.push(path);
+    }
+    return paths;
+  }
+
+  function formatRemoteSearchSelectedPathsForCopy(mode) {
+    const paths = getRemoteSearchSelectedOrContextPaths();
+    if (!paths.length) return '';
+    return paths.map(path => mode === 'name' ? getRemotePathBasename(path) : path).join('\\n');
+  }
+
+  function formatRemoteSearchResultsForCopy() {
+    const results = Array.isArray(remoteSearchState.results) ? remoteSearchState.results : [];
+    if (!results.length) return '';
+
+    const contentSearch = results.some(result => result && typeof result.line !== 'undefined');
+    if (!contentSearch) {
+      return results.map(result => String(result.path || '').trim()).filter(Boolean).join('\\n');
+    }
+
+    const grouped = new Map();
+    for (const result of results) {
+      const path = result.path || '';
+      if (!grouped.has(path)) grouped.set(path, []);
+      grouped.get(path).push(result);
+    }
+
+    return Array.from(grouped.entries()).map(([path, matches]) => {
+      const matchLabel = matches.length === 1 ? '1 match' : matches.length + ' matches';
+      const lines = matches.map(match => '  ' + String(match.line || '') + ': ' + String(match.text || '')).join('\\n');
+      return path + ' (' + matchLabel + ')' + (lines ? '\\n' + lines : '');
+    }).join('\\n\\n');
+  }
+
+  function copyRemoteSearchResults() {
+    const text = formatRemoteSearchResultsForCopy();
+    if (!text) return;
+    vscode.postMessage({ type: 'copyStatus', payload: { text, message: 'Copied search results' } });
+  }
+
+  function getRemoteSearchRenderableResults() {
+    const results = Array.isArray(remoteSearchState.results) ? remoteSearchState.results : [];
+    const visibleLimit = getRemoteSearchVisibleLimit(remoteSearchState.connectionId || activeConnectionId || '');
+    return results.length > visibleLimit ? results.slice(0, visibleLimit) : results;
+  }
+
+  function renderRemoteSearchShowMore(totalResults, renderedResults) {
+    if (totalResults <= renderedResults) return '';
+    return '<div class="remote-search-show-more"><span>Showing ' + escapeHtml(String(renderedResults)) + ' of ' + escapeHtml(String(totalResults)) + ' results. Copy Results includes all results.</span><button class="secondary" type="button" data-remote-search-show-more="true">Show more</button></div>';
+  }
+
+  function getRemoteSearchResultRows() {
+    const rows = [];
+    const results = getRemoteSearchRenderableResults();
+    const contentSearch = results.some(result => result && typeof result.line !== 'undefined');
+
+    if (!contentSearch) {
+      results.forEach((result, index) => {
+        const path = result && result.path ? String(result.path) : '';
+        if (!path) return;
+        rows.push({
+          key: 'file:' + path + ':' + index,
+          path,
+          kind: result && result.type === 'directory' ? 'directory' : 'file'
+        });
+      });
+      return rows;
+    }
+
+    const grouped = new Map();
+    for (const result of results) {
+      const path = result && result.path ? String(result.path) : '';
+      if (!path) continue;
+      if (!grouped.has(path)) grouped.set(path, []);
+      grouped.get(path).push(result);
+    }
+
+    for (const [path, matches] of grouped.entries()) {
+      rows.push({ key: 'group:' + path, path, kind: 'file' });
+      if (remoteSearchExpandedResultPaths.has(path)) {
+        matches.forEach((match, index) => rows.push({
+          key: 'match:' + path + ':' + String(match.line || '') + ':' + index,
+          path,
+          kind: 'file'
+        }));
+      }
+    }
+
+    return rows;
+  }
+
+  function getVisibleRemoteSearchResultKeys() {
+    return getRemoteSearchResultRows().map(row => row.key);
+  }
+
+  function syncRemoteSearchSelectedRows() {
+    if (!remoteSearchResults) return;
+    for (const row of remoteSearchResults.querySelectorAll('.remote-search-result-row[data-remote-search-result-key]')) {
+      row.classList.toggle('selected', remoteSearchSelectedResultKeys.has(row.getAttribute('data-remote-search-result-key') || ''));
+    }
+  }
+
+  function normalizeRemoteSearchSelection() {
+    const visibleKeys = new Set(getVisibleRemoteSearchResultKeys());
+    remoteSearchSelectedResultKeys = new Set(Array.from(remoteSearchSelectedResultKeys).filter(key => visibleKeys.has(key)));
+    if (remoteSearchSelectionAnchorKey && !visibleKeys.has(remoteSearchSelectionAnchorKey)) {
+      remoteSearchSelectionAnchorKey = Array.from(remoteSearchSelectedResultKeys).pop() || '';
+    }
+  }
+
+  function selectRemoteSearchResult(key) {
+    remoteSearchSelectedResultKeys = new Set([key]);
+    remoteSearchSelectionAnchorKey = key;
+    syncRemoteSearchSelectedRows();
+  }
+
+  function toggleRemoteSearchResultSelection(key) {
+    if (remoteSearchSelectedResultKeys.has(key)) {
+      remoteSearchSelectedResultKeys.delete(key);
+    } else {
+      remoteSearchSelectedResultKeys.add(key);
+      remoteSearchSelectionAnchorKey = key;
+    }
+    if (!remoteSearchSelectedResultKeys.size) remoteSearchSelectionAnchorKey = '';
+    syncRemoteSearchSelectedRows();
+  }
+
+  function selectRemoteSearchResultRange(anchorKey, targetKey) {
+    const visibleKeys = getVisibleRemoteSearchResultKeys();
+    const anchorIndex = visibleKeys.indexOf(anchorKey);
+    const targetIndex = visibleKeys.indexOf(targetKey);
+    if (anchorIndex === -1 || targetIndex === -1) {
+      selectRemoteSearchResult(targetKey);
+      return;
+    }
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    remoteSearchSelectedResultKeys = new Set(visibleKeys.slice(start, end + 1));
+    remoteSearchSelectionAnchorKey = targetKey;
+    syncRemoteSearchSelectedRows();
+  }
+
+  function renderRemoteSearchResults() {
+    if (!remoteSearchResults) return;
+    const allResults = Array.isArray(remoteSearchState.results) ? remoteSearchState.results : [];
+    const results = getRemoteSearchRenderableResults();
+    const showMoreHtml = renderRemoteSearchShowMore(allResults.length, results.length);
+    if (!allResults.length) {
+      remoteSearchSelectedResultKeys.clear();
+      remoteSearchSelectionAnchorKey = '';
+      remoteSearchResults.innerHTML = '<div class="remote-search-empty">' + escapeHtml(remoteSearchState.status === 'running' ? 'Searching...' : 'No results.') + '</div>';
+      return;
+    }
+
+    const contentSearch = results.some(result => result && typeof result.line !== 'undefined');
+    if (!contentSearch) {
+      remoteSearchResults.innerHTML = results.map((result, index) => {
+        const path = result.path || '';
+        const kind = result.type === 'directory' ? 'directory' : 'file';
+        const key = 'file:' + path + ':' + index;
+        const selected = remoteSearchSelectedResultKeys.has(key) ? ' selected' : '';
+        return '<div class="remote-search-result-row remote-search-file-result' + selected + '" data-remote-search-result-key="' + escapeHtml(key) + '" data-remote-search-result-path="' + escapeHtml(path) + '" data-remote-search-result-kind="' + escapeHtml(kind) + '">' + escapeHtml(path) + '</div>';
+      }).join('') + showMoreHtml;
+      normalizeRemoteSearchSelection();
+      syncRemoteSearchSelectedRows();
+      return;
+    }
+
+    const grouped = new Map();
+    for (const result of results) {
+      const path = result.path || '';
+      if (!grouped.has(path)) grouped.set(path, []);
+      grouped.get(path).push(result);
+    }
+
+    const options = remoteSearchState.options || {};
+    const query = String(options.textToFind || '');
+    const caseSensitive = Boolean(options.caseSensitive);
+    remoteSearchResults.innerHTML = Array.from(grouped.entries()).map(([path, matches]) => {
+      const expanded = remoteSearchExpandedResultPaths.has(path);
+      const matchLabel = matches.length === 1 ? '1 match' : matches.length + ' matches';
+      const groupKey = 'group:' + path;
+      const groupSelected = remoteSearchSelectedResultKeys.has(groupKey) ? ' selected' : '';
+      const lines = expanded
+        ? matches.map((match, index) => {
+          const matchKey = 'match:' + path + ':' + String(match.line || '') + ':' + index;
+          const matchSelected = remoteSearchSelectedResultKeys.has(matchKey) ? ' selected' : '';
+          return '<div class="remote-search-result-row remote-search-match' + matchSelected + '" data-remote-search-result-key="' + escapeHtml(matchKey) + '" data-remote-search-result-path="' + escapeHtml(path) + '" data-remote-search-result-kind="file"><span class="remote-search-line-number">' + escapeHtml(String(match.line || '')) + '</span><span class="remote-search-line-text">' + renderRemoteSearchMatchSnippet(match.text || '', query, caseSensitive) + '</span></div>';
+        }).join('')
+        : '';
+      return '<div class="remote-search-result-group"><div class="remote-search-result-row remote-search-result-path' + groupSelected + '" data-remote-search-result-key="' + escapeHtml(groupKey) + '" data-remote-search-result-path="' + escapeHtml(path) + '" data-remote-search-result-kind="file">' + (expanded ? '▾ ' : '▸ ') + escapeHtml(path) + ' <span class="remote-search-match-count">(' + matchLabel + ')</span></div>' + lines + '</div>';
+    }).join('') + showMoreHtml;
+    normalizeRemoteSearchSelection();
+    syncRemoteSearchSelectedRows();
+  }
+
+
   function listDirectory(path, options = {}) {
     if (!activeConnectionId || busy) return;
     setBusy(true, 'Loading ' + path + '...');
@@ -6418,6 +9104,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     const selectedEntries = getSelectedActionEntries();
     setEntryContextActionsVisible(selectedEntries);
+    hideRemoteSearchResultContextMenu();
+    hideTextEditContextMenu();
     entryContextMenu.classList.add('visible');
     entryContextMenu.style.left = '0px';
     entryContextMenu.style.top = '0px';
@@ -6427,6 +9115,71 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const top = Math.min(clientY, Math.max(0, window.innerHeight - menuRect.height - 8));
     entryContextMenu.style.left = left + 'px';
     entryContextMenu.style.top = top + 'px';
+  }
+
+  function setRemoteSearchContextActionVisible(element, visible) {
+    if (element) element.style.display = visible ? '' : 'none';
+  }
+
+  function showRemoteSearchResultContextMenu(path, kind, clientX, clientY) {
+    if (!activeConnectionId || !remoteSearchResultContextMenu) return;
+    const normalizedPath = path ? normalizeUiRemotePath(path) : '';
+    const normalizedKind = kind === 'directory' ? 'directory' : (normalizedPath ? 'file' : '');
+    const hasPath = Boolean(normalizedPath);
+    const isDirectory = normalizedKind === 'directory';
+    const hasResults = Array.isArray(remoteSearchState.results) && remoteSearchState.results.length > 0;
+
+    remoteSearchContextPath = normalizedPath;
+    remoteSearchContextKind = normalizedKind;
+
+    setRemoteSearchContextActionVisible(remoteSearchContextOpen, hasPath && !isDirectory);
+    setRemoteSearchContextActionVisible(remoteSearchContextOpenReadOnly, hasPath && !isDirectory);
+    setRemoteSearchContextActionVisible(remoteSearchContextFileSeparator, hasPath && !isDirectory);
+    setRemoteSearchContextActionVisible(remoteSearchContextCopyPath, hasPath);
+    setRemoteSearchContextActionVisible(remoteSearchContextCopyName, hasPath);
+    setRemoteSearchContextActionVisible(remoteSearchContextResultsSeparator, hasPath && hasResults);
+    setRemoteSearchContextActionVisible(remoteSearchContextCopyResults, hasResults);
+
+    if (!hasPath && !hasResults) return;
+
+    hideContextMenu();
+    hideTextEditContextMenu();
+    remoteSearchResultContextMenu.classList.add('visible');
+    remoteSearchResultContextMenu.style.left = '0px';
+    remoteSearchResultContextMenu.style.top = '0px';
+
+    const menuRect = remoteSearchResultContextMenu.getBoundingClientRect();
+    const left = Math.min(clientX, Math.max(0, window.innerWidth - menuRect.width - 8));
+    const top = Math.min(clientY, Math.max(0, window.innerHeight - menuRect.height - 8));
+    remoteSearchResultContextMenu.style.left = left + 'px';
+    remoteSearchResultContextMenu.style.top = top + 'px';
+  }
+
+  function hideRemoteSearchResultContextMenu() {
+    remoteSearchContextPath = '';
+    remoteSearchContextKind = '';
+    if (remoteSearchResultContextMenu) remoteSearchResultContextMenu.classList.remove('visible');
+  }
+
+  function getRemotePathBasename(path) {
+    const normalized = normalizeUiRemotePath(path || '/');
+    if (normalized === '/') return '/';
+    const trimmed = normalized.replace(new RegExp('/+$'), '');
+    const index = trimmed.lastIndexOf('/');
+    return index >= 0 ? trimmed.slice(index + 1) : trimmed;
+  }
+
+  function getRemoteSearchContextEntry() {
+    const path = normalizeUiRemotePath(remoteSearchContextPath || '');
+    if (!path) return null;
+    return {
+      path,
+      name: getRemotePathBasename(path),
+      type: remoteSearchContextKind === 'directory' ? 'directory' : 'file',
+      effectiveType: remoteSearchContextKind === 'directory' ? 'directory' : 'file',
+      linkTarget: '',
+      permissions: ''
+    };
   }
 
   function setEntryContextActionsVisible(entries) {
@@ -6453,9 +9206,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const canChangePermissions = hasEntryActions && capabilities.canChangePermissions;
     const canChangeOwnerGroup = hasEntryActions && capabilities.canChangeOwnerGroup;
     const hasCurrentDirectoryActions = Boolean(activeConnectionId) && !hasEntryActions;
+    const canCreateInContext = hasCurrentDirectoryActions || isSingleDirectory;
     const canRefresh = Boolean(activeConnectionId);
     const canRunRemoteCommand = Boolean(activeConnectionId) && capabilities.canRunCommand;
     const canOpenSshTerminal = canRunRemoteCommand && capabilities.canOpenSshTerminal;
+    const canOpenLogViewer = Boolean(activeConnectionId) && capabilities.canRunCommand && (!hasEntryActions || isSingleFile);
     const canUpload = Boolean(activeConnectionId) && !hasEntryActions;
     const canCopyCurrentPath = Boolean(activeConnectionId) && !hasEntryActions;
     const canDownload = hasEntryActions;
@@ -6496,15 +9251,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     contextSetPermissions.style.display = canChangePermissions ? '' : 'none';
     contextChangeOwnerGroup.style.display = canChangeOwnerGroup ? '' : 'none';
 
-    contextRefreshSeparator.style.display = (hasCurrentDirectoryActions || canRefresh || canRunRemoteCommand || canUpload) && (hasEntryActions || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
-    contextCreateFile.style.display = hasCurrentDirectoryActions ? '' : 'none';
-    contextCreateDirectory.style.display = hasCurrentDirectoryActions ? '' : 'none';
+    contextRefreshSeparator.style.display = (canCreateInContext || canRefresh || canRunRemoteCommand || canUpload) && (hasEntryActions || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
+    contextCreateFile.style.display = canCreateInContext ? '' : 'none';
+    contextCreateDirectory.style.display = canCreateInContext ? '' : 'none';
     contextUpload.style.display = canUpload ? '' : 'none';
     contextUpload.textContent = 'Upload...';
     contextEmptyCopySeparator.style.display = canCopyCurrentPath && canUpload ? '' : 'none';
     contextCopyCurrentPath.style.display = canCopyCurrentPath ? '' : 'none';
-    contextEmptyRefreshSeparator.style.display = canCopyCurrentPath && (canRefresh || canRunRemoteCommand || canOpenSshTerminal) ? '' : 'none';
+    contextEmptyRefreshSeparator.style.display = canCopyCurrentPath && (canRefresh || canOpenLogViewer || canRunRemoteCommand || canOpenSshTerminal) ? '' : 'none';
     contextRefresh.style.display = canRefresh ? '' : 'none';
+    if (contextOpenLogViewer) contextOpenLogViewer.style.display = canOpenLogViewer ? '' : 'none';
+    if (contextOpenLogViewer) contextOpenLogViewer.textContent = isSingleFile ? 'Open in Log Viewer' : 'Open Log Viewer';
     contextRunRemoteCommand.style.display = canRunRemoteCommand ? '' : 'none';
     contextOpenSshTerminal.style.display = canOpenSshTerminal ? '' : 'none';
 
@@ -6575,7 +9332,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function getRemoteParentPath(path) {
     const normalized = normalizeUiRemotePath(path || '/');
     if (normalized === '/') return '/';
-    const trimmed = normalized.replace(/\\/+$/, '');
+    const trimmed = normalized.replace(new RegExp('/+$'), '');
     const index = trimmed.lastIndexOf('/');
     return index <= 0 ? '/' : trimmed.slice(0, index);
   }
@@ -6814,8 +9571,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       pending: Array.isArray(payload && payload.pending) ? payload.pending : [],
       completed: Array.isArray(payload && payload.completed) ? payload.completed : []
     };
+    pruneTransferQueuePendingActions();
     renderTransferQueueButton();
+    renderRemoteSearchBadge();
     if (transferQueueModalOpen) renderTransferQueueModal();
+  }
+
+
+  function pruneTransferQueuePendingActions() {
+    const activeIds = new Set((transferQueueState.currentTransfers || []).map(item => item && item.id).filter(Boolean));
+    const pendingIds = new Set((transferQueueState.pending || []).map(item => item && item.id).filter(Boolean));
+
+    Array.from(transferQueueCancelingIds).forEach(id => {
+      if (!activeIds.has(id)) transferQueueCancelingIds.delete(id);
+    });
+
+    Array.from(transferQueueRemovingIds).forEach(id => {
+      if (!pendingIds.has(id)) transferQueueRemovingIds.delete(id);
+    });
   }
 
   function renderTransferQueueButton() {
@@ -6898,11 +9671,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       return;
     }
 
-    transferQueueCurrent.innerHTML = currentTransfers.map(current => renderTransferQueueItem(current, {
-      action: current.canCancel ? 'cancel-current' : '',
-      actionLabel: current.status === 'Canceling' ? 'Canceling...' : 'Cancel',
-      disabled: !current.canCancel
-    })).join('');
+    transferQueueCurrent.innerHTML = currentTransfers.map(current => {
+      const isCanceling = transferQueueCancelingIds.has(current.id) || current.status === 'Canceling';
+      return renderTransferQueueItem(current, {
+        action: current.canCancel || isCanceling ? 'cancel-current' : '',
+        actionLabel: isCanceling ? 'Canceling...' : 'Cancel',
+        disabled: isCanceling || !current.canCancel
+      });
+    }).join('');
   }
 
   function renderPendingTransferQueueItems() {
@@ -6915,11 +9691,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       return;
     }
 
-    transferQueuePending.innerHTML = pending.map(item => renderTransferQueueItem(item, {
-      action: 'remove-pending',
-      actionLabel: 'Remove',
-      disabled: false
-    })).join('');
+    transferQueuePending.innerHTML = pending.map(item => {
+      const isRemoving = transferQueueRemovingIds.has(item.id);
+      return renderTransferQueueItem(item, {
+        action: 'remove-pending',
+        actionLabel: isRemoving ? 'Removing...' : 'Remove',
+        disabled: isRemoving
+      });
+    }).join('');
   }
 
   function renderCompletedTransferQueueItems() {
@@ -6955,6 +9734,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       ? '<button class="secondary" type="button" data-transfer-action="' + escapeHtml(action) + '" data-transfer-id="' + escapeHtml(item.id || '') + '"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(actionLabel) + '</button>'
       : '';
     const failedItemsHtml = renderTransferQueueFailedItems(item);
+    const canceledItemsHtml = renderTransferQueueCanceledItems(item);
 
     return '<div class="transfer-queue-item">' +
       '<div class="transfer-queue-item-main">' +
@@ -6966,6 +9746,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       '<div class="transfer-queue-status">Status: ' + escapeHtml(formatTransferQueueSentence(status)) + '</div>' +
       '<div class="transfer-queue-progress">Progress: ' + escapeHtml(formatTransferQueueSentence(progress)) + '</div>' +
       failedItemsHtml +
+      canceledItemsHtml +
       '</div>' +
       '<div class="transfer-queue-actions">' + actionHtml + '</div>' +
       '</div>';
@@ -6995,6 +9776,35 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return '<div class="transfer-queue-failed-items">' +
       '<div class="transfer-queue-failed-title">Failed items</div>' +
       failedRows +
+      moreRow +
+      '</div>';
+  }
+
+
+  function renderTransferQueueCanceledItems(item) {
+    const canceledItems = Array.isArray(item && item.canceledItems) ? item.canceledItems : [];
+    if (!canceledItems.length) return '';
+
+    const visibleItems = canceledItems.slice(0, 5);
+    const remainingCount = canceledItems.length - visibleItems.length;
+    const canceledRows = visibleItems.map(canceledItem => {
+      const parsed = parseTransferFailedItem(canceledItem);
+      const detailHtml = parsed.detail
+        ? '<div class="transfer-queue-canceled-error">' + escapeHtml(parsed.detail) + '</div>'
+        : '';
+
+      return '<div class="transfer-queue-canceled-item" title="' + escapeHtml(parsed.raw) + '">' +
+        '<div class="transfer-queue-canceled-path">- ' + escapeHtml(parsed.path) + '</div>' +
+        detailHtml +
+        '</div>';
+    }).join('');
+    const moreRow = remainingCount > 0
+      ? '<div class="transfer-queue-canceled-more">...and ' + remainingCount + ' more</div>'
+      : '';
+
+    return '<div class="transfer-queue-canceled-items">' +
+      '<div class="transfer-queue-canceled-title">Canceled items</div>' +
+      canceledRows +
       moreRow +
       '</div>';
   }
@@ -7092,17 +9902,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const isSftpConnectionMethod = isSftpFormConnection();
     const capabilities = getActiveRemoteCapabilities();
     const showRunRemoteCommand = capabilities.canRunCommand;
+    const showSshTerminal = capabilities.canOpenSshTerminal;
+    const showLogViewer = showSshTerminal;
     const showSudoMode = capabilities.canUseSudo;
-    const nextToolbarCapabilityState = (showRunRemoteCommand ? '1' : '0') + ':' + (showSudoMode ? '1' : '0');
+    const nextToolbarCapabilityState = (showRunRemoteCommand ? '1' : '0') + ':' + (showSshTerminal ? '1' : '0') + ':' + (showSudoMode ? '1' : '0');
     const shouldAnimateToolbarLayout = Boolean(toolbarCapabilityState && toolbarCapabilityState !== nextToolbarCapabilityState);
     const toolbarLayoutSnapshot = shouldAnimateToolbarLayout ? prepareToolbarLayoutTransition() : null;
 
     if (pathbar) {
-      pathbar.classList.toggle('hide-command-actions', !showRunRemoteCommand);
+      pathbar.classList.toggle('hide-command-actions', false);
       pathbar.classList.toggle('hide-sudo-actions', !showSudoMode);
     }
-    if (commandActions) commandActions.style.display = showRunRemoteCommand ? '' : 'none';
-    if (commandActionsSeparator) commandActionsSeparator.style.display = showRunRemoteCommand ? '' : 'none';
+    if (commandActions) commandActions.style.display = '';
+    if (commandActionsSeparator) commandActionsSeparator.style.display = '';
+    if (runRemoteCommandAction) runRemoteCommandAction.style.display = showRunRemoteCommand ? '' : 'none';
+    if (openSshTerminalAction) openSshTerminalAction.style.display = showSshTerminal ? '' : 'none';
+    if (openLogViewerAction) openLogViewerAction.style.display = showLogViewer ? '' : 'none';
     if (transferActionsSeparator) transferActionsSeparator.style.display = '';
     if (sudoToggleLabel) sudoToggleLabel.style.display = showSudoMode ? '' : 'none';
     if (sudoToggleSeparator) sudoToggleSeparator.style.display = showSudoMode ? '' : 'none';
@@ -7121,6 +9936,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     profileSelect.disabled = shouldLockConnectionPicker;
     profileDropdownButton.disabled = shouldLockConnectionPicker;
     manageProfilesButton.disabled = busy;
+    showSettingsButton.disabled = false;
     showOutputButton.disabled = false;
 
     const hasStatusCancelAction = Boolean(statusCancelAction);
@@ -7155,10 +9971,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateRemotePathBreadcrumb();
     filterInput.disabled = busy || !hasActiveSession;
     if (runRemoteCommandButton) runRemoteCommandButton.disabled = busy || !hasActiveSession || !capabilities.canRunCommand;
+    if (openLogViewerButton) openLogViewerButton.disabled = busy || !hasActiveSession || !capabilities.canOpenSshTerminal;
     if (openSshTerminalButton) openSshTerminalButton.disabled = busy || !hasActiveSession || !capabilities.canOpenSshTerminal;
+    if (remoteSearchButton) remoteSearchButton.disabled = !hasActiveSession;
     updateFilterClearButton();
     updateTransferButtons();
     renderTransferQueueButton();
+    renderRemoteSearchBadge();
+    renderRemoteCommandBadge();
+    renderLogViewerBadge();
     updatePathFavoriteControls();
     updateRemotePathBreadcrumb();
     uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;
@@ -7176,6 +9997,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (uploadButton) uploadButton.disabled = !canStartTransferAction() || !hasActiveSession;
     if (downloadButton) downloadButton.disabled = !canStartTransferAction() || !hasActiveSession || getSelectedActionEntries().length === 0;
     renderTransferQueueButton();
+    renderRemoteSearchBadge();
+    renderRemoteCommandBadge();
+    renderLogViewerBadge();
   }
 
   function escapeHtml(value) {

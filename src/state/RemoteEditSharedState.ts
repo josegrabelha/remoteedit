@@ -17,6 +17,12 @@ export interface RemoteEditProfilesState {
   source?: 'webview' | 'sidebar' | 'import';
 }
 
+export interface RemoteEditRemoteDirectoryChangeState {
+  connectionId: string;
+  remotePath: string;
+  source?: 'webview' | 'sidebar';
+}
+
 function normalizeRemotePath(remotePath: string | undefined): string {
   const raw = String(remotePath || '/').trim() || '/';
   const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`;
@@ -30,11 +36,13 @@ class RemoteEditSharedStateStore {
   private readonly navigationChangedEmitter = new vscode.EventEmitter<RemoteEditNavigationState>();
   private readonly favoritesChangedEmitter = new vscode.EventEmitter<RemoteEditFavoritesState>();
   private readonly profilesChangedEmitter = new vscode.EventEmitter<RemoteEditProfilesState>();
+  private readonly remoteDirectoryChangedEmitter = new vscode.EventEmitter<RemoteEditRemoteDirectoryChangeState>();
 
   readonly onActiveConnectionChanged = this.activeConnectionChangedEmitter.event;
   readonly onNavigationChanged = this.navigationChangedEmitter.event;
   readonly onFavoritesChanged = this.favoritesChangedEmitter.event;
   readonly onProfilesChanged = this.profilesChangedEmitter.event;
+  readonly onRemoteDirectoryChanged = this.remoteDirectoryChangedEmitter.event;
 
   getActiveConnectionId(): string | undefined {
     return this.activeConnectionId;
@@ -94,11 +102,24 @@ class RemoteEditSharedStateStore {
     this.profilesChangedEmitter.fire({ selectedId, source });
   }
 
+  fireRemoteDirectoryChanged(connectionId: string, remotePath: string, source?: RemoteEditRemoteDirectoryChangeState['source']): void {
+    if (!connectionId) {
+      return;
+    }
+
+    this.remoteDirectoryChangedEmitter.fire({
+      connectionId,
+      remotePath: normalizeRemotePath(remotePath),
+      source
+    });
+  }
+
   dispose(): void {
     this.activeConnectionChangedEmitter.dispose();
     this.navigationChangedEmitter.dispose();
     this.favoritesChangedEmitter.dispose();
     this.profilesChangedEmitter.dispose();
+    this.remoteDirectoryChangedEmitter.dispose();
   }
 }
 

@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import { Client as FtpClient, FileInfo, FileType } from 'basic-ftp';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
-import { getNumberSetting } from '../utils/settingsUtils';
+import { getBooleanSetting, getNumberSetting } from '../utils/settingsUtils';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { normalizeConnectionType } from '../remote/RemoteConnectionTypes';
 import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from '../remote/RemoteSessionManager';
@@ -26,6 +26,15 @@ interface CachedReadFile {
 
 interface CachedDirectoryListing {
   entries: RemoteEntry[];
+  expiresAt: number;
+}
+
+interface CachedModifiedTime {
+  modifyTime: number;
+  expiresAt: number;
+}
+
+interface CachedModifiedTimeFailure {
   expiresAt: number;
 }
 
@@ -53,6 +62,20 @@ interface FtpMergedListResult {
   merged: boolean;
 }
 
+interface ModifiedTimeHydrationSummary {
+  lookups: number;
+  updated: number;
+  failed: number;
+  skippedCachedFailures: number;
+  cancelled: boolean;
+  elapsedMs: number;
+}
+
+interface FtpStatProbeResult {
+  stat?: RemoteStat;
+  error?: unknown;
+}
+
 export class FtpSessionManager implements RemoteSessionManager {
   constructor(private readonly output?: vscode.OutputChannel) {}
 
@@ -62,6 +85,10 @@ export class FtpSessionManager implements RemoteSessionManager {
   private readonly reconnectRequired = new Set<string>();
   private readonly readFileCache = new Map<string, CachedReadFile>();
   private readonly directoryListingCache = new Map<string, CachedDirectoryListing>();
+  private readonly modifiedTimeCache = new Map<string, CachedModifiedTime>();
+  private readonly modifiedTimeFailureCache = new Map<string, CachedModifiedTimeFailure>();
+  private readonly modifiedTimeLookupTokens = new Map<string, number>();
+  private readonly modifiedTimeClients = new Map<string, FtpClient>();
   private readonly inFlightDirectoryListings = new Map<string, InFlightDirectoryListing>();
   private readonly operationQueues = new Map<string, Promise<unknown>>();
   private readonly keepAliveTimers = new Map<string, ReturnType<typeof setInterval>>();
@@ -160,6 +187,8 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearDirectoryListingCache(connectionId);
+    this.clearModifiedTimeCache(connectionId);
+    this.cancelModifiedTimeLookup(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
     this.operationQueues.delete(connectionId);
   }
@@ -184,17 +213,43 @@ export class FtpSessionManager implements RemoteSessionManager {
   async listDirectory(connectionId: string, remotePath: string, options: RemoteListDirectoryOptions = {}): Promise<RemoteEntry[]> {
     const normalizedPath = normalizeRemotePath(remotePath);
     const totalTimer = createPerformanceTimer();
-    const cacheTtlSeconds = getNumberSetting('directoryListingCacheTtl', 30, 0, 300);
+    const cacheTtlSeconds = this.getDirectoryListingCacheTtlSeconds();
     const cacheEnabled = cacheTtlSeconds > 0;
+    const modifiedDateFallbackEnabled = this.isModifiedDateFallbackEnabled();
     const cacheKey = this.buildDirectoryListingCacheKey(connectionId, normalizedPath);
+
+    if (!modifiedDateFallbackEnabled) {
+      this.cancelModifiedTimeLookup(connectionId);
+    }
 
     if (cacheEnabled && !options.forceRefresh) {
       const cached = this.directoryListingCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
         const cachedEntries = cloneRemoteEntries(cached.entries);
+        const lookupToken = modifiedDateFallbackEnabled ? this.beginModifiedTimeLookup(connectionId) : 0;
+        const cachedModifiedTimes = modifiedDateFallbackEnabled
+          ? this.applyCachedModifiedTimes(connectionId, cachedEntries, cacheTtlSeconds)
+          : 0;
+        const mdtm = modifiedDateFallbackEnabled
+          ? await this.hydrateMissingModifiedTimes(connectionId, normalizedPath, cachedEntries, cacheTtlSeconds, lookupToken)
+          : this.createDisabledModifiedTimeHydrationSummary();
+
+        this.directoryListingCache.set(cacheKey, {
+          entries: cloneRemoteEntries(cachedEntries),
+          expiresAt: Date.now() + cacheTtlSeconds * 1000
+        });
+
         appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
           cache: 'hit',
           items: cachedEntries.length,
+          mdtmEnabled: modifiedDateFallbackEnabled,
+          mdtmCache: cachedModifiedTimes,
+          mdtmLookups: mdtm.lookups,
+          mdtmUpdated: mdtm.updated,
+          mdtmFailed: mdtm.failed,
+          mdtmSkipped: mdtm.skippedCachedFailures,
+          mdtmCancelled: mdtm.cancelled,
+          mdtm: `${mdtm.elapsedMs}ms`,
           total: `${totalTimer()}ms`
         });
         return cachedEntries;
@@ -214,43 +269,69 @@ export class FtpSessionManager implements RemoteSessionManager {
       return clonedEntries;
     }
 
-    const listingPromise = this.runQueued(connectionId, async () => {
-      const client = this.getClient(connectionId);
-      const cacheState = cacheEnabled ? (options.forceRefresh ? 'refresh' : 'miss') : 'disabled';
+    const lookupToken = modifiedDateFallbackEnabled ? this.beginModifiedTimeLookup(connectionId) : 0;
+    const cacheState = cacheEnabled ? (options.forceRefresh ? 'refresh' : 'miss') : 'disabled';
+
+    const listingPromise = (async () => {
       const queuedTotalTimer = createPerformanceTimer();
-      const listing = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
+      const listed = await this.runQueued(connectionId, async () => {
+        const client = this.getClient(connectionId);
+        const listing = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
 
-      const mapTimer = createPerformanceTimer();
-      const entries = listing.items
-        .filter(item => item.name !== '.' && item.name !== '..')
-        .map(item => mapFtpFileInfo(item, normalizedPath));
-      const mapMs = mapTimer();
+        const mapTimer = createPerformanceTimer();
+        const entries = listing.items
+          .filter(item => item.name !== '.' && item.name !== '..')
+          .map(item => mapFtpFileInfo(item, normalizedPath));
+        const mapMs = mapTimer();
 
-      const sortTimer = createPerformanceTimer();
-      const sortedEntries = sortRemoteEntries(entries);
-      const sortMs = sortTimer();
+        const sortTimer = createPerformanceTimer();
+        const sortedEntries = sortRemoteEntries(entries);
+        const sortMs = sortTimer();
+
+        return {
+          sortedEntries,
+          listing,
+          mapMs,
+          sortMs
+        };
+      });
+
+      const cachedModifiedTimes = modifiedDateFallbackEnabled
+        ? this.applyCachedModifiedTimes(connectionId, listed.sortedEntries, cacheTtlSeconds)
+        : 0;
+      const mdtm = modifiedDateFallbackEnabled
+        ? await this.hydrateMissingModifiedTimes(connectionId, normalizedPath, listed.sortedEntries, cacheTtlSeconds, lookupToken)
+        : this.createDisabledModifiedTimeHydrationSummary();
 
       if (cacheEnabled) {
         this.directoryListingCache.set(cacheKey, {
-          entries: cloneRemoteEntries(sortedEntries),
+          entries: cloneRemoteEntries(listed.sortedEntries),
           expiresAt: Date.now() + cacheTtlSeconds * 1000
         });
       }
 
       appendPerformanceLog(this.output, 'FTP', `listDirectory ${normalizedPath}`, {
         cache: cacheState,
-        items: sortedEntries.length,
-        command: listing.primaryCommand || 'unknown',
-        list: `${listing.primaryListMs}ms`,
-        merge: `${listing.listMergeMs}ms`,
-        merged: listing.merged,
-        map: `${mapMs}ms`,
-        sort: `${sortMs}ms`,
+        items: listed.sortedEntries.length,
+        command: listed.listing.primaryCommand || 'unknown',
+        list: `${listed.listing.primaryListMs}ms`,
+        merge: `${listed.listing.listMergeMs}ms`,
+        merged: listed.listing.merged,
+        map: `${listed.mapMs}ms`,
+        sort: `${listed.sortMs}ms`,
+        mdtmEnabled: modifiedDateFallbackEnabled,
+        mdtmCache: cachedModifiedTimes,
+        mdtmLookups: mdtm.lookups,
+        mdtmUpdated: mdtm.updated,
+        mdtmFailed: mdtm.failed,
+        mdtmSkipped: mdtm.skippedCachedFailures,
+        mdtmCancelled: mdtm.cancelled,
+        mdtm: `${mdtm.elapsedMs}ms`,
         total: `${queuedTotalTimer()}ms`
       });
 
-      return cloneRemoteEntries(sortedEntries);
-    });
+      return cloneRemoteEntries(listed.sortedEntries);
+    })();
 
     this.inFlightDirectoryListings.set(cacheKey, {
       promise: listingPromise,
@@ -328,6 +409,314 @@ export class FtpSessionManager implements RemoteSessionManager {
     } finally {
       client.availableListCommands = originalCommands;
     }
+  }
+
+
+  private getDirectoryListingCacheTtlSeconds(): number {
+    return getNumberSetting('directoryListingCacheTtl', 30, 0, 300);
+  }
+
+  private isModifiedDateFallbackEnabled(): boolean {
+    return getBooleanSetting('ftp.enableModifiedDateFallback', true);
+  }
+
+  private createDisabledModifiedTimeHydrationSummary(): ModifiedTimeHydrationSummary {
+    return {
+      lookups: 0,
+      updated: 0,
+      failed: 0,
+      skippedCachedFailures: 0,
+      cancelled: false,
+      elapsedMs: 0
+    };
+  }
+
+  private beginModifiedTimeLookup(connectionId: string): number {
+    const nextToken = (this.modifiedTimeLookupTokens.get(connectionId) || 0) + 1;
+    this.modifiedTimeLookupTokens.set(connectionId, nextToken);
+    this.closeModifiedTimeClient(connectionId);
+    return nextToken;
+  }
+
+  private cancelModifiedTimeLookup(connectionId: string): void {
+    this.modifiedTimeLookupTokens.set(connectionId, (this.modifiedTimeLookupTokens.get(connectionId) || 0) + 1);
+    this.closeModifiedTimeClient(connectionId);
+  }
+
+  private isModifiedTimeLookupCurrent(connectionId: string, token: number): boolean {
+    return this.modifiedTimeLookupTokens.get(connectionId) === token
+      && this.hasConnection(connectionId);
+  }
+
+  private closeModifiedTimeClient(connectionId: string): void {
+    const client = this.modifiedTimeClients.get(connectionId);
+
+    if (client) {
+      this.closeClient(client);
+    }
+
+    this.modifiedTimeClients.delete(connectionId);
+  }
+
+  private async createModifiedTimeClient(connectionId: string, token: number): Promise<FtpClient | undefined> {
+    if (!this.isModifiedTimeLookupCurrent(connectionId, token)) {
+      return undefined;
+    }
+
+    const options = this.connectOptions.get(connectionId);
+    if (!options) {
+      return undefined;
+    }
+
+    const client = new FtpClient(30000);
+
+    try {
+      const secureOptions = await buildFtpsSecureOptions(options);
+      await client.access({
+        host: options.host,
+        port: options.port,
+        user: options.username,
+        password: options.password,
+        secure: options.connectionType === 'ftps',
+        secureOptions
+      });
+
+      if (!this.isModifiedTimeLookupCurrent(connectionId, token)) {
+        this.closeClient(client);
+        return undefined;
+      }
+
+      this.modifiedTimeClients.set(connectionId, client);
+      this.touchConnectionActivity(connectionId);
+      return client;
+    } catch (error) {
+      this.closeClient(client);
+      appendDebugLog(this.output, 'FTP', 'modified time fallback client failed', {
+        connection: connectionId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    }
+  }
+
+  private applyCachedModifiedTimes(connectionId: string, entries: RemoteEntry[], cacheTtlSeconds: number): number {
+    const now = Date.now();
+    let applied = 0;
+
+    for (const entry of entries) {
+      if (entry.modifyTime > 0 || !entry.path) {
+        continue;
+      }
+
+      const cacheKey = this.buildModifiedTimeCacheKey(connectionId, entry.path);
+      const cached = this.modifiedTimeCache.get(cacheKey);
+
+      if (!cached) {
+        continue;
+      }
+
+      if (cacheTtlSeconds > 0 && cached.expiresAt > now) {
+        entry.modifyTime = cached.modifyTime;
+        applied += 1;
+        continue;
+      }
+
+      this.modifiedTimeCache.delete(cacheKey);
+    }
+
+    return applied;
+  }
+
+  private buildModifiedTimeLookupCandidates(remotePath: string, entry: RemoteEntry, includeRelativeName: boolean): string[] {
+    const candidates: string[] = [];
+    const entryPath = normalizeRemotePath(entry.path || '');
+    const entryName = String(entry.name || '').trim();
+
+    if (includeRelativeName && entryName && !entryName.includes('/')) {
+      candidates.push(entryName);
+    }
+
+    if (entryPath && entryPath !== '/') {
+      candidates.push(entryPath);
+
+      const withoutLeadingSlash = entryPath.replace(/^\/+/, '');
+      if (withoutLeadingSlash) {
+        candidates.push(withoutLeadingSlash);
+      }
+    }
+
+    const normalizedRemotePath = normalizeRemotePath(remotePath);
+    if (entryName && normalizedRemotePath !== '/') {
+      candidates.push(joinRemotePath(normalizedRemotePath, entryName));
+    }
+
+    return Array.from(new Set(candidates.filter(Boolean)));
+  }
+
+  private async hydrateMissingModifiedTimes(
+    connectionId: string,
+    remotePath: string,
+    entries: RemoteEntry[],
+    cacheTtlSeconds: number,
+    token: number
+  ): Promise<ModifiedTimeHydrationSummary> {
+    const timer = createPerformanceTimer();
+    const allMissingEntries = entries.filter(entry => entry.modifyTime <= 0 && Boolean(entry.path));
+    const missingEntries = allMissingEntries.filter(entry => !this.isModifiedTimeFailureCached(connectionId, entry.path || '', cacheTtlSeconds));
+    const skippedCachedFailures = allMissingEntries.length - missingEntries.length;
+
+    if (missingEntries.length === 0) {
+      return {
+        lookups: 0,
+        updated: 0,
+        failed: 0,
+        skippedCachedFailures,
+        cancelled: false,
+        elapsedMs: timer()
+      };
+    }
+
+    const client = await this.createModifiedTimeClient(connectionId, token);
+
+    if (!client) {
+      return {
+        lookups: 0,
+        updated: 0,
+        failed: 0,
+        skippedCachedFailures,
+        cancelled: !this.isModifiedTimeLookupCurrent(connectionId, token),
+        elapsedMs: timer()
+      };
+    }
+
+    let lookups = 0;
+    let updated = 0;
+    let failed = 0;
+    let cancelled = false;
+    let loggedFailures = 0;
+    let changedToListDirectory = false;
+
+    try {
+      try {
+        await client.cd(normalizeRemotePath(remotePath));
+        changedToListDirectory = true;
+      } catch (error) {
+        appendDebugLog(this.output, 'FTP', 'MDTM fallback could not change directory before relative lookups', {
+          connection: connectionId,
+          path: normalizeRemotePath(remotePath),
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+
+      for (const entry of missingEntries) {
+        if (!this.isModifiedTimeLookupCurrent(connectionId, token) || client.closed) {
+          cancelled = true;
+          break;
+        }
+
+        const entryPath = normalizeRemotePath(entry.path || '');
+        if (!entryPath || entryPath === '/') {
+          continue;
+        }
+
+        const candidates = this.buildModifiedTimeLookupCandidates(normalizeRemotePath(remotePath), entry, changedToListDirectory);
+        if (candidates.length === 0) {
+          continue;
+        }
+
+        lookups += 1;
+        let entryUpdated = false;
+        let lastError: unknown;
+        let lastCandidate = '';
+        const attemptedCandidates: string[] = [];
+
+        for (const candidate of candidates) {
+          if (!this.isModifiedTimeLookupCurrent(connectionId, token) || client.closed) {
+            cancelled = true;
+            break;
+          }
+
+          lastCandidate = candidate;
+          attemptedCandidates.push(candidate);
+
+          try {
+            const modifiedAt = await client.lastMod(candidate);
+            const modifyTime = modifiedAt instanceof Date ? modifiedAt.getTime() : 0;
+
+            if (Number.isFinite(modifyTime) && modifyTime > 0) {
+              entry.modifyTime = Number(modifyTime);
+              updated += 1;
+              entryUpdated = true;
+
+              if (cacheTtlSeconds > 0) {
+                this.modifiedTimeCache.set(this.buildModifiedTimeCacheKey(connectionId, entryPath), {
+                  modifyTime: Number(modifyTime),
+                  expiresAt: Date.now() + cacheTtlSeconds * 1000
+                });
+                this.modifiedTimeFailureCache.delete(this.buildModifiedTimeCacheKey(connectionId, entryPath));
+              }
+
+              break;
+            }
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (cancelled) {
+          break;
+        }
+
+        if (!entryUpdated) {
+          failed += 1;
+
+          if (cacheTtlSeconds > 0) {
+            this.modifiedTimeFailureCache.set(this.buildModifiedTimeCacheKey(connectionId, entryPath), {
+              expiresAt: Date.now() + cacheTtlSeconds * 1000
+            });
+          }
+
+          if (loggedFailures < 5) {
+            loggedFailures += 1;
+            appendDebugLog(this.output, 'FTP', 'MDTM modified time lookup failed', {
+              connection: connectionId,
+              path: entryPath,
+              candidates: attemptedCandidates.join(', '),
+              lastCandidate,
+              type: entry.type,
+              error: lastError instanceof Error ? lastError.message : String(lastError || 'No valid modified time returned')
+            });
+          }
+        }
+      }
+    } finally {
+      if (this.modifiedTimeClients.get(connectionId) === client) {
+        this.modifiedTimeClients.delete(connectionId);
+      }
+      this.closeClient(client);
+    }
+
+    if (lookups > 0 || updated > 0 || failed > 0 || cancelled) {
+      appendDebugLog(this.output, 'FTP', 'modified time fallback completed', {
+        connection: connectionId,
+        path: normalizeRemotePath(remotePath),
+        items: missingEntries.length,
+        lookups,
+        updated,
+        failed,
+        skipped: skippedCachedFailures,
+        cancelled
+      });
+    }
+
+    return {
+      lookups,
+      updated,
+      failed,
+      skippedCachedFailures,
+      cancelled,
+      elapsedMs: timer()
+    };
   }
 
   async prepareFileForOpen(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<void> {
@@ -415,64 +804,187 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   private async statUnqueued(client: FtpClient, normalizedPath: string): Promise<RemoteStat> {
+    const result = await this.tryStatUnqueued(client, normalizedPath);
+
+    if (result.stat) {
+      return result.stat;
+    }
+
+    throw result.error || new Error(`Could not stat remote path ${normalizedPath}.`);
+  }
+
+  private async tryStatUnqueued(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
     if (normalizedPath === '/') {
       return {
-        type: 'directory',
-        size: 0,
-        modifyTime: 0,
-        accessTime: 0
+        stat: {
+          type: 'directory',
+          size: 0,
+          modifyTime: 0,
+          accessTime: 0
+        }
       };
     }
 
+    let lastError: unknown;
     const entry = await this.findEntry(client, normalizedPath);
 
     if (entry) {
+      const entryType = mapFtpEntryType(entry);
+
+      if (entryType === 'file' || entryType === 'directory' || entryType === 'link') {
+        return {
+          stat: {
+            type: entryType === 'link' ? 'unknown' : entryType,
+            size: Number(entry.size || 0),
+            modifyTime: getFtpModifyTime(entry),
+            accessTime: 0
+          }
+        };
+      }
+    }
+
+    const fileStat = await this.tryStatFileBySize(client, normalizedPath);
+    if (fileStat.stat) {
+      return fileStat;
+    }
+    lastError = fileStat.error || lastError;
+
+    const directoryStat = await this.tryStatDirectoryByCd(client, normalizedPath);
+    if (directoryStat.stat) {
+      return directoryStat;
+    }
+    lastError = directoryStat.error || lastError;
+
+    const modifiedFileStat = await this.tryStatFileByModifiedTime(client, normalizedPath);
+    if (modifiedFileStat.stat) {
+      return modifiedFileStat;
+    }
+    lastError = modifiedFileStat.error || lastError;
+
+    if (entry) {
       return {
-        type: mapFtpStatType(entry),
-        size: Number(entry.size || 0),
-        modifyTime: getFtpModifyTime(entry),
-        accessTime: 0
+        stat: {
+          type: 'unknown',
+          size: Number(entry.size || 0),
+          modifyTime: getFtpModifyTime(entry),
+          accessTime: 0
+        }
       };
     }
 
-    try {
-      await client.list(normalizedPath);
-      return {
-        type: 'directory',
-        size: 0,
-        modifyTime: 0,
-        accessTime: 0
-      };
-    } catch {
-      // Try file metadata below.
+    const listedStat = await this.tryStatFromPathListing(client, normalizedPath);
+    if (listedStat.stat) {
+      return listedStat;
     }
 
-    let size: number | undefined;
-    let modifyTime = 0;
-    let metadataError: unknown;
+    return { error: listedStat.error || lastError };
+  }
+
+  private async tryStatFileBySize(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
+    let size: number;
 
     try {
       size = await client.size(normalizedPath);
     } catch (error) {
-      metadataError = error;
-    }
-
-    try {
-      modifyTime = await client.lastMod(normalizedPath).then(date => date.getTime());
-    } catch {
-      // Modification time is optional for FTP servers.
-    }
-
-    if (size === undefined && modifyTime <= 0) {
-      throw metadataError || new Error(`Could not stat remote path ${normalizedPath}.`);
+      return { error };
     }
 
     return {
-      type: 'file',
-      size: Number(size || 0),
-      modifyTime: Number(modifyTime || 0),
-      accessTime: 0
+      stat: {
+        type: 'file',
+        size: Number(size || 0),
+        modifyTime: await this.tryGetModifiedTime(client, normalizedPath),
+        accessTime: 0
+      }
     };
+  }
+
+  private async tryStatDirectoryByCd(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
+    const previousPath = await this.safePwd(client);
+    let changedDirectory = false;
+
+    try {
+      await client.cd(normalizedPath);
+      changedDirectory = true;
+      return {
+        stat: {
+          type: 'directory',
+          size: 0,
+          modifyTime: 0,
+          accessTime: 0
+        }
+      };
+    } catch (error) {
+      return { error };
+    } finally {
+      if (changedDirectory) {
+        await this.tryCd(client, previousPath);
+      }
+    }
+  }
+
+  private async tryStatFileByModifiedTime(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
+    try {
+      const modifiedAt = await client.lastMod(normalizedPath);
+      const modifyTime = modifiedAt instanceof Date ? modifiedAt.getTime() : 0;
+
+      if (Number.isFinite(modifyTime) && modifyTime > 0) {
+        return {
+          stat: {
+            type: 'file',
+            size: 0,
+            modifyTime: Number(modifyTime),
+            accessTime: 0
+          }
+        };
+      }
+
+      return { error: new Error(`No valid modified time returned for ${normalizedPath}.`) };
+    } catch (error) {
+      return { error };
+    }
+  }
+
+  private async tryStatFromPathListing(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
+    let items: FileInfo[];
+
+    try {
+      items = await client.list(normalizedPath);
+    } catch (error) {
+      return { error };
+    }
+
+    const selfListingEntry = getSelfListingEntry(items, normalizedPath);
+
+    if (selfListingEntry) {
+      return {
+        stat: {
+          type: mapFtpStatType(selfListingEntry),
+          size: Number(selfListingEntry.size || 0),
+          modifyTime: getFtpModifyTime(selfListingEntry),
+          accessTime: 0
+        }
+      };
+    }
+
+    return {
+      stat: {
+        type: 'directory',
+        size: 0,
+        modifyTime: 0,
+        accessTime: 0
+      }
+    };
+  }
+
+  private async tryGetModifiedTime(client: FtpClient, normalizedPath: string): Promise<number> {
+    try {
+      const modifiedAt = await client.lastMod(normalizedPath);
+      const modifyTime = modifiedAt instanceof Date ? modifiedAt.getTime() : 0;
+      return Number.isFinite(modifyTime) ? Number(modifyTime) : 0;
+    } catch {
+      return 0;
+    }
   }
 
   async createFile(connectionId: string, remotePath: string): Promise<void> {
@@ -584,7 +1096,7 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   disableSudoMode(_connectionId: string): void {
-    // FTP/FTPS does not support sudo mode.
+    // FTP/FTPS does not support Sudo Mode.
   }
 
   isSudoModeEnabled(_connectionId: string): boolean {
@@ -861,6 +1373,8 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.connectOptions.delete(connectionId);
     this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
+    this.clearModifiedTimeCache(connectionId);
+    this.cancelModifiedTimeLookup(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
     this.operationQueues.delete(connectionId);
   }
@@ -873,6 +1387,8 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.connectOptions.delete(connectionId);
     this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
+    this.clearModifiedTimeCache(connectionId);
+    this.cancelModifiedTimeLookup(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
     this.operationQueues.delete(connectionId);
   }
@@ -985,27 +1501,57 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   private async pathExists(client: FtpClient, normalizedPath: string): Promise<boolean> {
-    if (await this.findEntry(client, normalizedPath)) {
-      return true;
-    }
-
-    try {
-      await client.size(normalizedPath);
-      return true;
-    } catch {
-      // Try directory listing below.
-    }
-
-    try {
-      await client.list(normalizedPath);
-      return true;
-    } catch {
-      return false;
-    }
+    const result = await this.tryStatUnqueued(client, normalizedPath);
+    return Boolean(result.stat);
   }
 
   private buildDirectoryListingCacheKey(connectionId: string, remotePath: string): string {
     return `${connectionId}:${normalizeRemotePath(remotePath)}`;
+  }
+
+  private buildModifiedTimeCacheKey(connectionId: string, remotePath: string): string {
+    return `${connectionId}:${normalizeRemotePath(remotePath)}`;
+  }
+
+  private clearModifiedTimeCache(connectionId: string, remotePath?: string): void {
+    if (remotePath) {
+      const key = this.buildModifiedTimeCacheKey(connectionId, remotePath);
+      this.modifiedTimeCache.delete(key);
+      this.modifiedTimeFailureCache.delete(key);
+      return;
+    }
+
+    const prefix = `${connectionId}:`;
+    for (const key of Array.from(this.modifiedTimeCache.keys())) {
+      if (key.startsWith(prefix)) {
+        this.modifiedTimeCache.delete(key);
+      }
+    }
+    for (const key of Array.from(this.modifiedTimeFailureCache.keys())) {
+      if (key.startsWith(prefix)) {
+        this.modifiedTimeFailureCache.delete(key);
+      }
+    }
+  }
+
+  private isModifiedTimeFailureCached(connectionId: string, remotePath: string, cacheTtlSeconds: number): boolean {
+    if (cacheTtlSeconds <= 0) {
+      return false;
+    }
+
+    const key = this.buildModifiedTimeCacheKey(connectionId, remotePath);
+    const cached = this.modifiedTimeFailureCache.get(key);
+
+    if (!cached) {
+      return false;
+    }
+
+    if (cached.expiresAt > Date.now()) {
+      return true;
+    }
+
+    this.modifiedTimeFailureCache.delete(key);
+    return false;
   }
 
   private clearDirectoryListingCache(connectionId: string, remotePath?: string): void {
@@ -1040,6 +1586,7 @@ export class FtpSessionManager implements RemoteSessionManager {
 
   private invalidateDirectoryListingForPath(connectionId: string, remotePath: string): void {
     const normalizedPath = normalizeRemotePath(remotePath);
+    this.clearModifiedTimeCache(connectionId, normalizedPath);
     this.clearDirectoryListingCache(connectionId, normalizedPath);
     this.clearDirectoryListingCache(connectionId, dirnameRemotePath(normalizedPath));
     this.clearInFlightDirectoryListings(connectionId, normalizedPath);
@@ -1067,6 +1614,7 @@ export class FtpSessionManager implements RemoteSessionManager {
   private clearReadFileCache(connectionId: string, remotePath?: string): void {
     if (remotePath) {
       this.readFileCache.delete(this.buildReadFileCacheKey(connectionId, remotePath));
+      this.clearModifiedTimeCache(connectionId, remotePath);
       this.invalidateDirectoryListingForPath(connectionId, remotePath);
       return;
     }
@@ -1078,6 +1626,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       }
     }
     this.clearDirectoryListingCache(connectionId);
+    this.clearModifiedTimeCache(connectionId);
   }
 }
 
@@ -1134,6 +1683,34 @@ function mergeFtpFileInfo(primaryItem: FileInfo, listItem: FileInfo): FileInfo {
   }
 
   return primaryItem;
+}
+
+function getSelfListingEntry(items: FileInfo[], normalizedPath: string): FileInfo | undefined {
+  if (items.length !== 1) {
+    return undefined;
+  }
+
+  const item = items[0];
+  const itemName = String(item.name || '').trim();
+
+  if (!itemName || itemName === '.' || itemName === '..') {
+    return undefined;
+  }
+
+  const targetName = basenameRemotePath(normalizedPath);
+
+  if (itemName === targetName) {
+    return item;
+  }
+
+  if (itemName.includes('/')) {
+    const normalizedItemPath = normalizeRemotePath(itemName);
+    if (normalizedItemPath === normalizedPath || basenameRemotePath(normalizedItemPath) === targetName) {
+      return item;
+    }
+  }
+
+  return undefined;
 }
 
 function hasListMetadata(item: FileInfo): boolean {

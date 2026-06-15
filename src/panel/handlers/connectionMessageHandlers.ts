@@ -24,6 +24,9 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.RenameConnection:
       await handlers.renameConnection(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.ReorderConnections:
+      await handlers.reorderConnections(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.RequestImportConnectionsSettings:
       await handlers.requestImportConnectionsSettings();
       return true;
@@ -44,6 +47,9 @@ export async function tryHandleConnectionMessage(
       return true;
     case RemoteEditIncomingMessageType.SwitchSession:
       await handlers.switchSession(String(message.payload?.connectionId || ''));
+      return true;
+    case RemoteEditIncomingMessageType.ReorderSessions:
+      handlers.reorderSessions(message.payload);
       return true;
     default:
       return false;

@@ -42,6 +42,21 @@ export async function tryHandleBrowserMessage(
     case RemoteEditIncomingMessageType.CopyStatus:
       await handlers.copyStatus(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestRemoteSearchState:
+      handlers.requestRemoteSearchState();
+      return true;
+    case RemoteEditIncomingMessageType.BrowseRemoteSearchScope:
+      await handlers.browseRemoteSearchScope(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.StartRemoteSearch:
+      await handlers.startRemoteSearch(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CancelRemoteSearch:
+      handlers.cancelRemoteSearch();
+      return true;
+    case RemoteEditIncomingMessageType.ClearRemoteSearch:
+      handlers.clearRemoteSearch();
+      return true;
     default:
       return false;
   }

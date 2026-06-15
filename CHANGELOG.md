@@ -1,4 +1,19 @@
 # Changelog
+## [1.7.0] - 2026-06-13
+
+### Added
+
+* Added Remote Search to the Webview with file name/path search, SSH/SFTP content search with grouped highlighted results and sudo support, and FTP/FTPS file name search support.
+* Added a dedicated Log Viewer Webview for SSH/SFTP connections with tabs, follow mode, pause/resume, search, formatting options, line controls, and entry points from the Webview and Primary Sidebar.
+
+### Improved
+
+* Improved UI polish across the Webview, Primary Sidebar, tabs, toolbars, context menus, connection icons, and modal interactions.
+* Improved Run Remote Command modal behavior when closing or pressing Escape while a command is running.
+
+### Fixed
+
+* Fixed FTP/FTPS modified date handling on servers that do not provide consistent metadata.
 
 ## [1.6.2] - 2026-06-11
 
@@ -123,8 +138,6 @@
 ## [1.1.0] - 2026-05-25
 
 ### Added
-
-## 1.1.0
 
 - Added Transfer Queue support for uploads and downloads.
 - Improved transfer details, progress formatting, and Output Channel logging.

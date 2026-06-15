@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { getBooleanSetting } from './settingsUtils';
 
-export type OutputLogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+export type OutputLogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' | 'PERF';
 export type OutputLogDetails = Record<string, string | number | boolean | undefined | null>;
 
 export function appendOutputLog(
@@ -70,7 +70,7 @@ export function appendPerformanceLog(
       .join(' | ')
     : '';
 
-  output.appendLine(`[${formatLocalTimestamp()}] [DEBUG] [Perf][${source}] ${message}${inlineDetails ? ` | ${inlineDetails}` : ''}`);
+  output.appendLine(`[${formatLocalTimestamp()}] [PERF] [${source}] ${message}${inlineDetails ? ` | ${inlineDetails}` : ''}`);
 }
 
 export function createPerformanceTimer(): () => number {

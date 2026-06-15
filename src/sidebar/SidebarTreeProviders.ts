@@ -10,8 +10,26 @@ const COMMAND_OPEN = 'remoteedit.open';
 const COMMAND_OPEN_SETTINGS = 'remoteedit.sidebar.openSettings';
 const COMMAND_EXPORT_BACKUP = 'remoteedit.sidebar.exportBackup';
 const COMMAND_IMPORT_BACKUP = 'remoteedit.sidebar.importBackup';
+const COMMAND_OPEN_LOG_VIEWER = 'remoteedit.sidebar.openLogViewer';
 
-export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem> {
+export interface RemoteEditActionsTreeProviderOptions {
+  hasLogViewerConnection(): boolean;
+}
+
+export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem>, vscode.Disposable {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<RemoteEditSidebarItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+
+  constructor(private readonly options: RemoteEditActionsTreeProviderOptions) {}
+
+  refresh(): void {
+    this.onDidChangeTreeDataEmitter.fire();
+  }
+
+  dispose(): void {
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
+
   getTreeItem(element: RemoteEditSidebarItem): vscode.TreeItem {
     return element;
   }
@@ -20,6 +38,8 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
     if (element) {
       return [];
     }
+
+    const canOpenLogViewer = this.options.hasLogViewerConnection();
 
     return [
       new RemoteEditSidebarItem({
@@ -33,6 +53,26 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
           title: 'Remote Edit (Advanced View)'
         },
         contextValue: 'remoteedit.action.advancedView'
+      }),
+      new RemoteEditSidebarItem({
+        label: 'Log Viewer',
+        kind: 'action',
+        id: 'action:logViewer',
+        icon: canOpenLogViewer
+          ? new vscode.ThemeIcon('output')
+          : new vscode.ThemeIcon('output', new vscode.ThemeColor('disabledForeground')),
+        tooltip: canOpenLogViewer
+          ? 'Open Log Viewer for the active SSH/SFTP connection.'
+          : 'Log Viewer requires an active SSH/SFTP connection.',
+        command: canOpenLogViewer
+          ? {
+            command: COMMAND_OPEN_LOG_VIEWER,
+            title: 'Log Viewer'
+          }
+          : undefined,
+        contextValue: canOpenLogViewer
+          ? 'remoteedit.action.logViewer'
+          : 'remoteedit.action.logViewer.disabled'
       }),
       new RemoteEditSidebarItem({
         label: 'Export Backup',
@@ -464,17 +504,23 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       });
 
       const message = error instanceof Error ? error.message : String(error);
+      const normalizedRemotePath = normalizeRemotePath(remotePath);
+      const items: RemoteEditSidebarItem[] = [];
 
-      return [
-        new RemoteEditSidebarItem({
-          label: 'Unable to load files',
-          kind: 'placeholder',
-          icon: new vscode.ThemeIcon('warning'),
-          description: message,
-          tooltip: message,
-          contextValue: 'remoteedit.placeholder'
-        })
-      ];
+      if (includeGoParent && normalizedRemotePath !== '/') {
+        items.push(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
+      }
+
+      items.push(new RemoteEditSidebarItem({
+        label: 'Unable to load files',
+        kind: 'placeholder',
+        icon: new vscode.ThemeIcon('warning'),
+        description: message,
+        tooltip: message,
+        contextValue: 'remoteedit.placeholder'
+      }));
+
+      return items;
     } finally {
       releaseListSlot();
     }

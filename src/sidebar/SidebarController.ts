@@ -29,7 +29,7 @@ type SidebarConnectionDraft = ConnectionProfileInput & {
 };
 
 export class RemoteEditSidebarController implements vscode.Disposable {
-  private readonly actionsProvider = new RemoteEditActionsTreeProvider();
+  private readonly actionsProvider: RemoteEditActionsTreeProvider;
   private readonly connectionsProvider: ConnectionsTreeProvider;
   private readonly openConnectionsProvider: OpenConnectionsTreeProvider;
   private readonly connectionsTreeView: vscode.TreeView<RemoteEditSidebarItem>;
@@ -50,6 +50,9 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     private readonly connectionManager: ConnectionManager,
     private readonly output: vscode.OutputChannel
   ) {
+    this.actionsProvider = new RemoteEditActionsTreeProvider({
+      hasLogViewerConnection: () => Boolean(this.resolveLogViewerConnectionId())
+    });
     this.connectionsProvider = new ConnectionsTreeProvider(connectionManager, {
       getQuickConnectProfile: () => this.buildQuickConnectProfile(),
       getDraftProfile: profile => this.mergeProfileWithDraft(profile),
@@ -75,6 +78,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
     if (connectionChangeEvent) {
       this.disposables.push(connectionChangeEvent(() => {
+        this.actionsProvider.refresh();
         this.connectionsProvider.refresh();
         this.refreshSudoModeVisualState();
 
@@ -84,6 +88,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       }));
     }
 
+    this.disposables.push(RemoteEditSharedState.onActiveConnectionChanged(() => this.actionsProvider.refresh()));
+    this.disposables.push(RemoteEditSharedState.onRemoteDirectoryChanged(event => {
+      if (event.source === 'sidebar') {
+        return;
+      }
+
+      this.refreshOpenConnectionDirectory(event.connectionId, event.remotePath);
+    }));
     this.disposables.push(this.connectionsTreeView.onDidChangeSelection(event => this.expandSelectedConnection(event.selection[0])));
     this.disposables.push(vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('remoteedit.sidebar.showItemInfoOnHover')) {
@@ -152,6 +164,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.enableSudoMode', item => this.enableSudoMode(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.disableSudoMode', item => this.disableSudoMode(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.openSshTerminal', item => this.openSshTerminal(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.openLogViewer', item => this.openLogViewer(item)),
       vscode.commands.registerCommand('remoteedit.primary.openDirectoryAsRootDirectory', (itemOrConnectionId, maybePath) => this.openDirectoryAsRootDirectory(itemOrConnectionId, maybePath)),
       vscode.commands.registerCommand('remoteedit.sidebar.openFavoritePath', (itemOrConnectionId, maybePath) => this.openFavoritePath(itemOrConnectionId, maybePath)),
       vscode.commands.registerCommand('remoteedit.sidebar.goParentFolder', (itemOrConnectionId, maybePath) => this.goParentFolder(itemOrConnectionId, maybePath)),
@@ -240,6 +253,45 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     this.output.appendLine(`[Sidebar] Sudo Mode disabled: ${connectionId}`);
     void vscode.window.showInformationMessage('Sudo Mode disabled.');
     this.refreshSudoModeVisualState();
+  }
+
+  private async openLogViewer(item: RemoteEditSidebarItem | undefined): Promise<void> {
+    const connectionId = item?.connectionId || this.resolveLogViewerConnectionId();
+    const connection = connectionId ? this.sessions.getConnection(connectionId) : undefined;
+
+    if (!connectionId || !connection) {
+      void vscode.window.showErrorMessage('No open Remote Edit SSH/SFTP connection selected.');
+      return;
+    }
+
+    if (!this.canOpenLogViewerForConnection(connection)) {
+      void vscode.window.showInformationMessage('Log Viewer is available for SSH/SFTP connections only.');
+      return;
+    }
+
+    if (item?.kind === 'remoteFile' && item.remotePath) {
+      RemoteEditPanel.openLogViewerForFile(this.context, this.sessions, this.connectionManager, this.output, connectionId, item.remotePath);
+      return;
+    }
+
+    RemoteEditPanel.openLogViewerForConnection(this.context, this.sessions, this.connectionManager, this.output, connectionId);
+  }
+
+  private resolveLogViewerConnectionId(): string | undefined {
+    const activeConnectionId = RemoteEditSharedState.getActiveConnectionId();
+    const activeConnection = activeConnectionId ? this.sessions.getConnection(activeConnectionId) : undefined;
+
+    if (activeConnection && this.canOpenLogViewerForConnection(activeConnection)) {
+      return activeConnectionId;
+    }
+
+    return this.sessions.listConnections()
+      .find(connection => this.canOpenLogViewerForConnection(connection))
+      ?.id;
+  }
+
+  private canOpenLogViewerForConnection(connection: ReturnType<RemoteSessionManager['getConnection']>): boolean {
+    return String(connection?.connectionType || '').toLowerCase() === 'sftp';
   }
 
   private async openSshTerminal(item: RemoteEditSidebarItem | undefined): Promise<void> {
@@ -624,6 +676,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.disposables.pop()?.dispose();
     }
 
+    this.actionsProvider.dispose();
     this.connectionsProvider.dispose();
     this.openConnectionsProvider.dispose();
     this.transfersProvider.dispose();
@@ -839,6 +892,24 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private refreshOpenConnections(): void {
+    this.openConnectionsProvider.refresh();
+  }
+
+  private refreshOpenConnectionDirectory(connectionId: string, remotePath: string): void {
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      return;
+    }
+
+    const normalizedPath = normalizeRemotePath(remotePath || '/');
+    const rootPath = this.openConnectionsProvider.getRootPathForConnection(connectionId) || connection.startPath || '/';
+    const normalizedRootPath = normalizeRemotePath(rootPath);
+    const targetItem = normalizedPath === normalizedRootPath
+      ? RemoteEditSidebarItem.filesGroup(connection, normalizedRootPath)
+      : RemoteEditSidebarItem.remoteDirectoryPlaceholder(connectionId, normalizedPath, normalizedRootPath);
+
+    this.openConnectionsProvider.refresh(targetItem, { forceRefresh: true });
     this.openConnectionsProvider.refresh();
   }
 
@@ -1129,6 +1200,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.output.appendLine(`[Sidebar] Created remote ${label}: ${newPath}`);
       void vscode.window.showInformationMessage(`Created ${trimmedName}.`);
       this.refreshOpenConnections();
+      RemoteEditSharedState.fireRemoteDirectoryChanged(item.connectionId, targetDirectory, 'sidebar');
     } catch (error) {
       this.showSidebarCommandError(error);
     }
@@ -1195,6 +1267,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.output.appendLine(`[Sidebar] Deleted remote item: ${item.remotePath}`);
       void vscode.window.showInformationMessage(`Deleted ${entryName}.`);
       this.refreshOpenConnections();
+      RemoteEditSharedState.fireRemoteDirectoryChanged(item.connectionId, this.dirnameRemotePath(item.remotePath), 'sidebar');
     } catch (error) {
       this.showSidebarCommandError(error);
     }
@@ -1556,9 +1629,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private async uploadToRemoteDirectory(item: RemoteEditSidebarItem | undefined): Promise<void> {
-    if (!item?.connectionId || !item.remotePath || this.getRemoteItemType(item) !== 'directory') {
+    if (!item?.connectionId || !item.remotePath) {
       return;
     }
+
+    const itemType = this.getRemoteItemType(item);
+    const targetDirectory = itemType === 'directory'
+      ? item.remotePath
+      : this.dirnameRemotePath(item.remotePath);
 
     RemoteEditPanel.requestUploadEntriesFromSidebar(
       this.context,
@@ -1567,7 +1645,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.output,
       {
         connectionId: item.connectionId,
-        targetDirectory: item.remotePath
+        targetDirectory
       }
     );
   }
@@ -1838,7 +1916,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
   private showSidebarCommandError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    this.output.appendLine(`[Sidebar] Remote command failed: ${message}`);
+    this.output.appendLine(`[Sidebar] Operation failed: ${message}`);
     void vscode.window.showErrorMessage(message);
   }
 

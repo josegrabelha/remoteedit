@@ -7,6 +7,7 @@ export interface RemoteEditPanelMessageHandlers {
   pickCaCertificatePath(): Promise<void>;
   deleteConnection(payload: any): Promise<void>;
   renameConnection(payload: any): Promise<void>;
+  reorderConnections(payload: any): Promise<void>;
   requestImportConnectionsSettings(): Promise<void>;
   exportConnectionsSettings(payload: any): Promise<void>;
   importConnectionsSettings(payload: any): Promise<void>;
@@ -14,6 +15,7 @@ export interface RemoteEditPanelMessageHandlers {
   cancelConnection(): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
   switchSession(connectionId: string): Promise<void>;
+  reorderSessions(payload: any): void;
   enableSudoMode(): Promise<void>;
   disableSudoMode(connectionId: string): void;
   listDirectory(remotePath: string, options?: { forceRefresh?: boolean }): Promise<void>;
@@ -42,9 +44,16 @@ export interface RemoteEditPanelMessageHandlers {
   requestChangeOwnerGroup(payload: any): Promise<void>;
   requestRunRemoteCommand(payload: any): Promise<void>;
   requestOpenSshTerminal(payload: any): Promise<void>;
+  requestOpenLogViewer(payload: any): Promise<void>;
+  requestRemoteSearchState(): void;
+  browseRemoteSearchScope(payload: any): Promise<void>;
+  startRemoteSearch(payload: any): Promise<void>;
+  cancelRemoteSearch(): void;
+  clearRemoteSearch(): void;
   stopRemoteCommand(payload: any): void;
   applyPermissions(payload: any): void;
   cancelPermissions(): void;
+  showSettings(): void;
   showOutput(): void;
   copyRemotePath(payload: any): Promise<void>;
   copyStatus(payload: any): Promise<void>;

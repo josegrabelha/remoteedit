@@ -16,7 +16,9 @@ export interface RemoteEditProgressOptions {
   cancelMessage?: string;
   confirmCancellation?: () => Promise<boolean>;
   cancellationSource?: vscode.CancellationTokenSource;
+  suppressNotification?: boolean;
 }
+
 
 export interface RemoteEditProgressReporter {
   reportMessage(message: string): void;
@@ -101,6 +103,26 @@ export async function withRemoteEditProgress<T>(
   const source = options.cancellationSource ?? new vscode.CancellationTokenSource();
   const reporter = new DelayedRemoteEditProgressReporter();
   const operation = Promise.resolve().then(() => task(source.token, reporter));
+
+  if (options.suppressNotification) {
+    try {
+      if (!cancellable || !returnOnCancel) {
+        return await operation;
+      }
+
+      return await Promise.race([
+        operation,
+        waitForCancellation(source.token, cancelMessage).catch(error => {
+          operation.catch(() => undefined);
+          throw error;
+        })
+      ]);
+    } finally {
+      if (ownsCancellationSource) {
+        source.dispose();
+      }
+    }
+  }
 
   if (delayMs > 0) {
     const first = await Promise.race([

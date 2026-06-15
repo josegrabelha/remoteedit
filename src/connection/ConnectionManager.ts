@@ -180,7 +180,7 @@ export class ConnectionManager {
       };
     }));
 
-    return profiles.sort((a, b) => a.name.localeCompare(b.name));
+    return profiles;
   }
 
   async getProfile(profileId: string): Promise<ConnectionProfile | undefined> {
@@ -309,6 +309,41 @@ export class ConnectionManager {
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
     await this.context.secrets.delete(secretKey(profileId, 'password'));
     await this.context.secrets.delete(secretKey(profileId, 'passphrase'));
+  }
+
+  async reorderProfiles(profileIds: string[]): Promise<ConnectionProfile[]> {
+    const requestedIds = Array.isArray(profileIds)
+      ? profileIds.map(id => String(id || '').trim()).filter(Boolean)
+      : [];
+
+    if (!requestedIds.length) {
+      return this.listProfiles();
+    }
+
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    const profiles = storedProfiles.map(profile => this.normalizeStoredProfile(profile));
+    const profileById = new Map(profiles.map(profile => [profile.id, profile]));
+    const nextProfiles: ConnectionProfile[] = [];
+    const addedIds = new Set<string>();
+
+    for (const profileId of requestedIds) {
+      const profile = profileById.get(profileId);
+      if (!profile || addedIds.has(profile.id)) {
+        continue;
+      }
+
+      nextProfiles.push(profile);
+      addedIds.add(profile.id);
+    }
+
+    for (const profile of profiles) {
+      if (!addedIds.has(profile.id)) {
+        nextProfiles.push(profile);
+      }
+    }
+
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    return this.listProfiles();
   }
 
 

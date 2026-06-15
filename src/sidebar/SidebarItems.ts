@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AuthType, ConnectionProfile } from '../connection/ConnectionManager';
 import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
@@ -41,7 +42,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     label: string;
     kind: RemoteEditSidebarItemKind;
     collapsibleState?: vscode.TreeItemCollapsibleState;
-    icon?: vscode.ThemeIcon;
+    icon?: vscode.TreeItem['iconPath'];
     resourceUri?: vscode.Uri;
     description?: string;
     tooltip?: string | vscode.MarkdownString;
@@ -228,13 +229,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
           ? 'remoteedit.savedConnection.connected'
           : 'remoteedit.savedConnection.disconnected';
 
-    const icon = options?.connecting
-      ? new vscode.ThemeIcon('loading~spin')
-      : options?.draft
-        ? new vscode.ThemeIcon('server', new vscode.ThemeColor('editorWarning.foreground'))
-        : options?.connected
-          ? new vscode.ThemeIcon('server', new vscode.ThemeColor('testing.iconPassed'))
-          : new vscode.ThemeIcon('server');
+    const icon = getSavedConnectionIcon(options);
 
     const description = options?.draft
       ? 'Draft'
@@ -313,10 +308,13 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
   }
 
   static favoritePath(connectionId: string, remotePath: string, options?: { isSftp?: boolean }): RemoteEditSidebarItem {
+    const pathDisplay = buildSidebarPathDisplay(remotePath);
+
     return new RemoteEditSidebarItem({
-      label: remotePath,
+      label: pathDisplay.label,
       kind: 'favoritePath',
       id: `favorite:${connectionId}:${remotePath}`,
+      description: pathDisplay.description,
       tooltip: remotePath,
       profileId: connectionId,
       connectionId,
@@ -332,13 +330,15 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
 
   static filesGroup(connection: ActiveConnection, rootPath?: string, options?: { isFavorite?: boolean }): RemoteEditSidebarItem {
     const normalizedRoot = normalizeRemotePath(rootPath || connection.startPath || '/');
+    const pathDisplay = buildSidebarPathDisplay(normalizedRoot);
 
     return new RemoteEditSidebarItem({
-      label: normalizedRoot,
+      label: pathDisplay.label,
       kind: 'filesGroup',
       id: `files:${connection.id}:${normalizedRoot}`,
       collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
       icon: new vscode.ThemeIcon('root-folder', new vscode.ThemeColor('icon.foreground')),
+      description: pathDisplay.description,
       tooltip: buildRemoteBrowseTooltipOrEmpty(normalizedRoot),
       resourceUri: getSidebarDecorationResourceUri(connection.id, normalizedRoot, 'root'),
       profileId: connection.id,
@@ -493,6 +493,30 @@ export type ConnectionDetailField =
   | 'ftpsCaCertificatePath'
   | 'credentials';
 
+
+function getSavedConnectionIcon(options?: { modified?: boolean; connected?: boolean; draft?: boolean; connecting?: boolean }): vscode.TreeItem['iconPath'] {
+  if (options?.connecting) {
+    return new vscode.ThemeIcon('loading~spin');
+  }
+
+  if (options?.draft) {
+    return getResourceIcon('connection-draft.svg');
+  }
+
+  if (options?.connected) {
+    return getResourceIcon('connection-active.svg');
+  }
+
+  return {
+    light: getResourceIcon('connection-light.svg'),
+    dark: getResourceIcon('connection-dark.svg')
+  };
+}
+
+function getResourceIcon(fileName: string): vscode.Uri {
+  return vscode.Uri.file(path.join(__dirname, '..', '..', 'resources', fileName));
+}
+
 export function getConnectionDetailFields(profile: ConnectionProfile): ConnectionDetailField[] {
   const connectionType = String(profile.connectionType || 'sftp');
   const isSftp = connectionType === 'sftp';
@@ -632,6 +656,53 @@ export function getParentRemotePath(remotePath: string): string {
 
 function normalizeRemoteRootStartPath(startPath: string | undefined): string {
   return normalizeRemotePath(startPath);
+}
+
+const SIDEBAR_PARENT_PATH_SEGMENTS = 3;
+
+function buildSidebarPathDisplay(remotePath: string): { label: string; description?: string } {
+  const normalizedPath = normalizeRemotePath(remotePath);
+
+  if (normalizedPath === '/') {
+    return { label: normalizedPath };
+  }
+
+  const showParentPath = shouldShowSidebarParentPath();
+
+  return {
+    label: `…/${getRemotePathBasename(normalizedPath)}`,
+    description: showParentPath ? `parent: ${formatSidebarParentPath(getParentRemotePath(normalizedPath))}` : undefined
+  };
+}
+
+function shouldShowSidebarParentPath(): boolean {
+  return vscode.workspace.getConfiguration('remoteedit.sidebar').get<boolean>('showParentPath', true);
+}
+
+function formatSidebarParentPath(parentPath: string): string {
+  const normalizedParent = normalizeRemotePath(parentPath);
+
+  if (normalizedParent === '/') {
+    return '/';
+  }
+
+  const segments = normalizedParent.split('/').filter(Boolean);
+
+  if (segments.length <= SIDEBAR_PARENT_PATH_SEGMENTS) {
+    return normalizedParent;
+  }
+
+  return `…/${segments.slice(-SIDEBAR_PARENT_PATH_SEGMENTS).join('/')}`;
+}
+
+function getRemotePathBasename(remotePath: string): string {
+  const normalizedPath = normalizeRemotePath(remotePath);
+
+  if (normalizedPath === '/') {
+    return '/';
+  }
+
+  return normalizedPath.split('/').filter(Boolean).pop() || normalizedPath;
 }
 
 

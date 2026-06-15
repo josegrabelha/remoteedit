@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, and save remote files over SSH/SFTP, FTP, and FTPS directly from VS Code.",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -143,6 +143,12 @@
         "command": "remoteedit.sidebar.openSshTerminal",
         "title": "Open SSH Terminal",
         "icon": "$(terminal)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.openLogViewer",
+        "title": "Open Log Viewer",
+        "icon": "$(output)",
         "category": "Remote Edit"
       },
       {
@@ -435,13 +441,19 @@
             "description": "Show detailed item information automatically when hovering files and folders in the Primary Sidebar.",
             "order": 10
           },
+          "remoteedit.sidebar.showParentPath": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the parent path as secondary text for current root and favorite paths in the Primary Sidebar.",
+            "order": 20
+          },
           "remoteedit.directoryListingCacheTtl": {
             "type": "number",
             "default": 30,
             "minimum": 0,
             "maximum": 300,
             "description": "Time in seconds to reuse recently loaded remote directory listings. Set to 0 to disable cache. Manual refresh always reloads from the server.",
-            "order": 20
+            "order": 30
           }
         }
       },
@@ -490,6 +502,12 @@
             "maximum": 300000,
             "description": "Controls the FTP/FTPS keep-alive interval, in milliseconds, when Keep Connection Alive is enabled.",
             "order": 10
+          },
+          "remoteedit.ftp.enableModifiedDateFallback": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable FTP/FTPS MDTM fallback to detect modified dates for items missing timestamps. Disable this if directory browsing becomes slow on some FTP/FTPS servers.",
+            "order": 20
           }
         }
       },
@@ -512,7 +530,7 @@
           "remoteedit.sudoTempDirectory": {
             "type": "string",
             "default": "/tmp",
-            "description": "Remote directory used for temporary files when SFTP sudo mode saves privileged files. The connected SFTP user must be able to write to this directory.",
+            "description": "Remote directory used for temporary files when SFTP Sudo Mode saves privileged files. The connected SFTP user must be able to write to this directory.",
             "order": 10
           },
           "remoteedit.restoreSpecialPermissionBits": {
@@ -520,6 +538,19 @@
             "default": true,
             "description": "Restore original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it.",
             "order": 20
+          }
+        }
+      },
+      {
+        "title": "Remote Edit: Log Viewer",
+        "properties": {
+          "remoteedit.logViewer.maxBackgroundBufferLines": {
+            "type": "number",
+            "default": 5000,
+            "minimum": 500,
+            "maximum": 50000,
+            "description": "Maximum number of log lines kept per session while the Log Viewer is closed or hidden.",
+            "order": 10
           }
         }
       },
@@ -535,7 +566,7 @@
           "remoteedit.diagnostics.performanceLogs": {
             "type": "boolean",
             "default": false,
-            "description": "Enable performance logs for directory listing, rendering, cache, and transfer diagnostics.",
+            "description": "Enable performance logs for directory listing, rendering, cache, transfers, Remote Search, and Log Viewer diagnostics.",
             "order": 20
           }
         }
@@ -1362,22 +1393,27 @@
         {
           "command": "remoteedit.sidebar.downloadRemoteEntry",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "5_item@1"
+          "group": "5_transfer@1"
+        },
+        {
+          "command": "remoteedit.sidebar.uploadToRemoteDirectory",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "5_transfer@2"
         },
         {
           "command": "remoteedit.sidebar.calculateRemoteChecksums",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "5_item@2"
+          "group": "6_item@1"
         },
         {
           "command": "remoteedit.sidebar.showRemoteEntryProperties",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "5_item@3"
+          "group": "6_item@2"
         },
         {
           "command": "remoteedit.sidebar.setRemotePermissions",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "5_item@4"
+          "group": "6_item@3"
         },
         {
           "command": "remoteedit.sidebar.deleteRemoteEntry",
@@ -1578,6 +1614,46 @@
           "command": "remoteedit.sidebar.copyConnectionDetailValue",
           "when": "view == remoteedit.connectionsView && viewItem == remoteedit.quickConnectionDetail.ftpsCaCertificatePath",
           "group": "3_copy@1"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.favorite.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.favorite.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteFile.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.favoritePath.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOff",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
@@ -1792,6 +1868,10 @@
         {
           "command": "remoteedit.sidebar.selectCaCertificatePath",
           "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -1859,6 +1939,9 @@
     "file transfer",
     "upload",
     "download",
+    "search",
+    "remote search",
+    "file search",
     "sudo",
     "permissions",
     "chmod",

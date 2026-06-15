@@ -6,11 +6,17 @@ export async function tryHandleMiscMessage(
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<boolean> {
   switch (message.type) {
+    case RemoteEditIncomingMessageType.ShowSettings:
+      handlers.showSettings();
+      return true;
     case RemoteEditIncomingMessageType.ShowOutput:
       handlers.showOutput();
       return true;
     case RemoteEditIncomingMessageType.RequestOpenSshTerminal:
       await handlers.requestOpenSshTerminal(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RequestOpenLogViewer:
+      await handlers.requestOpenLogViewer(message.payload);
       return true;
     case RemoteEditIncomingMessageType.ConfirmDialogResponse:
       handlers.confirmDialogResponse(message.payload);

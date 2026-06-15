@@ -1,10 +1,12 @@
 # Changelog
-## [1.7.1] - 2026-06-15
+## [1.7.2] - 2026-06-15
 
 ### Fixed
 
 * Fixed FTP false conflict detection when some servers return empty or ambiguous path listing responses.
 * Improved FTP path existence checks and fallback directory listing behavior.
+* Added a Log Viewer Webview warning before opening files that appear to contain binary data, with Open anyway and Cancel actions.
+* Standardized Log Viewer status messages to avoid mixed trailing punctuation.
 
 ## [1.7.0] - 2026-06-13
 

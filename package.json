@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, and save remote files over SSH/SFTP, FTP, and FTPS directly from VS Code.",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

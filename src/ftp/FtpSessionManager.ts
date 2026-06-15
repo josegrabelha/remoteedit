@@ -52,6 +52,7 @@ interface InFlightDirectoryListing {
 interface FtpListResult {
   items: FileInfo[];
   command: string;
+  fallback?: string;
 }
 
 interface FtpMergedListResult {
@@ -276,7 +277,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       const queuedTotalTimer = createPerformanceTimer();
       const listed = await this.runQueued(connectionId, async () => {
         const client = this.getClient(connectionId);
-        const listing = await this.listDirectoryWithMergedMetadata(client, normalizedPath);
+        const listing = await this.listDirectoryWithMergedMetadata(connectionId, client, normalizedPath);
 
         const mapTimer = createPerformanceTimer();
         const entries = listing.items
@@ -349,9 +350,9 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
 
-  private async listDirectoryWithMergedMetadata(client: FtpClient, remotePath: string): Promise<FtpMergedListResult> {
+  private async listDirectoryWithMergedMetadata(connectionId: string, client: FtpClient, remotePath: string): Promise<FtpMergedListResult> {
     const primaryTimer = createPerformanceTimer();
-    const primaryListing = await this.listDirectoryWithCommandDetails(client, remotePath);
+    const primaryListing = await this.listDirectoryWithCommandDetails(connectionId, client, remotePath);
     const primaryListMs = primaryTimer();
 
     if (!isMlsdListCommand(primaryListing.command)) {
@@ -365,7 +366,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
 
     const mergeTimer = createPerformanceTimer();
-    const listListing = await this.tryListDirectoryWithCommands(client, remotePath, ['LIST -a', 'LIST']);
+    const listListing = await this.tryListDirectoryWithCommands(connectionId, client, remotePath, ['LIST -a', 'LIST']);
     const listMergeMs = mergeTimer();
 
     if (!listListing) {
@@ -387,23 +388,102 @@ export class FtpSessionManager implements RemoteSessionManager {
     };
   }
 
-  private async listDirectoryWithCommandDetails(client: FtpClient, remotePath: string): Promise<FtpListResult> {
+  private async listDirectoryWithCommandDetails(connectionId: string, client: FtpClient, remotePath: string): Promise<FtpListResult> {
+    const directListing = await this.listDirectoryDirectWithCommandDetails(client, remotePath);
+
+    if (hasUsableFtpListItems(directListing.items) || normalizeRemotePath(remotePath) === '/') {
+      return directListing;
+    }
+
+    const cwdListing = await this.tryListDirectoryFromCurrentDirectory(connectionId, client, remotePath);
+    if (cwdListing && hasUsableFtpListItems(cwdListing.items)) {
+      appendDebugLog(this.output, 'FTP', 'empty direct listing recovered with CWD fallback', {
+        connection: connectionId,
+        path: normalizeRemotePath(remotePath),
+        directCommand: directListing.command || 'unknown',
+        fallbackCommand: cwdListing.command || 'unknown',
+        items: cwdListing.items.length
+      });
+      return cwdListing;
+    }
+
+    if (isListAllCommand(directListing.command)) {
+      const listListing = await this.tryListDirectoryWithCommands(connectionId, client, remotePath, ['LIST']);
+      if (listListing && hasUsableFtpListItems(listListing.items)) {
+        appendDebugLog(this.output, 'FTP', 'empty LIST -a listing recovered with LIST fallback', {
+          connection: connectionId,
+          path: normalizeRemotePath(remotePath),
+          directCommand: directListing.command || 'unknown',
+          fallbackCommand: listListing.command || 'unknown',
+          fallback: listListing.fallback || 'direct',
+          items: listListing.items.length
+        });
+        return listListing;
+      }
+    }
+
+    return directListing;
+  }
+
+  private async listDirectoryDirectWithCommandDetails(client: FtpClient, remotePath: string): Promise<FtpListResult> {
     const items = await client.list(remotePath);
-    const command = Array.isArray(client.availableListCommands) && client.availableListCommands.length > 0
-      ? String(client.availableListCommands[0] || '')
-      : '';
+    const command = this.getCurrentListCommand(client);
 
     return { items, command };
   }
 
-  private async tryListDirectoryWithCommands(client: FtpClient, remotePath: string, commands: string[]): Promise<FtpListResult | undefined> {
+  private async tryListDirectoryFromCurrentDirectory(
+    connectionId: string,
+    client: FtpClient,
+    remotePath: string
+  ): Promise<FtpListResult | undefined> {
+    const normalizedPath = normalizeRemotePath(remotePath);
+    const previousPath = await this.safePwd(client);
+    let changedDirectory = false;
+
+    try {
+      await client.cd(normalizedPath);
+      changedDirectory = true;
+
+      const listing = await this.listDirectoryDirectWithCommandDetails(client, '');
+      return {
+        ...listing,
+        command: appendFtpListCommandContext(listing.command, 'cwd'),
+        fallback: 'cwd'
+      };
+    } catch (error) {
+      appendDebugLog(this.output, 'FTP', 'empty direct listing CWD fallback failed', {
+        connection: connectionId,
+        path: normalizedPath,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    } finally {
+      if (changedDirectory) {
+        await this.tryCd(client, previousPath);
+      }
+    }
+  }
+
+  private getCurrentListCommand(client: FtpClient): string {
+    return Array.isArray(client.availableListCommands) && client.availableListCommands.length > 0
+      ? String(client.availableListCommands[0] || '')
+      : '';
+  }
+
+  private async tryListDirectoryWithCommands(
+    connectionId: string,
+    client: FtpClient,
+    remotePath: string,
+    commands: string[]
+  ): Promise<FtpListResult | undefined> {
     const originalCommands = Array.isArray(client.availableListCommands)
       ? [...client.availableListCommands]
       : [];
 
     try {
       client.availableListCommands = [...commands];
-      return await this.listDirectoryWithCommandDetails(client, remotePath);
+      return await this.listDirectoryWithCommandDetails(connectionId, client, remotePath);
     } catch {
       return undefined;
     } finally {
@@ -799,12 +879,12 @@ export class FtpSessionManager implements RemoteSessionManager {
 
     return await this.runQueued(connectionId, async () => {
       const client = this.getClient(connectionId);
-      return await this.statUnqueued(client, normalizedPath);
+      return await this.statUnqueued(connectionId, client, normalizedPath);
     });
   }
 
-  private async statUnqueued(client: FtpClient, normalizedPath: string): Promise<RemoteStat> {
-    const result = await this.tryStatUnqueued(client, normalizedPath);
+  private async statUnqueued(connectionId: string, client: FtpClient, normalizedPath: string): Promise<RemoteStat> {
+    const result = await this.tryStatUnqueued(connectionId, client, normalizedPath);
 
     if (result.stat) {
       return result.stat;
@@ -813,7 +893,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     throw result.error || new Error(`Could not stat remote path ${normalizedPath}.`);
   }
 
-  private async tryStatUnqueued(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
+  private async tryStatUnqueued(connectionId: string, client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
     if (normalizedPath === '/') {
       return {
         stat: {
@@ -826,7 +906,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
 
     let lastError: unknown;
-    const entry = await this.findEntry(client, normalizedPath);
+    const entry = await this.findEntry(connectionId, client, normalizedPath);
 
     if (entry) {
       const entryType = mapFtpEntryType(entry);
@@ -872,7 +952,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       };
     }
 
-    const listedStat = await this.tryStatFromPathListing(client, normalizedPath);
+    const listedStat = await this.tryStatFromPathListing(connectionId, client, normalizedPath);
     if (listedStat.stat) {
       return listedStat;
     }
@@ -945,16 +1025,16 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
   }
 
-  private async tryStatFromPathListing(client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
-    let items: FileInfo[];
+  private async tryStatFromPathListing(connectionId: string, client: FtpClient, normalizedPath: string): Promise<FtpStatProbeResult> {
+    let listing: FtpListResult;
 
     try {
-      items = await client.list(normalizedPath);
+      listing = await this.listDirectoryWithCommandDetails(connectionId, client, normalizedPath);
     } catch (error) {
       return { error };
     }
 
-    const selfListingEntry = getSelfListingEntry(items, normalizedPath);
+    const selfListingEntry = getSelfListingEntry(listing.items, normalizedPath);
 
     if (selfListingEntry) {
       return {
@@ -967,13 +1047,19 @@ export class FtpSessionManager implements RemoteSessionManager {
       };
     }
 
+    if (hasUsableFtpListItems(listing.items)) {
+      return {
+        stat: {
+          type: 'directory',
+          size: 0,
+          modifyTime: 0,
+          accessTime: 0
+        }
+      };
+    }
+
     return {
-      stat: {
-        type: 'directory',
-        size: 0,
-        modifyTime: 0,
-        accessTime: 0
-      }
+      error: new Error(`Could not confirm remote path exists from empty FTP listing: ${normalizedPath}.`)
     };
   }
 
@@ -993,7 +1079,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     await this.runQueued(connectionId, async () => {
       const client = this.getClient(connectionId);
 
-      if (await this.pathExists(client, normalizedPath)) {
+      if (await this.pathExists(connectionId, client, normalizedPath)) {
         throw new Error(`Remote path already exists: ${normalizedPath}`);
       }
 
@@ -1024,7 +1110,7 @@ export class FtpSessionManager implements RemoteSessionManager {
 
     await this.runQueued(connectionId, async () => {
       const client = this.getClient(connectionId);
-      const stat = await this.statUnqueued(client, normalizedPath);
+      const stat = await this.statUnqueued(connectionId, client, normalizedPath);
 
       if (stat.type === 'directory') {
         await client.removeDir(normalizedPath);
@@ -1055,7 +1141,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     if (!overwrite) {
       const exists = await this.runQueued(connectionId, async () => {
         const client = this.getClient(connectionId);
-        return await this.pathExists(client, normalizedTargetPath);
+        return await this.pathExists(connectionId, client, normalizedTargetPath);
       });
 
       if (exists) {
@@ -1484,7 +1570,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     });
   }
 
-  private async findEntry(client: FtpClient, normalizedPath: string): Promise<FileInfo | undefined> {
+  private async findEntry(connectionId: string, client: FtpClient, normalizedPath: string): Promise<FileInfo | undefined> {
     const parentPath = dirnameRemotePath(normalizedPath);
     const name = basenameRemotePath(normalizedPath);
 
@@ -1493,15 +1579,15 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
 
     try {
-      const items = await client.list(parentPath);
-      return items.find(item => item.name === name);
+      const listing = await this.listDirectoryWithCommandDetails(connectionId, client, parentPath);
+      return listing.items.find(item => item.name === name);
     } catch {
       return undefined;
     }
   }
 
-  private async pathExists(client: FtpClient, normalizedPath: string): Promise<boolean> {
-    const result = await this.tryStatUnqueued(client, normalizedPath);
+  private async pathExists(connectionId: string, client: FtpClient, normalizedPath: string): Promise<boolean> {
+    const result = await this.tryStatUnqueued(connectionId, client, normalizedPath);
     return Boolean(result.stat);
   }
 
@@ -1633,6 +1719,19 @@ export class FtpSessionManager implements RemoteSessionManager {
 
 function isMlsdListCommand(command: string): boolean {
   return String(command || '').trim().toUpperCase().startsWith('MLSD');
+}
+
+function isListAllCommand(command: string): boolean {
+  return /^LIST\s+-A(?:\s|$)/i.test(String(command || '').trim());
+}
+
+function appendFtpListCommandContext(command: string, context: string): string {
+  const normalizedCommand = String(command || '').trim() || 'unknown';
+  return `${normalizedCommand} (${context})`;
+}
+
+function hasUsableFtpListItems(items: FileInfo[]): boolean {
+  return items.some(item => item.name !== '.' && item.name !== '..');
 }
 
 function mergeFtpMetadata(primaryItems: FileInfo[], listItems: FileInfo[]): FileInfo[] {

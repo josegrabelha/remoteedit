@@ -1,4 +1,11 @@
 # Changelog
+## [1.7.1] - 2026-06-15
+
+### Fixed
+
+* Fixed FTP false conflict detection when some servers return empty or ambiguous path listing responses.
+* Improved FTP path existence checks and fallback directory listing behavior.
+
 ## [1.7.0] - 2026-06-13
 
 ### Added

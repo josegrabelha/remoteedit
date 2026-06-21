@@ -542,9 +542,12 @@ export function getConnectionDetailFields(profile: ConnectionProfile): Connectio
     if (isPrivateKey) {
       fields.push('privateKeyPath');
     }
+    fields.push('credentials');
+  } else {
+    fields.push('credentials');
   }
 
-  fields.push('startPath', 'keepAlive', 'credentials');
+  fields.push('keepAlive', 'startPath');
   return fields;
 }
 

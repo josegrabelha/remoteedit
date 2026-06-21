@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Remote files and server tools for VS Code over SSH/SFTP, FTP, and FTPS.",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -435,12 +435,23 @@
             "default": 1000,
             "description": "Controls the Remote Edit status bar button priority. Higher values appear closer to the left within the selected alignment group.",
             "order": 40
-          },
-          "remoteedit.remotePathBreadcrumb.showDirectoryDetails": {
+          }
+        }
+      },
+      {
+        "title": "Remote Edit: Webview",
+        "properties": {
+          "remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails": {
             "type": "boolean",
             "default": true,
             "description": "Show permissions and owner/group details in the Remote Path breadcrumb directory picker.",
-            "order": 50
+            "order": 10
+          },
+          "remoteedit.webview.fileList.openOnNameClick": {
+            "type": "boolean",
+            "default": true,
+            "description": "Open files and folders with a single click on the item name in the Webview file list.",
+            "order": 20
           }
         }
       },
@@ -458,14 +469,6 @@
             "default": true,
             "description": "Show the parent path as secondary text for current root and favorite paths in the Primary Sidebar.",
             "order": 20
-          },
-          "remoteedit.directoryListingCacheTtl": {
-            "type": "number",
-            "default": 30,
-            "minimum": 0,
-            "maximum": 300,
-            "description": "Time in seconds to reuse recently loaded remote directory listings. Set to 0 to disable cache. Manual refresh always reloads from the server.",
-            "order": 30
           }
         }
       },
@@ -550,6 +553,19 @@
             "default": true,
             "description": "Restore original setuid, setgid, and sticky permission bits after saving existing remote files, when the remote system allows it.",
             "order": 20
+          }
+        }
+      },
+      {
+        "title": "Remote Edit: Cache",
+        "properties": {
+          "remoteedit.directoryListingCacheTtl": {
+            "type": "number",
+            "default": 30,
+            "minimum": 0,
+            "maximum": 300,
+            "description": "Time in seconds to reuse recently loaded remote directory listings. Set to 0 to disable cache. Manual refresh always reloads from the server.",
+            "order": 10
           }
         }
       },

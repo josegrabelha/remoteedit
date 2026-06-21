@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 
 export interface RemoteEditHtmlOptions {
   showRemotePathBreadcrumbDirectoryDetails: boolean;
+  openFileListItemsOnNameClick: boolean;
 }
 
 export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, options: RemoteEditHtmlOptions): string {
   const showRemotePathBreadcrumbDirectoryDetails = options.showRemotePathBreadcrumbDirectoryDetails !== false;
+  const openFileListItemsOnNameClick = options.openFileListItemsOnNameClick !== false;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -649,6 +651,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   .entry-icon svg { width: 20px; height: 20px; display: block; fill: currentColor; }
   .entry-icon svg path { fill: currentColor; }
   .entry-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .table-wrap.name-click-open-enabled .entry-text { cursor: pointer; }
+  .table-wrap.name-click-open-enabled .entry-text:hover { text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 2px; }
   .empty-state { padding: 34px 16px; text-align: center; color: var(--vscode-descriptionForeground); }
   .context-menu { position: fixed; z-index: 100; width: 196px; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border)); border-radius: 4px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); display: none; }
   .context-menu.visible { display: block; }
@@ -2118,6 +2122,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   let showRemotePathBreadcrumbDirectoryDetails = ${showRemotePathBreadcrumbDirectoryDetails ? 'true' : 'false'};
+  let openFileListItemsOnNameClick = ${openFileListItemsOnNameClick ? 'true' : 'false'};
 
   const mainLayout = document.getElementById('mainLayout');
   const connectionResizeHandle = document.getElementById('connectionResizeHandle');
@@ -3086,6 +3091,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
       case 'remotePathBreadcrumbSettingsChanged':
         showRemotePathBreadcrumbDirectoryDetails = payload.showDirectoryDetails !== false;
         refreshOpenRemotePathDropdown();
+        break;
+      case 'fileListSettingsChanged':
+        openFileListItemsOnNameClick = payload.openOnNameClick !== false;
+        updateFileListNameClickOpenState();
         break;
       case 'hideExportConnectionsSettingsDialog':
         hideExportBackupDialog();
@@ -5274,8 +5283,14 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
     resizer.addEventListener('mousedown', startColumnResize);
   }
 
+  function updateFileListNameClickOpenState() {
+    if (!entriesTableWrap) return;
+    entriesTableWrap.classList.toggle('name-click-open-enabled', openFileListItemsOnNameClick);
+  }
+
   applyColumnWidths();
   updateSortIndicators();
+  updateFileListNameClickOpenState();
 
   for (const input of [profileName, host, port, username, password, privateKeyPath, passphrase, startPath]) {
     input.addEventListener('keydown', event => { if (event.key === 'Enter') connectButton.click(); });
@@ -13032,13 +13047,37 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
       const entryKey = entry.path || entry.name;
       row.className = 'entry-row' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
       row.dataset.entryPath = entryKey;
-      row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
+      row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text" data-entry-name-action="open">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
         '<td class="type">' + escapeHtml(formatEntryType(entry)) + '</td>' +
         '<td class="size">' + (isDirectoryLike(entry) ? '' : formatSize(entry.size)) + '</td>' +
         '<td class="owner">' + escapeHtml(formatMetadata(entry.owner)) + '</td>' +
         '<td class="group">' + escapeHtml(formatMetadata(entry.group)) + '</td>' +
         '<td class="permissions">' + escapeHtml(entry.permissions || '') + '</td>' +
         '<td class="modified">' + formatDate(entry.modifyTime) + '</td>';
+
+      const entryNameText = row.querySelector('[data-entry-name-action="open"]');
+      if (entryNameText) {
+        entryNameText.addEventListener('click', event => {
+          if (!openFileListItemsOnNameClick || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          hideContextMenu();
+          if (event.detail > 1) {
+            return;
+          }
+          selectEntry(entryKey);
+          vscode.postMessage({ type: 'openEntry', payload: entry });
+        });
+        entryNameText.addEventListener('dblclick', event => {
+          if (!openFileListItemsOnNameClick) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      }
 
       row.addEventListener('click', event => {
         hideContextMenu();

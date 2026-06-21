@@ -724,11 +724,12 @@ export class RemoteEditPanel {
       }),
       LogViewerPanel.onDidChangeActiveSessionCount(() => this.postLogViewerActiveSessionCount()),
       vscode.workspace.onDidChangeConfiguration(event => {
-        if (!event.affectsConfiguration('remoteedit.remotePathBreadcrumb.showDirectoryDetails')) {
-          return;
+        if (event.affectsConfiguration('remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails') || event.affectsConfiguration('remoteedit.remotePathBreadcrumb.showDirectoryDetails')) {
+          this.postRemotePathBreadcrumbSettings();
         }
-
-        this.postRemotePathBreadcrumbSettings();
+        if (event.affectsConfiguration('remoteedit.webview.fileList.openOnNameClick') || event.affectsConfiguration('remoteedit.fileList.openOnNameClick')) {
+          this.postFileListSettings();
+        }
       })
     );
 
@@ -7918,9 +7919,21 @@ exit 0`;
 
   private postRemotePathBreadcrumbSettings(): void {
     this.postMessage(RemoteEditOutboundMessageType.RemotePathBreadcrumbSettingsChanged, {
-      showDirectoryDetails: vscode.workspace
-        .getConfiguration('remoteedit.remotePathBreadcrumb')
-        .get<boolean>('showDirectoryDetails', true)
+      showDirectoryDetails: getBooleanSettingWithLegacyFallback(
+        'webview.remotePathBreadcrumb.showDirectoryDetails',
+        'remotePathBreadcrumb.showDirectoryDetails',
+        true
+      )
+    });
+  }
+
+  private postFileListSettings(): void {
+    this.postMessage(RemoteEditOutboundMessageType.FileListSettingsChanged, {
+      openOnNameClick: getBooleanSettingWithLegacyFallback(
+        'webview.fileList.openOnNameClick',
+        'fileList.openOnNameClick',
+        true
+      )
     });
   }
 
@@ -7961,9 +7974,37 @@ exit 0`;
 
   private renderHtml(webview: vscode.Webview): string {
     return renderRemoteEditHtml(webview, getNonce(), {
-      showRemotePathBreadcrumbDirectoryDetails: vscode.workspace
-        .getConfiguration('remoteedit.remotePathBreadcrumb')
-        .get<boolean>('showDirectoryDetails', true)
+      showRemotePathBreadcrumbDirectoryDetails: getBooleanSettingWithLegacyFallback(
+        'webview.remotePathBreadcrumb.showDirectoryDetails',
+        'remotePathBreadcrumb.showDirectoryDetails',
+        true
+      ),
+      openFileListItemsOnNameClick: getBooleanSettingWithLegacyFallback(
+        'webview.fileList.openOnNameClick',
+        'fileList.openOnNameClick',
+        true
+      )
     });
   }
+}
+
+
+function getBooleanSettingWithLegacyFallback(key: string, legacyKey: string, defaultValue: boolean): boolean {
+  const config = vscode.workspace.getConfiguration('remoteedit');
+
+  if (hasConfiguredSetting(config, key)) {
+    return config.get<boolean>(key, defaultValue);
+  }
+
+  if (hasConfiguredSetting(config, legacyKey)) {
+    return config.get<boolean>(legacyKey, defaultValue);
+  }
+
+  return config.get<boolean>(key, defaultValue);
+}
+
+function hasConfiguredSetting(config: vscode.WorkspaceConfiguration, key: string): boolean {
+  const inspected = config.inspect(key) as { globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown } | undefined;
+
+  return inspected?.globalValue !== undefined || inspected?.workspaceValue !== undefined || inspected?.workspaceFolderValue !== undefined;
 }

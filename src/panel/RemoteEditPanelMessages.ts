@@ -120,7 +120,8 @@ export const RemoteEditOutboundMessageType = {
   ServerProcessActionState: 'serverProcessActionState',
   PortForwardStateChanged: 'portForwardStateChanged',
   PersistentStorageSnapshot: 'persistentStorageSnapshot',
-  RemotePathBreadcrumbSettingsChanged: 'remotePathBreadcrumbSettingsChanged'
+  RemotePathBreadcrumbSettingsChanged: 'remotePathBreadcrumbSettingsChanged',
+  FileListSettingsChanged: 'fileListSettingsChanged'
 } as const;
 
 export type RemoteEditIncomingMessageType = typeof RemoteEditIncomingMessageType[keyof typeof RemoteEditIncomingMessageType];

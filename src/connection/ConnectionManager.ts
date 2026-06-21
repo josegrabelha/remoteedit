@@ -145,7 +145,8 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   statusBarButtonPosition: 'left',
   statusBarButtonStyle: 'iconAndText',
   statusBarButtonPriority: 1000,
-  'remotePathBreadcrumb.showDirectoryDetails': true,
+  'webview.remotePathBreadcrumb.showDirectoryDetails': true,
+  'webview.fileList.openOnNameClick': true,
   'sidebar.showItemInfoOnHover': false,
   'sidebar.showParentPath': true,
   directoryListingCacheTtl: 30,
@@ -161,6 +162,15 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   'logViewer.maxBackgroundBufferLines': 5000
 } as const;
 const REMOTE_EDIT_SETTING_KEYS = Object.keys(REMOTE_EDIT_SETTING_DEFAULTS) as Array<keyof typeof REMOTE_EDIT_SETTING_DEFAULTS>;
+const LEGACY_SETTING_KEY_ALIASES: Record<string, keyof typeof REMOTE_EDIT_SETTING_DEFAULTS> = {
+  'remotePathBreadcrumb.showDirectoryDetails': 'webview.remotePathBreadcrumb.showDirectoryDetails',
+  'fileList.openOnNameClick': 'webview.fileList.openOnNameClick'
+};
+const CANONICAL_SETTING_KEY_LEGACY_ALIASES = Object.entries(LEGACY_SETTING_KEY_ALIASES).reduce<Record<string, string[]>>((aliases, [legacyKey, canonicalKey]) => {
+  const key = String(canonicalKey);
+  aliases[key] = [...(aliases[key] || []), legacyKey];
+  return aliases;
+}, {});
 const SCRYPT_PARAMS = {
   keyLength: 32,
   N: 16384,
@@ -602,7 +612,7 @@ export class ConnectionManager {
     const settings: Record<string, unknown> = {};
 
     for (const key of REMOTE_EDIT_SETTING_KEYS) {
-      settings[key] = config.get(key);
+      settings[key] = getSettingValueWithLegacyFallback(config, String(key));
     }
 
     return settings;
@@ -610,9 +620,9 @@ export class ConnectionManager {
 
   private async importSettings(settings: Record<string, unknown>, settingsKeys?: string[]): Promise<void> {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const normalizedSettings = { ...settings };
+    const normalizedSettings = normalizeImportedSettingValues(settings);
     const normalizedSettingsKeys = Array.isArray(settingsKeys)
-      ? settingsKeys.map(key => String(key || '').trim()).filter(key => isExportableSettingKey(key))
+      ? normalizeImportedSettingKeys(settingsKeys)
       : undefined;
 
     if (
@@ -643,6 +653,10 @@ export class ConnectionManager {
         areSettingValuesEqual(importedValue, defaultValue) ? undefined : importedValue,
         vscode.ConfigurationTarget.Global
       );
+
+      for (const legacyKey of CANONICAL_SETTING_KEY_LEGACY_ALIASES[String(key)] || []) {
+        await config.update(legacyKey, undefined, vscode.ConfigurationTarget.Global);
+      }
     }
   }
 
@@ -1085,6 +1099,73 @@ function buildProfileId(name: string, host: string, username: string): string {
 
 function isExportableSettingKey(key: string): key is keyof typeof REMOTE_EDIT_SETTING_DEFAULTS {
   return Object.prototype.hasOwnProperty.call(REMOTE_EDIT_SETTING_DEFAULTS, key);
+}
+
+function getCanonicalSettingKey(key: string): keyof typeof REMOTE_EDIT_SETTING_DEFAULTS | undefined {
+  const normalizedKey = String(key || '').trim();
+
+  if (isExportableSettingKey(normalizedKey)) {
+    return normalizedKey;
+  }
+
+  return LEGACY_SETTING_KEY_ALIASES[normalizedKey];
+}
+
+function normalizeImportedSettingValues(settings: Record<string, unknown>): Record<string, unknown> {
+  const normalizedSettings: Record<string, unknown> = {};
+
+  for (const [rawKey, value] of Object.entries(settings)) {
+    const normalizedKey = String(rawKey || '').trim();
+    const canonicalKey = getCanonicalSettingKey(normalizedKey);
+
+    if (!canonicalKey) {
+      continue;
+    }
+
+    if (isExportableSettingKey(normalizedKey) || !Object.prototype.hasOwnProperty.call(normalizedSettings, canonicalKey)) {
+      normalizedSettings[canonicalKey] = value;
+    }
+  }
+
+  return normalizedSettings;
+}
+
+function normalizeImportedSettingKeys(settingsKeys: string[]): string[] {
+  const normalizedKeys: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawKey of settingsKeys) {
+    const canonicalKey = getCanonicalSettingKey(String(rawKey || '').trim());
+
+    if (!canonicalKey || seen.has(canonicalKey)) {
+      continue;
+    }
+
+    normalizedKeys.push(canonicalKey);
+    seen.add(canonicalKey);
+  }
+
+  return normalizedKeys;
+}
+
+function getSettingValueWithLegacyFallback(config: vscode.WorkspaceConfiguration, key: string): unknown {
+  if (hasConfiguredSetting(config, key)) {
+    return config.get(key);
+  }
+
+  for (const legacyKey of CANONICAL_SETTING_KEY_LEGACY_ALIASES[key] || []) {
+    if (hasConfiguredSetting(config, legacyKey)) {
+      return config.get(legacyKey);
+    }
+  }
+
+  return config.get(key);
+}
+
+function hasConfiguredSetting(config: vscode.WorkspaceConfiguration, key: string): boolean {
+  const inspected = config.inspect(key) as { globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown } | undefined;
+
+  return inspected?.globalValue !== undefined || inspected?.workspaceValue !== undefined || inspected?.workspaceFolderValue !== undefined;
 }
 
 function areSettingValuesEqual(a: unknown, b: unknown): boolean {

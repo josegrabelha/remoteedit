@@ -230,7 +230,7 @@ The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping t
 Use this setting to hide those details when you prefer a simpler directory list:
 
 ```json
-"remoteedit.remotePathBreadcrumb.showDirectoryDetails": true
+"remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails": true
 ```
 
 Default: `true`
@@ -322,7 +322,11 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.statusBarButtonPosition`
 - `remoteedit.statusBarButtonStyle`
 - `remoteedit.statusBarButtonPriority`
-- `remoteedit.remotePathBreadcrumb.showDirectoryDetails`
+
+### Webview
+
+- `remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails`
+- `remoteedit.webview.fileList.openOnNameClick`
 
 ### Sidebar
 

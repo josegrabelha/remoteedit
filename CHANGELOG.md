@@ -1,4 +1,11 @@
 # Changelog
+## [1.8.1] - 2026-06-21
+
+### Added
+
+* Added single-click opening from file and folder names in the Webview file list. Item names now show a subtle underline on name hover when single-click opening is enabled.
+* Added `remoteedit.webview.fileList.openOnNameClick` to control single-click opening from item names in the Webview file list.
+
 ## [1.8.0] - 2026-06-20
 
 ### Added

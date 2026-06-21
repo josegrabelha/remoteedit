@@ -74,6 +74,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     output,
     sidebarController,
+    fileSystemProvider,
+    readOnlyFileSystemProvider,
     vscode.workspace.registerFileSystemProvider('remoteedit', fileSystemProvider, {
       isCaseSensitive: true
     }),

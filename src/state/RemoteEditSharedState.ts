@@ -23,6 +23,14 @@ export interface RemoteEditRemoteDirectoryChangeState {
   source?: 'webview' | 'sidebar';
 }
 
+export interface RemoteEditRemoteFileOpenFailureState {
+  connectionId: string;
+  remotePath: string;
+  error: unknown;
+  readOnly: boolean;
+  source?: 'webview' | 'sidebar';
+}
+
 function normalizeRemotePath(remotePath: string | undefined): string {
   const raw = String(remotePath || '/').trim() || '/';
   const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`;
@@ -37,12 +45,14 @@ class RemoteEditSharedStateStore {
   private readonly favoritesChangedEmitter = new vscode.EventEmitter<RemoteEditFavoritesState>();
   private readonly profilesChangedEmitter = new vscode.EventEmitter<RemoteEditProfilesState>();
   private readonly remoteDirectoryChangedEmitter = new vscode.EventEmitter<RemoteEditRemoteDirectoryChangeState>();
+  private readonly remoteFileOpenFailureEmitter = new vscode.EventEmitter<RemoteEditRemoteFileOpenFailureState>();
 
   readonly onActiveConnectionChanged = this.activeConnectionChangedEmitter.event;
   readonly onNavigationChanged = this.navigationChangedEmitter.event;
   readonly onFavoritesChanged = this.favoritesChangedEmitter.event;
   readonly onProfilesChanged = this.profilesChangedEmitter.event;
   readonly onRemoteDirectoryChanged = this.remoteDirectoryChangedEmitter.event;
+  readonly onRemoteFileOpenFailure = this.remoteFileOpenFailureEmitter.event;
 
   getActiveConnectionId(): string | undefined {
     return this.activeConnectionId;
@@ -114,12 +124,24 @@ class RemoteEditSharedStateStore {
     });
   }
 
+  fireRemoteFileOpenFailure(event: RemoteEditRemoteFileOpenFailureState): void {
+    if (!event.connectionId) {
+      return;
+    }
+
+    this.remoteFileOpenFailureEmitter.fire({
+      ...event,
+      remotePath: normalizeRemotePath(event.remotePath)
+    });
+  }
+
   dispose(): void {
     this.activeConnectionChangedEmitter.dispose();
     this.navigationChangedEmitter.dispose();
     this.favoritesChangedEmitter.dispose();
     this.profilesChangedEmitter.dispose();
     this.remoteDirectoryChangedEmitter.dispose();
+    this.remoteFileOpenFailureEmitter.dispose();
   }
 }
 

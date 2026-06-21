@@ -722,6 +722,13 @@ export class RemoteEditPanel {
 
         void this.refreshCurrentDirectoryFromSharedChange(event.connectionId, event.remotePath).catch(error => this.showCommandError(error));
       }),
+      RemoteEditSharedState.onRemoteFileOpenFailure(event => {
+        if (event.source !== 'webview') {
+          return;
+        }
+
+        void this.handleWebviewRemoteFileOpenFailure(event).catch(error => this.showCommandError(error));
+      }),
       LogViewerPanel.onDidChangeActiveSessionCount(() => this.postLogViewerActiveSessionCount()),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails') || event.affectsConfiguration('remoteedit.remotePathBreadcrumb.showDirectoryDetails')) {
@@ -2087,43 +2094,17 @@ export class RemoteEditPanel {
     const connectionId = this.requireActiveConnectionId();
     const failedEntries: Array<{ path: string; error: string }> = [];
 
-    try {
-      await withRemoteEditProgress(
-        resolvedEntries.length === 1
-          ? (readOnly ? 'Opening remote file read-only...' : 'Opening remote file...')
-          : `${readOnly ? 'Opening read-only' : 'Opening'} ${resolvedEntries.length} remote files...`,
-        async (token, progress) => {
-          for (const entry of resolvedEntries) {
-            throwIfCancelled(token, 'Opening canceled.');
+    for (const entry of resolvedEntries) {
+      const uri = buildRemoteEditUri(connectionId, entry.path, this.getActiveUriAuthority(), { readOnly, openSource: 'webview' });
 
-            const uri = buildRemoteEditUri(connectionId, entry.path, this.getActiveUriAuthority(), { readOnly });
-
-            try {
-              await this.sessions.prepareFileForOpen(connectionId, entry.path, token, progress);
-              throwIfCancelled(token, 'Opening canceled.');
-              await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
-              this.logInfo(readOnly ? 'Opened remote file read-only.' : 'Opened remote file.', { Path: this.buildRemoteReference(entry.path) });
-            } catch (error) {
-              if (isRemoteEditOperationCancelled(error)) {
-                throw error;
-              }
-
-              const message = error instanceof Error ? error.message : String(error);
-              failedEntries.push({ path: entry.path, error: message });
-              this.logWarn(readOnly ? 'Failed to open remote file read-only.' : 'Failed to open remote file.', { Path: this.buildRemoteReference(entry.path), Details: message });
-            }
-          }
-        },
-        { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening canceled.' }
-      );
-    } catch (error) {
-      if (isRemoteEditOperationCancelled(error)) {
-        this.postBusy(false, 'Opening canceled.');
-        this.logInfo('Opening remote file canceled.');
-        return;
+      try {
+        await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
+        this.logInfo(readOnly ? 'Opened remote file read-only.' : 'Opened remote file.', { Path: this.buildRemoteReference(entry.path) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failedEntries.push({ path: entry.path, error: message });
+        this.logWarn(readOnly ? 'Failed to open remote file read-only.' : 'Failed to open remote file.', { Path: this.buildRemoteReference(entry.path), Details: message });
       }
-
-      throw error;
     }
 
     if (failedEntries.length) {
@@ -2287,26 +2268,7 @@ export class RemoteEditPanel {
   private async openFile(remotePath: string): Promise<void> {
     const connectionId = this.requireActiveConnectionId();
     const normalizedPath = normalizeRemotePath(remotePath);
-    const uri = buildRemoteEditUri(connectionId, normalizedPath, this.getActiveUriAuthority());
-
-    try {
-      await withRemoteEditProgress(
-        'Opening remote file...',
-        async (token, progress) => {
-          await this.sessions.prepareFileForOpen(connectionId, normalizedPath, token, progress);
-          throwIfCancelled(token, 'Opening canceled.');
-        },
-        { cancellable: true, returnOnCancel: true, cancelMessage: 'Opening canceled.' }
-      );
-    } catch (error) {
-      if (isRemoteEditOperationCancelled(error)) {
-        this.postBusy(false, 'Opening canceled.');
-        this.logInfo('Opening remote file canceled.', { Path: this.buildRemoteReference(normalizedPath) });
-        return;
-      }
-
-      throw error;
-    }
+    const uri = buildRemoteEditUri(connectionId, normalizedPath, this.getActiveUriAuthority(), { openSource: 'webview' });
 
     await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
 
@@ -7694,6 +7656,23 @@ exit 0`;
     }
 
     this.logInfo(message, { Operation: operation, ...details });
+  }
+
+  private async handleWebviewRemoteFileOpenFailure(event: { connectionId: string; remotePath: string; error: unknown; readOnly: boolean }): Promise<void> {
+    if (!this.panel || this.isDisposed) {
+      return;
+    }
+
+    const activeConnectionId = this.state.getActiveConnectionId();
+    if (activeConnectionId && activeConnectionId !== event.connectionId) {
+      return;
+    }
+
+    await this.showRemoteFileOpenFailureDialog(
+      event.readOnly ? 'Could not open remote file read-only' : 'Could not open remote file',
+      event.remotePath,
+      this.formatRemoteFileOpenFailureReason(event.error, event.remotePath)
+    );
   }
 
   private async showRemoteFileOpenFailureDialog(title: string, remotePath: string, reason: string): Promise<void> {

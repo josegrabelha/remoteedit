@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
-import { withRemoteEditProgress } from '../utils/progressUtils';
+import { isRemoteEditOperationCancelled, withRemoteEditProgress } from '../utils/progressUtils';
 import { appendOutputLog } from '../utils/outputLogger';
+import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 
-export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
+export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
+  private readonly pendingFileReads = new Map<string, PendingFileRead>();
+  private readonly tabChangeSubscription: vscode.Disposable;
 
   readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this.emitter.event;
 
@@ -12,7 +15,9 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
     private readonly sessions: RemoteSessionManager,
     private readonly output?: vscode.OutputChannel,
     private readonly readOnly = false
-  ) {}
+  ) {
+    this.tabChangeSubscription = vscode.window.tabGroups.onDidChangeTabs(event => this.cancelPendingReadsForClosedTabs(event.closed));
+  }
 
   watch(_uri: vscode.Uri, _options: { readonly recursive: boolean; readonly excludes: readonly string[] }): vscode.Disposable {
     // Remote file watching is not implemented yet.
@@ -47,8 +52,49 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const { connectionId, remotePath } = parseRemoteEditUri(uri);
-    return await this.sessions.readFile(connectionId, remotePath);
+    const { connectionId, remotePath, openSource } = parseRemoteEditUri(uri);
+    const uriKey = uri.toString();
+    const cancellationSource = new vscode.CancellationTokenSource();
+    const pendingRead: PendingFileRead = { cancellationSource };
+
+    this.pendingFileReads.set(uriKey, pendingRead);
+
+    try {
+      return await withRemoteEditProgress(
+        'Opening remote file...',
+        async (token, progress) => await this.sessions.readFile(connectionId, remotePath, token, progress),
+        {
+          cancellable: true,
+          returnOnCancel: true,
+          cancelMessage: 'Opening remote file was cancelled.',
+          cancellationSource
+        }
+      );
+    } catch (error) {
+      if (isRemoteEditOperationCancelled(error)) {
+        await closeMatchingEditorTab(uri);
+        throw vscode.FileSystemError.Unavailable('Opening remote file was cancelled.');
+      }
+
+      if (openSource === 'webview') {
+        RemoteEditSharedState.fireRemoteFileOpenFailure({
+          connectionId,
+          remotePath,
+          error,
+          readOnly: uri.scheme === 'remoteedit-readonly',
+          source: 'webview'
+        });
+        await closeMatchingEditorTab(uri);
+      }
+
+      throw error;
+    } finally {
+      if (this.pendingFileReads.get(uriKey) === pendingRead) {
+        this.pendingFileReads.delete(uriKey);
+      }
+
+      cancellationSource.dispose();
+    }
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array, _options: { readonly create: boolean; readonly overwrite: boolean }): Promise<void> {
@@ -103,17 +149,89 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider {
   private fireChanged(uri: vscode.Uri, type: vscode.FileChangeType): void {
     this.emitter.fire([{ type, uri }]);
   }
+
+  private cancelPendingReadsForClosedTabs(closedTabs: readonly vscode.Tab[]): void {
+    if (!this.pendingFileReads.size || !closedTabs.length) {
+      return;
+    }
+
+    for (const tab of closedTabs) {
+      for (const uriKey of getTabUriStrings(tab)) {
+        const pendingRead = this.pendingFileReads.get(uriKey);
+
+        if (!pendingRead || pendingRead.cancellationSource.token.isCancellationRequested) {
+          continue;
+        }
+
+        pendingRead.cancellationSource.cancel();
+      }
+    }
+  }
+
+  dispose(): void {
+    this.tabChangeSubscription.dispose();
+    this.emitter.dispose();
+
+    for (const pendingRead of this.pendingFileReads.values()) {
+      pendingRead.cancellationSource.cancel();
+      pendingRead.cancellationSource.dispose();
+    }
+
+    this.pendingFileReads.clear();
+  }
+}
+
+interface PendingFileRead {
+  cancellationSource: vscode.CancellationTokenSource;
+}
+
+async function closeMatchingEditorTab(uri: vscode.Uri): Promise<void> {
+  const targetUri = uri.toString();
+  const matchingTabs: vscode.Tab[] = [];
+
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (isTabForUri(tab, targetUri)) {
+        matchingTabs.push(tab);
+      }
+    }
+  }
+
+  if (matchingTabs.length === 0) {
+    return;
+  }
+
+  try {
+    await vscode.window.tabGroups.close(matchingTabs, true);
+  } catch {
+    // Best-effort cleanup. The read operation has already been cancelled.
+  }
+}
+
+function isTabForUri(tab: vscode.Tab, targetUri: string): boolean {
+  return getTabUriStrings(tab).includes(targetUri);
+}
+
+function getTabUriStrings(tab: vscode.Tab): string[] {
+  const input = tab.input as { readonly uri?: vscode.Uri; readonly modified?: vscode.Uri; readonly original?: vscode.Uri } | undefined;
+  const uris = [input?.uri, input?.modified, input?.original]
+    .filter((uri): uri is vscode.Uri => Boolean(uri))
+    .map(uri => uri.toString());
+
+  return Array.from(new Set(uris));
 }
 
 export function buildRemoteEditUri(
   connectionId: string,
   remotePath: string,
   displayAuthority?: string,
-  options: { readonly readOnly?: boolean } = {}
+  options: { readonly readOnly?: boolean; readonly openSource?: 'webview' | 'sidebar' } = {}
 ): vscode.Uri {
   const normalizedRemotePath = remotePath.startsWith('/') ? remotePath : `/${remotePath}`;
   const authority = normalizeUriAuthority(displayAuthority || connectionId);
   const scheme = options.readOnly ? 'remoteedit-readonly' : 'remoteedit';
+
+  const query = buildRemoteEditUriQuery(connectionId, displayAuthority ? normalizeUriPathSegment(shortenHostname(displayAuthority)) : '', options.openSource);
 
   if (displayAuthority) {
     const virtualRoot = normalizeUriPathSegment(shortenHostname(displayAuthority));
@@ -123,23 +241,25 @@ export function buildRemoteEditUri(
       scheme,
       authority,
       path: `/${virtualRoot}${remotePathWithoutRoot ? `/${remotePathWithoutRoot}` : ''}`,
-      query: `connectionId=${encodeURIComponent(connectionId)}&remoteRoot=${encodeURIComponent(virtualRoot)}`
+      query
     });
   }
 
   return vscode.Uri.from({
     scheme,
     authority,
-    path: normalizedRemotePath
+    path: normalizedRemotePath,
+    query
   });
 }
 
-export function parseRemoteEditUri(uri: vscode.Uri): { connectionId: string; remotePath: string } {
+export function parseRemoteEditUri(uri: vscode.Uri): { connectionId: string; remotePath: string; openSource?: 'webview' | 'sidebar' } {
   if (uri.scheme !== 'remoteedit' && uri.scheme !== 'remoteedit-readonly') {
     throw new Error(`Unsupported URI scheme '${uri.scheme}'.`);
   }
 
   const connectionId = getQueryValue(uri.query, 'connectionId') || uri.authority;
+  const openSource = normalizeOpenSource(getQueryValue(uri.query, 'openSource'));
 
   if (!connectionId) {
     throw new Error('Missing Remote Edit connection id in URI.');
@@ -147,8 +267,29 @@ export function parseRemoteEditUri(uri: vscode.Uri): { connectionId: string; rem
 
   return {
     connectionId,
-    remotePath: stripVirtualRoot(uri.path || '/', getQueryValue(uri.query, 'remoteRoot'))
+    remotePath: stripVirtualRoot(uri.path || '/', getQueryValue(uri.query, 'remoteRoot')),
+    openSource
   };
+}
+
+
+function buildRemoteEditUriQuery(connectionId: string, remoteRoot: string, openSource?: 'webview' | 'sidebar'): string {
+  const params = new URLSearchParams();
+
+  if (remoteRoot) {
+    params.set('connectionId', connectionId);
+    params.set('remoteRoot', remoteRoot);
+  }
+
+  if (openSource) {
+    params.set('openSource', openSource);
+  }
+
+  return params.toString();
+}
+
+function normalizeOpenSource(value: string): 'webview' | 'sidebar' | undefined {
+  return value === 'webview' || value === 'sidebar' ? value : undefined;
 }
 
 function stripVirtualRoot(path: string, virtualRoot: string): string {

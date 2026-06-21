@@ -6,6 +6,10 @@
 * Added single-click opening from file and folder names in the Webview file list. Item names now show a subtle underline on name hover when single-click opening is enabled.
 * Added `remoteedit.webview.fileList.openOnNameClick` to control single-click opening from item names in the Webview file list.
 
+### Improved
+
+* Aligned Webview file opening with the Sidebar so editor tabs are created immediately while content loads through the remote file provider. Slow file loads now show cancellable progress, and failed Webview opens keep the detailed error dialog.
+
 ## [1.8.0] - 2026-06-20
 
 ### Added

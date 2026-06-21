@@ -82,13 +82,24 @@ export interface RemoteEditEncryptedCredentials {
   data: string;
 }
 
+export interface RemoteEditPersistentWebviewStorage {
+  savedCommands?: Record<string, unknown[]>;
+  serverLogShortcuts?: Record<string, unknown[]>;
+  portForwards?: Record<string, unknown[]>;
+}
+
 export interface RemoteEditBackupFile {
   remoteEditExportVersion: number;
   exportedAt: string;
   extensionVersion?: string;
   settings?: Record<string, unknown>;
+  settingsKeys?: string[];
   connections?: RemoteEditBackupConnection[];
   encryptedCredentials?: RemoteEditEncryptedCredentials | null;
+  savedCommands?: Record<string, unknown[]>;
+  serverLogShortcuts?: Record<string, unknown[]>;
+  portForwards?: Record<string, unknown[]>;
+  logViewerFavorites?: Record<string, string[]>;
 }
 
 export interface RemoteEditBackupSummary {
@@ -99,6 +110,10 @@ export interface RemoteEditBackupSummary {
   remotePathFavoriteCount: number;
   usernamesIncluded: boolean;
   hasEncryptedCredentials: boolean;
+  savedCommandCount: number;
+  serverLogShortcutCount: number;
+  portForwardCount: number;
+  logViewerFavoriteCount: number;
 }
 
 export interface RemoteEditBackupImportResult {
@@ -110,6 +125,10 @@ export interface RemoteEditBackupImportResult {
   credentialsRestored: number;
   favoritesImported: number;
   usernamesImported: number;
+  savedCommandsImported: number;
+  serverLogShortcutsImported: number;
+  portForwardsImported: number;
+  logViewerFavoritesImported: number;
 }
 
 interface StoredCredentialMap {
@@ -120,22 +139,28 @@ interface StoredCredentialMap {
 }
 
 const CONFIG_SECTION = 'remoteedit';
-const SUPPORTED_BACKUP_VERSION = 1;
-const REMOTE_EDIT_SETTING_KEYS = [
-  'statusBarButtonPosition',
-  'statusBarButtonStyle',
-  'editorTitleButtonPosition',
-  'statusBarButtonPriority',
-  'sshReadyTimeout',
-  'sshKeepAliveInterval',
-  'sshKeepAliveCountMax',
-  'sftpResolveOwnerGroupNames',
-  'diagnostics.debugLogs',
-  'diagnostics.performanceLogs',
-  'ftpKeepAliveInterval',
-  'sudoTempDirectory',
-  'restoreSpecialPermissionBits'
-] as const;
+const SUPPORTED_BACKUP_VERSION = 2;
+const REMOTE_EDIT_SETTING_DEFAULTS = {
+  editorTitleButtonPosition: 'hidden',
+  statusBarButtonPosition: 'left',
+  statusBarButtonStyle: 'iconAndText',
+  statusBarButtonPriority: 1000,
+  'remotePathBreadcrumb.showDirectoryDetails': true,
+  'sidebar.showItemInfoOnHover': false,
+  'sidebar.showParentPath': true,
+  directoryListingCacheTtl: 30,
+  sshReadyTimeout: 30000,
+  sshKeepAliveInterval: 30000,
+  sshKeepAliveCountMax: 3,
+  sftpResolveOwnerGroupNames: false,
+  ftpKeepAliveInterval: 30000,
+  'ftp.enableModifiedDateFallback': false,
+  maxConcurrentTransfers: 2,
+  sudoTempDirectory: '/tmp',
+  restoreSpecialPermissionBits: true,
+  'logViewer.maxBackgroundBufferLines': 5000
+} as const;
+const REMOTE_EDIT_SETTING_KEYS = Object.keys(REMOTE_EDIT_SETTING_DEFAULTS) as Array<keyof typeof REMOTE_EDIT_SETTING_DEFAULTS>;
 const SCRYPT_PARAMS = {
   keyLength: 32,
   N: 16384,
@@ -163,6 +188,10 @@ export interface ConnectionProfileInput {
 }
 
 const CONNECTIONS_KEY = 'remoteedit.connectionProfiles';
+const SAVED_REMOTE_COMMANDS_KEY = 'remoteedit.savedRemoteCommands';
+const SERVER_LOG_SHORTCUTS_KEY = 'remoteedit.serverLogShortcuts';
+const SERVER_PORT_FORWARDS_KEY = 'remoteedit.serverPortForwards';
+const LOG_VIEWER_FAVORITES_KEY = 'remoteedit.logViewer.favorites.v1';
 const SECRET_PREFIX = 'remoteedit.connectionSecret';
 const FTPS_CA_CERTIFICATE_REQUIRED_MESSAGE = 'CA certificate path is required for FTPS unless self-signed/untrusted certificates are allowed.';
 
@@ -355,13 +384,20 @@ export class ConnectionManager {
       ? profiles.map(profile => this.toBackupConnection(profile, options))
       : [];
 
+    const persistentStorage = includeConnections ? this.getPersistentWebviewStorageSnapshot() : undefined;
+
     const backup: RemoteEditBackupFile = {
       remoteEditExportVersion: SUPPORTED_BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       extensionVersion: options.extensionVersion || undefined,
       settings: options.includeSettings ? this.exportSettings() : undefined,
+      settingsKeys: options.includeSettings ? [...REMOTE_EDIT_SETTING_KEYS] : undefined,
       connections: includeConnections ? backupConnections : undefined,
-      encryptedCredentials: null
+      encryptedCredentials: null,
+      savedCommands: persistentStorage?.savedCommands,
+      serverLogShortcuts: persistentStorage?.serverLogShortcuts,
+      portForwards: persistentStorage?.portForwards,
+      logViewerFavorites: includeConnections ? this.getLogViewerFavoritesSnapshot() : undefined
     };
 
     if (includeCredentials) {
@@ -395,7 +431,11 @@ export class ConnectionManager {
         return count + favorites.length;
       }, 0),
       usernamesIncluded: supportedConnections.some(connection => typeof connection.username === 'string' && connection.username.trim().length > 0),
-      hasEncryptedCredentials: Boolean(backup.encryptedCredentials)
+      hasEncryptedCredentials: Boolean(backup.encryptedCredentials),
+      savedCommandCount: countCollectionItems(backup.savedCommands),
+      serverLogShortcutCount: countCollectionItems(backup.serverLogShortcuts),
+      portForwardCount: countCollectionItems(backup.portForwards),
+      logViewerFavoriteCount: countCollectionItems(backup.logViewerFavorites)
     };
   }
 
@@ -414,11 +454,15 @@ export class ConnectionManager {
       skippedUnsupported: 0,
       credentialsRestored: 0,
       favoritesImported: 0,
-      usernamesImported: 0
+      usernamesImported: 0,
+      savedCommandsImported: 0,
+      serverLogShortcutsImported: 0,
+      portForwardsImported: 0,
+      logViewerFavoritesImported: 0
     };
 
     if (options.includeSettings && backup.settings && typeof backup.settings === 'object') {
-      await this.importSettings(backup.settings);
+      await this.importSettings(backup.settings, Array.isArray(backup.settingsKeys) ? backup.settingsKeys : undefined);
       result.settingsImported = true;
     }
 
@@ -516,6 +560,12 @@ export class ConnectionManager {
       }
     }
 
+    const persistentResult = await this.importPersistentBackupData(backup, options.importMode);
+    result.savedCommandsImported = persistentResult.savedCommandsImported;
+    result.serverLogShortcutsImported = persistentResult.serverLogShortcutsImported;
+    result.portForwardsImported = persistentResult.portForwardsImported;
+    result.logViewerFavoritesImported = persistentResult.logViewerFavoritesImported;
+
     return result;
   }
 
@@ -558,9 +608,12 @@ export class ConnectionManager {
     return settings;
   }
 
-  private async importSettings(settings: Record<string, unknown>): Promise<void> {
+  private async importSettings(settings: Record<string, unknown>, settingsKeys?: string[]): Promise<void> {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     const normalizedSettings = { ...settings };
+    const normalizedSettingsKeys = Array.isArray(settingsKeys)
+      ? settingsKeys.map(key => String(key || '').trim()).filter(key => isExportableSettingKey(key))
+      : undefined;
 
     if (
       !Object.prototype.hasOwnProperty.call(normalizedSettings, 'statusBarButtonPosition') &&
@@ -570,13 +623,131 @@ export class ConnectionManager {
       const showStatusBarButton = normalizedSettings.showStatusBarButton !== false;
       const statusBarButtonAlignment = normalizedSettings.statusBarButtonAlignment === 'right' ? 'right' : 'left';
       normalizedSettings.statusBarButtonPosition = showStatusBarButton ? statusBarButtonAlignment : 'hidden';
-    }
-
-    for (const key of REMOTE_EDIT_SETTING_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(normalizedSettings, key)) {
-        await config.update(key, normalizedSettings[key], vscode.ConfigurationTarget.Global);
+      if (normalizedSettingsKeys && !normalizedSettingsKeys.includes('statusBarButtonPosition')) {
+        normalizedSettingsKeys.push('statusBarButtonPosition');
       }
     }
+
+    const keysToApply = normalizedSettingsKeys && normalizedSettingsKeys.length > 0
+      ? normalizedSettingsKeys
+      : Object.keys(normalizedSettings).filter(key => isExportableSettingKey(key));
+
+    for (const key of keysToApply) {
+      const defaultValue = REMOTE_EDIT_SETTING_DEFAULTS[key as keyof typeof REMOTE_EDIT_SETTING_DEFAULTS];
+      const importedValue = Object.prototype.hasOwnProperty.call(normalizedSettings, key)
+        ? normalizedSettings[key]
+        : defaultValue;
+
+      await config.update(
+        key,
+        areSettingValuesEqual(importedValue, defaultValue) ? undefined : importedValue,
+        vscode.ConfigurationTarget.Global
+      );
+    }
+  }
+
+  getPersistentWebviewStorageSnapshot(): RemoteEditPersistentWebviewStorage {
+    return {
+      savedCommands: normalizePersistentObject(this.context.globalState.get<Record<string, unknown[]>>(SAVED_REMOTE_COMMANDS_KEY, {})),
+      serverLogShortcuts: normalizePersistentObject(this.context.globalState.get<Record<string, unknown[]>>(SERVER_LOG_SHORTCUTS_KEY, {})),
+      portForwards: normalizePersistentObject(this.context.globalState.get<Record<string, unknown[]>>(SERVER_PORT_FORWARDS_KEY, {}))
+    };
+  }
+
+  async syncPersistentWebviewStorageSnapshot(
+    snapshot: RemoteEditPersistentWebviewStorage,
+    options?: { migrationOnly?: boolean }
+  ): Promise<RemoteEditPersistentWebviewStorage> {
+    await this.syncPersistentCollection(SAVED_REMOTE_COMMANDS_KEY, snapshot.savedCommands, options);
+    await this.syncPersistentCollection(SERVER_LOG_SHORTCUTS_KEY, snapshot.serverLogShortcuts, options);
+    await this.syncPersistentCollection(SERVER_PORT_FORWARDS_KEY, snapshot.portForwards, options);
+    return this.getPersistentWebviewStorageSnapshot();
+  }
+
+  private async syncPersistentCollection(
+    key: string,
+    incoming: Record<string, unknown[]> | undefined,
+    options?: { migrationOnly?: boolean }
+  ): Promise<void> {
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      return;
+    }
+
+    const normalizedIncoming = normalizePersistentObject(incoming);
+    if (!Object.keys(normalizedIncoming).length) {
+      return;
+    }
+
+    if (options?.migrationOnly) {
+      const existing = normalizePersistentObject(this.context.globalState.get<Record<string, unknown[]>>(key, {}));
+      if (Object.keys(existing).length) {
+        return;
+      }
+    }
+
+    await this.context.globalState.update(key, normalizedIncoming);
+  }
+
+  private getLogViewerFavoritesSnapshot(): Record<string, string[]> {
+    return normalizeStringCollection(this.context.globalState.get<Record<string, string[]>>(LOG_VIEWER_FAVORITES_KEY, {}));
+  }
+
+  private async importPersistentBackupData(backup: RemoteEditBackupFile, importMode: RemoteEditImportMode): Promise<{
+    savedCommandsImported: number;
+    serverLogShortcutsImported: number;
+    portForwardsImported: number;
+    logViewerFavoritesImported: number;
+  }> {
+    const savedCommandsImported = await this.importPersistentCollection(SAVED_REMOTE_COMMANDS_KEY, backup, 'savedCommands', importMode);
+    const serverLogShortcutsImported = await this.importPersistentCollection(SERVER_LOG_SHORTCUTS_KEY, backup, 'serverLogShortcuts', importMode);
+    const portForwardsImported = await this.importPersistentCollection(SERVER_PORT_FORWARDS_KEY, backup, 'portForwards', importMode);
+    const logViewerFavoritesImported = await this.importStringCollection(LOG_VIEWER_FAVORITES_KEY, backup, 'logViewerFavorites', importMode);
+
+    return { savedCommandsImported, serverLogShortcutsImported, portForwardsImported, logViewerFavoritesImported };
+  }
+
+  private async importPersistentCollection(
+    storageKey: string,
+    backup: RemoteEditBackupFile,
+    backupKey: 'savedCommands' | 'serverLogShortcuts' | 'portForwards',
+    importMode: RemoteEditImportMode
+  ): Promise<number> {
+    if (!Object.prototype.hasOwnProperty.call(backup, backupKey)) {
+      return 0;
+    }
+
+    const imported = normalizePersistentObject(backup[backupKey]);
+    const next = importMode === 'replace'
+      ? imported
+      : {
+        ...normalizePersistentObject(this.context.globalState.get<Record<string, unknown[]>>(storageKey, {})),
+        ...imported
+      };
+
+    await this.context.globalState.update(storageKey, next);
+    return countCollectionItems(imported);
+  }
+
+  private async importStringCollection(
+    storageKey: string,
+    backup: RemoteEditBackupFile,
+    backupKey: 'logViewerFavorites',
+    importMode: RemoteEditImportMode
+  ): Promise<number> {
+    if (!Object.prototype.hasOwnProperty.call(backup, backupKey)) {
+      return 0;
+    }
+
+    const imported = normalizeStringCollection(backup[backupKey]);
+    const next = importMode === 'replace'
+      ? imported
+      : {
+        ...normalizeStringCollection(this.context.globalState.get<Record<string, string[]>>(storageKey, {})),
+        ...imported
+      };
+
+    await this.context.globalState.update(storageKey, next);
+    return countCollectionItems(imported);
   }
 
   private normalizeBackupConnections(connections: RemoteEditBackupConnection[], options: ConnectionBackupImportOptions): ConnectionProfile[] {
@@ -761,7 +932,8 @@ export class ConnectionManager {
       startPath,
       keepAlive,
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
-      ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : undefined
+      ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : undefined,
+      isQuickConnect: !profile?.id
     };
   }
 
@@ -909,6 +1081,74 @@ function buildProfileId(name: string, host: string, username: string): string {
   return `${base}-${Date.now().toString(36)}`;
 }
 
+
+
+function isExportableSettingKey(key: string): key is keyof typeof REMOTE_EDIT_SETTING_DEFAULTS {
+  return Object.prototype.hasOwnProperty.call(REMOTE_EDIT_SETTING_DEFAULTS, key);
+}
+
+function areSettingValuesEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function normalizePersistentObject(value: unknown): Record<string, unknown[]> {
+  const normalized: Record<string, unknown[]> = {};
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return normalized;
+  }
+
+  for (const [key, items] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey || !Array.isArray(items)) {
+      continue;
+    }
+
+    normalized[normalizedKey] = items
+      .filter(item => item && typeof item === 'object')
+      .map(item => ({ ...(item as Record<string, unknown>) }));
+  }
+
+  return normalized;
+}
+
+function normalizeStringCollection(value: unknown): Record<string, string[]> {
+  const normalized: Record<string, string[]> = {};
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return normalized;
+  }
+
+  for (const [key, items] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey || !Array.isArray(items)) {
+      continue;
+    }
+
+    const seen = new Set<string>();
+    normalized[normalizedKey] = items
+      .map(item => String(item || '').trim())
+      .filter(item => {
+        if (!item || seen.has(item)) {
+          return false;
+        }
+        seen.add(item);
+        return true;
+      });
+  }
+
+  return normalized;
+}
+
+function countCollectionItems(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 0;
+  }
+
+  return Object.values(value as Record<string, unknown>).reduce<number>((count, items) => {
+    return count + (Array.isArray(items) ? items.length : 0);
+  }, 0);
+}
 
 function validateBackupVersion(backup: RemoteEditBackupFile): void {
   const version = Number(backup?.remoteEditExportVersion || 0);

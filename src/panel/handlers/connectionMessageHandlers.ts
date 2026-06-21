@@ -27,6 +27,9 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.ReorderConnections:
       await handlers.reorderConnections(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.SyncPersistentStorage:
+      await handlers.syncPersistentStorage(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.RequestImportConnectionsSettings:
       await handlers.requestImportConnectionsSettings();
       return true;
@@ -40,7 +43,7 @@ export async function tryHandleConnectionMessage(
       await handlers.connect(message.payload);
       return true;
     case RemoteEditIncomingMessageType.CancelConnection:
-      await handlers.cancelConnection();
+      await handlers.cancelConnection(message.payload);
       return true;
     case RemoteEditIncomingMessageType.Disconnect:
       await handlers.disconnect(String(message.payload?.connectionId || handlers.getActiveConnectionId() || ''));

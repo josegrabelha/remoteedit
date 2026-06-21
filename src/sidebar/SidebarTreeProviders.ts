@@ -79,7 +79,7 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
         kind: 'action',
         id: 'action:exportBackup',
         icon: new vscode.ThemeIcon('sign-out'),
-        tooltip: 'Export Remote Edit settings, saved connections, and remote path favorites.',
+        tooltip: 'Export Remote Edit data.',
         command: {
           command: COMMAND_EXPORT_BACKUP,
           title: 'Export Backup'
@@ -91,7 +91,7 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
         kind: 'action',
         id: 'action:importBackup',
         icon: new vscode.ThemeIcon('sign-in'),
-        tooltip: 'Import Remote Edit settings, saved connections, and remote path favorites.',
+        tooltip: 'Import Remote Edit data.',
         command: {
           command: COMMAND_IMPORT_BACKUP,
           title: 'Import Backup'

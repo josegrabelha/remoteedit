@@ -6,7 +6,7 @@ import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } fr
 import { getBooleanSetting, getNumberSetting } from '../utils/settingsUtils';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { normalizeConnectionType } from '../remote/RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from '../remote/RemoteSessionManager';
+import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions } from '../remote/RemoteSessionManager';
 import type {
   ActiveConnection,
   ConnectOptions,
@@ -153,7 +153,8 @@ export class FtpSessionManager implements RemoteSessionManager {
         startPath,
         keepAlive: options.keepAlive !== false,
         ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(options.ftpsAllowSelfSignedCertificate) : false,
-        ftpsCaCertificatePath: connectionType === 'ftps' ? String(options.ftpsCaCertificatePath || '').trim() : undefined
+        ftpsCaCertificatePath: connectionType === 'ftps' ? String(options.ftpsCaCertificatePath || '').trim() : undefined,
+        isQuickConnect: Boolean(options.isQuickConnect)
       };
 
       this.connections.set(options.connectionId, connection);
@@ -1171,6 +1172,10 @@ export class FtpSessionManager implements RemoteSessionManager {
 
   async changeOwnerGroup(_connectionId: string, _remotePath: string, _options: RemoteChangeOwnerGroupOptions): Promise<void> {
     throw createUnsupportedError('Change owner/group');
+  }
+
+  async listOwnerGroupSuggestions(_connectionId: string): Promise<RemoteOwnerGroupSuggestions> {
+    return { owners: [], groups: [] };
   }
 
   async chmod(_connectionId: string, _remotePath: string, _mode: string | number, _options: RemoteChmodOptions = {}): Promise<void> {

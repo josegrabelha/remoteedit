@@ -1,6 +1,11 @@
 import * as vscode from 'vscode';
 
-export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): string {
+export interface RemoteEditHtmlOptions {
+  showRemotePathBreadcrumbDirectoryDetails: boolean;
+}
+
+export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, options: RemoteEditHtmlOptions): string {
+  const showRemotePathBreadcrumbDirectoryDetails = options.showRemotePathBreadcrumbDirectoryDetails !== false;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,11 +16,18 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <style>
   :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; }
   * { box-sizing: border-box; }
+  * { scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background-color: var(--vscode-scrollbarSlider-background); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  *::-webkit-scrollbar-thumb:hover { background-color: var(--vscode-scrollbarSlider-hoverBackground); }
+  *::-webkit-scrollbar-thumb:active { background-color: var(--vscode-scrollbarSlider-activeBackground); }
+  *::-webkit-scrollbar-corner { background: transparent; }
   html, body { margin: 0; height: 100%; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); overflow: hidden; user-select: none; -webkit-user-select: none; }
   input, textarea { user-select: text; -webkit-user-select: text; }
   input.connection-input-invalid, select.connection-input-invalid, .profile-dropdown-button.connection-input-invalid { border-color: var(--remoteedit-validation-error); }
   input.connection-input-invalid:focus, input.connection-input-invalid:focus-visible, select.connection-input-invalid:focus, select.connection-input-invalid:focus-visible, .profile-dropdown-button.connection-input-invalid:focus, .profile-dropdown-button.connection-input-invalid:focus-visible { border-color: var(--remoteedit-validation-error); outline: none; box-shadow: none; }
-  .page { height: 100vh; padding: 16px 6px; display: flex; min-width: 0; }
+  .page { height: 100vh; padding: 10px 0; margin: 0 -9px; width: calc(100% + 18px); display: flex; min-width: 0; }
   .shell { width: 100%; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .session-strip { display: flex; gap: 6px; align-items: center; min-height: 30px; margin-top: 10px; overflow-x: auto; padding: 1px 0; flex: 0 0 auto; }
   .session-label { color: var(--vscode-descriptionForeground); font-size: 12px; margin-right: 2px; white-space: nowrap; }
@@ -30,6 +42,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .session-tab-drop-line { position: absolute; bottom: 0; width: 1px; height: 33px; background: var(--vscode-focusBorder); display: none; pointer-events: none; z-index: 12; transform: none; }
   .session-icon { width: 16px; min-width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: inherit; opacity: 0.82; flex: 0 0 auto; font-size: 16px; line-height: 16px; }
   .session-icon svg { width: 16px; height: 16px; display: block; fill: currentColor; }
+  .session-tab.connecting .session-icon .spinner { display: block; width: 14px; min-width: 14px; height: 14px; border-width: 2px; border-color: currentColor; border-right-color: transparent; opacity: 0.82; }
+  .session-tab.failed .session-icon { color: inherit; opacity: 0.82; }
   .session-name { display: inline-flex; align-items: center; height: 100%; overflow: hidden; text-overflow: ellipsis; min-width: 0; line-height: 1; }
   .session-close { position: relative; width: 20px; min-width: 20px; height: 20px; min-height: 20px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 -3px 0 0; border-radius: 3px; background: transparent; color: inherit; opacity: 0.72; line-height: 0; font-size: 0; font-weight: 400; transform: none; flex: 0 0 auto; }
   .session-close::before, .session-close::after { content: ''; position: absolute; left: 50%; top: 50%; width: 11px; height: 1px; background: currentColor; transform-origin: center; }
@@ -37,21 +51,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .session-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
   .session-close:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); opacity: 1; }
   .session-empty { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 34px; }
-  .layout { position: relative; display: grid; grid-template-columns: var(--connection-panel-width, 320px) minmax(0, 1fr); gap: 16px; margin-top: 0; align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; }
+  .layout { position: relative; display: grid; grid-template-columns: var(--connection-panel-width, 320px) minmax(0, 1fr); gap: 10px; margin-top: 0; align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; }
   .layout.connection-collapsed { grid-template-columns: 0px minmax(0, 1fr); gap: 0; }
   .layout.connection-collapsed .connection-card { opacity: 0; transform: translateX(-12px); pointer-events: none; border-color: transparent; }
-  .connection-panel-handle { width: 20px; min-width: 20px; height: 40px; min-height: 40px; pointer-events: none; }
-  .connection-panel-handle .tooltip-anchor { display: flex; align-items: center; justify-content: center; width: 20px; height: 40px; line-height: 0; pointer-events: auto; }
-  .connection-panel-handle .panel-toggle-button { width: 20px; min-width: 20px; height: 40px; min-height: 40px; padding: 0; background: var(--vscode-sideBar-background); color: var(--vscode-descriptionForeground); opacity: 0.68; box-shadow: 0 1px 3px rgb(0 0 0 / 14%); }
+  .connection-panel-handle { width: 10px; min-width: 10px; height: 35px; min-height: 35px; pointer-events: none; }
+  .connection-panel-handle .tooltip-anchor { display: flex; align-items: center; justify-content: center; width: 10px; height: 35px; line-height: 0; pointer-events: auto; }
+  .connection-panel-handle .panel-toggle-button { width: 10px; min-width: 10px; height: 35px; min-height: 35px; padding: 0; background: var(--vscode-sideBar-background); color: var(--vscode-descriptionForeground); opacity: 0.68; box-shadow: 0 1px 3px rgb(0 0 0 / 14%); }
   .connection-panel-handle .panel-toggle-button:hover:not(:disabled) { color: var(--vscode-foreground); opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
-  .connection-panel-handle .panel-toggle-button svg { width: 14px; height: 14px; }
+  .connection-panel-handle .panel-toggle-button svg { width: 10px; height: 10px; }
   .connection-rail { position: fixed; left: 0; top: var(--connection-rail-top, 150px); z-index: 50; opacity: 0; transform: translateX(-6px); }
   .connection-rail .tooltip-anchor { pointer-events: none; }
   .layout.connection-collapsed .connection-rail { opacity: 1; transform: translateX(0); }
   .layout.connection-collapsed .connection-rail .tooltip-anchor { pointer-events: auto; }
-  .connection-rail .panel-toggle-button { border-left: 0; border-radius: 0 5px 5px 0; }
+  .connection-rail .panel-toggle-button { border-left: 0; border-radius: 0 4px 4px 0; }
   .connection-collapse-handle { position: absolute; right: 0; top: 6px; z-index: 30; }
-  .connection-collapse-handle .panel-toggle-button { border-right: 0; border-radius: 5px 0 0 5px; }
+  .connection-collapse-handle .panel-toggle-button { border-right: 0; border-radius: 4px 0 0 4px; }
   @media (prefers-reduced-motion: no-preference) {
     .layout.connection-transition-ready { transition: grid-template-columns 150ms ease-out, gap 150ms ease-out; }
     .layout.connection-transition-ready .connection-card { transition: opacity 150ms ease-out, transform 150ms ease-out, border-color 150ms ease-out; }
@@ -60,16 +74,287 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
   .browser-column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .browser-card { flex: 1 1 auto; }
-  .browser-open-section { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); column-gap: 14px; align-items: center; min-height: 52px; padding: 8px 14px; background: var(--vscode-editor-background); }
+  .browser-open-section { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); column-gap: 10px; align-items: center; min-height: 46px; padding: 6px 10px; background: var(--vscode-editor-background); }
   .browser-open-text { min-width: 0; }
   .browser-open-section .card-subtitle { margin-top: 3px; }
-  .browser-title-section { padding: 13px 14px; background: var(--vscode-editor-background); }
-  .open-connections-row { display: flex; align-items: stretch; align-self: stretch; min-width: 0; min-height: 0; margin-bottom: -8px; }
+  .browser-title-section { padding: 10px 12px; background: var(--vscode-editor-background); }
+  .open-connections-row { display: flex; align-items: stretch; align-self: stretch; min-width: 0; min-height: 0; margin-bottom: -7px; }
   .browser-session-strip { margin-top: 0; min-height: 0; height: 100%; padding: 0; flex: 1 1 auto; min-width: 0; justify-content: flex-start; align-items: flex-end; border-bottom: 0; overflow-y: hidden; }
   .browser-session-strip .session-tabs { align-items: flex-end; height: 100%; overflow-x: auto; overflow-y: hidden; gap: 0; }
   .browser-session-strip .session-tabs.empty { align-items: center; overflow-x: hidden; }
   .browser-session-strip .session-tabs.empty .session-empty { display: inline-flex; align-items: center; height: 100%; line-height: normal; }
   .browser-section-divider { position: relative; z-index: 1; height: 1px; background: linear-gradient(to right, var(--vscode-panel-border) 0, var(--vscode-panel-border) var(--active-tab-left, 0px), transparent var(--active-tab-left, 0px), transparent calc(var(--active-tab-left, 0px) + var(--active-tab-width, 0px)), var(--vscode-panel-border) calc(var(--active-tab-left, 0px) + var(--active-tab-width, 0px)), var(--vscode-panel-border) 100%); flex: 0 0 auto; }
+  .connection-view-switch { display: inline-flex; align-items: center; flex: 0 0 auto; height: 32px; box-sizing: border-box; padding: 1px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-input-background); }
+  .connection-view-switch[hidden] { display: none !important; }
+  .connection-view-switch-button { width: 52px; min-width: 52px; height: 28px; min-height: 28px; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground)); font-size: inherit; }
+  .pathbar-view-switch { justify-self: end; }
+  .server-view-switch { justify-self: end; align-self: start; }
+  .view-switch-separator { justify-self: center; margin-left: 2px; margin-right: 0; }
+  .server-refresh-actions { display: none; align-items: center; gap: 4px; justify-content: flex-end; }
+  .server-refresh-actions[hidden], .server-refresh-separator[hidden] { display: none !important; }
+  .server-refresh-actions .icon-only { height: 32px; min-height: 32px; }
+  .server-auto-refresh-picker { position: relative; width: 104px; min-width: 104px; }
+  .server-auto-refresh-button { width: 100%; }
+  .server-auto-refresh-menu { min-width: 128px; right: auto; }
+  .server-refresh-separator { display: none; justify-self: center; }
+  .server-toolbar-status { position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; display: none; align-items: center; min-width: 0; width: var(--remote-path-width, 44vw); max-width: min(var(--remote-path-width, 44vw), calc(100% - 520px)); height: 32px; padding: 0 4px; box-sizing: border-box; color: var(--vscode-descriptionForeground); opacity: 0.92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; line-height: 1.2; pointer-events: none; }
+  .pathbar.server-toolbar-mode .server-toolbar-status { display: flex; }
+  .server-toolbar-status.error { color: var(--vscode-errorForeground, var(--remoteedit-validation-error)); opacity: 1; }
+  .pathbar.server-toolbar-mode .server-refresh-actions { display: inline-flex; }
+  .pathbar.server-toolbar-mode .server-refresh-separator { display: block; }
+  .connection-view-switch-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-foreground); }
+  .connection-view-switch-button.active { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-foreground); box-shadow: inset 0 0 0 1px var(--vscode-widget-border, var(--vscode-panel-border)); }
+  .connection-view-switch-button:disabled { opacity: 0.48; cursor: default; }
+  .connection-view { flex: 1 1 auto; min-width: 0; min-height: 0; }
+  .files-view { display: flex; flex-direction: column; }
+  .connection-view.hidden { display: none !important; }
+  .server-view { overflow: auto; padding-right: 2px; font-size: 11.5px; line-height: 1.25; }
+  .server-dashboard {
+    --server-overview-card-height: 68px;
+    --server-row-large-card-height: 176px;
+    --server-row-standard-card-height: 176px;
+    --server-system-info-card-height: 176px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 100%;
+  }
+  .server-header { display: flex; flex-direction: column; gap: 7px; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-editor-background); }
+  .server-header-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; min-width: 0; }
+  .server-header-main { min-width: 0; }
+  .server-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .server-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-foreground); font-weight: 650; font-size: 12px; }
+  .server-meta { margin-top: 2px; color: var(--vscode-descriptionForeground); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+  .server-actions button { height: 24px; min-height: 24px; padding: 0 8px; font-size: 11px; }
+  .server-badge { display: inline-flex; align-items: center; height: 16px; min-height: 16px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
+  .server-badge.active { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
+  .server-overview-grid { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 8px; }
+  .server-overview-card, .server-section-card { border: 1px solid var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-editor-background); min-width: 0; box-sizing: border-box; overflow: hidden; }
+  .server-overview-card { display: flex; flex-direction: column; height: var(--server-overview-card-height); min-height: var(--server-overview-card-height); padding: 7px 9px; }
+  .server-overview-label { color: var(--vscode-descriptionForeground); font-size: 10.5px; margin-bottom: 3px; }
+  .server-overview-value { color: var(--vscode-foreground); font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .server-overview-help { margin-top: 2px; color: var(--vscode-descriptionForeground); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .server-section-card { display: flex; flex-direction: column; height: var(--server-row-standard-card-height); min-height: var(--server-row-standard-card-height); padding: 8px 9px; }
+  .server-grid > .server-section-card:nth-child(1),
+  .server-grid > .server-section-card:nth-child(2) { height: var(--server-row-large-card-height); min-height: var(--server-row-large-card-height); }
+  .server-grid > .server-section-card.full-width { height: var(--server-system-info-card-height); min-height: var(--server-system-info-card-height); }
+  .server-section-card.full-width { grid-column: 1 / -1; }
+  .server-section-title-row { position: relative; top: -4px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 18px; margin-bottom: 4px; }
+  .server-section-title-row::before { content: ''; position: absolute; top: -4px; right: -9px; bottom: -4px; left: -9px; background: color-mix(in srgb, var(--vscode-editor-foreground) 5%, transparent); pointer-events: none; }
+  .server-section-title-row > * { position: relative; z-index: 1; }
+  .server-section-title { color: var(--vscode-foreground); font-size: 11.5px; font-weight: 650; }
+  .server-section-title-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+  .server-section-title-wrap .server-section-title { flex: 0 0 auto; }
+  .server-section-count { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .server-section-note { color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+  .server-list { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  .server-list-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 23px; padding: 2px 0; border-top: 1px solid color-mix(in srgb, var(--vscode-panel-border) 52%, transparent); }
+  .server-list-row:first-child { border-top: 0; }
+  .server-list-column-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; flex: 0 0 auto; min-height: 17px; padding: 0 4px 3px; margin-bottom: 2px; border-bottom: 1px solid color-mix(in srgb, var(--vscode-panel-border) 46%, transparent); color: var(--vscode-descriptionForeground); font-size: 9.8px; line-height: 1.2; }
+  .server-list-column-header-main { min-width: 0; overflow: hidden; }
+  .server-list-column-header-trailing { min-width: 0; }
+  .server-list-column-sort-button { appearance: none; -webkit-appearance: none; display: inline-flex; align-items: center; gap: 3px; min-width: 0; height: 16px; min-height: 16px; padding: 0 2px; border: 0; border-radius: 2px; background: transparent; color: var(--vscode-descriptionForeground); font: inherit; font-weight: 600; line-height: 1.2; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-list-column-sort-button.active { color: var(--vscode-foreground); }
+  .server-list-column-header button.server-list-column-sort-button:hover:not(:disabled),
+  .server-list-column-header button.server-list-column-sort-button:focus-visible { color: var(--vscode-foreground); background: transparent; outline: none; box-shadow: none; }
+  .server-list-sort-indicator { flex: 0 0 auto; width: 8px; min-width: 8px; text-align: center; font-size: 9px; opacity: 0.85; }
+  .server-list-column-header-actions-space { display: inline-block; flex: 0 0 auto; }
+  .server-quick-task-actions-space { min-width: 36px; }
+  .server-log-shortcut-actions-space { min-width: 118px; }
+  .server-service-actions-space { min-width: 114px; }
+  .server-process-actions-space { min-width: 42px; }
+  .server-scheduled-actions-space { min-width: 78px; }
+  .server-port-forward-actions-space { min-width: 48px; }
+  .server-list-main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-list-title { color: var(--vscode-foreground); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-list-subtitle { margin-top: 1px; color: var(--vscode-descriptionForeground); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-row-actions { display: inline-flex; gap: 4px; align-items: center; }
+  .server-row-actions button { height: 21px; min-height: 21px; padding: 0 6px; font-size: 10.5px; }
+  .server-quick-tasks-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .server-quick-tasks-filter-box { position: relative; justify-self: end; width: 180px; min-width: 180px; max-width: 180px; }
+  .server-quick-tasks-filter { width: 100%; min-width: 0; height: 21px; min-height: 21px; padding: 2px 27px 2px 7px; border-radius: 3px; border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; font-size: 10.5px; }
+  .server-quick-tasks-filter:focus, .server-quick-tasks-filter:focus-visible { border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; }
+  .server-quick-tasks-filter::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 0.85; }
+  .server-quick-tasks-filter-box .filter-clear-button { width: 19px; min-width: 19px; height: 19px; min-height: 19px; right: 3px; }
+  .server-quick-tasks-filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .server-quick-tasks-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .server-quick-task-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  .server-quick-task-row:hover { background: var(--vscode-list-hoverBackground); }
+  .server-quick-task-main { display: grid; grid-template-columns: minmax(90px, 42%) minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-quick-task-details, .server-quick-task-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-quick-task-name { color: var(--vscode-foreground); font-size: 11.5px; }
+  .server-quick-task-details { color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+  .server-quick-task-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 36px; opacity: 0; pointer-events: none; transition: opacity 80ms ease-out; }
+  .server-quick-task-row:hover .server-quick-task-actions,
+  .server-quick-task-row:focus-within .server-quick-task-actions { opacity: 1; pointer-events: auto; }
+  .server-quick-task-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
+  .server-quick-task-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
+  .server-quick-tasks-card .server-placeholder { display: grid; gap: 7px; align-content: start; }
+  .server-quick-tasks-card .server-placeholder button { justify-self: start; height: 23px; min-height: 23px; padding: 0 7px; font-size: 10.5px; }
+  .server-card-link-button { align-self: flex-start; height: 21px; min-height: 21px; margin-top: 5px; padding: 0 0; border: 0; background: transparent; color: var(--vscode-textLink-foreground); font-size: 10.5px; }
+  .server-card-link-button:hover:not(:disabled), .server-card-link-button:focus-visible { background: transparent; color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: underline; outline: none; }
+  .server-section-title-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .server-section-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+  .server-section-title-separator { width: 1px; height: 18px; flex: 0 0 auto; background: var(--vscode-panel-border); opacity: 0.9; }
+  .server-section-title-actions .remote-command-icon-button { width: 18px; min-width: 18px; height: 18px; min-height: 18px; }
+  .server-services-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .server-services-filter-box { position: relative; justify-self: end; width: 180px; min-width: 180px; max-width: 180px; }
+  .server-services-filter { width: 100%; min-width: 0; height: 21px; min-height: 21px; padding: 2px 27px 2px 7px; border-radius: 3px; border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; font-size: 10.5px; }
+  .server-services-filter:focus, .server-services-filter:focus-visible { border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; }
+  .server-services-filter::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 0.85; }
+  .server-services-filter-box .filter-clear-button { width: 19px; min-width: 19px; height: 19px; min-height: 19px; right: 3px; }
+  .server-services-filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .server-services-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .server-logs-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .server-logs-filter-box { position: relative; justify-self: end; width: 180px; min-width: 180px; max-width: 180px; }
+  .server-logs-filter { width: 100%; min-width: 0; height: 21px; min-height: 21px; padding: 2px 27px 2px 7px; border-radius: 3px; border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; font-size: 10.5px; }
+  .server-logs-filter:focus, .server-logs-filter:focus-visible { border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; }
+  .server-logs-filter::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 0.85; }
+  .server-logs-filter-box .filter-clear-button { width: 19px; min-width: 19px; height: 19px; min-height: 19px; right: 3px; }
+  .server-logs-filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .server-logs-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .server-log-shortcuts-list { max-height: none; overflow-y: auto; overflow-x: hidden; padding-right: 2px; }
+  .server-log-shortcut-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; }
+  .server-log-shortcut-row:hover { background: var(--vscode-list-hoverBackground); }
+  .server-log-shortcut-main { display: grid; grid-template-columns: minmax(90px, 38%) minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-log-shortcut-title { display: flex; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-log-shortcut-path { min-width: 0; color: var(--vscode-descriptionForeground); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-log-shortcut-title-button { display: block; width: 100%; min-width: 0; height: auto; min-height: 0; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--vscode-foreground); text-align: left; font: inherit; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .server-log-shortcut-title-button:hover:not(:disabled), .server-log-shortcut-title-button:focus-visible { background: transparent; color: var(--vscode-foreground); text-decoration: none; outline: none; }
+  .server-log-shortcut-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 118px; opacity: 0; pointer-events: none; transition: opacity 80ms ease-out; }
+  .server-log-shortcut-row:hover .server-log-shortcut-actions,
+  .server-log-shortcut-row:focus-within .server-log-shortcut-actions { opacity: 1; pointer-events: auto; }
+  .server-log-shortcut-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
+  .server-log-shortcut-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
+  .server-section-title-actions svg { width: 12px; height: 12px; display: block; fill: currentColor; }
+  .server-service-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  .server-service-row:hover { background: var(--vscode-list-hoverBackground); }
+  .server-service-main { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+  .server-service-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-service-trailing { display: inline-flex; gap: 7px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 184px; }
+  .server-service-status { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 54px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
+  .server-service-status.running { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
+  .server-service-status.failed { color: var(--vscode-testing-iconFailed, var(--remoteedit-validation-error)); border-color: color-mix(in srgb, var(--vscode-testing-iconFailed, var(--remoteedit-validation-error)) 45%, var(--vscode-panel-border)); }
+  .server-service-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 114px; opacity: 0; pointer-events: none; transition: opacity 80ms ease-out; }
+  .server-service-row:hover .server-service-actions,
+  .server-service-row:focus-within .server-service-actions { opacity: 1; pointer-events: auto; }
+  .server-service-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
+  .server-service-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
+  .server-processes-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .server-processes-filter-box { position: relative; justify-self: end; width: 180px; min-width: 180px; max-width: 180px; }
+  .server-processes-filter { width: 100%; min-width: 0; height: 21px; min-height: 21px; padding: 2px 27px 2px 7px; border-radius: 3px; border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; font-size: 10.5px; }
+  .server-processes-filter:focus, .server-processes-filter:focus-visible { border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; }
+  .server-processes-filter::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 0.85; }
+  .server-processes-filter-box .filter-clear-button { width: 19px; min-width: 19px; height: 19px; min-height: 19px; right: 3px; }
+  .server-processes-filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .server-processes-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .server-process-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  .server-process-row:hover { background: var(--vscode-list-hoverBackground); }
+  .server-process-main { display: grid; grid-template-columns: minmax(0, 1fr) 42px minmax(44px, 74px) 44px 44px; gap: 7px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-process-pid { min-width: 0; color: var(--vscode-descriptionForeground); font-size: 10.5px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-process-command { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-foreground); font-size: 11.5px; }
+  .server-process-user { min-width: 0; color: var(--vscode-descriptionForeground); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-process-cpu, .server-process-memory { min-width: 0; color: var(--vscode-descriptionForeground); font-size: 10px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-process-trailing { display: inline-flex; gap: 7px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 72px; }
+  .server-process-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 42px; opacity: 0; pointer-events: none; transition: opacity 80ms ease-out; }
+  .server-process-row:hover .server-process-actions,
+  .server-process-row:focus-within .server-process-actions { opacity: 1; pointer-events: auto; }
+  .server-process-row.process-action-active .server-process-actions { opacity: 0; pointer-events: none; }
+  .server-process-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
+  .server-process-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
+  .server-process-status { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 68px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
+  .server-process-status.terminated { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
+  .server-process-status.killing, .server-process-status.still-running { color: var(--vscode-charts-yellow, var(--vscode-descriptionForeground)); border-color: color-mix(in srgb, var(--vscode-charts-yellow, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
+  .server-scheduled-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .server-scheduled-filter-box { position: relative; justify-self: end; width: 180px; min-width: 180px; max-width: 180px; }
+  .server-scheduled-filter { width: 100%; min-width: 0; height: 21px; min-height: 21px; padding: 2px 27px 2px 7px; border-radius: 3px; border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; font-size: 10.5px; }
+  .server-scheduled-filter:focus, .server-scheduled-filter:focus-visible { border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; }
+  .server-scheduled-filter::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 0.85; }
+  .server-scheduled-filter-box .filter-clear-button { width: 19px; min-width: 19px; height: 19px; min-height: 19px; right: 3px; }
+  .server-scheduled-filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .server-scheduled-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .server-scheduled-list { max-height: none; overflow-y: auto; overflow-x: hidden; padding-right: 2px; }
+  .server-scheduled-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  .server-scheduled-row:hover { background: var(--vscode-list-hoverBackground); }
+  .server-scheduled-main { display: grid; grid-template-columns: minmax(0, 1fr) 74px 86px; gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-scheduled-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-foreground); font-size: 11.5px; }
+  .server-scheduled-count, .server-scheduled-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+  .server-scheduled-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 78px; opacity: 0; pointer-events: none; transition: opacity 80ms ease-out; }
+  .server-scheduled-row:hover .server-scheduled-actions,
+  .server-scheduled-row:focus-within .server-scheduled-actions { opacity: 1; pointer-events: auto; }
+  .server-scheduled-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
+  .server-scheduled-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
+    .server-log-shortcut-empty { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px 8px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent); }
+  .server-log-shortcut-dialog { width: min(520px, calc(100vw - 48px)); overflow: visible; }
+  .server-log-shortcut-dialog .file-properties-body { overflow: visible; }
+  .server-log-shortcut-fields { display: grid; gap: 10px; }
+  .server-log-shortcut-field { display: grid; gap: 5px; }
+  .server-log-shortcut-field label { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; }
+  .server-log-shortcut-field input { width: 100%; box-sizing: border-box; }
+  .server-log-shortcut-path-wrap { position: relative; display: block; }
+  .server-log-shortcut-path-wrap input { min-width: 0; padding-right: 34px; }
+  .server-log-shortcut-path-wrap .input-icon-button { position: absolute; top: 3px; right: 3px; bottom: 3px; z-index: 2; width: 26px; min-width: 26px; height: auto; min-height: 0; padding: 2px; }
+  .remote-search-scope-picker.server-log-shortcut-picker {
+    position: fixed;
+    left: 0;
+    right: auto;
+    top: 0;
+    bottom: auto;
+    z-index: 10000;
+    max-width: calc(100vw - 16px);
+  }
+  .remote-search-scope-picker.server-log-shortcut-picker .remote-search-scope-picker-list { max-height: 220px; }
+  .server-log-shortcut-field input.server-log-shortcut-input-invalid { border-color: var(--remoteedit-validation-error); }
+  .server-log-shortcut-feedback { min-height: 16px; line-height: 16px; color: var(--remoteedit-validation-error); font-size: 11px; }
+  .server-log-shortcut-remove-path { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-port-forwards-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .server-port-forwards-filter-box { position: relative; justify-self: end; width: 180px; min-width: 180px; max-width: 180px; }
+  .server-port-forwards-filter { width: 100%; min-width: 0; height: 21px; min-height: 21px; padding: 2px 27px 2px 7px; border-radius: 3px; border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; font-size: 10.5px; }
+  .server-port-forwards-filter:focus, .server-port-forwards-filter:focus-visible { border-color: var(--vscode-input-border, transparent); box-shadow: none; outline: none; }
+  .server-port-forwards-filter::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 0.85; }
+  .server-port-forwards-filter-box .filter-clear-button { width: 19px; min-width: 19px; height: 19px; min-height: 19px; right: 3px; }
+  .server-port-forwards-filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
+  .server-port-forwards-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .server-port-forward-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  .server-port-forward-row:hover { background: var(--vscode-list-hoverBackground); }
+  .server-port-forward-main { display: grid; grid-template-columns: minmax(90px, 32%) minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-port-forward-name, .server-port-forward-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-port-forward-name { color: var(--vscode-foreground); font-size: 11.5px; }
+  .server-port-forward-target { color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+  .server-port-forward-trailing { display: inline-flex; gap: 7px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 156px; }
+  .server-port-forward-status { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 54px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
+  .server-port-forward-status.running { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
+  .server-port-forward-status.error { color: var(--vscode-testing-iconFailed, var(--remoteedit-validation-error)); border-color: color-mix(in srgb, var(--vscode-testing-iconFailed, var(--remoteedit-validation-error)) 45%, var(--vscode-panel-border)); }
+  .server-port-forward-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 48px; opacity: 0; pointer-events: none; transition: opacity 80ms ease-out; }
+  .server-port-forward-row:hover .server-port-forward-actions,
+  .server-port-forward-row:focus-within .server-port-forward-actions { opacity: 1; pointer-events: auto; }
+  .server-port-forward-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
+  .server-port-forward-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
+  .server-port-forward-empty { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px 8px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent); }
+  .server-port-forward-dialog { width: min(520px, calc(100vw - 48px)); }
+  .server-port-forward-fields { display: grid; gap: 10px; }
+  .server-port-forward-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .server-port-forward-field { display: grid; gap: 5px; }
+  .server-port-forward-field label { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; }
+  .server-port-forward-field input { width: 100%; box-sizing: border-box; }
+  .server-port-forward-field input.server-port-forward-input-invalid { border-color: var(--remoteedit-validation-error); }
+  .server-port-forward-option { width: fit-content; color: var(--vscode-descriptionForeground); user-select: none; }
+  .server-port-forward-auto-badge { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 30px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
+  .server-port-forward-feedback { min-height: 16px; line-height: 16px; color: var(--remoteedit-validation-error); font-size: 11px; }
+  .server-port-forward-help { color: var(--vscode-descriptionForeground); font-size: 10.5px; line-height: 1.35; }
+  .server-port-forward-running-note { padding: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-size: 11px; }
+  .server-port-forward-remove-path { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-placeholder { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px 8px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent); }
+  .server-disabled-state { display: grid; place-items: center; min-height: 220px; padding: 18px; text-align: center; color: var(--vscode-descriptionForeground); border: 1px dashed var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-editor-background); }
+  .server-disabled-title { color: var(--vscode-foreground); font-weight: 650; margin-bottom: 4px; }
+  .server-system-info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 10px; align-content: start; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  .server-system-info-item { min-width: 0; }
+  .server-system-info-label { color: var(--vscode-descriptionForeground); font-size: 10px; margin-bottom: 1px; }
+  .server-system-info-value { color: var(--vscode-foreground); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 1100px) { .server-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .server-grid { grid-template-columns: 1fr; } .server-system-info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 820px) { .connection-view-switch { align-self: flex-start; } .server-header-top { grid-template-columns: 1fr; } .server-actions { justify-content: flex-start; } .server-overview-grid, .server-system-info-grid { grid-template-columns: 1fr; } }
   .card { border: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .connection-card { position: relative; opacity: 1; transform: translateX(0); }
   .connection-resize-handle { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; z-index: 20; cursor: col-resize; background: transparent; }
@@ -83,8 +368,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     body.resizing-connection-panel .layout.connection-transition-ready.connection-collapse-animating .connection-card { transition: opacity 150ms ease-out, transform 150ms ease-out, border-color 150ms ease-out; }
     body.resizing-connection-panel .layout.connection-transition-ready.connection-collapse-animating .connection-panel-handle { transition: opacity 150ms ease-out, transform 150ms ease-out; }
   }
-  .card-header { padding: 13px 14px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
-  .card-header.connection-card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; min-height: 52px; padding: 8px 36px 8px 14px; }
+  .card-header { padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+  .card-header.connection-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; min-height: 46px; padding: 7px 32px 7px 12px; }
   .connection-card-title-text { min-width: 0; }
   .panel-toggle-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 4px; border-radius: 3px; flex: 0 0 auto; }
   .connection-card-header .panel-toggle-button { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 3px; }
@@ -92,17 +377,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .browser-open-text-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .card-title { font-weight: 650; margin: 0; }
   .card-subtitle { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; }
-  .card-body { padding: 14px; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
+  .card-body { padding: 12px; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
   .browser-card .card-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .connection-card .connection-card-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; padding: 0; overflow: hidden; }
-  .connection-profile-section { flex: 0 0 auto; padding: 14px; min-width: 0; }
+  .connection-profile-section { flex: 0 0 auto; padding: 12px; min-width: 0; }
   .connection-card .profile-row { margin-bottom: 0; }
-  .connection-details-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; padding: 12px 14px 14px; overflow-y: auto; overflow-x: hidden; }
+  .connection-details-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; padding: 10px 12px 12px; overflow-y: auto; overflow-x: hidden; }
   .connection-panel-divider { height: 1px; background: var(--vscode-panel-border); flex: 0 0 auto; }
-  .connection-actions-section { flex: 0 0 auto; padding: 12px 14px 14px; background: var(--vscode-sideBar-background); }
-  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 9px; min-width: 0; }
+  .connection-actions-section { flex: 0 0 auto; padding: 10px 12px 12px; background: var(--vscode-sideBar-background); }
+  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 8px; min-width: 0; }
   .full { grid-column: 1 / -1; }
-  .keepalive-row { margin-top: 8px; margin-bottom: 0; }
+  .keepalive-row { margin-top: 6px; margin-bottom: 0; }
   label { display: block; font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 5px; }
   input, select { width: 100%; height: 31px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 5px 8px; border-radius: 3px; outline: none; }
   input:focus, select:focus { border-color: var(--vscode-focusBorder); }
@@ -114,8 +399,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .input-icon-button { position: absolute; top: 2px; right: 2px; width: 27px; min-width: 27px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 0 2px 2px 0; background: transparent; color: var(--vscode-input-foreground); opacity: 0.8; }
   .input-icon-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .input-icon-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
-  .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-  .connection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: center; width: 100%; min-width: 0; margin-top: 0; }
+  .button-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+  .connection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; align-items: center; width: 100%; min-width: 0; margin-top: 0; }
   .connection-actions .connection-action-full { grid-column: 1 / -1; }
   .connection-actions button { width: 100%; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
   button { min-height: 31px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 6px 12px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
@@ -144,7 +429,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .profile-dropdown-button:focus { outline: none; border-color: var(--vscode-focusBorder); }
   .profile-dropdown-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-dropdown-chevron { width: 15px; height: 15px; display: block; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.78; transition: transform 120ms ease; }
-  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
+  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron, .server-auto-refresh-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
   .profile-dropdown-menu { position: absolute; z-index: 130; top: calc(100% + 4px); left: 0; right: 0; display: none; width: 100%; max-width: 100%; box-sizing: border-box; max-height: 300px; overflow-y: auto; overflow-x: hidden; padding: 5px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
   .connection-profile-dropdown-menu { max-height: 340px; overflow: hidden; }
   .profile-dropdown-filter { padding: 2px 2px 5px; position: sticky; top: -5px; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
@@ -153,7 +438,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .profile-dropdown-pinned { flex: 0 0 auto; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
   .profile-dropdown-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   .profile-dropdown-empty { color: var(--vscode-descriptionForeground); padding: 10px 7px; font-size: 12px; }
-  .profile-picker.open .profile-dropdown-menu, .auth-picker.open .profile-dropdown-menu, .connection-type-picker.open .profile-dropdown-menu { display: block; }
+  .profile-picker.open .profile-dropdown-menu, .auth-picker.open .profile-dropdown-menu, .connection-type-picker.open .profile-dropdown-menu, .server-auto-refresh-picker.open .profile-dropdown-menu { display: block; }
   .profile-picker.open .connection-profile-dropdown-menu { display: flex; flex-direction: column; }
   .auth-select-native, .connection-type-select-native { display: none; }
   .auth-picker, .connection-type-picker { position: relative; min-width: 0; }
@@ -171,9 +456,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .profile-dropdown-meta { color: var(--vscode-descriptionForeground); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-dropdown-item.selected .profile-dropdown-meta { color: inherit; opacity: 0.78; }
   .profile-dropdown-separator { height: 1px; margin: 5px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); }
+  .owner-group-combo { position: relative; }
+  .owner-group-combo input { width: 100%; }
+  .owner-group-suggestions { position: fixed; z-index: 10040; left: 0; top: 0; width: 240px; display: none; max-height: min(220px, calc(100vh - 24px)); overflow-y: auto; overflow-x: hidden; padding: 5px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+  .owner-group-suggestions.visible { display: block; }
+  .owner-group-suggestion-item { width: 100%; min-height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 7px; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
+  .owner-group-suggestion-item:hover:not(:disabled), .owner-group-suggestion-item:focus-visible { background: var(--vscode-list-hoverBackground); outline: none; }
+  .owner-group-suggestion-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .owner-group-suggestion-detail { color: var(--vscode-descriptionForeground); font-size: 11px; white-space: nowrap; }
+  .owner-group-suggestion-empty { padding: 8px 7px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.35; }
+  .owner-group-suggestion-empty.error { color: var(--vscode-errorForeground, var(--vscode-inputValidation-errorForeground)); }
   .manage-profiles-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
   .manage-profiles-button svg { width: 24px; height: 24px; display: block; fill: currentColor; flex: 0 0 auto; }
-  .connection-details-title { margin: 0 0 10px; color: var(--vscode-foreground); font-size: 12px; font-weight: 650; }
+  .connection-details-title { margin: 0 0 8px; color: var(--vscode-foreground); font-size: 12px; font-weight: 650; }
   .connection-section-title { grid-column: 1 / -1; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; letter-spacing: 0.03em; text-transform: uppercase; margin: 4px 0 -2px; }
   .connection-section-title.actions-title { margin-top: 14px; }
   .divider { height: 1px; background: var(--vscode-panel-border); margin: 14px 0; }
@@ -202,19 +497,51 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .browser-header { display: block; }
   .browser-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; min-width: 0; }
   .browser-title-text { min-width: 0; }
-  .sudo-toggle { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; justify-self: start; gap: 6px; width: 64px; min-width: 64px; height: 28px; min-height: 28px; box-sizing: border-box; margin: 0; padding: 0; font-size: 12px; line-height: 16px; color: var(--vscode-descriptionForeground); cursor: pointer; user-select: none; white-space: nowrap; }
+  .sudo-toggle { display: inline-flex; align-items: center; justify-content: center; justify-self: start; width: 32px; min-width: 32px; height: 32px; min-height: 32px; box-sizing: border-box; margin: 0; padding: 4px; border: 1px solid var(--vscode-button-border, var(--vscode-input-border, var(--vscode-panel-border))); border-radius: 3px; background: var(--vscode-button-secondaryBackground, var(--vscode-input-background)); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor: pointer; user-select: none; white-space: nowrap; transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+  .sudo-toggle:hover:not(.disabled) { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
   .sudo-toggle input { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
-  .sudo-toggle-track { position: relative; width: 26px; height: 14px; border-radius: 999px; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease; }
-  .sudo-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--vscode-descriptionForeground); transition: transform 120ms ease, background 120ms ease; }
-  .sudo-toggle input:checked + .sudo-toggle-track { background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
-  .sudo-toggle input:checked + .sudo-toggle-track .sudo-toggle-thumb { transform: translateX(12px); background: var(--vscode-button-foreground); }
-  .sudo-toggle input:disabled + .sudo-toggle-track { opacity: 0.55; }
-  .sudo-toggle.enabled .sudo-toggle-state { color: var(--vscode-foreground); }
-  .sudo-toggle-state { min-width: 0; text-align: center; color: var(--vscode-descriptionForeground); font-weight: 500; }
-  .pathbar { position: relative; display: grid; grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto auto 64px; gap: 6px; align-items: center; margin-bottom: 8px; flex: 0 0 auto; }
-  .pathbar.hide-command-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto 64px; }
-  .pathbar.hide-sudo-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto; }
-  .pathbar.hide-command-actions.hide-sudo-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto; }
+  .sudo-toggle.disabled { cursor: default; opacity: 0.55; }
+  .sudo-toggle.enabled { border-color: color-mix(in srgb, var(--remoteedit-validation-error) 58%, var(--vscode-button-border, var(--vscode-input-border, var(--vscode-panel-border)))); }
+  .sudo-toggle-icon { width: 24px; height: 26px; display: block; flex: 0 0 auto; color: inherit; fill: currentColor; }
+  .sudo-toggle-icon text { fill: currentColor; font-family: var(--vscode-font-family); font-size: 13.5px; font-weight: 400; letter-spacing: 0.035em; dominant-baseline: middle; }
+  .sudo-toggle.enabled .sudo-toggle-icon { color: var(--remoteedit-validation-error); }
+  .sudo-toggle-state { min-width: 0; text-align: center; color: inherit; font-weight: 650; }
+  .pathbar { position: relative; display: grid; grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto auto 32px auto auto; gap: 6px; align-items: center; margin-bottom: 8px; flex: 0 0 auto; }
+  .pathbar.hide-command-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto 32px auto auto; }
+  .pathbar.hide-sudo-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto auto auto; }
+  .pathbar.hide-view-switch-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto auto 32px; }
+  .pathbar.hide-command-actions.hide-sudo-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto; }
+  .pathbar.hide-command-actions.hide-view-switch-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto 32px; }
+  .pathbar.hide-sudo-actions.hide-view-switch-actions,
+  .pathbar.hide-command-actions.hide-sudo-actions.hide-view-switch-actions { grid-template-columns: minmax(0, var(--remote-path-width, 1fr)) minmax(0, var(--remote-path-filter-width, 150px)) auto auto auto auto; }
+  .pathbar.server-toolbar-mode,
+  .pathbar.server-toolbar-mode.hide-command-actions {
+    grid-template-columns: auto auto auto auto auto auto 32px auto auto;
+    justify-content: end;
+  }
+  .pathbar.server-toolbar-mode.hide-view-switch-actions,
+  .pathbar.server-toolbar-mode.hide-command-actions.hide-view-switch-actions {
+    grid-template-columns: auto auto auto auto auto auto 32px;
+    justify-content: end;
+  }
+  .pathbar.server-toolbar-mode.hide-sudo-actions,
+  .pathbar.server-toolbar-mode.hide-command-actions.hide-sudo-actions {
+    grid-template-columns: auto auto auto auto auto auto auto;
+    justify-content: end;
+  }
+  .pathbar.server-toolbar-mode.hide-sudo-actions.hide-view-switch-actions,
+  .pathbar.server-toolbar-mode.hide-command-actions.hide-sudo-actions.hide-view-switch-actions {
+    grid-template-columns: auto auto auto auto auto;
+    justify-content: end;
+  }
+  .pathbar.server-toolbar-mode #remotePathBox,
+  .pathbar.server-toolbar-mode #remotePathResizeHandle,
+  .pathbar.server-toolbar-mode #filterBox,
+  .pathbar.server-toolbar-mode #commandActionsSeparator,
+  .pathbar.server-toolbar-mode #downloadAction,
+  .pathbar.server-toolbar-mode #uploadAction {
+    display: none !important;
+  }
   .pathbar.remote-path-reset-animating, .pathbar.toolbar-layout-animating { transition: grid-template-columns 150ms ease-out; }
   .pathbar.remote-path-reset-animating .remote-path-resize-handle, .pathbar.toolbar-layout-animating .remote-path-resize-handle { transition: left 150ms ease-out; }
   .pathbar.toolbar-layout-animating > * { will-change: transform, opacity; }
@@ -258,7 +585,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .remote-path-dropdown-item { width: 100%; min-height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 5px 7px; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
   .remote-path-dropdown-item:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
   .remote-path-dropdown-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .remote-path-dropdown-meta { color: var(--vscode-descriptionForeground); opacity: 0.72; font-size: 11px; white-space: nowrap; }
+  .remote-path-dropdown-meta { color: var(--vscode-descriptionForeground); opacity: 0.72; font-size: 11px; white-space: nowrap; display: grid; grid-template-columns: minmax(0, 14ch) 10ch; column-gap: 12px; align-items: center; }
+  .remote-path-dropdown-meta-owner, .remote-path-dropdown-meta-permissions { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .remote-path-favorite-buttons { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; gap: 1px; height: 27px; }
   .remote-path-favorite-button { width: 30px; min-width: 30px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: transparent; color: var(--vscode-input-foreground); opacity: 0.82; line-height: 1; }
   .remote-path-favorite-button svg { width: 25px; height: 25px; display: block; fill: currentColor; stroke: none; pointer-events: none; }
@@ -294,9 +622,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .filter-box.has-value .filter-clear-button { opacity: 0.7; visibility: visible; }
   .filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .filter-clear-button:disabled { cursor: default; }
-  .table-wrap { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); flex: 1 1 0; min-height: 0; max-height: none; overflow: auto; scrollbar-gutter: stable; border-radius: 6px; user-select: none; -webkit-user-select: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .table-wrap { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); flex: 1 1 0; min-height: 0; max-height: none; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; border-radius: 6px; user-select: none; -webkit-user-select: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
   .table-wrap.privileged-session { border-color: color-mix(in srgb, #7a2f2f 62%, var(--vscode-panel-border)); box-shadow: 0 0 0 1px color-mix(in srgb, #7a2f2f 18%, transparent); }
-  table { width: 100%; min-width: 984px; border-collapse: collapse; table-layout: fixed; }
+  table { width: 100%; min-width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; }
   th, td { padding: 6px 10px; line-height: 1.25; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   th { position: sticky; top: 0; background: var(--vscode-sideBar-background); font-weight: 500; z-index: 1; user-select: none; overflow: visible; }
   th.sortable { cursor: pointer; }
@@ -335,10 +663,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   .file-properties-backdrop { position: fixed; inset: 0; z-index: 210; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .file-properties-backdrop.visible { display: flex; }
+  #inputPromptBackdrop { z-index: 320; }
   .file-properties-dialog { width: min(640px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
   .file-properties-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   .file-properties-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
-  .file-properties-path { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; font-size: 12px; }
+  .file-properties-path, .confirm-dialog-subtitle, .transfer-conflict-subtitle, .permission-dialog-path, .remote-command-subtitle, .transfer-queue-subtitle { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; overflow-wrap: anywhere; }
+  .modal-action-left { margin-right: auto; }
+  .file-properties-actions button[hidden], .confirm-dialog-actions button[hidden], .permission-dialog-actions button[hidden], .remote-command-actions button[hidden], .transfer-conflict-actions button[hidden] { display: none !important; }
   .file-properties-body { padding: 16px 18px; overflow: auto; }
   .file-properties-grid { display: grid; grid-template-columns: 150px minmax(0, 1fr); border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
   .manage-profiles-dialog { width: min(640px, calc(100vw - 48px)); height: min(560px, calc(100vh - 48px)); max-height: calc(100vh - 48px); }
@@ -359,6 +690,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .connection-name-dialog { width: min(460px, calc(100vw - 48px)); }
   .connection-name-dialog .file-properties-body { display: grid; gap: 8px; }
   .connection-name-feedback { min-height: 16px; color: var(--remoteedit-validation-error); font-size: 12px; line-height: 1.35; }
+  .input-prompt-dialog { width: min(460px, calc(100vw - 48px)); }
+  .input-prompt-dialog .file-properties-body { display: grid; gap: 8px; }
+  .input-prompt-feedback { min-height: 16px; color: var(--remoteedit-validation-error); font-size: 12px; line-height: 1.35; }
   .backup-section { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .backup-summary-section { gap: 4px; padding: 7px 9px; }
   .backup-section-title { margin: 0; font-size: 11px; font-weight: 650; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -374,7 +708,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .backup-field-error.visible { display: block; }
   .backup-credential-fields input.backup-input-invalid { border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); }
   .password-reveal-button svg { width: 16px; height: 16px; }
-  .backup-summary-line { min-width: 0; color: var(--vscode-foreground); font-size: 11px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .backup-summary-line { min-width: 0; color: var(--vscode-foreground); font-size: 11px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow-wrap: anywhere; }
   .backup-result { display: none; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); color: var(--vscode-foreground); font-size: 12px; line-height: 1.35; }
   .backup-result.visible { display: block; }
   .backup-result.success { border-color: color-mix(in srgb, var(--vscode-button-background) 45%, var(--vscode-panel-border)); }
@@ -389,7 +723,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .backup-import-mode input[type="radio"]:disabled { opacity: 0.68; cursor: default; }
   .backup-mode-help { margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; opacity: 0.78; }
   .backup-validation { min-height: 16px; color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground)); font-size: 12px; line-height: 1.35; }
-  @media (max-width: 560px) { .manage-profiles-header-row { flex-direction: column; } .backup-credential-fields { grid-template-columns: 1fr; } .backup-summary-line { white-space: normal; } }
+  @media (max-width: 560px) { .manage-profiles-header-row { flex-direction: column; } .backup-credential-fields { grid-template-columns: 1fr; } }
   .manage-profile-row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .manage-profile-row.can-reorder { cursor: grab; }
   .manage-profile-row.dragging { opacity: 0.55; cursor: grabbing; }
@@ -428,7 +762,6 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .remote-command-dialog { width: min(1180px, calc(100vw - 48px)); height: min(720px, calc(100vh - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
   .remote-command-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   .remote-command-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
-  .remote-command-subtitle { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; }
   .remote-command-body { flex: 1 1 auto; min-height: 0; padding: 12px 18px 16px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; overflow: hidden; }
   .remote-command-main { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; overflow: hidden; }
   .remote-command-field-grid { display: grid; gap: 12px; }
@@ -567,12 +900,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .transfer-queue-backdrop { position: fixed; inset: 0; z-index: 220; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .transfer-queue-backdrop.visible { display: flex; }
   .transfer-queue-dialog { width: min(940px, calc(100vw - 48px)); height: min(720px, calc(100vh - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
-  .transfer-queue-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
-  .transfer-queue-title { margin: 0; font-size: 17px; font-weight: 650; }
-  .transfer-queue-close { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; background: transparent; color: inherit; border: 0; font-size: 18px; line-height: 28px; }
-  .transfer-queue-close:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .transfer-queue-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .transfer-queue-header-text { min-width: 0; }
+  .transfer-queue-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
   .transfer-queue-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 14px; display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 10px; align-content: stretch; }
-  .transfer-queue-section { min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--vscode-panel-border); border-radius: 7px; overflow: hidden; background: var(--vscode-editor-background); }
+  .transfer-queue-section { min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
   .transfer-queue-section-title { flex: 0 0 auto; margin: 0; padding: 5px 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); font-size: 11px; font-weight: 600; }
   .transfer-queue-items { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
   .transfer-queue-section-scroll .transfer-queue-items { overflow-y: auto; }
@@ -603,8 +935,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .confirm-dialog-backdrop { position: fixed; inset: 0; z-index: 240; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .confirm-dialog-backdrop.visible { display: flex; }
   .confirm-dialog { width: min(520px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
-  .confirm-dialog-header { padding: 16px 18px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
-  .confirm-dialog-title { margin: 0; font-size: 18px; font-weight: 650; }
+  .confirm-dialog-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .confirm-dialog-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
   .confirm-dialog-body { padding: 15px 18px; display: grid; gap: 12px; overflow: auto; }
   .confirm-dialog-message { margin: 0; line-height: 1.45; }
   .confirm-dialog-details { margin: 0; padding: 10px 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
@@ -612,8 +944,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .transfer-conflict-backdrop { position: fixed; inset: 0; z-index: 250; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .transfer-conflict-backdrop.visible { display: flex; }
   .transfer-conflict-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
-  .transfer-conflict-header { padding: 16px 18px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
-  .transfer-conflict-title { margin: 0; font-size: 18px; font-weight: 650; }
+  .transfer-conflict-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .transfer-conflict-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
   .transfer-conflict-body { padding: 15px 18px; display: grid; gap: 12px; overflow: auto; }
   .transfer-conflict-message { margin: 0; line-height: 1.45; }
   .transfer-conflict-file { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-input-background); }
@@ -634,7 +966,6 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   .permission-dialog { width: min(620px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
   .permission-dialog-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   .permission-dialog-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
-  .permission-dialog-path { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; font-size: 12px; }
   .permission-dialog-body { padding: 16px 18px; display: grid; gap: 16px; }
   .permission-section { border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-editor-background); }
   .permission-section-title { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 600; background: var(--vscode-sideBar-background); }
@@ -658,35 +989,68 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   @media (max-width: 640px) { .permission-mode-row { grid-template-columns: max-content 90px; justify-content: start; } .permission-preview-stack { grid-column: 2 / -1; } }
   .permission-validation { min-height: 18px; padding: 0 12px 12px; color: var(--vscode-errorForeground); }
   .permission-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
-  .statusbar { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; flex: 0 0 auto; padding: 10px 12px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 40px; color: var(--vscode-descriptionForeground); }
+  .statusbar { margin-top: 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; flex: 0 0 auto; height: 22px; min-height: 22px; padding: 0 8px; background: var(--vscode-input-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 20px; overflow: hidden; }
   .statusbar.error { color: var(--remoteedit-validation-error); border-color: var(--remoteedit-validation-error); }
   .statusbar.busy { color: var(--vscode-progressBar-background, var(--vscode-foreground)); }
-  .status-main { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
+  .status-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
   .status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .status-output-link { flex: 0 0 auto; min-height: auto; height: auto; padding: 0; border: 0; background: transparent; color: inherit; text-decoration: underline; text-underline-offset: 2px; line-height: 1.2; cursor: pointer; white-space: nowrap; }
   .statusbar .status-output-link:hover, .statusbar .status-output-link:active, .statusbar .status-output-link:focus { background: transparent; color: inherit; }
   .statusbar .status-output-link:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; background: transparent; }
-  .status-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
-  .status-action-button { align-self: center; min-height: 26px; height: 26px; padding: 0 8px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid var(--vscode-panel-border); background: transparent; color: inherit; opacity: 0.9; line-height: 1; white-space: nowrap; }
+  .status-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; height: 18px; }
+  .status-action-button { align-self: center; min-height: 18px; height: 18px; padding: 0 6px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid var(--vscode-panel-border); background: transparent; color: inherit; opacity: 0.9; line-height: 16px; white-space: nowrap; font-size: 11px; }
   .status-action-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); border-color: var(--vscode-focusBorder, var(--vscode-button-border, var(--vscode-panel-border))); }
   .status-action-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .statusbar.error .status-copy-button:hover:not(:disabled) { border-color: var(--remoteedit-validation-error); }
   .statusbar.error .status-copy-button:focus-visible { outline-color: var(--remoteedit-validation-error); }
   .status-cancel-button[hidden] { display: none; }
-  .status-copy-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center; height: 26px; min-height: 26px; }
-  .status-copy-button { width: 28px; min-width: 28px; padding: 0; }
-  .status-copy-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
+  .status-copy-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center; height: 18px; min-height: 18px; }
+  .status-copy-button { width: 20px; min-width: 20px; padding: 0; }
+  .status-copy-button svg { width: 13px; height: 13px; display: block; fill: currentColor; }
   .status-copy-feedback { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 60; padding: 4px 8px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 4px; background: var(--vscode-editorWidget-background, var(--vscode-notifications-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-notifications-foreground)); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28); font-size: 12px; line-height: 1.2; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 120ms ease, transform 120ms ease; }
   .status-copy-feedback.visible { opacity: 1; transform: translateY(0); }
-  .spinner { width: 14px; min-width: 14px; height: 14px; border: 2px solid var(--vscode-panel-border); border-top-color: var(--vscode-progressBar-background, var(--vscode-foreground)); border-radius: 50%; animation: spin 0.9s linear infinite; display: none; flex: 0 0 auto; }
+  .spinner { width: 12px; min-width: 12px; height: 12px; border: 2px solid var(--vscode-panel-border); border-top-color: var(--vscode-progressBar-background, var(--vscode-foreground)); border-radius: 50%; animation: spin 0.9s linear infinite; display: none; flex: 0 0 auto; }
   .statusbar.busy .spinner { display: block; }
   .muted { color: var(--vscode-descriptionForeground); }
   .small { font-size: 12px; }
   code { font-family: var(--vscode-editor-font-family); }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout, .layout.connection-collapsed { grid-template-columns: 1fr; flex: 0 0 auto; } .connection-resize-handle { display: none; } .connection-rail { left: 0; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .remote-path-resize-handle { display: none; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .filter-sudo-separator { display: none; } .sudo-toggle { justify-self: flex-start; } .browser-header { align-items: flex-start; flex-direction: column; } }
-  @media (max-height: 720px) and (min-width: 981px) { .hint-list { display: none; } .card-header, .card-body, .browser-title-section { padding: 11px 12px; } .card-header.connection-card-header { padding: 8px 36px 8px 14px; } .browser-open-section { padding: 8px 14px; } }
+  @media (max-width: 980px) { html, body { overflow: auto; } .page { height: auto; min-height: 100vh; } .layout, .layout.connection-collapsed { grid-template-columns: 1fr; flex: 0 0 auto; } .connection-resize-handle { display: none; } .connection-rail { left: 0; } .browser-column { min-height: 0; } .browser-card { min-height: 520px; } .pathbar, .profile-row, .connection-name-row { grid-template-columns: 1fr; } .remote-path-resize-handle { display: none; } .path-actions { justify-content: flex-start; } .filter-box { width: 100%; } .filter-sudo-separator { display: none; } .sudo-toggle { justify-self: flex-start; } .pathbar-view-switch { justify-self: flex-start; } .view-switch-separator { display: none; } .browser-header { align-items: flex-start; flex-direction: column; } }
+  @media (max-height: 720px) and (min-width: 981px) { .hint-list { display: none; } .card-header, .card-body, .browser-title-section { padding: 9px 10px; } .card-header.connection-card-header { padding: 6px 30px 6px 10px; } .browser-open-section { padding: 5px 9px; } }
   @media (max-width: 760px) { .open-connections-row { align-items: flex-start; flex-direction: column; gap: 6px; } .browser-session-strip { width: 100%; } }
+
+  /* Remove native browser/VS Code focus rings from webview controls. Remote Edit uses hover/active styles instead. */
+  *:focus,
+  *:focus-visible {
+    outline: none !important;
+  }
+  button:focus,
+  button:focus-visible,
+  [role='button']:focus,
+  [role='button']:focus-visible,
+  a:focus,
+  a:focus-visible,
+  .session-tab:focus,
+  .session-tab:focus-visible,
+  .session-close:focus,
+  .session-close:focus-visible,
+  .remote-path-resize-handle:focus,
+  .remote-path-resize-handle:focus-visible,
+  .dialog-checkbox:focus,
+  .dialog-checkbox:focus-visible,
+  .checkbox-row input[type='checkbox']:focus,
+  .checkbox-row input[type='checkbox']:focus-visible,
+  .modal-checkbox-line input[type='checkbox']:focus,
+  .modal-checkbox-line input[type='checkbox']:focus-visible,
+  .backup-import-mode input[type='radio']:focus,
+  .backup-import-mode input[type='radio']:focus-visible,
+  .status-output-link:focus,
+  .status-output-link:focus-visible,
+  .status-action-button:focus,
+  .status-action-button:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
   </style>
 </head>
 <body>
@@ -707,7 +1071,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </button>
           </span>
         </div>
-        <div id="connectionResizeHandle" class="connection-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize Connection Panel" aria-valuemin="240" aria-valuemax="390" aria-valuenow="320" title="Resize Connection Panel"></div>
+        <div id="connectionResizeHandle" class="connection-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize Connection Panel" aria-valuemin="240" aria-valuemax="390" aria-valuenow="320" data-tooltip="Resize Connection Panel"></div>
         <div class="card-body connection-card-body">
           <div class="connection-profile-section">
             <div class="profile-row">
@@ -874,7 +1238,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           <div class="card-body">
           <div class="pathbar">
             <div id="remotePathBox" class="remote-path-box">
-              <input id="currentPath" value="" disabled aria-label="Remote Path" title="Remote Path" />
+              <input id="currentPath" value="" disabled aria-label="Remote Path" data-tooltip="Remote Path" />
               <div class="remote-path-navigation-buttons" aria-hidden="false">
                 <button id="remotePathBackButton" class="remote-path-navigation-button" type="button" aria-label="Go Back" data-tooltip="Go Back" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M313.15-460H760v-40H313.15l211.69-211.69L496-740 236-480l260 260 28.84-28.31L313.15-460Z" /></svg></button>
                 <button id="remotePathForwardButton" class="remote-path-navigation-button" type="button" aria-label="Go Forward" data-tooltip="Go Forward" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M646.85-460H200v-40h446.85L435.16-711.69 464-740l260 260-260 260-28.84-28.31L646.85-460Z" /></svg></button>
@@ -899,10 +1263,30 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               </div>
             </div>
             <div id="remotePathResizeHandle" class="remote-path-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize Remote Path" aria-valuemin="400" tabindex="0"></div>
+            <div id="serverToolbarStatus" class="server-toolbar-status" role="status" aria-live="polite"></div>
             <div id="filterBox" class="filter-box">
               <input id="filterInput" class="filter-input" placeholder="Filter Files..." aria-label="Filter Files" disabled />
               <button id="clearFilterButton" class="filter-clear-button has-tooltip" aria-label="Clear Filter" data-tooltip="Clear Filter" disabled><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button>
             </div>
+            <div id="serverRefreshActions" class="path-actions server-refresh-actions" aria-label="Server Refresh Controls">
+              <span class="tooltip-anchor" data-tooltip="Refresh Server Dashboard">
+                <button id="serverRefreshButton" class="secondary icon-only" type="button" aria-label="Refresh Server Dashboard" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M483.08-200q-117.25 0-198.63-81.34-81.37-81.34-81.37-198.54 0-117.2 81.37-198.66Q365.83-760 483.08-760q71.3 0 133.54 33.88 62.23 33.89 100.3 94.58V-760h40v209.23H547.69v-40h148q-31.23-59.85-87.88-94.54Q551.15-720 483.08-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h42.46Q725.08-310.15 651-255.08 576.92-200 483.08-200Z" /></svg></button>
+              </span>
+              <div id="serverAutoRefreshPicker" class="server-auto-refresh-picker">
+                <button id="serverAutoRefreshDropdownButton" type="button" class="profile-dropdown-button server-auto-refresh-button has-tooltip" aria-haspopup="listbox" aria-expanded="false" aria-label="Server Auto Refresh" data-tooltip="Server Auto Refresh" disabled>
+                  <span id="serverAutoRefreshDropdownLabel" class="profile-dropdown-label">Auto: Off</span>
+                  <svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg>
+                </button>
+                <div id="serverAutoRefreshDropdownMenu" class="profile-dropdown-menu server-auto-refresh-menu" role="listbox" aria-label="Server Auto Refresh">
+                  <button type="button" class="profile-dropdown-item selected" role="option" aria-selected="true" data-server-auto-refresh="off"><span class="profile-dropdown-name">Auto: Off</span></button>
+                  <button type="button" class="profile-dropdown-item" role="option" aria-selected="false" data-server-auto-refresh="15"><span class="profile-dropdown-name">Auto: 15s</span></button>
+                  <button type="button" class="profile-dropdown-item" role="option" aria-selected="false" data-server-auto-refresh="30"><span class="profile-dropdown-name">Auto: 30s</span></button>
+                  <button type="button" class="profile-dropdown-item" role="option" aria-selected="false" data-server-auto-refresh="60"><span class="profile-dropdown-name">Auto: 1m</span></button>
+                  <button type="button" class="profile-dropdown-item" role="option" aria-selected="false" data-server-auto-refresh="300"><span class="profile-dropdown-name">Auto: 5m</span></button>
+                </div>
+              </div>
+            </div>
+            <span id="serverRefreshActionsSeparator" class="toolbar-separator filter-sudo-separator server-refresh-separator" aria-hidden="true"></span>
             <span id="commandActionsSeparator" class="toolbar-separator filter-sudo-separator" aria-hidden="true"></span>
             <div id="commandActions" class="path-actions command-actions">
               <span class="tooltip-anchor remote-search-button-wrap" data-tooltip="Remote Search">
@@ -920,10 +1304,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             </div>
             <span id="transferActionsSeparator" class="toolbar-separator filter-sudo-separator" aria-hidden="true"></span>
             <div class="path-actions transfer-actions">
-              <span class="tooltip-anchor" data-tooltip="Download Selected Files or Folders">
+              <span id="downloadAction" class="tooltip-anchor" data-tooltip="Download Selected Files or Folders">
                 <button id="downloadButton" class="secondary icon-only" aria-label="Download Selected Files or Folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm220-146L314-472l28-28 118 118v-370h40v370l118-118 28 28-166 166Z" /></svg></button>
               </span>
-              <span class="tooltip-anchor" data-tooltip="Upload Files or Folders">
+              <span id="uploadAction" class="tooltip-anchor" data-tooltip="Upload Files or Folders">
                 <button id="uploadButton" class="secondary icon-only" aria-label="Upload Files or Folders" disabled><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M260-160q-41.92 0-70.96-29.04Q160-218.08 160-260v-80h40v80q0 25 17.5 42.5T260-200h440q25 0 42.5-17.5T760-260v-80h40v80q0 41.92-29.04 70.96Q741.92-160 700-160H260Zm200-160v-370L342-572l-28-28 166-166 166 166-28 28-118-118v370h-40Z" /></svg></button>
               </span>
               <span id="transferQueueTooltip" class="tooltip-anchor" data-tooltip="Transfer Queue">
@@ -931,13 +1315,20 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               </span>
             </div>
             <span id="sudoToggleSeparator" class="toolbar-separator filter-sudo-separator" aria-hidden="true"></span>
-            <label id="sudoToggleLabel" class="sudo-toggle has-tooltip" data-tooltip="Connect to a Host to Enable Sudo Mode">
-              <span id="sudoToggleState" class="sudo-toggle-state">Sudo</span>
-              <input id="sudoToggle" type="checkbox" disabled aria-label="Enable Sudo Mode for This Connection" />
-              <span class="sudo-toggle-track" aria-hidden="true"><span class="sudo-toggle-thumb"></span></span>
+            <label id="sudoToggleLabel" class="sudo-toggle has-tooltip disabled" data-tooltip="Enable Sudo Mode">
+              <input id="sudoToggle" type="checkbox" disabled aria-label="Enable Sudo Mode" />
+              <svg id="sudoToggleState" class="sudo-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <text x="12" y="13.2" text-anchor="middle">SU</text>
+              </svg>
             </label>
+            <span class="toolbar-separator view-switch-separator" aria-hidden="true"></span>
+            <div class="connection-view-switch pathbar-view-switch" role="tablist" aria-label="Connection View">
+              <button class="connection-view-switch-button active" type="button" role="tab" aria-selected="true" aria-controls="filesView" data-connection-view="files">Files</button>
+              <button class="connection-view-switch-button" type="button" role="tab" aria-selected="false" aria-controls="serverView" data-connection-view="server">Server</button>
+            </div>
           </div>
 
+          <div id="filesView" class="connection-view files-view">
           <div id="entriesTableWrap" class="table-wrap">
             <table id="entriesTable">
               <colgroup>
@@ -961,8 +1352,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
               <tbody id="entriesBody"><tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr></tbody>
             </table>
           </div>
-
           <div id="status" class="statusbar"><div class="status-main"><div id="statusText" class="status-text">Ready.</div><button id="statusOutputLink" class="status-output-link" type="button" hidden>See details in Output.</button><div class="spinner" aria-hidden="true"></div></div><div class="status-actions"><button id="statusCancelButton" class="status-action-button status-cancel-button has-tooltip tooltip-above" type="button" aria-label="Cancel Current Operation" data-tooltip="Cancel Current Operation" hidden>Cancel</button><div class="status-copy-wrap"><button id="statusCopyButton" class="status-action-button status-copy-button has-tooltip tooltip-above" type="button" aria-label="Copy Status" data-tooltip="Copy Status"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg></button><div id="statusCopyFeedback" class="status-copy-feedback" role="status" aria-live="polite">Copied</div></div></div></div>
+          </div>
+          <div id="serverView" class="connection-view server-view hidden" aria-label="Server dashboard">
+            <div id="serverViewContent" class="server-dashboard"></div>
+          </div>
           </div>
         </section>
       </section>
@@ -971,6 +1365,149 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   </main>
 
   <div id="webviewTooltip" class="webview-tooltip" role="tooltip" aria-hidden="true"></div>
+  <div id="inputPromptBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="inputPromptTitle" aria-hidden="true">
+    <section class="file-properties-dialog input-prompt-dialog">
+      <div class="file-properties-header">
+        <h2 id="inputPromptTitle" class="file-properties-title">Input</h2>
+        <div id="inputPromptMessage" class="file-properties-path"></div>
+      </div>
+      <div class="file-properties-body">
+        <label id="inputPromptLabel" for="inputPromptInput">Input</label>
+        <div id="inputPromptInputWrap" class="input-with-button reveal-hidden">
+          <input id="inputPromptInput" type="text" autocomplete="off" />
+          <button id="inputPromptRevealButton" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily Show Password" data-tooltip="Hold to Show Password" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.3 3 1.73 6.11 1 8c.73 1.89 3.3 5 7 5s6.27-3.11 7-5c-.73-1.89-3.3-5-7-5Zm0 8.5A3.5 3.5 0 1 1 8 4.5a3.5 3.5 0 0 1 0 7Zm0-1.25A2.25 2.25 0 1 0 8 5.75a2.25 2.25 0 0 0 0 4.5Z" /></svg>
+          </button>
+        </div>
+        <div id="inputPromptFeedback" class="input-prompt-feedback" role="status" aria-live="polite"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="inputPromptCancelButton" type="button" class="secondary">Cancel</button>
+        <button id="inputPromptConfirmButton" type="button">OK</button>
+      </div>
+    </section>
+  </div>
+
+
+  <div id="serverLogShortcutBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="serverLogShortcutTitle" aria-hidden="true">
+    <section class="file-properties-dialog server-log-shortcut-dialog">
+      <div class="file-properties-header">
+        <h2 id="serverLogShortcutTitle" class="file-properties-title">Add Log Shortcut</h2>
+        <div id="serverLogShortcutSubtitle" class="file-properties-path">Create a shortcut to a remote log file.</div>
+      </div>
+      <div class="file-properties-body">
+        <div class="server-log-shortcut-fields">
+          <div class="server-log-shortcut-field">
+            <label for="serverLogShortcutNameInput">Name</label>
+            <input id="serverLogShortcutNameInput" type="text" autocomplete="off" placeholder="Nginx error" />
+          </div>
+          <div class="server-log-shortcut-field">
+            <label for="serverLogShortcutPathInput">Remote log path</label>
+            <div class="server-log-shortcut-path-wrap">
+              <input id="serverLogShortcutPathInput" type="text" autocomplete="off" placeholder="/var/log/nginx/error.log" />
+              <button id="serverLogShortcutBrowseButton" class="input-icon-button has-tooltip" type="button" aria-label="Browse Remote Log File" data-tooltip="Browse Remote Log File">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l2 2h8v12H4V4h6Zm-5 3v10h14V7H5Z" /></svg>
+              </button>
+              <div id="serverLogShortcutPathPicker" class="remote-search-scope-picker server-log-shortcut-picker hidden" aria-hidden="true">
+                <div class="remote-search-scope-picker-header">
+                  <div id="serverLogShortcutPathPickerPath" class="remote-search-scope-picker-path">/var/log</div>
+                  <div class="remote-search-scope-picker-actions">
+                    <button id="serverLogShortcutPathPickerCancelButton" class="secondary" type="button">Cancel</button>
+                  </div>
+                </div>
+                <div id="serverLogShortcutPathPickerList" class="remote-search-scope-picker-list"><div class="remote-search-scope-picker-empty">Loading...</div></div>
+              </div>
+            </div>
+          </div>
+          <div id="serverLogShortcutFeedback" class="server-log-shortcut-feedback" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="serverLogShortcutRemoveButton" type="button" class="secondary danger modal-action-left" hidden>Remove</button>
+        <button id="serverLogShortcutCancelButton" type="button" class="secondary">Cancel</button>
+        <button id="serverLogShortcutSaveButton" type="button">Add</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="serverLogShortcutRemoveBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="serverLogShortcutRemoveTitle" aria-hidden="true">
+    <section class="file-properties-dialog connection-name-dialog">
+      <div class="file-properties-header">
+        <h2 id="serverLogShortcutRemoveTitle" class="file-properties-title">Remove Log Shortcut</h2>
+        <div class="file-properties-path">This will only remove the shortcut from Remote Edit. The remote log file will not be deleted.</div>
+      </div>
+      <div class="file-properties-body">
+        <div id="serverLogShortcutRemovePath" class="server-log-shortcut-remove-path"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="serverLogShortcutRemoveCancelButton" type="button" class="secondary">Cancel</button>
+        <button id="serverLogShortcutRemoveConfirmButton" type="button" class="danger">Remove</button>
+      </div>
+    </section>
+  </div>
+
+
+  <div id="serverPortForwardBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="serverPortForwardTitle" aria-hidden="true">
+    <section class="file-properties-dialog server-port-forward-dialog">
+      <div class="file-properties-header">
+        <h2 id="serverPortForwardTitle" class="file-properties-title">Add Port Forward</h2>
+        <div id="serverPortForwardSubtitle" class="file-properties-path">Create a local SSH port forward for this connection.</div>
+      </div>
+      <div class="file-properties-body">
+        <div class="server-port-forward-fields">
+          <div class="server-port-forward-field">
+            <label for="serverPortForwardNameInput">Name</label>
+            <input id="serverPortForwardNameInput" type="text" autocomplete="off" placeholder="My App" />
+          </div>
+          <div class="server-port-forward-field-grid">
+            <div class="server-port-forward-field">
+              <label for="serverPortForwardLocalHostInput">Local host</label>
+              <input id="serverPortForwardLocalHostInput" type="text" autocomplete="off" placeholder="localhost" />
+            </div>
+            <div class="server-port-forward-field">
+              <label for="serverPortForwardLocalPortInput">Local port</label>
+              <input id="serverPortForwardLocalPortInput" type="text" inputmode="numeric" autocomplete="off" placeholder="3000" />
+            </div>
+          </div>
+          <div class="server-port-forward-field-grid">
+            <div class="server-port-forward-field">
+              <label for="serverPortForwardRemoteHostInput">Remote host</label>
+              <input id="serverPortForwardRemoteHostInput" type="text" autocomplete="off" placeholder="127.0.0.1" />
+            </div>
+            <div class="server-port-forward-field">
+              <label for="serverPortForwardRemotePortInput">Remote port</label>
+              <input id="serverPortForwardRemotePortInput" type="text" inputmode="numeric" autocomplete="off" placeholder="3000" />
+            </div>
+          </div>
+          <label class="modal-checkbox-line server-port-forward-option"><input id="serverPortForwardAutoStartInput" class="dialog-checkbox" type="checkbox" /> <span>Auto-start on connect</span></label>
+          <div id="serverPortForwardRunningNote" class="server-port-forward-running-note" hidden>Stop the port forward before editing local or remote ports.</div>
+          <div class="server-port-forward-help">Local forwarding maps localhost:LOCAL_PORT on your computer to REMOTE_HOST:REMOTE_PORT from the remote server.</div>
+          <div id="serverPortForwardFeedback" class="server-port-forward-feedback" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="serverPortForwardDeleteButton" type="button" class="secondary danger modal-action-left" hidden>Delete</button>
+        <button id="serverPortForwardCancelButton" type="button" class="secondary">Cancel</button>
+        <button id="serverPortForwardSaveButton" type="button">Save</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="serverPortForwardRemoveBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="serverPortForwardRemoveTitle" aria-hidden="true">
+    <section class="file-properties-dialog connection-name-dialog">
+      <div class="file-properties-header">
+        <h2 id="serverPortForwardRemoveTitle" class="file-properties-title">Delete Port Forward</h2>
+        <div class="file-properties-path">This will only remove the saved forward from Remote Edit.</div>
+      </div>
+      <div class="file-properties-body">
+        <div id="serverPortForwardRemovePath" class="server-port-forward-remove-path"></div>
+      </div>
+      <div class="file-properties-actions">
+        <button id="serverPortForwardRemoveCancelButton" type="button" class="secondary">Cancel</button>
+        <button id="serverPortForwardRemoveConfirmButton" type="button" class="danger">Delete</button>
+      </div>
+    </section>
+  </div>
 
   <div id="connectionNameBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="connectionNameTitle" aria-hidden="true">
     <section class="file-properties-dialog connection-name-dialog">
@@ -984,8 +1521,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         <div id="connectionNameFeedback" class="connection-name-feedback" role="status" aria-live="polite"></div>
       </div>
       <div class="file-properties-actions">
-        <button id="connectionNameCreateButton" type="button">Create</button>
         <button id="connectionNameCancelButton" type="button" class="secondary">Cancel</button>
+        <button id="connectionNameCreateButton" type="button">Create</button>
       </div>
     </section>
   </div>
@@ -1130,8 +1667,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <div id="transferQueueModal" class="transfer-queue-backdrop" role="dialog" aria-modal="true" aria-labelledby="transferQueueTitle" aria-hidden="true">
     <div class="transfer-queue-dialog">
       <div class="transfer-queue-header">
-        <h2 id="transferQueueTitle" class="transfer-queue-title">Transfer Queue</h2>
-        <button id="transferQueueCloseButton" class="transfer-queue-close has-tooltip" type="button" aria-label="Close Transfer Queue" data-tooltip="Close">×</button>
+        <div class="transfer-queue-header-text">
+          <h2 id="transferQueueTitle" class="transfer-queue-title">Transfer Queue</h2>
+          <div class="transfer-queue-subtitle">Monitor current, pending, and completed transfers.</div>
+        </div>
       </div>
       <div class="transfer-queue-body">
         <section class="transfer-queue-section" aria-labelledby="transferQueueCurrentTitle">
@@ -1196,7 +1735,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
             <label class="modal-checkbox-line"><input id="remoteSearchSubdirectories" class="dialog-checkbox" type="checkbox" checked><span>Include subdirectories</span></label>
             <label class="modal-checkbox-line"><input id="remoteSearchHiddenFiles" class="dialog-checkbox" type="checkbox"><span>Include hidden files</span></label>
             <label class="modal-checkbox-line"><input id="remoteSearchCaseSensitive" class="dialog-checkbox" type="checkbox"><span>Case sensitive</span></label>
-            <label id="remoteSearchSudoRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchUseSudo" class="dialog-checkbox" type="checkbox"><span>Use Sudo Mode</span></label>
+            <label id="remoteSearchSudoRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchUseSudo" class="dialog-checkbox" type="checkbox"><span>Use Sudo Mode</span><span id="remoteSearchSudoNote" class="remote-command-sudo-note"></span></label>
           </div>
           <div class="remote-search-field">
             <label for="remoteSearchFileName">File name</label>
@@ -1219,10 +1758,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         </section>
       </div>
       <div class="file-properties-actions remote-search-actions">
-        <button id="remoteSearchPrimaryButton" class="remote-search-primary-button" type="button">Search</button>
         <button id="remoteSearchCopyButton" class="secondary" type="button">Copy</button>
         <button id="remoteSearchClearButton" class="secondary" type="button">Clear</button>
         <button id="remoteSearchCloseButton" class="secondary" type="button">Close</button>
+        <button id="remoteSearchPrimaryButton" class="remote-search-primary-button" type="button">Search</button>
       </div>
     </section>
   </div>
@@ -1241,9 +1780,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     <section class="confirm-dialog">
       <div class="confirm-dialog-header">
         <h2 id="confirmDialogTitle" class="confirm-dialog-title">Confirm action</h2>
+        <div id="confirmDialogMessage" class="confirm-dialog-subtitle"></div>
       </div>
-      <div class="confirm-dialog-body">
-        <p id="confirmDialogMessage" class="confirm-dialog-message"></p>
+      <div id="confirmDialogBody" class="confirm-dialog-body">
         <pre id="confirmDialogDetails" class="confirm-dialog-details" hidden></pre>
       </div>
       <div class="confirm-dialog-actions">
@@ -1257,9 +1796,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     <section class="transfer-conflict-dialog" tabindex="-1">
       <div class="transfer-conflict-header">
         <h2 id="transferConflictTitle" class="transfer-conflict-title">Transfer conflict</h2>
+        <div id="transferConflictMessage" class="transfer-conflict-subtitle"></div>
       </div>
       <div class="transfer-conflict-body">
-        <p id="transferConflictMessage" class="transfer-conflict-message"></p>
         <div class="transfer-conflict-file">
           <span id="transferConflictName" class="transfer-conflict-name"></span>
           <span id="transferConflictPath" class="transfer-conflict-path"></span>
@@ -1336,11 +1875,17 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           <div class="owner-group-input-grid">
             <div>
               <label for="ownerGroupOwnerInput">Owner</label>
-              <input id="ownerGroupOwnerInput" type="text" autocomplete="off" spellcheck="false" placeholder="owner">
+              <div class="owner-group-combo" data-owner-group-combo="owner">
+                <input id="ownerGroupOwnerInput" type="text" autocomplete="off" spellcheck="false" placeholder="owner" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ownerGroupOwnerSuggestions">
+                <div id="ownerGroupOwnerSuggestions" class="owner-group-suggestions" role="listbox" aria-label="Owner suggestions"></div>
+              </div>
             </div>
             <div>
               <label for="ownerGroupGroupInput">Group</label>
-              <input id="ownerGroupGroupInput" type="text" autocomplete="off" spellcheck="false" placeholder="group">
+              <div class="owner-group-combo" data-owner-group-combo="group">
+                <input id="ownerGroupGroupInput" type="text" autocomplete="off" spellcheck="false" placeholder="group" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ownerGroupGroupSuggestions">
+                <div id="ownerGroupGroupSuggestions" class="owner-group-suggestions" role="listbox" aria-label="Group suggestions"></div>
+              </div>
             </div>
           </div>
           <div id="ownerGroupHelperBlock" class="modal-checkbox-block">
@@ -1473,6 +2018,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   <div id="contextCopySeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextCopyPath" type="button" role="menuitem">Copy Path</button>
   <button id="contextCopyName" type="button" role="menuitem">Copy Filename</button>
+  <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextDownload" type="button" role="menuitem">Download...</button>
+  <button id="contextUploadEntry" type="button" role="menuitem">Upload...</button>
+  <div id="contextTransferSeparator" class="context-menu-separator" role="separator"></div>
   <div id="contextCompressSubmenu" class="context-submenu" role="none">
     <button id="contextCompressTrigger" class="context-submenu-trigger" type="button" role="menuitem" aria-haspopup="true">Compress to Archive</button>
     <div class="context-submenu-content" role="menu" aria-label="Archive Formats">
@@ -1482,9 +2031,6 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       <button id="contextCompressTarZ" type="button" role="menuitem" data-archive-format="tar.Z">tar.Z...</button>
     </div>
   </div>
-  <div id="contextItemSeparator" class="context-menu-separator" role="separator"></div>
-  <button id="contextDownload" type="button" role="menuitem">Download...</button>
-  <button id="contextUploadEntry" type="button" role="menuitem">Upload...</button>
   <button id="contextCalculateChecksums" type="button" role="menuitem">Calculate Checksums</button>
   <button id="contextFileProperties" type="button" role="menuitem">File Properties</button>
   <button id="contextSetPermissions" type="button" role="menuitem">Set Permissions...</button>
@@ -1571,6 +2117,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
+  let showRemotePathBreadcrumbDirectoryDetails = ${showRemotePathBreadcrumbDirectoryDetails ? 'true' : 'false'};
 
   const mainLayout = document.getElementById('mainLayout');
   const connectionResizeHandle = document.getElementById('connectionResizeHandle');
@@ -1623,11 +2170,52 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const privateKeyBlock = document.getElementById('privateKeyBlock');
   const passphraseBlock = document.getElementById('passphraseBlock');
   const sessionTabs = document.getElementById('sessionTabs');
+  const filesView = document.getElementById('filesView');
+  const serverView = document.getElementById('serverView');
+  const serverViewContent = document.getElementById('serverViewContent');
+  const serverLogShortcutBackdrop = document.getElementById('serverLogShortcutBackdrop');
+  const serverLogShortcutTitle = document.getElementById('serverLogShortcutTitle');
+  const serverLogShortcutSubtitle = document.getElementById('serverLogShortcutSubtitle');
+  const serverLogShortcutNameInput = document.getElementById('serverLogShortcutNameInput');
+  const serverLogShortcutPathInput = document.getElementById('serverLogShortcutPathInput');
+  const serverLogShortcutBrowseButton = document.getElementById('serverLogShortcutBrowseButton');
+  const serverLogShortcutPathPicker = document.getElementById('serverLogShortcutPathPicker');
+  const serverLogShortcutPathPickerPath = document.getElementById('serverLogShortcutPathPickerPath');
+  const serverLogShortcutPathPickerList = document.getElementById('serverLogShortcutPathPickerList');
+  const serverLogShortcutPathPickerCancelButton = document.getElementById('serverLogShortcutPathPickerCancelButton');
+  const serverLogShortcutFeedback = document.getElementById('serverLogShortcutFeedback');
+  const serverLogShortcutRemoveButton = document.getElementById('serverLogShortcutRemoveButton');
+  const serverLogShortcutSaveButton = document.getElementById('serverLogShortcutSaveButton');
+  const serverLogShortcutCancelButton = document.getElementById('serverLogShortcutCancelButton');
+  const serverLogShortcutRemoveBackdrop = document.getElementById('serverLogShortcutRemoveBackdrop');
+  const serverLogShortcutRemovePath = document.getElementById('serverLogShortcutRemovePath');
+  const serverLogShortcutRemoveConfirmButton = document.getElementById('serverLogShortcutRemoveConfirmButton');
+  const serverLogShortcutRemoveCancelButton = document.getElementById('serverLogShortcutRemoveCancelButton');
+  const serverPortForwardBackdrop = document.getElementById('serverPortForwardBackdrop');
+  const serverPortForwardTitle = document.getElementById('serverPortForwardTitle');
+  const serverPortForwardSubtitle = document.getElementById('serverPortForwardSubtitle');
+  const serverPortForwardNameInput = document.getElementById('serverPortForwardNameInput');
+  const serverPortForwardLocalHostInput = document.getElementById('serverPortForwardLocalHostInput');
+  const serverPortForwardLocalPortInput = document.getElementById('serverPortForwardLocalPortInput');
+  const serverPortForwardRemoteHostInput = document.getElementById('serverPortForwardRemoteHostInput');
+  const serverPortForwardRemotePortInput = document.getElementById('serverPortForwardRemotePortInput');
+  const serverPortForwardAutoStartInput = document.getElementById('serverPortForwardAutoStartInput');
+  const serverPortForwardRunningNote = document.getElementById('serverPortForwardRunningNote');
+  const serverPortForwardFeedback = document.getElementById('serverPortForwardFeedback');
+  const serverPortForwardDeleteButton = document.getElementById('serverPortForwardDeleteButton');
+  const serverPortForwardSaveButton = document.getElementById('serverPortForwardSaveButton');
+  const serverPortForwardCancelButton = document.getElementById('serverPortForwardCancelButton');
+  const serverPortForwardRemoveBackdrop = document.getElementById('serverPortForwardRemoveBackdrop');
+  const serverPortForwardRemovePath = document.getElementById('serverPortForwardRemovePath');
+  const serverPortForwardRemoveConfirmButton = document.getElementById('serverPortForwardRemoveConfirmButton');
+  const serverPortForwardRemoveCancelButton = document.getElementById('serverPortForwardRemoveCancelButton');
   const browserSectionDivider = document.querySelector('.browser-section-divider');
   const pathbar = document.querySelector('.pathbar');
   const currentPath = document.getElementById('currentPath');
   const remotePathLeadingIcon = document.querySelector('.remote-path-leading-icon');
   const SESSION_TAB_REMOTE_ICON = '<svg focusable="false" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12 11.5C12 11.5989 11.9707 11.6956 11.9157 11.7778C11.8608 11.86 11.7827 11.9241 11.6913 11.9619C11.6 11.9998 11.4994 12.0097 11.4025 11.9904C11.3055 11.9711 11.2164 11.9235 11.1464 11.8536C11.0765 11.7836 11.0289 11.6945 11.0096 11.5975C10.9903 11.5006 11.0002 11.4 11.0381 11.3087C11.0759 11.2173 11.14 11.1392 11.2222 11.0843C11.3044 11.0293 11.4011 11 11.5 11C11.6326 11 11.7598 11.0527 11.8536 11.1464C11.9473 11.2402 12 11.3674 12 11.5ZM11.5 8C11.5989 8 11.6956 7.97068 11.7778 7.91573C11.86 7.86079 11.9241 7.7827 11.9619 7.69134C11.9998 7.59998 12.0097 7.49945 11.9904 7.40245C11.9711 7.30546 11.9235 7.21637 11.8536 7.14645C11.7836 7.07652 11.6945 7.0289 11.5975 7.00961C11.5006 6.99031 11.4 7.00022 11.3087 7.03806C11.2173 7.0759 11.1392 7.13999 11.0843 7.22221C11.0293 7.30444 11 7.40111 11 7.5C11 7.63261 11.0527 7.75979 11.1464 7.85355C11.2402 7.94732 11.3674 8 11.5 8ZM14 4.5C13.999 4.87026 13.86 5.22685 13.61 5.5C13.86 5.77315 13.999 6.12974 14 6.5V8.5C13.999 8.87026 13.86 9.22685 13.61 9.5C13.86 9.77315 13.999 10.1297 14 10.5V12.5C14 12.8978 13.842 13.2794 13.5607 13.5607C13.2794 13.842 12.8978 14 12.5 14H3.5C3.10218 14 2.72064 13.842 2.43934 13.5607C2.15804 13.2794 2 12.8978 2 12.5V10.5C2.00097 10.1297 2.14003 9.77315 2.39 9.5C2.14003 9.22685 2.00097 8.87026 2 8.5V6.5C2.00097 6.12974 2.14003 5.77315 2.39 5.5C2.14003 5.22685 2.00097 4.87026 2 4.5V2.5C2 2.10218 2.15804 1.72064 2.43934 1.43934C2.72064 1.15804 3.10218 1 3.5 1H12.5C12.8978 1 13.2794 1.15804 13.5607 1.43934C13.842 1.72064 14 2.10218 14 2.5V4.5ZM3 4.5C3 4.63261 3.05268 4.75979 3.14645 4.85355C3.24021 4.94732 3.36739 5 3.5 5H12.5C12.6326 5 12.7598 4.94732 12.8536 4.85355C12.9473 4.75979 13 4.63261 13 4.5V2.5C13 2.36739 12.9473 2.24021 12.8536 2.14645C12.7598 2.05268 12.6326 2 12.5 2H3.5C3.36739 2 3.24021 2.05268 3.14645 2.14645C3.05268 2.24021 3 2.36739 3 2.5V4.5ZM12.5 6H3.5C3.36739 6 3.24021 6.05268 3.14645 6.14645C3.05268 6.24021 3 6.36739 3 6.5V8.5C3 8.63261 3.05268 8.75979 3.14645 8.85355C3.24021 8.94732 3.36739 9 3.5 9H12.5C12.6326 9 12.7598 8.94732 12.8536 8.85355C12.9473 8.75979 13 8.63261 13 8.5V6.5C13 6.36739 12.9473 6.24021 12.8536 6.14645C12.7598 6.05268 12.6326 6 12.5 6ZM13 10.5C13 10.3674 12.9473 10.2402 12.8536 10.1464C12.7598 10.0527 12.6326 10 12.5 10H3.5C3.36739 10 3.24021 10.0527 3.14645 10.1464C3.05268 10.2402 3 10.3674 3 10.5V12.5C3 12.6326 3.05268 12.7598 3.14645 12.8536C3.24021 12.9473 3.36739 13 3.5 13H12.5C12.6326 13 12.7598 12.9473 12.8536 12.8536C12.9473 12.7598 13 12.6326 13 12.5V10.5ZM11.5 4C11.5989 4 11.6956 3.97068 11.7778 3.91573C11.86 3.86079 11.9241 3.7827 11.9619 3.69134C11.9998 3.59998 12.0097 3.49945 11.9904 3.40245C11.9711 3.30546 11.9235 3.21637 11.8536 3.14645C11.7836 3.07652 11.6945 3.0289 11.5975 3.00961C11.5006 2.99031 11.4 3.00022 11.3087 3.03806C11.2173 3.0759 11.1392 3.13999 11.0843 3.22221C11.0293 3.30444 11 3.40111 11 3.5C11 3.63261 11.0527 3.75979 11.1464 3.85355C11.2402 3.94732 11.3674 4 11.5 4Z"/></svg>';
+  const SESSION_TAB_CONNECTING_ICON = '<div class="spinner" aria-hidden="true"></div>';
+  const SESSION_TAB_ERROR_ICON = '<svg focusable="false" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M8 1.5 15 14H1L8 1.5Zm0 2.06L2.72 13h10.56L8 3.56ZM7.25 6h1.5v3.8h-1.5V6Zm0 5h1.5v1.5h-1.5V11Z" /></svg>';
   const remotePathBox = document.getElementById('remotePathBox');
   const remotePathResizeHandle = document.getElementById('remotePathResizeHandle');
   const remotePathBreadcrumb = document.getElementById('remotePathBreadcrumb');
@@ -1651,7 +2239,25 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const statusCopyButton = document.getElementById('statusCopyButton');
   const statusCopyFeedback = document.getElementById('statusCopyFeedback');
   const webviewTooltip = document.getElementById('webviewTooltip');
+  const inputPromptBackdrop = document.getElementById('inputPromptBackdrop');
+  const inputPromptTitle = document.getElementById('inputPromptTitle');
+  const inputPromptMessage = document.getElementById('inputPromptMessage');
+  const inputPromptLabel = document.getElementById('inputPromptLabel');
+  const inputPromptInputWrap = document.getElementById('inputPromptInputWrap');
+  const inputPromptInput = document.getElementById('inputPromptInput');
+  const inputPromptRevealButton = document.getElementById('inputPromptRevealButton');
+  const inputPromptFeedback = document.getElementById('inputPromptFeedback');
+  const inputPromptConfirmButton = document.getElementById('inputPromptConfirmButton');
+  const inputPromptCancelButton = document.getElementById('inputPromptCancelButton');
   const browserSubtitle = document.getElementById('browserSubtitle');
+  const serverRefreshActions = document.getElementById('serverRefreshActions');
+  const serverToolbarStatus = document.getElementById('serverToolbarStatus');
+  const serverRefreshButton = document.getElementById('serverRefreshButton');
+  const serverAutoRefreshPicker = document.getElementById('serverAutoRefreshPicker');
+  const serverAutoRefreshDropdownButton = document.getElementById('serverAutoRefreshDropdownButton');
+  const serverAutoRefreshDropdownLabel = document.getElementById('serverAutoRefreshDropdownLabel');
+  const serverAutoRefreshDropdownMenu = document.getElementById('serverAutoRefreshDropdownMenu');
+  const serverRefreshActionsSeparator = document.getElementById('serverRefreshActionsSeparator');
   const commandActionsSeparator = document.getElementById('commandActionsSeparator');
   const commandActions = document.getElementById('commandActions');
   const transferActionsSeparator = document.getElementById('transferActionsSeparator');
@@ -1690,6 +2296,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const remoteSearchCaseSensitive = document.getElementById('remoteSearchCaseSensitive');
   const remoteSearchSudoRow = document.getElementById('remoteSearchSudoRow');
   const remoteSearchUseSudo = document.getElementById('remoteSearchUseSudo');
+  const remoteSearchSudoNote = document.getElementById('remoteSearchSudoNote');
   const remoteSearchInsideRow = document.getElementById('remoteSearchInsideRow');
   const remoteSearchInsideFiles = document.getElementById('remoteSearchInsideFiles');
   const remoteSearchFileName = document.getElementById('remoteSearchFileName');
@@ -1716,7 +2323,6 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const transferQueueTooltip = document.getElementById('transferQueueTooltip');
   const transferQueueCount = document.getElementById('transferQueueCount');
   const transferQueueModal = document.getElementById('transferQueueModal');
-  const transferQueueCloseButton = document.getElementById('transferQueueCloseButton');
   const transferQueueFooterCloseButton = document.getElementById('transferQueueFooterCloseButton');
   const transferQueueCurrent = document.getElementById('transferQueueCurrent');
   const transferQueuePending = document.getElementById('transferQueuePending');
@@ -1724,6 +2330,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const confirmDialogBackdrop = document.getElementById('confirmDialogBackdrop');
   const confirmDialogTitle = document.getElementById('confirmDialogTitle');
   const confirmDialogMessage = document.getElementById('confirmDialogMessage');
+  const confirmDialogBody = document.getElementById('confirmDialogBody');
   const confirmDialogDetails = document.getElementById('confirmDialogDetails');
   const confirmDialogCancelButton = document.getElementById('confirmDialogCancelButton');
   const confirmDialogConfirmButton = document.getElementById('confirmDialogConfirmButton');
@@ -1758,6 +2365,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const contextDownload = document.getElementById('contextDownload');
   const contextUploadEntry = document.getElementById('contextUploadEntry');
   const contextItemSeparator = document.getElementById('contextItemSeparator');
+  const contextTransferSeparator = document.getElementById('contextTransferSeparator');
   const contextCopySeparator = document.getElementById('contextCopySeparator');
   const contextCopyPath = document.getElementById('contextCopyPath');
   const contextCopyName = document.getElementById('contextCopyName');
@@ -1832,7 +2440,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const ownerGroupTitle = document.getElementById('ownerGroupTitle');
   const ownerGroupPath = document.getElementById('ownerGroupPath');
   const ownerGroupOwnerInput = document.getElementById('ownerGroupOwnerInput');
+  const ownerGroupOwnerSuggestions = document.getElementById('ownerGroupOwnerSuggestions');
   const ownerGroupGroupInput = document.getElementById('ownerGroupGroupInput');
+  const ownerGroupGroupSuggestions = document.getElementById('ownerGroupGroupSuggestions');
   const ownerGroupHelperBlock = document.getElementById('ownerGroupHelperBlock');
   const ownerGroupRecursiveRow = document.getElementById('ownerGroupRecursiveRow');
   const ownerGroupRecursiveInput = document.getElementById('ownerGroupRecursiveInput');
@@ -1924,6 +2534,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   let profiles = [];
   let sessions = [];
+  const clientPendingSessionsByConnectionId = new Map();
+  const filesStatusByConnectionId = new Map();
   let draggedSessionId = '';
   let sessionDragOverId = '';
   let sessionDragOverPosition = '';
@@ -1939,6 +2551,37 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let profileDropdownFilterText = '';
   let connectionTypeDropdownOpen = false;
   let authDropdownOpen = false;
+  let serverAutoRefreshDropdownOpen = false;
+  let serverAutoRefreshValue = 'off';
+  let serverAutoRefreshTimer = null;
+  const serverDashboardStatesByConnectionId = new Map();
+  const serverServiceFiltersByConnectionId = new Map();
+  const serverQuickTaskFiltersByConnectionId = new Map();
+  const serverProcessFiltersByConnectionId = new Map();
+  const serverScheduledJobFiltersByConnectionId = new Map();
+  const serverProcessActionStatesByConnectionId = new Map();
+  const serverLogShortcutFiltersByConnectionId = new Map();
+  const serverCardSortsByConnectionId = new Map();
+  const serverLogShortcutsSessionByConnectionId = new Map();
+  const SERVER_LOG_SHORTCUTS_STORAGE_KEY = 'remoteedit.serverLogShortcuts';
+  const serverPortForwardFiltersByConnectionId = new Map();
+  const serverPortForwardsSessionByConnectionId = new Map();
+  const serverPortForwardRuntimeByConnectionId = new Map();
+  const serverPortForwardAutoStartedConnectionIds = new Set();
+  const SERVER_PORT_FORWARDS_STORAGE_KEY = 'remoteedit.serverPortForwards';
+  let serverPortForwardDialogOpen = false;
+  let serverPortForwardDialogMode = 'add';
+  let serverPortForwardDialogForwardId = '';
+  let serverPortForwardRemoveDialogOpen = false;
+  let serverPortForwardRemoveId = '';
+  let serverLogShortcutDialogOpen = false;
+  let serverLogShortcutDialogMode = 'add';
+  let serverLogShortcutDialogShortcutId = '';
+  let serverLogShortcutPathPickerOpen = false;
+  let serverLogShortcutPathPickerPathValue = '/var/log';
+  let serverLogShortcutPathPickerRequestId = 0;
+  let serverLogShortcutRemoveDialogOpen = false;
+  let serverLogShortcutRemoveId = '';
   let manageProfilesDialogOpen = false;
   let exportBackupDialogOpen = false;
   let importBackupDialogOpen = false;
@@ -1946,6 +2589,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let manageProfilesFilterText = '';
   let renameProfileId = '';
   let activeConnectionId = '';
+  const activeConnectionViewsByConnectionId = new Map();
   let logViewerActiveSessionCount = 0;
   let currentEntries = [];
   let selectedEntryPath = '';
@@ -1961,11 +2605,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   let connectionButtonState = '';
   let lastSyncedActiveConnectionId = '';
   let statusCopyFeedbackTimer = 0;
+  let serverToolbarStatusTimer = 0;
+  const serverPortForwardPendingActions = new Map();
   let filePropertiesDialogOpen = false;
   let filePropertiesRemotePath = '';
   let checksumsDialogOpen = false;
   let ownerGroupDialogOpen = false;
   let ownerGroupEntries = [];
+  const ownerGroupSuggestionsByConnectionId = new Map();
+  let ownerGroupActiveSuggestionKind = '';
+  let ownerGroupSuggestionRepositionFrame = 0;
   let checksumsCopyState = { sha256: '', md5: '', all: '' };
   let permissionsDialogOpen = false;
   let permissionPreviewKind = 'file';
@@ -1988,8 +2637,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   const remoteCommandSessionsByConnectionId = new Map();
   const remoteCommandSavedByConnectionId = new Map();
   const remoteCommandHistoryByConnectionId = new Map();
+  let persistentStorageApplyingSnapshot = false;
   let confirmDialogOpen = false;
   let confirmDialogRequestId = '';
+  let inputPromptOpen = false;
+  let inputPromptRequestId = '';
+  let inputPromptPasswordMode = false;
   let transferConflictDialogOpen = false;
   let transferConflictRequestId = '';
   let pathFavoritesOpen = false;
@@ -2050,6 +2703,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   restoreNavigationHistoryFromState(initialWebviewState.navigationHistoryByConnectionId);
 
+  const TOOLTIP_SHOW_DELAY_MS = 500;
+  const TOOLTIP_TRANSIENT_DURATION_MS = 1500;
+  const TOOLTIP_FADE_MS = 80;
   let activeTooltipTarget = null;
   let tooltipTimer = 0;
 
@@ -2101,7 +2757,29 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const preferAbove = target.classList.contains('tooltip-above') || target.getAttribute('data-tooltip-position') === 'above';
       positionWebviewTooltip(target, preferAbove);
       webviewTooltip.classList.add('visible');
-    }, 500);
+    }, TOOLTIP_SHOW_DELAY_MS);
+  }
+
+  function showTransientActionTooltip(target, message = 'Copied', durationMs = TOOLTIP_TRANSIENT_DURATION_MS) {
+    if (!webviewTooltip || !target) return;
+    const tooltipTarget = target.closest ? (target.closest('.tooltip-anchor') || target) : target;
+    if (!tooltipTarget) return;
+
+    if (tooltipTimer) clearTimeout(tooltipTimer);
+    activeTooltipTarget = tooltipTarget;
+    webviewTooltip.textContent = String(message || 'Copied');
+    webviewTooltip.setAttribute('aria-hidden', 'false');
+    webviewTooltip.classList.remove('visible');
+    webviewTooltip.style.left = '0px';
+    webviewTooltip.style.top = '0px';
+
+    positionWebviewTooltip(tooltipTarget, true);
+    webviewTooltip.classList.add('visible');
+
+    tooltipTimer = window.setTimeout(() => {
+      if (activeTooltipTarget !== tooltipTarget) return;
+      hideWebviewTooltip();
+    }, Number(durationMs || 0) || TOOLTIP_TRANSIENT_DURATION_MS);
   }
 
   function getTooltipTarget(eventTarget) {
@@ -2133,12 +2811,102 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (target && target === activeTooltipTarget) hideWebviewTooltip();
   });
 
-  window.addEventListener('scroll', hideWebviewTooltip, true);
+  window.addEventListener('scroll', () => {
+    hideWebviewTooltip();
+    if (serverLogShortcutPathPickerOpen) positionServerLogShortcutPathPicker();
+  }, true);
   window.addEventListener('resize', () => {
     hideWebviewTooltip();
     hideRemotePathDropdown();
     updateActiveSessionTabDivider();
+    if (serverLogShortcutPathPickerOpen) positionServerLogShortcutPathPicker();
   });
+
+  function showInputPromptDialog(payload) {
+    if (!inputPromptBackdrop || !inputPromptInput) return;
+
+    inputPromptRequestId = String(payload.requestId || '');
+    inputPromptOpen = Boolean(inputPromptRequestId);
+    inputPromptPasswordMode = Boolean(payload.password);
+
+    if (inputPromptTitle) inputPromptTitle.textContent = String(payload.title || 'Input');
+    if (inputPromptMessage) inputPromptMessage.textContent = String(payload.prompt || '');
+    if (inputPromptLabel) inputPromptLabel.textContent = String(payload.label || (inputPromptPasswordMode ? 'Sudo password' : 'Name'));
+    if (inputPromptFeedback) inputPromptFeedback.textContent = String(payload.validationMessage || '');
+
+    inputPromptInput.type = inputPromptPasswordMode ? 'password' : 'text';
+    inputPromptInput.value = String(payload.value || '');
+    inputPromptInput.placeholder = String(payload.placeHolder || '');
+    inputPromptInput.classList.toggle('backup-input-invalid', Boolean(payload.validationMessage));
+
+    if (inputPromptInputWrap) {
+      inputPromptInputWrap.classList.toggle('reveal-hidden', !inputPromptPasswordMode);
+    }
+    if (inputPromptRevealButton) {
+      inputPromptRevealButton.disabled = !inputPromptPasswordMode;
+      inputPromptRevealButton.style.display = inputPromptPasswordMode ? '' : 'none';
+    }
+
+    if (inputPromptConfirmButton) inputPromptConfirmButton.textContent = String(payload.confirmLabel || 'OK');
+    if (inputPromptCancelButton) inputPromptCancelButton.textContent = String(payload.cancelLabel || 'Cancel');
+
+    inputPromptBackdrop.classList.add('visible');
+    inputPromptBackdrop.setAttribute('aria-hidden', 'false');
+
+    setTimeout(() => {
+      inputPromptInput.focus();
+      const selection = Array.isArray(payload.valueSelection) ? payload.valueSelection : null;
+      if (selection && selection.length >= 2) {
+        inputPromptInput.setSelectionRange(Number(selection[0]) || 0, Number(selection[1]) || inputPromptInput.value.length);
+      } else {
+        inputPromptInput.select();
+      }
+    }, 0);
+  }
+
+  function closeInputPromptDialog(confirmed) {
+    if (!inputPromptOpen) return;
+    const requestId = inputPromptRequestId;
+    const value = inputPromptInput ? String(inputPromptInput.value || '') : '';
+
+    inputPromptOpen = false;
+    inputPromptRequestId = '';
+    inputPromptPasswordMode = false;
+
+    if (inputPromptInput) {
+      inputPromptInput.value = '';
+      inputPromptInput.type = 'text';
+      inputPromptInput.classList.remove('backup-input-invalid');
+    }
+    if (inputPromptFeedback) inputPromptFeedback.textContent = '';
+    if (inputPromptInputWrap) inputPromptInputWrap.classList.add('reveal-hidden');
+    if (inputPromptRevealButton) {
+      inputPromptRevealButton.disabled = true;
+      inputPromptRevealButton.style.display = 'none';
+    }
+    if (inputPromptBackdrop) {
+      inputPromptBackdrop.classList.remove('visible');
+      inputPromptBackdrop.setAttribute('aria-hidden', 'true');
+    }
+
+    vscode.postMessage({ type: 'inputDialogResponse', payload: { requestId, confirmed: Boolean(confirmed), value: confirmed ? value : '' } });
+  }
+
+  function trapInputPromptFocus(event) {
+    if (!inputPromptOpen || event.key !== 'Tab') return;
+    const focusable = [inputPromptInput, inputPromptRevealButton, inputPromptCancelButton, inputPromptConfirmButton]
+      .filter(element => element && !element.hidden && element.style.display !== 'none' && !element.disabled);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   function showConfirmDialog(payload) {
     confirmDialogRequestId = String(payload.requestId || '');
@@ -2150,8 +2918,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const details = String(payload.details || '').trim();
     confirmDialogDetails.textContent = details;
     confirmDialogDetails.hidden = !details;
+    if (confirmDialogBody) confirmDialogBody.hidden = !details;
 
+    const hideCancel = Boolean(payload.hideCancel);
     confirmDialogCancelButton.textContent = String(payload.cancelLabel || 'Cancel');
+    confirmDialogCancelButton.hidden = hideCancel;
     confirmDialogConfirmButton.textContent = String(payload.confirmLabel || 'Confirm');
     confirmDialogConfirmButton.classList.toggle('danger', Boolean(payload.danger));
 
@@ -2164,7 +2935,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     confirmDialogBackdrop.classList.add('visible');
     confirmDialogBackdrop.setAttribute('aria-hidden', 'false');
-    setTimeout(() => confirmDialogCancelButton.focus(), 0);
+    setTimeout(() => (confirmDialogCancelButton.hidden ? confirmDialogConfirmButton : confirmDialogCancelButton).focus(), 0);
   }
 
   function closeConfirmDialog(confirmed) {
@@ -2175,7 +2946,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     confirmDialogRequestId = '';
     confirmDialogBackdrop.classList.remove('visible');
     confirmDialogBackdrop.setAttribute('aria-hidden', 'true');
+    confirmDialogCancelButton.hidden = false;
     confirmDialogConfirmButton.classList.remove('danger');
+
+    if (requestId.indexOf('client:closeConnection:') === 0) {
+      if (confirmed) {
+        const connectionId = requestId.slice('client:closeConnection:'.length);
+        disconnectSessionFromTabClose(connectionId);
+      }
+      return;
+    }
 
     vscode.postMessage({ type: 'confirmDialogResponse', payload: { requestId, confirmed: Boolean(confirmed) } });
   }
@@ -2300,6 +3080,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'showImportConnectionsSettingsDialog':
         showImportBackupDialog(payload.summary || {});
         break;
+      case 'persistentStorageSnapshot':
+        applyPersistentStorageSnapshot(payload || {});
+        break;
+      case 'remotePathBreadcrumbSettingsChanged':
+        showRemotePathBreadcrumbDirectoryDetails = payload.showDirectoryDetails !== false;
+        refreshOpenRemotePathDropdown();
+        break;
       case 'hideExportConnectionsSettingsDialog':
         hideExportBackupDialog();
         break;
@@ -2336,7 +3123,33 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         }
         break;
       case 'sessionsChanged': {
-        sessions = payload.sessions || [];
+        const previousSessionIds = new Set(sessions.map(session => session.id));
+        const incomingSessions = payload.sessions || [];
+        const incomingSessionIds = new Set(incomingSessions.map(session => session.id));
+        for (const incomingSession of incomingSessions) {
+          if (isSessionConnected(incomingSession)) {
+            clientPendingSessionsByConnectionId.delete(incomingSession.id);
+          }
+        }
+        sessions = mergeIncomingSessionsWithClientPending(incomingSessions);
+        const activeSessionIds = new Set(sessions.map(session => session.id));
+        Array.from(filesStatusByConnectionId.keys()).forEach(connectionId => {
+          if (connectionId !== '__global__' && !activeSessionIds.has(connectionId)) filesStatusByConnectionId.delete(connectionId);
+        });
+        Array.from(serverLogShortcutsSessionByConnectionId.keys()).forEach(connectionId => {
+          if (!activeSessionIds.has(connectionId)) serverLogShortcutsSessionByConnectionId.delete(connectionId);
+        });
+        Array.from(serverPortForwardRuntimeByConnectionId.keys()).forEach(connectionId => {
+          if (!activeSessionIds.has(connectionId)) serverPortForwardRuntimeByConnectionId.delete(connectionId);
+        });
+        Array.from(serverPortForwardAutoStartedConnectionIds).forEach(connectionId => {
+          if (!activeSessionIds.has(connectionId)) serverPortForwardAutoStartedConnectionIds.delete(connectionId);
+        });
+        sessions.forEach(session => {
+          requestServerPortForwardStatesForSession(session);
+          maybeAutoStartServerPortForwardsForSession(session, !previousSessionIds.has(session.id));
+        });
+        pruneConnectionViewState();
         pruneNavigationHistoryForSessions();
         const previousActiveConnectionId = activeConnectionId;
         if (previousActiveConnectionId && remoteSearchDialogOpen) saveRemoteSearchFormForConnection(previousActiveConnectionId);
@@ -2344,12 +3157,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         connectionButtonState = '';
         renderSessionTabs();
         updateActiveSessionUi();
+        if (activeConnectionId !== previousActiveConnectionId) restoreFilesStatusForActiveConnection();
+        updateConnectionViewUi();
         initializeNavigationHistoryForActiveSession();
         if (activeConnectionId && activeConnectionId !== previousActiveConnectionId) {
           syncConnectionFormWithActiveSession({ preserveStatus: true });
         }
         updateRemotePathNavigationControls();
         setControls();
+        maybeRequestServerDashboardForActiveView();
+        updateServerAutoRefreshTimer();
         if (activeConnectionId !== previousActiveConnectionId) {
           remoteSearchState = getRemoteSearchStateForActiveConnection();
           applyRemoteSearchFormForActiveConnection();
@@ -2369,14 +3186,28 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           session.sudoModeEnabled = Boolean(payload.enabled);
         }
         updateSudoToggle();
+        updateConnectionViewUi();
         if (remoteCommandDialogOpen) renderRemoteCommandSession();
         renderRemoteCommandBadge();
         if (remoteSearchDialogOpen) updateRemoteSearchProtocolFields();
         setControls();
+        if (targetConnectionId === activeConnectionId && getActiveConnectionView() === 'server') {
+          requestServerDashboardRefresh(true);
+        }
         break;
       }
-      case 'disconnected':
+      case 'disconnected': {
+        const disconnectedPreviousActiveConnectionId = activeConnectionId;
         sessions = [];
+        clientPendingSessionsByConnectionId.clear();
+        filesStatusByConnectionId.clear();
+        activeConnectionViewsByConnectionId.clear();
+        serverDashboardStatesByConnectionId.clear();
+        serverProcessActionStatesByConnectionId.clear();
+        serverLogShortcutsSessionByConnectionId.clear();
+        serverPortForwardRuntimeByConnectionId.clear();
+        serverPortForwardAutoStartedConnectionIds.clear();
+        updateServerAutoRefreshTimer();
         remoteSearchFormsByConnectionId.clear();
         remoteSearchStatesByConnectionId.clear();
         navigationHistoryByConnectionId.clear();
@@ -2407,6 +3238,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         hideRemotePathDropdown();
         renderSessionTabs();
         updateActiveSessionUi();
+        if (activeConnectionId !== disconnectedPreviousActiveConnectionId) restoreFilesStatusForActiveConnection();
+        updateConnectionViewUi();
         initializeNavigationHistoryForActiveSession();
         updateSortIndicators();
         entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
@@ -2415,6 +3248,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         setControls();
         setStatus('No active connection.');
         break;
+      }
       case 'directoryListed': {
         if (payload.connectionId && payload.connectionId !== activeConnectionId) return;
         const activeSession = getActiveSession();
@@ -2434,6 +3268,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         renderEntries(getVisibleEntries());
         if (directoryChanged) scrollEntriesToTop();
         updateActiveSessionPath(nextPath);
+        updateConnectionViewUi();
         recordNavigationHistory(nextPath, pendingNavigationHistoryMode);
         pendingNavigationHistoryMode = '';
         updatePathFavoriteControls();
@@ -2444,13 +3279,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         handleBreadcrumbDirectoriesListed(payload);
         break;
       case 'status':
-        setStatus(payload.message || '', false, Boolean(payload.showOutputLink), payload.outputLinkText || 'See details in Output.');
+        setStatus(payload.message || '', false, Boolean(payload.showOutputLink), payload.outputLinkText || 'See details in Output.', payload.connectionId || '');
+        break;
+      case 'serverStatus':
+        showServerToolbarStatus(payload.message || '', payload.kind || (payload.isError ? 'error' : 'info'), Number(payload.durationMs || 0));
         break;
       case 'statusCopyFeedback':
         showStatusCopyFeedback(payload.message || 'Copied');
         break;
       case 'busy':
-        setBusy(Boolean(payload.isBusy), payload.message || '', payload.cancelAction || (payload.canCancelTransfer ? 'transfer' : ''), payload.cancelLabel || 'Cancel');
+        setBusy(Boolean(payload.isBusy), payload.message || '', payload.cancelAction || (payload.canCancelTransfer ? 'transfer' : ''), payload.cancelLabel || 'Cancel', payload.connectionId || '');
         break;
       case 'transferQueueChanged':
         updateTransferQueueState(payload);
@@ -2481,7 +3319,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         applyRemoteSearchSnapshot(payload);
         break;
       case 'remoteSearchScopeEntriesListed':
-        if (!handleRemoteCommandWorkingDirectoryEntriesListed(payload || {})) {
+        if (!handleServerLogShortcutPathEntriesListed(payload || {}) && !handleRemoteCommandWorkingDirectoryEntriesListed(payload || {})) {
           handleRemoteSearchScopeEntriesListed(payload || {});
         }
         break;
@@ -2494,9 +3332,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         logViewerActiveSessionCount = Math.max(0, Number(payload.count || 0));
         renderLogViewerBadge();
         break;
+      case 'serverDashboard':
+        handleServerDashboardSnapshot(payload || {});
+        break;
+      case 'serverProcessActionState':
+        handleServerProcessActionState(payload || {});
+        break;
+      case 'portForwardStateChanged':
+        handleServerPortForwardState(payload || {});
+        break;
       case 'error':
         connectionButtonState = '';
-        setBusy(false);
+        if (payload.connectionId) markClientPendingSessionFailed(payload.connectionId, payload.message || 'Connection failed.');
+        setBusy(false, '', '', 'Cancel', payload.connectionId || '');
         if (importBackupDialogOpen && importBackupResult) {
           showBackupResult(importBackupResult, payload.message || 'Unknown error.', true);
           break;
@@ -2504,10 +3352,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
           showBackupResult(exportBackupResult, payload.message || 'Unknown error.', true);
           break;
         }
-        setStatus(payload.message || 'Unknown error.', true, Boolean(payload.showOutputLink), payload.outputLinkText || 'See details in Output.');
+        setStatus(payload.message || 'Unknown error.', true, Boolean(payload.showOutputLink), payload.outputLinkText || 'See details in Output.', payload.connectionId || '');
         break;
       case 'showConfirmDialog':
         showConfirmDialog(payload);
+        break;
+      case 'showInputDialog':
+        showInputPromptDialog(payload);
         break;
       case 'showTransferConflictDialog':
         showTransferConflictDialog(payload);
@@ -2521,6 +3372,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       case 'showPermissionsDialog':
         showPermissionsDialog(payload);
         break;
+      case 'ownerGroupSuggestions':
+        handleOwnerGroupSuggestions(payload || {});
+        break;
       case 'hidePermissionsDialog':
         hidePermissionsDialog();
         break;
@@ -2531,6 +3385,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   });
 
   window.addEventListener('DOMContentLoaded', () => {
+    vscode.postMessage({ type: 'syncPersistentStorage', payload: { migrationOnly: true, snapshot: collectPersistentStorageSnapshot() } });
     vscode.postMessage({ type: 'ready' });
     updateConnectionPanelLayout();
     applyRemotePathLayout();
@@ -2599,19 +3454,453 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const connectedSession = getConnectedSessionForCurrentForm();
     if (connectedSession) {
       connectionButtonState = 'disconnecting';
-      setBusy(true, 'Disconnecting...');
+      setBusy(true, 'Disconnecting...', '', 'Cancel', connectedSession.id);
       vscode.postMessage({ type: 'disconnect', payload: { connectionId: connectedSession.id } });
       return;
     }
 
+    const pendingSession = getPendingSessionForCurrentForm();
+    if (pendingSession) {
+      activateClientSession(pendingSession.id);
+      return;
+    }
+
     if (!validateConnectionForm('connect')) return;
-    connectionButtonState = 'connecting';
-    setBusy(true, 'Connecting...');
-    vscode.postMessage({ type: 'connect', payload: collectConnectionPayload() });
+    const payload = collectConnectionPayload();
+    const clientConnectionId = createClientConnectionId(payload);
+    payload.clientConnectionId = clientConnectionId;
+    createClientPendingSession(payload, clientConnectionId);
+    vscode.postMessage({ type: 'connect', payload });
   });
 
   showSettingsButton.addEventListener('click', () => vscode.postMessage({ type: 'showSettings' }));
   showOutputButton.addEventListener('click', () => vscode.postMessage({ type: 'showOutput' }));
+  document.addEventListener('click', event => {
+    const viewButton = event.target && event.target.closest ? event.target.closest('[data-connection-view]') : null;
+    if (!viewButton) return;
+    const nextView = viewButton.getAttribute('data-connection-view') || 'files';
+    if (nextView !== 'files' && nextView !== 'server') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (viewButton.disabled) return;
+    setActiveConnectionView(nextView);
+  });
+  if (serverView) serverView.addEventListener('input', event => {
+    const quickTasksFilterInput = event.target && event.target.closest ? event.target.closest('#serverQuickTasksFilterInput') : null;
+    if (quickTasksFilterInput) {
+      setServerQuickTaskFilterText(quickTasksFilterInput.value || '');
+      renderServerViewAndFocusQuickTasksFilter();
+      return;
+    }
+
+    const logsFilterInput = event.target && event.target.closest ? event.target.closest('#serverLogsFilterInput') : null;
+    if (logsFilterInput) {
+      setServerLogShortcutFilterText(logsFilterInput.value || '');
+      renderServerViewAndFocusLogsFilter();
+      return;
+    }
+
+    const portForwardsFilterInput = event.target && event.target.closest ? event.target.closest('#serverPortForwardsFilterInput') : null;
+    if (portForwardsFilterInput) {
+      setServerPortForwardFilterText(portForwardsFilterInput.value || '');
+      renderServerViewAndFocusPortForwardsFilter();
+      return;
+    }
+
+    const scheduledFilterInput = event.target && event.target.closest ? event.target.closest('#serverScheduledFilterInput') : null;
+    if (scheduledFilterInput) {
+      setServerScheduledJobFilterText(scheduledFilterInput.value || '');
+      renderServerViewAndFocusScheduledFilter();
+      return;
+    }
+
+    const processFilterInput = event.target && event.target.closest ? event.target.closest('#serverProcessesFilterInput') : null;
+    if (processFilterInput) {
+      setServerProcessFilterText(processFilterInput.value || '');
+      renderServerViewAndFocusProcessesFilter();
+      return;
+    }
+
+    const filterInput = event.target && event.target.closest ? event.target.closest('#serverServicesFilterInput') : null;
+    if (!filterInput) return;
+    setServerServiceFilterText(filterInput.value || '');
+    renderServerViewAndFocusServicesFilter();
+  });
+  if (serverView) serverView.addEventListener('keydown', event => {
+    const quickTasksFilterInput = event.target && event.target.closest ? event.target.closest('#serverQuickTasksFilterInput') : null;
+    if (quickTasksFilterInput && event.key === 'Escape') {
+      if (!String(quickTasksFilterInput.value || '')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setServerQuickTaskFilterText('');
+      renderServerViewAndFocusQuickTasksFilter();
+      return;
+    }
+
+    const logsFilterInput = event.target && event.target.closest ? event.target.closest('#serverLogsFilterInput') : null;
+    if (logsFilterInput && event.key === 'Escape') {
+      if (!String(logsFilterInput.value || '')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setServerLogShortcutFilterText('');
+      renderServerViewAndFocusLogsFilter();
+      return;
+    }
+
+    const portForwardsFilterInput = event.target && event.target.closest ? event.target.closest('#serverPortForwardsFilterInput') : null;
+    if (portForwardsFilterInput && event.key === 'Escape') {
+      if (!String(portForwardsFilterInput.value || '')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setServerPortForwardFilterText('');
+      renderServerViewAndFocusPortForwardsFilter();
+      return;
+    }
+
+    const scheduledFilterInput = event.target && event.target.closest ? event.target.closest('#serverScheduledFilterInput') : null;
+    if (scheduledFilterInput && event.key === 'Escape') {
+      if (!String(scheduledFilterInput.value || '')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setServerScheduledJobFilterText('');
+      renderServerViewAndFocusScheduledFilter();
+      return;
+    }
+
+    const processFilterInput = event.target && event.target.closest ? event.target.closest('#serverProcessesFilterInput') : null;
+    if (processFilterInput && event.key === 'Escape') {
+      if (!String(processFilterInput.value || '')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setServerProcessFilterText('');
+      renderServerViewAndFocusProcessesFilter();
+      return;
+    }
+
+    const filterInput = event.target && event.target.closest ? event.target.closest('#serverServicesFilterInput') : null;
+    if (!filterInput || event.key !== 'Escape') return;
+    if (!String(filterInput.value || '')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setServerServiceFilterText('');
+    renderServerViewAndFocusServicesFilter();
+  });
+  if (serverView) serverView.addEventListener('click', event => {
+    const serverSortButton = event.target && event.target.closest ? event.target.closest('[data-server-sort-card][data-server-sort-key]') : null;
+    if (serverSortButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleServerCardSortClick(serverSortButton.getAttribute('data-server-sort-card') || '', serverSortButton.getAttribute('data-server-sort-key') || '');
+      return;
+    }
+
+    const quickTasksFilterClearButton = event.target && event.target.closest ? event.target.closest('[data-server-quick-tasks-filter-clear]') : null;
+    if (quickTasksFilterClearButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (quickTasksFilterClearButton.disabled) return;
+      setServerQuickTaskFilterText('');
+      renderServerViewAndFocusQuickTasksFilter();
+      return;
+    }
+
+    const logsFilterClearButton = event.target && event.target.closest ? event.target.closest('[data-server-logs-filter-clear]') : null;
+    if (logsFilterClearButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (logsFilterClearButton.disabled) return;
+      setServerLogShortcutFilterText('');
+      renderServerViewAndFocusLogsFilter();
+      return;
+    }
+
+
+    const portForwardsFilterClearButton = event.target && event.target.closest ? event.target.closest('[data-server-port-forwards-filter-clear]') : null;
+    if (portForwardsFilterClearButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (portForwardsFilterClearButton.disabled) return;
+      setServerPortForwardFilterText('');
+      renderServerViewAndFocusPortForwardsFilter();
+      return;
+    }
+
+    const servicesFilterClearButton = event.target && event.target.closest ? event.target.closest('[data-server-services-filter-clear]') : null;
+    if (servicesFilterClearButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (servicesFilterClearButton.disabled) return;
+      setServerServiceFilterText('');
+      renderServerViewAndFocusServicesFilter();
+      return;
+    }
+
+    const processesFilterClearButton = event.target && event.target.closest ? event.target.closest('[data-server-processes-filter-clear]') : null;
+    if (processesFilterClearButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (processesFilterClearButton.disabled) return;
+      setServerProcessFilterText('');
+      renderServerViewAndFocusProcessesFilter();
+      return;
+    }
+
+    const scheduledFilterClearButton = event.target && event.target.closest ? event.target.closest('[data-server-scheduled-filter-clear]') : null;
+    if (scheduledFilterClearButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (scheduledFilterClearButton.disabled) return;
+      setServerScheduledJobFilterText('');
+      renderServerViewAndFocusScheduledFilter();
+      return;
+    }
+
+
+    const portForwardButton = event.target && event.target.closest ? event.target.closest('[data-server-port-forward-action]') : null;
+    if (portForwardButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (portForwardButton.disabled) return;
+      handleServerPortForwardAction(portForwardButton.getAttribute('data-server-port-forward-action') || '', portForwardButton.getAttribute('data-server-port-forward-id') || '');
+      return;
+    }
+
+    const portForwardRow = event.target && event.target.closest ? event.target.closest('.server-port-forward-row[data-server-port-forward-id]') : null;
+    if (portForwardRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      showServerPortForwardDialog('edit', portForwardRow.getAttribute('data-server-port-forward-id') || '');
+      return;
+    }
+
+    const scheduledButton = event.target && event.target.closest ? event.target.closest('[data-server-scheduled-action]') : null;
+    if (scheduledButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (scheduledButton.disabled) return;
+      handleServerScheduledJobAction(scheduledButton.getAttribute('data-server-scheduled-action') || 'open', readServerScheduledJobDataset(scheduledButton), scheduledButton);
+      return;
+    }
+
+    const scheduledRow = event.target && event.target.closest ? event.target.closest('.server-scheduled-row[data-server-scheduled-id]') : null;
+    if (scheduledRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleServerScheduledJobAction('open', readServerScheduledJobDataset(scheduledRow));
+      return;
+    }
+
+    const processButton = event.target && event.target.closest ? event.target.closest('[data-server-process-action]') : null;
+    if (processButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (processButton.disabled) return;
+      handleServerProcessAction('kill', readServerProcessDataset(processButton));
+      return;
+    }
+
+    const processRow = event.target && event.target.closest ? event.target.closest('.server-process-row[data-server-process-pid]') : null;
+    if (processRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleServerProcessAction('details', readServerProcessDataset(processRow));
+      return;
+    }
+
+    const serviceButton = event.target && event.target.closest ? event.target.closest('[data-server-service-action]') : null;
+    if (serviceButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (serviceButton.disabled) return;
+      handleServerServiceAction(
+        serviceButton.getAttribute('data-server-service-action') || '',
+        serviceButton.getAttribute('data-server-service-name') || '',
+        serviceButton.getAttribute('data-server-service-adapter') || ''
+      );
+      return;
+    }
+
+    const serviceRow = event.target && event.target.closest ? event.target.closest('.server-service-row[data-server-service-name]') : null;
+    if (serviceRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleServerServiceAction(
+        'details',
+        serviceRow.getAttribute('data-server-service-name') || '',
+        serviceRow.getAttribute('data-server-service-adapter') || ''
+      );
+      return;
+    }
+
+    const logButton = event.target && event.target.closest ? event.target.closest('[data-server-log-action]') : null;
+    if (logButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (logButton.disabled) return;
+      handleServerLogAction(
+        logButton.getAttribute('data-server-log-action') || 'readonly',
+        logButton.getAttribute('data-server-log-id') || '',
+        logButton.getAttribute('data-server-log-path') || '',
+        logButton
+      );
+      return;
+    }
+
+    const logRow = event.target && event.target.closest ? event.target.closest('.server-log-shortcut-row[data-server-log-id]') : null;
+    if (logRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleServerLogAction('edit', logRow.getAttribute('data-server-log-id') || '', '');
+      return;
+    }
+
+    const quickTaskButton = event.target && event.target.closest ? event.target.closest('[data-server-quick-task-action]') : null;
+    if (quickTaskButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (quickTaskButton.disabled) return;
+      const quickTaskAction = quickTaskButton.getAttribute('data-server-quick-task-action') || 'run';
+      if (quickTaskAction === 'add') {
+        handleServerQuickTaskAddAction();
+      } else {
+        handleServerQuickTaskAction(quickTaskButton.getAttribute('data-server-quick-task-id') || '', true);
+      }
+      return;
+    }
+
+    const quickTaskRow = event.target && event.target.closest ? event.target.closest('.server-quick-task-row[data-server-quick-task-id]') : null;
+    if (quickTaskRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleServerQuickTaskAction(quickTaskRow.getAttribute('data-server-quick-task-id') || '', false);
+      return;
+    }
+
+    const actionButton = event.target && event.target.closest ? event.target.closest('[data-server-action]') : null;
+    if (!actionButton || actionButton.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleServerViewAction(actionButton.getAttribute('data-server-action') || '');
+  });
+
+  if (serverLogShortcutSaveButton) serverLogShortcutSaveButton.addEventListener('click', () => {
+    saveServerLogShortcutDialog();
+  });
+  if (serverLogShortcutRemoveButton) serverLogShortcutRemoveButton.addEventListener('click', () => {
+    if (serverLogShortcutDialogMode !== 'edit' || !serverLogShortcutDialogShortcutId) return;
+    showServerLogShortcutRemoveDialog(serverLogShortcutDialogShortcutId);
+  });
+  if (serverLogShortcutCancelButton) serverLogShortcutCancelButton.addEventListener('click', () => {
+    hideServerLogShortcutDialog();
+  });
+  if (serverLogShortcutBackdrop) serverLogShortcutBackdrop.addEventListener('mousedown', event => {
+    if (event.target === serverLogShortcutBackdrop) hideServerLogShortcutDialog();
+  });
+  if (serverLogShortcutNameInput) serverLogShortcutNameInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveServerLogShortcutDialog();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      hideServerLogShortcutDialog();
+    }
+  });
+  if (serverLogShortcutPathInput) serverLogShortcutPathInput.addEventListener('input', () => {
+    validateServerLogShortcutInputs(false);
+    if (serverLogShortcutPathPickerOpen) positionServerLogShortcutPathPicker();
+  });
+  if (serverLogShortcutBrowseButton) serverLogShortcutBrowseButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); browseServerLogShortcutPath(); });
+  if (serverLogShortcutPathPicker) {
+    serverLogShortcutPathPicker.addEventListener('mousedown', event => event.stopPropagation());
+    serverLogShortcutPathPicker.addEventListener('click', event => event.stopPropagation());
+  }
+  if (serverLogShortcutPathPickerCancelButton) serverLogShortcutPathPickerCancelButton.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); hideServerLogShortcutPathPicker(); });
+  if (serverLogShortcutPathPickerList) serverLogShortcutPathPickerList.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.target && event.target.closest ? event.target.closest('[data-server-log-picker-path]') : null;
+    if (!target) return;
+    const path = target.getAttribute('data-server-log-picker-path') || '/';
+    const type = target.getAttribute('data-server-log-picker-type') || 'file';
+    if (type === 'directory') {
+      requestServerLogShortcutPathEntries(path);
+    } else {
+      selectServerLogShortcutPath(path);
+    }
+  });
+  if (serverLogShortcutPathInput) serverLogShortcutPathInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveServerLogShortcutDialog();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      hideServerLogShortcutDialog();
+    }
+  });
+  if (serverLogShortcutRemoveConfirmButton) serverLogShortcutRemoveConfirmButton.addEventListener('click', () => {
+    confirmRemoveServerLogShortcut();
+  });
+  if (serverLogShortcutRemoveCancelButton) serverLogShortcutRemoveCancelButton.addEventListener('click', () => {
+    hideServerLogShortcutRemoveDialog();
+  });
+  if (serverLogShortcutRemoveBackdrop) serverLogShortcutRemoveBackdrop.addEventListener('mousedown', event => {
+    if (event.target === serverLogShortcutRemoveBackdrop) hideServerLogShortcutRemoveDialog();
+  });
+
+  if (serverPortForwardSaveButton) serverPortForwardSaveButton.addEventListener('click', () => {
+    saveServerPortForwardDialog(false);
+  });
+  if (serverPortForwardCancelButton) serverPortForwardCancelButton.addEventListener('click', () => {
+    hideServerPortForwardDialog();
+  });
+  if (serverPortForwardDeleteButton) serverPortForwardDeleteButton.addEventListener('click', () => {
+    showServerPortForwardRemoveDialog();
+  });
+  if (serverPortForwardBackdrop) serverPortForwardBackdrop.addEventListener('mousedown', event => {
+    if (event.target === serverPortForwardBackdrop) hideServerPortForwardDialog();
+  });
+  for (const input of [serverPortForwardNameInput, serverPortForwardLocalHostInput, serverPortForwardLocalPortInput, serverPortForwardRemoteHostInput, serverPortForwardRemotePortInput]) {
+    if (!input) continue;
+    input.addEventListener('input', () => readServerPortForwardDialogValues(false));
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && event.target !== serverPortForwardNameInput) {
+        event.preventDefault();
+        saveServerPortForwardDialog(false);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        hideServerPortForwardDialog();
+      }
+    });
+  }
+  if (serverPortForwardRemoveConfirmButton) serverPortForwardRemoveConfirmButton.addEventListener('click', () => {
+    confirmRemoveServerPortForward();
+  });
+  if (serverPortForwardRemoveCancelButton) serverPortForwardRemoveCancelButton.addEventListener('click', () => {
+    hideServerPortForwardRemoveDialog();
+  });
+  if (serverPortForwardRemoveBackdrop) serverPortForwardRemoveBackdrop.addEventListener('mousedown', event => {
+    if (event.target === serverPortForwardRemoveBackdrop) hideServerPortForwardRemoveDialog();
+  });
+
+  if (serverRefreshButton) {
+    serverRefreshButton.addEventListener('click', () => handleServerViewAction('refresh'));
+  }
+  if (serverAutoRefreshDropdownButton) {
+    serverAutoRefreshDropdownButton.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleServerAutoRefreshDropdown();
+    });
+  }
+  if (serverAutoRefreshDropdownMenu) {
+    serverAutoRefreshDropdownMenu.addEventListener('click', event => {
+      const item = event.target && event.target.closest ? event.target.closest('[data-server-auto-refresh]') : null;
+      if (!item || !serverAutoRefreshDropdownButton || serverAutoRefreshDropdownButton.disabled) return;
+      selectServerAutoRefresh(item.getAttribute('data-server-auto-refresh') || 'off');
+      hideServerAutoRefreshDropdown();
+    });
+  }
+
   if (browserCard) {
     browserCard.addEventListener('click', event => {
       if (event.target instanceof Element && event.target.closest('.session-close')) return;
@@ -2711,11 +4000,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   uploadButton.addEventListener('click', () => { if (activeConnectionId && canStartTransferAction()) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } }); });
   downloadButton.addEventListener('click', () => { const entries = getSelectedActionEntries(); if (entries.length && canStartTransferAction()) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } }); });
   transferQueueButton.addEventListener('click', showTransferQueueModal);
-  transferQueueCloseButton.addEventListener('click', hideTransferQueueModal);
   transferQueueFooterCloseButton.addEventListener('click', hideTransferQueueModal);
   transferQueueModal.addEventListener('click', event => { if (event.target === transferQueueModal) hideTransferQueueModal(); });
   confirmDialogCancelButton.addEventListener('click', () => closeConfirmDialog(false));
   confirmDialogConfirmButton.addEventListener('click', () => closeConfirmDialog(true));
+  if (inputPromptCancelButton) inputPromptCancelButton.addEventListener('click', () => closeInputPromptDialog(false));
+  if (inputPromptConfirmButton) inputPromptConfirmButton.addEventListener('click', () => closeInputPromptDialog(true));
+  if (inputPromptInput) {
+    inputPromptInput.addEventListener('input', () => {
+      if (inputPromptFeedback) inputPromptFeedback.textContent = '';
+      inputPromptInput.classList.remove('backup-input-invalid');
+    });
+    inputPromptInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        closeInputPromptDialog(true);
+      }
+    });
+  }
   transferConflictActions.addEventListener('click', event => {
     const button = event.target && event.target.closest ? event.target.closest('button[data-transfer-conflict-decision]') : null;
     if (!button) return;
@@ -2737,6 +4039,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
   confirmDialogBackdrop.addEventListener('keydown', trapConfirmDialogFocus);
+  if (inputPromptBackdrop) {
+    inputPromptBackdrop.addEventListener('mousedown', event => {
+      if (event.target === inputPromptBackdrop) {
+        event.preventDefault();
+        if (inputPromptInput) inputPromptInput.focus();
+      }
+    });
+    inputPromptBackdrop.addEventListener('keydown', trapInputPromptFocus);
+  }
   transferQueueModal.addEventListener('pointerdown', handleTransferQueueActionPointerDown, true);
 
   function handleTransferQueueActionPointerDown(event) {
@@ -2778,7 +4089,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const action = statusCancelAction;
     statusCancelButton.disabled = true;
     if (action === 'connection') {
-      vscode.postMessage({ type: 'cancelConnection' });
+      vscode.postMessage({ type: 'cancelConnection', payload: { connectionId: activeConnectionId } });
       return;
     }
     if (action === 'transfer') {
@@ -2885,6 +4196,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (authDropdownOpen && event.target && event.target.closest && !event.target.closest('.auth-picker')) {
       hideAuthDropdown();
     }
+    if (serverAutoRefreshDropdownOpen && event.target && event.target.closest && !event.target.closest('#serverAutoRefreshPicker')) {
+      hideServerAutoRefreshDropdown();
+    }
     if (!breadcrumbDropdownState.open) return;
     if (event.target && event.target.closest && event.target.closest('#remotePathBox')) return;
     hideRemotePathDropdown();
@@ -2975,6 +4289,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       trapTransferConflictFocus(event);
       return;
     }
+    if (event.key === 'Escape' && inputPromptOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeInputPromptDialog(false);
+      return;
+    }
+    if (inputPromptOpen) {
+      trapInputPromptFocus(event);
+      return;
+    }
     if (event.key === 'Escape' && confirmDialogOpen) {
       event.preventDefault();
       event.stopPropagation();
@@ -2995,6 +4319,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
     if (event.key === 'Escape' && authDropdownOpen) {
       hideAuthDropdown();
+      return;
+    }
+    if (event.key === 'Escape' && serverAutoRefreshDropdownOpen) {
+      hideServerAutoRefreshDropdown();
       return;
     }
     if (event.key === 'Escape' && exportBackupDialogOpen) {
@@ -3024,6 +4352,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       return;
     }
     if (event.key === 'Escape' && ownerGroupDialogOpen) {
+      if (isOwnerGroupSuggestionsOpen()) {
+        event.preventDefault();
+        event.stopPropagation();
+        hideOwnerGroupSuggestions();
+        return;
+      }
       hideOwnerGroupDialog();
       return;
     }
@@ -3369,7 +4703,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       event.stopPropagation();
       return;
     }
-    loadRemoteCommandIntoEditor({ command: item.command }, false);
+    loadRemoteCommandIntoEditor(item, false);
   });
 
   remoteCommandOutputWrap.addEventListener('keydown', event => {
@@ -3440,16 +4774,36 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   });
 
-  ownerGroupOwnerInput.addEventListener('input', updateOwnerGroupApplyState);
-  ownerGroupGroupInput.addEventListener('input', updateOwnerGroupApplyState);
+  ownerGroupOwnerInput.addEventListener('input', () => {
+    updateOwnerGroupApplyState();
+    renderOwnerGroupSuggestions('owner');
+  });
+  ownerGroupGroupInput.addEventListener('input', () => {
+    updateOwnerGroupApplyState();
+    renderOwnerGroupSuggestions('group');
+  });
+  ownerGroupOwnerInput.addEventListener('focus', () => showOwnerGroupSuggestions('owner'));
+  ownerGroupGroupInput.addEventListener('focus', () => showOwnerGroupSuggestions('group'));
+  ownerGroupOwnerSuggestions.addEventListener('mousedown', event => event.preventDefault());
+  ownerGroupGroupSuggestions.addEventListener('mousedown', event => event.preventDefault());
+  ownerGroupOwnerSuggestions.addEventListener('click', event => handleOwnerGroupSuggestionClick(event, 'owner'));
+  ownerGroupGroupSuggestions.addEventListener('click', event => handleOwnerGroupSuggestionClick(event, 'group'));
   ownerGroupRecursiveInput.addEventListener('change', updateOwnerGroupApplyState);
   ownerGroupCancelButton.addEventListener('click', hideOwnerGroupDialog);
   ownerGroupApplyButton.addEventListener('click', applyOwnerGroupDialog);
+  document.addEventListener('mousedown', event => {
+    if (!ownerGroupDialogOpen || !isOwnerGroupSuggestionsOpen()) return;
+    const target = event.target && event.target.closest ? event.target.closest('.owner-group-combo, .owner-group-suggestions') : null;
+    if (!target) hideOwnerGroupSuggestions();
+  });
+
   ownerGroupBackdrop.addEventListener('mousedown', event => {
     if (event.target === ownerGroupBackdrop) {
       hideOwnerGroupDialog();
     }
   });
+  window.addEventListener('resize', scheduleOwnerGroupSuggestionsPosition);
+  window.addEventListener('scroll', scheduleOwnerGroupSuggestionsPosition, true);
 
   manageProfilesCloseButton.addEventListener('click', () => {
     hideManageProfilesDialog();
@@ -3487,6 +4841,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   bindTemporaryPasswordReveal(exportCredentialConfirmPasswordRevealButton, exportCredentialConfirmPassword);
   bindTemporaryPasswordReveal(passwordRevealButton, password);
   bindTemporaryPasswordReveal(passphraseRevealButton, passphrase);
+  bindTemporaryPasswordReveal(inputPromptRevealButton, inputPromptInput);
 
   importBackupCancelButton.addEventListener('click', hideImportBackupDialog);
   importBackupApplyButton.addEventListener('click', applyImportBackupDialog);
@@ -3831,10 +5186,44 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (remoteCommandWorkingDirectoryPickerOpen && remoteCommandPickerWrap && event.target instanceof Node && !remoteCommandPickerWrap.contains(event.target)) {
       hideRemoteCommandWorkingDirectoryPicker();
     }
+    const serverLogShortcutPickerWrap = serverLogShortcutPathPicker ? serverLogShortcutPathPicker.closest('.server-log-shortcut-path-wrap') : null;
+    if (serverLogShortcutPathPickerOpen && serverLogShortcutPickerWrap && event.target instanceof Node && !serverLogShortcutPickerWrap.contains(event.target)) {
+      hideServerLogShortcutPathPicker();
+    }
   });
 
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') {
+      if (serverLogShortcutPathPickerOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideServerLogShortcutPathPicker();
+        return;
+      }
+      if (serverLogShortcutDialogOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideServerLogShortcutDialog();
+        return;
+      }
+      if (serverLogShortcutRemoveDialogOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideServerLogShortcutRemoveDialog();
+        return;
+      }
+      if (serverPortForwardRemoveDialogOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideServerPortForwardRemoveDialog();
+        return;
+      }
+      if (serverPortForwardDialogOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideServerPortForwardDialog();
+        return;
+      }
       if (remoteCommandWorkingDirectoryPickerOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -4160,15 +5549,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function getToolbarLayoutItems() {
+    const pathbarViewSwitch = pathbar ? pathbar.querySelector('.pathbar-view-switch') : null;
+    const viewSwitchSeparator = pathbar ? pathbar.querySelector('.view-switch-separator') : null;
     return [
       remotePathBox,
       filterBox,
+      serverRefreshActions,
+      serverRefreshActionsSeparator,
       commandActionsSeparator,
       commandActions,
       transferActionsSeparator,
       transferActions,
       sudoToggleSeparator,
-      sudoToggleLabel
+      sudoToggleLabel,
+      viewSwitchSeparator,
+      pathbarViewSwitch
     ].filter(Boolean);
   }
 
@@ -4385,7 +5780,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function updateConnectionRailPosition() {
     if (!mainLayout || !connectionRail || !connectionPanelCollapsed) return;
     const layoutRect = mainLayout.getBoundingClientRect();
-    connectionRail.style.top = Math.max(6, Math.round(layoutRect.top + 6)) + 'px';
+    connectionRail.style.top = Math.max(6, Math.round(layoutRect.top + 8)) + 'px';
   }
 
   function updateConnectionPanelLayout(options = {}) {
@@ -4467,7 +5862,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function updateProfileDropdownLabel() {
     const profile = selectedProfileId ? profiles.find(item => item.id === selectedProfileId) : undefined;
     profileDropdownLabel.textContent = profile ? profile.name : 'New / Quick Connection';
-    profileDropdownButton.title = profile ? formatProfileTarget(profile) : 'Use the form below';
+    profileDropdownButton.setAttribute('data-tooltip', profile ? formatProfileTarget(profile) : 'Use the form below');
   }
 
   function normalizeConnectionFilter(value) {
@@ -4574,7 +5969,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function toggleProfileDropdown() {
-    if (busy || !profileDropdownButton) return;
+    if (!profileDropdownButton) return;
     if (profileDropdownOpen) {
       hideProfileDropdown();
       return;
@@ -4764,6 +6159,61 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     reorderSessionTabsByIndex(draggedId, position === 'after' ? targetIndex + 1 : targetIndex);
   }
 
+  function activateClientSession(connectionId) {
+    const sessionId = String(connectionId || '').trim();
+    const session = sessions.find(item => item.id === sessionId);
+    if (!session) return;
+
+    activeConnectionId = sessionId;
+    renderSessionTabs();
+    updateActiveSessionUi();
+    updateConnectionViewUi();
+    restoreFilesStatusForActiveConnection();
+    setControls();
+
+    if (isSessionConnected(session)) {
+      setBusy(true, 'Switching to ' + session.name + '...', '', 'Cancel', session.id);
+      vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id } });
+      return;
+    }
+
+    currentEntries = [];
+    currentPath.value = session.currentPath || session.startPath || '/';
+    const message = isSessionFailed(session) ? (session.error || 'Connection failed.') : 'Connecting...';
+    entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">' + escapeHtml(message) + '</div></td></tr>';
+  }
+
+  function getSessionCloseDisplayName(session) {
+    const rawName = session && (session.name || session.host || session.id);
+    const name = String(rawName || 'this connection').trim();
+    return name || 'this connection';
+  }
+
+  function disconnectSessionFromTabClose(connectionId) {
+    const sessionId = String(connectionId || '');
+    if (!sessionId || connectionButtonState === 'disconnecting') return;
+    const session = sessions.find(item => item.id === sessionId);
+    if (!session) return;
+    connectionButtonState = 'disconnecting';
+    setBusy(true, 'Disconnecting...');
+    vscode.postMessage({ type: 'disconnect', payload: { connectionId: sessionId } });
+  }
+
+  function requestCloseSessionFromTab(session) {
+    if (!session || !session.id || connectionButtonState === 'disconnecting') return;
+    if (!isSessionConnected(session)) {
+      removeClientPendingSession(session.id);
+      return;
+    }
+    showConfirmDialog({
+      requestId: 'client:closeConnection:' + session.id,
+      title: 'Close connection?',
+      message: 'This will disconnect "' + getSessionCloseDisplayName(session) + '" and stop any active Remote Edit operations for this connection.',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Disconnect'
+    });
+  }
+
   function renderSessionTabs() {
     if (!sessions.length) {
       sessionTabs.classList.add('empty');
@@ -4777,18 +6227,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
     for (const session of sessions) {
       const tab = document.createElement('button');
-      tab.className = 'session-tab has-tooltip tooltip-above' + (session.id === activeConnectionId ? ' active' : '');
+      const tabStateClass = isSessionConnecting(session) ? ' connecting' : (isSessionFailed(session) ? ' failed' : '');
+      const tabIcon = isSessionConnecting(session) ? SESSION_TAB_CONNECTING_ICON : (isSessionFailed(session) ? SESSION_TAB_ERROR_ICON : SESSION_TAB_REMOTE_ICON);
+      tab.className = 'session-tab has-tooltip tooltip-above' + tabStateClass + (session.id === activeConnectionId ? ' active' : '');
       tab.dataset.sessionId = session.id || '';
       tab.dataset.tooltip = formatSessionTooltipTarget(session);
       tab.draggable = true;
-      tab.innerHTML = '<span class="session-icon" aria-hidden="true">' + SESSION_TAB_REMOTE_ICON + '</span><span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect"></span>';
+      tab.innerHTML = '<span class="session-icon" aria-hidden="true">' + tabIcon + '</span><span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect"></span>';
       tab.addEventListener('click', () => {
         if (session.id === activeConnectionId) {
-          syncConnectionFormWithActiveSession({ preserveStatus: true });
+          if (isSessionConnected(session)) syncConnectionFormWithActiveSession({ preserveStatus: true });
           return;
         }
-        setBusy(true, 'Switching to ' + session.name + '...');
-        vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id } });
+        activateClientSession(session.id);
       });
 
       tab.addEventListener('dragstart', event => {
@@ -4815,9 +6266,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       close.addEventListener('dragstart', event => { event.preventDefault(); event.stopPropagation(); });
       close.addEventListener('click', event => {
         event.stopPropagation();
-        connectionButtonState = 'disconnecting';
-        setBusy(true, 'Disconnecting...');
-        vscode.postMessage({ type: 'disconnect', payload: { connectionId: session.id } });
+        requestCloseSessionFromTab(session);
       });
 
       sessionTabs.appendChild(tab);
@@ -4866,6 +6315,2109 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     sessionDropZone.addEventListener('dragleave', handleSessionTabsDragLeave);
   }
 
+  function getConnectionViewStorageKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function isServerViewSupported(session) {
+    return Boolean(session && normalizeConnectionTypeValue(session.connectionType) === 'sftp' && getActiveRemoteCapabilities().canRunCommand);
+  }
+
+  function getActiveConnectionView() {
+    if (!activeConnectionId) return 'files';
+    const active = getActiveSession();
+    const saved = activeConnectionViewsByConnectionId.get(getConnectionViewStorageKey()) || 'files';
+    if (saved === 'server' && !isServerViewSupported(active)) return 'files';
+    return saved === 'server' ? 'server' : 'files';
+  }
+
+  function setActiveConnectionView(view) {
+    const nextView = view === 'server' ? 'server' : 'files';
+    const active = getActiveSession();
+    if (nextView === 'server' && !isServerViewSupported(active)) {
+      activeConnectionViewsByConnectionId.set(getConnectionViewStorageKey(), 'files');
+    } else if (activeConnectionId) {
+      activeConnectionViewsByConnectionId.set(getConnectionViewStorageKey(), nextView);
+    }
+    const toolbarLayoutSnapshot = prepareToolbarLayoutTransition();
+    updateConnectionViewUi();
+    setControls({ animateToolbarLayout: false });
+    finishToolbarLayoutTransition(toolbarLayoutSnapshot);
+    maybeRequestServerDashboardForActiveView();
+    updateServerAutoRefreshTimer();
+  }
+
+  function pruneConnectionViewState() {
+    const activeIds = new Set(sessions.map(session => session.id).filter(Boolean));
+    for (const key of Array.from(activeConnectionViewsByConnectionId.keys())) {
+      if (key !== '__default__' && !activeIds.has(key)) activeConnectionViewsByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverDashboardStatesByConnectionId.keys())) {
+      if (!activeIds.has(key)) serverDashboardStatesByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverServiceFiltersByConnectionId.keys())) {
+      if (key !== '__default__' && !activeIds.has(key)) serverServiceFiltersByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverQuickTaskFiltersByConnectionId.keys())) {
+      if (key !== '__default__' && !activeIds.has(key)) serverQuickTaskFiltersByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverProcessFiltersByConnectionId.keys())) {
+      if (key !== '__default__' && !activeIds.has(key)) serverProcessFiltersByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverProcessActionStatesByConnectionId.keys())) {
+      if (!activeIds.has(key)) serverProcessActionStatesByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverLogShortcutFiltersByConnectionId.keys())) {
+      if (key !== '__default__' && !activeIds.has(key)) serverLogShortcutFiltersByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverPortForwardFiltersByConnectionId.keys())) {
+      if (key !== '__default__' && !activeIds.has(key)) serverPortForwardFiltersByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverCardSortsByConnectionId.keys())) {
+      const separatorIndex = String(key).indexOf('::');
+      const connectionId = separatorIndex >= 0 ? String(key).slice(0, separatorIndex) : String(key);
+      if (connectionId !== '__default__' && !activeIds.has(connectionId)) serverCardSortsByConnectionId.delete(key);
+    }
+    for (const key of Array.from(serverPortForwardRuntimeByConnectionId.keys())) {
+      if (!activeIds.has(key)) serverPortForwardRuntimeByConnectionId.delete(key);
+    }
+  }
+
+  function formatServerAdapterLabel(session) {
+    if (!session) return 'unknown';
+    const protocol = normalizeConnectionTypeValue(session.connectionType);
+    if (protocol !== 'sftp') return protocol;
+    return 'ssh/sftp';
+  }
+
+  function formatServerSudoLabel(session) {
+    if (!session || normalizeConnectionTypeValue(session.connectionType) !== 'sftp') return 'Sudo unavailable';
+    if (String(session.username || '').trim().toLowerCase() === 'root') return 'Root user';
+    return session.sudoModeEnabled ? 'Sudo enabled' : 'Sudo disabled';
+  }
+
+  function formatServerTarget(session) {
+    if (!session) return '';
+    const user = String(session.username || '').trim();
+    const hostValue = String(session.host || '').trim();
+    if (user && hostValue) return user + '@' + hostValue;
+    return user || hostValue || 'Remote host';
+  }
+
+  function createServerLogShortcutId() {
+    return 'log-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function createServerLogShortcut(name, path) {
+    const normalizedPath = normalizeUiRemotePath(path || '/');
+    const normalizedName = String(name || '').trim() || getRemotePathBasename(normalizedPath);
+    return {
+      id: createServerLogShortcutId(),
+      name: normalizedName,
+      path: normalizedPath
+    };
+  }
+
+  function getServerInfoValue(label) {
+    const state = getActiveServerDashboardState();
+    const items = state && state.data && Array.isArray(state.data.systemInfo) ? state.data.systemInfo : [];
+    const target = String(label || '').toLowerCase();
+    const item = items.find(info => String(info.label || '').toLowerCase() === target);
+    return String((item && item.value) || '').trim();
+  }
+
+  function getDefaultServerLogShortcuts(session) {
+    const protocol = normalizeConnectionTypeValue(session && session.connectionType);
+    if (protocol !== 'sftp') return [];
+
+    const osName = getServerInfoValue('OS').toLowerCase();
+    const adapter = getServerInfoValue('Adapter').toLowerCase();
+    if (osName === 'aix' || adapter.indexOf('aix') !== -1 || adapter === 'generic-unix') {
+      return [
+        createServerLogShortcut('AIX messages', '/var/adm/messages'),
+        createServerLogShortcut('Messages', '/var/log/messages')
+      ];
+    }
+
+    return [
+      createServerLogShortcut('System log', '/var/log/syslog'),
+      createServerLogShortcut('Messages', '/var/log/messages'),
+      createServerLogShortcut('Nginx error', '/var/log/nginx/error.log'),
+      createServerLogShortcut('Nginx access', '/var/log/nginx/access.log'),
+      createServerLogShortcut('Apache error', '/var/log/httpd/error_log'),
+      createServerLogShortcut('Apache2 error', '/var/log/apache2/error.log')
+    ];
+  }
+
+  function sanitizeServerLogShortcut(item) {
+    const path = normalizeUiRemotePath(item && item.path ? item.path : '');
+    if (!path || path === '/') return null;
+    const name = String(item && item.name ? item.name : '').trim() || getRemotePathBasename(path);
+    return {
+      id: String(item && item.id ? item.id : createServerLogShortcutId()).trim() || createServerLogShortcutId(),
+      name: name,
+      path: path
+    };
+  }
+
+  function readServerLogShortcutsStorage() {
+    try {
+      const raw = localStorage.getItem(SERVER_LOG_SHORTCUTS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeServerLogShortcutsStorage(storage) {
+    try {
+      localStorage.setItem(SERVER_LOG_SHORTCUTS_STORAGE_KEY, JSON.stringify(storage || {}));
+      postPersistentStorageSnapshot();
+    } catch (_) {
+      // Ignore storage quota or disabled storage errors.
+    }
+  }
+
+  function isServerLogShortcutsPersistent(session) {
+    if (!session || session.isQuickConnect === true) return false;
+    if (session.isQuickConnect === false) return true;
+    return profiles.some(profile => profile.id === session.id);
+  }
+
+  function hasServerDashboardDataForLogDefaults() {
+    const state = getActiveServerDashboardState();
+    return Boolean(state && state.data);
+  }
+
+  function getServerLogShortcuts(session) {
+    if (!session) return [];
+    const connectionId = String(session.id || '').trim();
+    if (!connectionId) return [];
+
+    if (isServerLogShortcutsPersistent(session)) {
+      const storage = readServerLogShortcutsStorage();
+      if (Array.isArray(storage[connectionId])) {
+        return storage[connectionId].map(sanitizeServerLogShortcut).filter(Boolean);
+      }
+      if (!hasServerDashboardDataForLogDefaults()) {
+        return [];
+      }
+      const defaults = getDefaultServerLogShortcuts(session);
+      storage[connectionId] = defaults;
+      writeServerLogShortcutsStorage(storage);
+      return defaults;
+    }
+
+    if (serverLogShortcutsSessionByConnectionId.has(connectionId)) {
+      return (serverLogShortcutsSessionByConnectionId.get(connectionId) || []).map(sanitizeServerLogShortcut).filter(Boolean);
+    }
+
+    if (!hasServerDashboardDataForLogDefaults()) {
+      return [];
+    }
+
+    const defaults = getDefaultServerLogShortcuts(session);
+    serverLogShortcutsSessionByConnectionId.set(connectionId, defaults);
+    return defaults;
+  }
+
+  function saveServerLogShortcuts(session, shortcuts) {
+    if (!session) return;
+    const connectionId = String(session.id || '').trim();
+    if (!connectionId) return;
+    const normalized = (Array.isArray(shortcuts) ? shortcuts : []).map(sanitizeServerLogShortcut).filter(Boolean);
+
+    if (isServerLogShortcutsPersistent(session)) {
+      const storage = readServerLogShortcutsStorage();
+      storage[connectionId] = normalized;
+      writeServerLogShortcutsStorage(storage);
+      return;
+    }
+
+    serverLogShortcutsSessionByConnectionId.set(connectionId, normalized);
+  }
+
+  function getServerLogShortcutById(session, shortcutId) {
+    const id = String(shortcutId || '').trim();
+    return getServerLogShortcuts(session).find(shortcut => shortcut.id === id) || null;
+  }
+
+  function getRemotePathDirname(path) {
+    const normalized = normalizeUiRemotePath(path || '/');
+    if (normalized === '/') return '/';
+    const trimmed = normalized.replace(new RegExp('/+$'), '');
+    const index = trimmed.lastIndexOf('/');
+    return index <= 0 ? '/' : trimmed.slice(0, index);
+  }
+
+  function getServerLogShortcutInitialPickerPath() {
+    const typedPath = normalizeUiRemotePath(serverLogShortcutPathInput && serverLogShortcutPathInput.value ? serverLogShortcutPathInput.value : '');
+    if (typedPath && typedPath !== '/') {
+      return getRemotePathDirname(typedPath);
+    }
+    const state = getActiveServerDashboardState();
+    const info = state && state.data && Array.isArray(state.data.systemInfo) ? state.data.systemInfo : [];
+    const osName = String(((info.find(item => item && item.label === 'OS') || {}).value || '')).toLowerCase();
+    return osName === 'aix' ? '/var/adm' : '/var/log';
+  }
+
+  function ensureServerLogShortcutPathPickerPortal() {
+    if (!serverLogShortcutPathPicker || serverLogShortcutPathPicker.parentElement === document.body) return;
+    document.body.appendChild(serverLogShortcutPathPicker);
+  }
+
+  function positionServerLogShortcutPathPicker() {
+    if (!serverLogShortcutPathPickerOpen || !serverLogShortcutPathPicker || !serverLogShortcutPathInput) return;
+    ensureServerLogShortcutPathPickerPortal();
+
+    const rect = serverLogShortcutPathInput.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const margin = 8;
+    const gap = 4;
+    const width = Math.max(240, Math.min(rect.width, viewportWidth - (margin * 2)));
+    const left = Math.max(margin, Math.min(rect.left, viewportWidth - width - margin));
+    const below = Math.max(0, viewportHeight - rect.bottom - margin - gap);
+    const above = Math.max(0, rect.top - margin - gap);
+    const openAbove = below < 180 && above > below;
+    const available = Math.max(120, openAbove ? above : below);
+    const maxHeight = Math.min(280, Math.max(120, available));
+
+    serverLogShortcutPathPicker.style.left = Math.round(left) + 'px';
+    serverLogShortcutPathPicker.style.right = 'auto';
+    serverLogShortcutPathPicker.style.bottom = 'auto';
+    serverLogShortcutPathPicker.style.width = Math.round(width) + 'px';
+    serverLogShortcutPathPicker.style.maxHeight = Math.round(maxHeight) + 'px';
+
+    if (serverLogShortcutPathPickerList) {
+      serverLogShortcutPathPickerList.style.maxHeight = Math.max(80, Math.round(maxHeight - 38)) + 'px';
+    }
+
+    const measuredHeight = Math.min(serverLogShortcutPathPicker.offsetHeight || maxHeight, maxHeight);
+    const top = openAbove
+      ? Math.max(margin, rect.top - gap - measuredHeight)
+      : Math.min(rect.bottom + gap, viewportHeight - margin - measuredHeight);
+    serverLogShortcutPathPicker.style.top = Math.round(top) + 'px';
+  }
+
+  function browseServerLogShortcutPath() {
+    if (!activeConnectionId || !serverLogShortcutDialogOpen) return;
+    const path = getServerLogShortcutInitialPickerPath();
+    showServerLogShortcutPathPicker(path);
+    requestServerLogShortcutPathEntries(path);
+  }
+
+  function showServerLogShortcutPathPicker(path) {
+    serverLogShortcutPathPickerOpen = true;
+    serverLogShortcutPathPickerPathValue = normalizeUiRemotePath(path || '/');
+    if (serverLogShortcutPathPicker) {
+      ensureServerLogShortcutPathPickerPortal();
+      serverLogShortcutPathPicker.classList.remove('hidden');
+      serverLogShortcutPathPicker.setAttribute('aria-hidden', 'false');
+    }
+    if (serverLogShortcutPathPickerPath) serverLogShortcutPathPickerPath.textContent = serverLogShortcutPathPickerPathValue;
+    if (serverLogShortcutPathPickerList) serverLogShortcutPathPickerList.innerHTML = '<div class="remote-search-scope-picker-empty">Loading...</div>';
+    positionServerLogShortcutPathPicker();
+  }
+
+  function hideServerLogShortcutPathPicker() {
+    serverLogShortcutPathPickerOpen = false;
+    if (serverLogShortcutPathPicker) {
+      serverLogShortcutPathPicker.classList.add('hidden');
+      serverLogShortcutPathPicker.setAttribute('aria-hidden', 'true');
+      serverLogShortcutPathPicker.removeAttribute('style');
+      if (serverLogShortcutPathPickerList) serverLogShortcutPathPickerList.style.maxHeight = '';
+    }
+  }
+
+  function requestServerLogShortcutPathEntries(path) {
+    if (!activeConnectionId || !serverLogShortcutDialogOpen) return;
+    const scopePath = normalizeUiRemotePath(path || '/');
+    serverLogShortcutPathPickerPathValue = scopePath;
+    serverLogShortcutPathPickerRequestId += 1;
+    if (serverLogShortcutPathPickerPath) serverLogShortcutPathPickerPath.textContent = scopePath;
+    if (serverLogShortcutPathPickerList) serverLogShortcutPathPickerList.innerHTML = '<div class="remote-search-scope-picker-empty">Loading...</div>';
+    positionServerLogShortcutPathPicker();
+    vscode.postMessage({ type: 'browseRemoteSearchScope', payload: { scopePath, includeFiles: true, purpose: 'serverLogShortcut', requestId: String(serverLogShortcutPathPickerRequestId) } });
+  }
+
+  function selectServerLogShortcutPath(path) {
+    const selectedPath = normalizeUiRemotePath(path || '');
+    if (!selectedPath || selectedPath === '/') return;
+    serverLogShortcutPathInput.value = selectedPath;
+    validateServerLogShortcutInputs(false);
+    hideServerLogShortcutPathPicker();
+    serverLogShortcutPathInput.focus();
+  }
+
+  function handleServerLogShortcutPathEntriesListed(payload) {
+    if (payload && payload.purpose && payload.purpose !== 'serverLogShortcut') return false;
+    if (!serverLogShortcutPathPickerOpen) return false;
+    if (payload.connectionId && activeConnectionId && payload.connectionId !== activeConnectionId) return true;
+    if (payload.requestId && String(payload.requestId) !== String(serverLogShortcutPathPickerRequestId)) return true;
+    const path = normalizeUiRemotePath(payload.path || '/');
+    const parentPath = normalizeUiRemotePath(payload.parentPath || '/');
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    serverLogShortcutPathPickerPathValue = path;
+    if (serverLogShortcutPathPickerPath) serverLogShortcutPathPickerPath.textContent = path;
+    if (!serverLogShortcutPathPickerList) return true;
+    const parentItem = path && path !== '/' ? '<button class="remote-search-scope-picker-item" type="button" data-server-log-picker-type="directory" data-server-log-picker-path="' + escapeHtml(parentPath || '/') + '"><span aria-hidden="true">..</span></button>' : '';
+    if (payload.error) {
+      serverLogShortcutPathPickerList.innerHTML = parentItem + '<div class="remote-search-scope-picker-empty error">' + escapeHtml(payload.error || 'Unable to list this directory.') + '</div>';
+      positionServerLogShortcutPathPicker();
+      return true;
+    }
+    const currentPath = normalizeUiRemotePath(serverLogShortcutPathInput.value || '');
+    const items = entries.map(entry => {
+      const entryPath = normalizeUiRemotePath(entry.path || entry.name || '/');
+      const type = getEffectiveEntryType(entry) === 'directory' ? 'directory' : 'file';
+      const icon = type === 'directory' ? '▸' : '·';
+      const selected = type === 'file' && currentPath && entryPath === currentPath ? ' file-selected' : '';
+      return '<button class="remote-search-scope-picker-item' + selected + '" type="button" data-server-log-picker-type="' + escapeHtml(type) + '" data-server-log-picker-path="' + escapeHtml(entryPath) + '"><span aria-hidden="true">' + icon + '</span><span>' + escapeHtml(entry.name || entryPath) + '</span><span class="remote-search-scope-picker-item-path">' + escapeHtml(entryPath) + '</span></button>';
+    }).join('');
+    serverLogShortcutPathPickerList.innerHTML = parentItem + (items || '<div class="remote-search-scope-picker-empty">No files or folders.</div>');
+    positionServerLogShortcutPathPicker();
+    return true;
+  }
+
+  function validateServerLogShortcutInputs(showFeedback) {
+    const name = String(serverLogShortcutNameInput.value || '').trim();
+    const rawPath = String(serverLogShortcutPathInput.value || '').trim();
+    const pathValid = Boolean(rawPath && rawPath.charAt(0) === '/');
+
+    serverLogShortcutNameInput.classList.remove('server-log-shortcut-input-invalid');
+    serverLogShortcutPathInput.classList.toggle('server-log-shortcut-input-invalid', !pathValid && showFeedback);
+
+    if (!rawPath) {
+      if (showFeedback) serverLogShortcutFeedback.textContent = 'Remote log path is required.';
+      return null;
+    }
+
+    if (!pathValid) {
+      if (showFeedback) serverLogShortcutFeedback.textContent = 'Path must be absolute.';
+      return null;
+    }
+
+    if (showFeedback) serverLogShortcutFeedback.textContent = '';
+    const normalizedPath = normalizeUiRemotePath(rawPath);
+    return {
+      name: name || getRemotePathBasename(normalizedPath),
+      path: normalizedPath
+    };
+  }
+
+  function showServerLogShortcutDialog(mode, shortcutId) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return;
+    const editing = mode === 'edit';
+    const shortcut = editing ? getServerLogShortcutById(active, shortcutId) : null;
+    if (editing && !shortcut) return;
+
+    serverLogShortcutDialogOpen = true;
+    serverLogShortcutDialogMode = editing ? 'edit' : 'add';
+    serverLogShortcutDialogShortcutId = editing ? shortcut.id : '';
+
+    serverLogShortcutTitle.textContent = editing ? 'Edit Log Shortcut' : 'Add Log Shortcut';
+    serverLogShortcutSubtitle.textContent = editing ? 'Update this shortcut name or remote log path.' : 'Create a shortcut to a remote log file.';
+    serverLogShortcutSaveButton.textContent = editing ? 'Save' : 'Add';
+    if (serverLogShortcutRemoveButton) {
+      serverLogShortcutRemoveButton.hidden = !editing;
+      serverLogShortcutRemoveButton.disabled = !editing;
+    }
+    serverLogShortcutNameInput.value = shortcut ? shortcut.name : '';
+    serverLogShortcutPathInput.value = shortcut ? shortcut.path : '';
+    serverLogShortcutFeedback.textContent = '';
+    serverLogShortcutNameInput.classList.remove('server-log-shortcut-input-invalid');
+    serverLogShortcutPathInput.classList.remove('server-log-shortcut-input-invalid');
+
+    serverLogShortcutBackdrop.classList.add('visible');
+    serverLogShortcutBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+      if (editing) {
+        serverLogShortcutNameInput.focus();
+        serverLogShortcutNameInput.select();
+      } else {
+        serverLogShortcutPathInput.focus();
+      }
+    }, 0);
+  }
+
+  function hideServerLogShortcutDialog() {
+    hideServerLogShortcutPathPicker();
+    serverLogShortcutDialogOpen = false;
+    serverLogShortcutDialogMode = 'add';
+    serverLogShortcutDialogShortcutId = '';
+    if (serverLogShortcutRemoveButton) {
+      serverLogShortcutRemoveButton.hidden = true;
+      serverLogShortcutRemoveButton.disabled = true;
+    }
+    serverLogShortcutBackdrop.classList.remove('visible');
+    serverLogShortcutBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function saveServerLogShortcutDialog() {
+    const values = validateServerLogShortcutInputs(true);
+    if (!values) {
+      serverLogShortcutPathInput.focus();
+      return;
+    }
+
+    const active = getActiveSession();
+    if (!active) return;
+    const shortcuts = getServerLogShortcuts(active).slice();
+
+    if (serverLogShortcutDialogMode === 'edit') {
+      const index = shortcuts.findIndex(shortcut => shortcut.id === serverLogShortcutDialogShortcutId);
+      if (index < 0) return;
+      shortcuts[index] = {
+        id: shortcuts[index].id,
+        name: values.name,
+        path: values.path
+      };
+    } else {
+      shortcuts.push(createServerLogShortcut(values.name, values.path));
+    }
+
+    saveServerLogShortcuts(active, shortcuts);
+    hideServerLogShortcutDialog();
+    renderServerView();
+  }
+
+  function showServerLogShortcutRemoveDialog(shortcutId) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return;
+    const shortcut = getServerLogShortcutById(active, shortcutId);
+    if (!shortcut) return;
+
+    serverLogShortcutRemoveDialogOpen = true;
+    serverLogShortcutRemoveId = shortcut.id;
+    serverLogShortcutRemovePath.textContent = shortcut.name + ' — ' + shortcut.path;
+    serverLogShortcutRemoveBackdrop.classList.add('visible');
+    serverLogShortcutRemoveBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => serverLogShortcutRemoveCancelButton.focus(), 0);
+  }
+
+  function hideServerLogShortcutRemoveDialog() {
+    serverLogShortcutRemoveDialogOpen = false;
+    serverLogShortcutRemoveId = '';
+    serverLogShortcutRemoveBackdrop.classList.remove('visible');
+    serverLogShortcutRemoveBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function confirmRemoveServerLogShortcut() {
+    const active = getActiveSession();
+    if (!active || !serverLogShortcutRemoveId) return;
+    const shortcuts = getServerLogShortcuts(active).filter(shortcut => shortcut.id !== serverLogShortcutRemoveId);
+    saveServerLogShortcuts(active, shortcuts);
+    hideServerLogShortcutRemoveDialog();
+    hideServerLogShortcutDialog();
+    renderServerView();
+  }
+
+  function getServerDashboardState(connectionId) {
+    const key = String(connectionId || '').trim();
+    if (!key) return null;
+    let state = serverDashboardStatesByConnectionId.get(key);
+    if (!state) {
+      state = { connectionId: key, data: null, loading: false, refreshing: false, error: '', requestId: '' };
+      serverDashboardStatesByConnectionId.set(key, state);
+    }
+    return state;
+  }
+
+  function getActiveServerDashboardState() {
+    return getServerDashboardState(activeConnectionId);
+  }
+
+  function createServerDashboardRequestId() {
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  }
+
+  function getDefaultServerOverviewItems() {
+    return [
+      { label: 'Uptime', value: '—', help: 'Not loaded' },
+      { label: 'Load', value: '—', help: 'Not loaded' },
+      { label: 'Memory', value: '—', help: 'Not loaded' },
+      { label: 'Disk', value: '—', help: 'Not loaded' }
+    ];
+  }
+
+  function requestServerDashboardRefresh(force) {
+    const active = getActiveSession();
+    if (!activeConnectionId || !active || !isServerViewSupported(active)) return;
+    const state = getServerDashboardState(activeConnectionId);
+    if (!state) return;
+    if (state.refreshing && !force) return;
+    const requestId = createServerDashboardRequestId();
+    state.requestId = requestId;
+    state.loading = !state.data;
+    state.refreshing = true;
+    state.error = '';
+    renderServerView();
+    if (serverRefreshButton) serverRefreshButton.classList.add('busy');
+    vscode.postMessage({ type: 'requestServerDashboard', payload: { connectionId: activeConnectionId, requestId: requestId, force: Boolean(force) } });
+  }
+
+  function maybeRequestServerDashboardForActiveView() {
+    const active = getActiveSession();
+    if (getActiveConnectionView() !== 'server' || !activeConnectionId || !active || !isServerViewSupported(active)) return;
+    const state = getServerDashboardState(activeConnectionId);
+    if (!state || state.data || state.loading || state.refreshing) return;
+    requestServerDashboardRefresh(false);
+  }
+
+  function handleServerDashboardSnapshot(payload) {
+    const connectionId = String(payload.connectionId || '').trim();
+    if (!connectionId) return;
+    const state = getServerDashboardState(connectionId);
+    if (!state) return;
+    if (state.requestId && payload.requestId && state.requestId !== payload.requestId) return;
+    const processActionState = getServerProcessActionState(connectionId);
+    if (processActionState && state.data) {
+      payload = Object.assign({}, payload, {
+        processes: Array.isArray(state.data.processes) ? state.data.processes : [],
+        processAdapter: state.data.processAdapter || payload.processAdapter || 'ps'
+      });
+    }
+    state.data = payload;
+    state.loading = false;
+    state.refreshing = false;
+    state.error = String(payload.error || '');
+    state.requestId = '';
+    if (connectionId === activeConnectionId) {
+      renderServerView();
+      updateServerRefreshBusyState();
+    }
+  }
+
+  function updateServerRefreshBusyState() {
+    const state = getActiveServerDashboardState();
+    const refreshing = Boolean(state && state.refreshing);
+    if (serverRefreshButton) serverRefreshButton.classList.toggle('busy', refreshing);
+  }
+
+  function updateServerAutoRefreshTimer() {
+    if (serverAutoRefreshTimer) {
+      clearInterval(serverAutoRefreshTimer);
+      serverAutoRefreshTimer = null;
+    }
+    const seconds = Number(serverAutoRefreshValue || 0);
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    if (getActiveConnectionView() !== 'server') return;
+    const active = getActiveSession();
+    if (!activeConnectionId || !active || !isServerViewSupported(active)) return;
+    serverAutoRefreshTimer = setInterval(() => {
+      const currentActive = getActiveSession();
+      if (getActiveConnectionView() !== 'server' || !activeConnectionId || !currentActive || !isServerViewSupported(currentActive)) {
+        updateServerAutoRefreshTimer();
+        return;
+      }
+      requestServerDashboardRefresh(false);
+    }, Math.max(15, seconds) * 1000);
+  }
+
+  function renderServerOverviewCards() {
+    const state = getActiveServerDashboardState();
+    const dataItems = state && state.data && Array.isArray(state.data.overview) ? state.data.overview : getDefaultServerOverviewItems();
+    const items = dataItems.map(item => ({
+      label: item.label || '',
+      value: state && state.loading ? 'Loading...' : (item.value || '—'),
+      help: item.help || ''
+    }));
+    return items.map(item => '<div class="server-overview-card"><div class="server-overview-label">' + escapeHtml(item.label) + '</div><div class="server-overview-value">' + escapeHtml(item.value) + '</div><div class="server-overview-help">' + escapeHtml(item.help) + '</div></div>').join('');
+  }
+
+
+  function renderServerQuickTasks() {
+    const list = getRemoteCommandSavedList(activeConnectionId);
+    const running = getRemoteCommandSession(activeConnectionId).status === 'running';
+    const filterText = getServerQuickTaskFilterText();
+    const filteredList = list.filter(item => matchesServerQuickTaskFilter(item, filterText));
+    const visibleList = sortServerItems('quickTasks', filteredList, (item, key) => {
+      if (key === 'details') return item && (item.details || getRemoteCommandItemRemotePath(item) || item.command);
+      return item && (item.name || firstRemoteCommandLine(item.command) || item.command);
+    });
+    const filterHasValue = Boolean(String(filterText || '').trim());
+    const countLabel = formatServerListCount(list.length, filteredList.length, filterHasValue, false);
+    const filterBox = '<div class="server-quick-tasks-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverQuickTasksFilterInput" class="server-quick-tasks-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter tasks" value="' + escapeHtml(filterText) + '" aria-label="Filter quick tasks"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Quick Tasks Filter" data-tooltip="Clear Filter" data-server-quick-tasks-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div>';
+    const addTooltip = running ? 'A command is already running' : 'Add command';
+    const addButton = '<span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(addTooltip) + '"><button class="secondary remote-command-icon-button" type="button" aria-label="Add command" data-server-quick-task-action="add"' + (running ? ' disabled' : '') + '><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3h1v4.5H13v1H8.5V13h-1V8.5H3v-1h4.5V3Z"></path></svg></button></span>';
+    const header = '<div class="server-section-title-row server-quick-tasks-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Quick Tasks</div><span class="server-section-count">' + escapeHtml(countLabel) + '</span></div><div class="server-section-title-right"><div class="server-section-title-actions">' + addButton + '</div><span class="server-section-title-separator" aria-hidden="true"></span>' + filterBox + '</div></div>';
+
+    if (!list.length) {
+      return '<section class="server-section-card server-quick-tasks-card">' + header + '<div class="server-placeholder"><div>No saved commands yet.</div><button class="secondary" type="button" data-server-action="run-command">Open Run Commands</button></div></section>';
+    }
+
+    if (!filteredList.length) {
+      return '<section class="server-section-card server-quick-tasks-card">' + header + '<div class="server-placeholder">No quick tasks match the current filter.</div></section>';
+    }
+
+    const columns = renderServerColumnHeader('quickTasks', 'server-quick-task-main', [
+      { key: 'name', label: 'Name' },
+      { key: 'details', label: 'Details' }
+    ], '<div class="server-list-column-header-trailing"><span class="server-list-column-header-actions-space server-quick-task-actions-space" aria-hidden="true"></span></div>');
+    return '<section class="server-section-card server-quick-tasks-card">' + header + columns + '<div class="server-list server-quick-tasks-list">'
+      + visibleList.map(item => {
+        const id = String(item.id || '');
+        const name = item.name || firstRemoteCommandLine(item.command) || 'Saved command';
+        const details = item.details || truncateRemoteCommandText(item.command, 90);
+        const disabledTooltip = running ? 'A command is already running' : 'Run command';
+        return '<div class="server-list-row server-quick-task-row" data-server-quick-task-id="' + escapeHtml(id) + '" data-tooltip="Open in Run Commands">'
+          + '<div class="server-list-main server-quick-task-main"><span class="server-quick-task-name tooltip-above" data-tooltip="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span><span class="server-quick-task-details tooltip-above" data-tooltip="' + escapeHtml(details) + '">' + escapeHtml(details) + '</span></div>'
+          + '<div class="server-quick-task-actions"><span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(disabledTooltip) + '"><button class="secondary server-quick-task-action-button" type="button" data-server-quick-task-action="run" data-server-quick-task-id="' + escapeHtml(id) + '"' + (running ? ' disabled' : '') + '>Run</button></span></div>'
+          + '</div>';
+      }).join('')
+      + '</div></section>';
+  }
+
+
+  function getServerQuickTaskFilterKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function getServerQuickTaskFilterText() {
+    return serverQuickTaskFiltersByConnectionId.get(getServerQuickTaskFilterKey()) || '';
+  }
+
+  function setServerQuickTaskFilterText(value) {
+    const key = getServerQuickTaskFilterKey();
+    const text = String(value || '');
+    if (text) serverQuickTaskFiltersByConnectionId.set(key, text);
+    else serverQuickTaskFiltersByConnectionId.delete(key);
+  }
+
+  function renderServerViewAndFocusQuickTasksFilter() {
+    renderServerView();
+    const nextInput = document.getElementById('serverQuickTasksFilterInput');
+    if (nextInput) {
+      nextInput.focus();
+      const len = String(nextInput.value || '').length;
+      try { nextInput.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function matchesServerQuickTaskFilter(item, filterText) {
+    const filter = String(filterText || '').trim().toLowerCase();
+    if (!filter) return true;
+    const haystack = [
+      item && item.name,
+      item && item.details,
+      item && item.command,
+      getRemoteCommandItemRemotePath(item)
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+    return haystack.includes(filter);
+  }
+
+  function formatServerListCount(total, visible, filterHasValue, loading) {
+    if (loading && !total) return 'Loading';
+    const totalCount = Math.max(0, Number(total) || 0);
+    const visibleCount = Math.max(0, Number(visible) || 0);
+    const suffix = totalCount === 1 ? 'item' : 'items';
+    if (filterHasValue) return visibleCount + ' of ' + totalCount + ' ' + suffix;
+    return totalCount + ' ' + suffix;
+  }
+
+  function getServerCardSortStorageKey(card) {
+    return (activeConnectionId || '__default__') + '::' + String(card || '');
+  }
+
+  function getServerCardSort(card) {
+    const sort = serverCardSortsByConnectionId.get(getServerCardSortStorageKey(card));
+    if (!sort || !sort.key || !sort.direction) return { key: '', direction: '' };
+    return { key: String(sort.key || ''), direction: sort.direction === 'desc' ? 'desc' : 'asc' };
+  }
+
+  function setServerCardSort(card, key, direction) {
+    const storageKey = getServerCardSortStorageKey(card);
+    const nextKey = String(key || '');
+    const nextDirection = direction === 'desc' ? 'desc' : (direction === 'asc' ? 'asc' : '');
+    if (!nextKey || !nextDirection) {
+      serverCardSortsByConnectionId.delete(storageKey);
+      return;
+    }
+    serverCardSortsByConnectionId.set(storageKey, { key: nextKey, direction: nextDirection });
+  }
+
+  function handleServerCardSortClick(card, key) {
+    const normalizedCard = String(card || '');
+    const normalizedKey = String(key || '');
+    if (!normalizedCard || !normalizedKey) return;
+    const current = getServerCardSort(normalizedCard);
+    if (current.key !== normalizedKey) {
+      setServerCardSort(normalizedCard, normalizedKey, 'asc');
+    } else if (current.direction === 'asc') {
+      setServerCardSort(normalizedCard, normalizedKey, 'desc');
+    } else {
+      setServerCardSort(normalizedCard, '', '');
+    }
+    renderServerView();
+  }
+
+  function getServerSortComparable(value) {
+    if (value === null || value === undefined) return { empty: true, number: null, text: '' };
+    const text = String(value).trim();
+    if (!text || text === '—') return { empty: true, number: null, text: '' };
+    const numericText = text.replace(/%$/, '').replace(/,/g, '');
+    const numericValue = Number(numericText);
+    if (Number.isFinite(numericValue) && /^[-+]?\d+(?:\.\d+)?%?$/.test(text.replace(/,/g, ''))) {
+      return { empty: false, number: numericValue, text: text.toLowerCase() };
+    }
+    return { empty: false, number: null, text: text.toLowerCase() };
+  }
+
+  function compareServerSortValues(leftValue, rightValue) {
+    const left = getServerSortComparable(leftValue);
+    const right = getServerSortComparable(rightValue);
+    if (left.empty && right.empty) return 0;
+    if (left.empty) return 1;
+    if (right.empty) return -1;
+    if (left.number !== null && right.number !== null) return left.number - right.number;
+    return left.text.localeCompare(right.text, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  function sortServerItems(card, items, getValue) {
+    const list = Array.isArray(items) ? items.slice() : [];
+    const sort = getServerCardSort(card);
+    if (!sort.key || !sort.direction) return list;
+    const direction = sort.direction === 'desc' ? -1 : 1;
+    return list.map((item, index) => ({ item: item, index: index }))
+      .sort((left, right) => {
+        const comparison = compareServerSortValues(getValue(left.item, sort.key), getValue(right.item, sort.key));
+        if (comparison !== 0) return comparison * direction;
+        return left.index - right.index;
+      })
+      .map(entry => entry.item);
+  }
+
+  function renderServerSortButton(card, key, label) {
+    const sort = getServerCardSort(card);
+    const active = sort.key === key && Boolean(sort.direction);
+    const indicator = active ? (sort.direction === 'desc' ? '↓' : '↑') : '';
+    const tooltip = active
+      ? (sort.direction === 'asc' ? 'Sort descending' : 'Clear sort')
+      : 'Sort ascending';
+    return '<button class="server-list-column-sort-button' + (active ? ' active' : '') + ' tooltip-above" type="button" data-tooltip="' + escapeHtml(tooltip) + '" data-server-sort-card="' + escapeHtml(card) + '" data-server-sort-key="' + escapeHtml(key) + '"><span>' + escapeHtml(label) + '</span><span class="server-list-sort-indicator" aria-hidden="true">' + escapeHtml(indicator) + '</span></button>';
+  }
+
+  function renderServerColumnHeader(card, mainClass, columns, trailingHtml) {
+    const columnButtons = (Array.isArray(columns) ? columns : []).map(column => renderServerSortButton(card, column.key, column.label)).join('');
+    return '<div class="server-list-column-header"><div class="server-list-column-header-main ' + escapeHtml(mainClass || '') + '">' + columnButtons + '</div>' + (trailingHtml || '') + '</div>';
+  }
+
+  function renderServerLogs(session) {
+    const shortcuts = getServerLogShortcuts(session);
+    const state = getActiveServerDashboardState();
+    const loadingDefaults = Boolean(!state || (!state.data && !state.error));
+    const filterText = getServerLogShortcutFilterText();
+    const filteredShortcuts = shortcuts.filter(shortcut => matchesServerLogShortcutFilter(shortcut, filterText));
+    const visibleShortcuts = sortServerItems('logs', filteredShortcuts, (shortcut, key) => {
+      if (key === 'path') return shortcut && shortcut.path;
+      return shortcut && shortcut.name;
+    });
+    const filterHasValue = Boolean(String(filterText || '').trim());
+    const countDetail = formatServerListCount(shortcuts.length, filteredShortcuts.length, filterHasValue, loadingDefaults);
+    const addButton = '<span class="tooltip-anchor tooltip-above" data-tooltip="Add log shortcut"><button class="secondary remote-command-icon-button" type="button" aria-label="Add log shortcut" data-server-log-action="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3h1v4.5H13v1H8.5V13h-1V8.5H3v-1h4.5V3Z"></path></svg></button></span>';
+    const filterBox = '<div class="server-logs-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverLogsFilterInput" class="server-logs-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter logs" value="' + escapeHtml(filterText) + '" aria-label="Filter logs"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Logs Filter" data-tooltip="Clear Filter" data-server-logs-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div>';
+    const header = '<div class="server-section-title-row server-logs-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Logs shortcuts</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right"><div class="server-section-title-actions">' + addButton + '</div><span class="server-section-title-separator" aria-hidden="true"></span>' + filterBox + '</div></div>';
+
+    if (!shortcuts.length) {
+      const message = loadingDefaults ? 'Loading log shortcuts...' : 'No log shortcuts. Use + to add one.';
+      return '<section class="server-section-card server-logs-card">' + header + '<div class="server-log-shortcut-empty">' + escapeHtml(message) + '</div></section>';
+    }
+
+    if (!filteredShortcuts.length) {
+      return '<section class="server-section-card server-logs-card">' + header + '<div class="server-log-shortcut-empty">No log shortcuts match the current filter.</div></section>';
+    }
+
+    const columns = renderServerColumnHeader('logs', 'server-log-shortcut-main', [
+      { key: 'name', label: 'Name' },
+      { key: 'path', label: 'Path' }
+    ], '<div class="server-list-column-header-trailing"><span class="server-list-column-header-actions-space server-log-shortcut-actions-space" aria-hidden="true"></span></div>');
+    return '<section class="server-section-card server-logs-card">' + header + columns + '<div class="server-list server-log-shortcuts-list">'
+      + visibleShortcuts.map(shortcut => '<div class="server-list-row server-log-shortcut-row" data-server-log-id="' + escapeHtml(shortcut.id) + '"><div class="server-list-main server-log-shortcut-main"><div class="server-list-title server-log-shortcut-title"><button class="server-log-shortcut-title-button tooltip-above" type="button" data-tooltip="' + escapeHtml(shortcut.path) + '">' + escapeHtml(shortcut.name) + '</button></div><span class="server-log-shortcut-path tooltip-above" data-tooltip="' + escapeHtml(shortcut.path) + '">' + escapeHtml(shortcut.path) + '</span></div><div class="server-log-shortcut-actions">'
+        + '<span class="tooltip-anchor tooltip-above" data-tooltip="Follow in Log Viewer"><button class="secondary server-log-shortcut-action-button" type="button" data-server-log-action="follow" data-server-log-id="' + escapeHtml(shortcut.id) + '">Follow</button></span>'
+        + '<span class="tooltip-anchor tooltip-above" data-tooltip="View Read-Only"><button class="secondary server-log-shortcut-action-button" type="button" data-server-log-action="readonly" data-server-log-id="' + escapeHtml(shortcut.id) + '">View</button></span>'
+        + '<span class="tooltip-anchor tooltip-above" data-tooltip="Copy Path"><button class="secondary server-log-shortcut-action-button" type="button" data-server-log-action="copy" data-server-log-id="' + escapeHtml(shortcut.id) + '">Copy</button></span>'
+        + '</div></div>').join('')
+      + '</div></section>';
+  }
+
+  function getServerLogShortcutFilterKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function getServerLogShortcutFilterText() {
+    return serverLogShortcutFiltersByConnectionId.get(getServerLogShortcutFilterKey()) || '';
+  }
+
+  function setServerLogShortcutFilterText(value) {
+    const key = getServerLogShortcutFilterKey();
+    const text = String(value || '');
+    if (text) serverLogShortcutFiltersByConnectionId.set(key, text);
+    else serverLogShortcutFiltersByConnectionId.delete(key);
+  }
+
+  function renderServerViewAndFocusLogsFilter() {
+    renderServerView();
+    const nextInput = document.getElementById('serverLogsFilterInput');
+    if (nextInput) {
+      nextInput.focus();
+      const len = String(nextInput.value || '').length;
+      try { nextInput.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function matchesServerLogShortcutFilter(shortcut, filterText) {
+    const filter = String(filterText || '').trim().toLowerCase();
+    if (!filter) return true;
+    const haystack = [
+      shortcut && shortcut.name,
+      shortcut && shortcut.path
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+    return haystack.includes(filter);
+  }
+
+  function getServerProcessFilterKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function getServerProcessFilterText() {
+    return serverProcessFiltersByConnectionId.get(getServerProcessFilterKey()) || '';
+  }
+
+  function setServerProcessFilterText(value) {
+    const key = getServerProcessFilterKey();
+    const text = String(value || '');
+    if (text) serverProcessFiltersByConnectionId.set(key, text);
+    else serverProcessFiltersByConnectionId.delete(key);
+  }
+
+  function renderServerViewAndFocusProcessesFilter() {
+    renderServerView();
+    const nextInput = document.getElementById('serverProcessesFilterInput');
+    if (nextInput) {
+      nextInput.focus();
+      const len = String(nextInput.value || '').length;
+      try { nextInput.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function matchesServerProcessFilter(process, filterText) {
+    const filter = String(filterText || '').trim().toLowerCase();
+    if (!filter) return true;
+    const haystack = [
+      process && process.pid,
+      process && process.user,
+      process && process.cpu,
+      process && process.memory,
+      process && process.command,
+      process && process.args,
+      process && process.adapter
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+    return haystack.includes(filter);
+  }
+
+  function getServerProcessActionState(connectionId) {
+    const key = String(connectionId || activeConnectionId || '').trim();
+    return key ? serverProcessActionStatesByConnectionId.get(key) || null : null;
+  }
+
+  function handleServerProcessActionState(payload) {
+    const connectionId = String(payload.connectionId || '').trim();
+    const pid = String(payload.pid || '').trim();
+    const status = String(payload.status || '').trim();
+    if (!connectionId || !pid) return;
+    if (status === 'clear') {
+      serverProcessActionStatesByConnectionId.delete(connectionId);
+    } else {
+      serverProcessActionStatesByConnectionId.set(connectionId, {
+        connectionId,
+        pid,
+        status,
+        process: payload.process || null
+      });
+    }
+    if (connectionId === activeConnectionId) renderServerView();
+  }
+
+  function getServerProcessesForRender(processes) {
+    const actionState = getServerProcessActionState(activeConnectionId);
+    const items = Array.isArray(processes) ? processes.map(process => Object.assign({}, process)) : [];
+    if (!actionState || !actionState.pid) return items;
+
+    const index = items.findIndex(process => String(process.pid || '') === String(actionState.pid));
+    const process = Object.assign({}, actionState.process || {}, { pid: actionState.pid, transientStatus: actionState.status });
+    if (index >= 0) {
+      items[index] = Object.assign({}, items[index], process);
+    } else if (process.pid) {
+      items.push(process);
+    }
+    return items;
+  }
+
+  function formatServerProcessTransientLabel(status) {
+    if (status === 'terminated') return 'Terminated';
+    if (status === 'still-running') return 'Still running';
+    if (status === 'killing') return 'Killing...';
+    return '';
+  }
+
+  const SERVER_SCROLL_PRESERVE_SELECTORS = {
+    quickTasks: '.server-quick-tasks-list',
+    logs: '.server-log-shortcuts-list, .server-log-shortcut-empty',
+    services: '.server-services-list',
+    processes: '.server-processes-list',
+    scheduled: '.server-scheduled-list'
+  };
+
+  function captureServerViewScrollState() {
+    if (!serverViewContent) return null;
+    const connectionId = serverViewContent.getAttribute('data-server-view-connection-id') || '';
+    const scrollTops = {};
+    Object.keys(SERVER_SCROLL_PRESERVE_SELECTORS).forEach(key => {
+      const element = serverViewContent.querySelector(SERVER_SCROLL_PRESERVE_SELECTORS[key]);
+      if (element) scrollTops[key] = element.scrollTop;
+    });
+    return { connectionId, scrollTops };
+  }
+
+  function restoreServerViewScrollState(scrollState, connectionId) {
+    if (!scrollState || String(scrollState.connectionId || '') !== String(connectionId || '')) return;
+    const scrollTops = scrollState.scrollTops || {};
+    requestAnimationFrame(() => {
+      if (!serverViewContent) return;
+      if (serverViewContent.getAttribute('data-server-view-connection-id') !== String(connectionId || '')) return;
+      Object.keys(SERVER_SCROLL_PRESERVE_SELECTORS).forEach(key => {
+        const value = scrollTops[key];
+        if (typeof value !== 'number') return;
+        const element = serverViewContent.querySelector(SERVER_SCROLL_PRESERVE_SELECTORS[key]);
+        if (element) element.scrollTop = value;
+      });
+    });
+  }
+
+  function getServerServiceFilterKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function getServerServiceFilterText() {
+    return serverServiceFiltersByConnectionId.get(getServerServiceFilterKey()) || '';
+  }
+
+  function setServerServiceFilterText(value) {
+    const key = getServerServiceFilterKey();
+    const text = String(value || '');
+    if (text) serverServiceFiltersByConnectionId.set(key, text);
+    else serverServiceFiltersByConnectionId.delete(key);
+  }
+
+  function renderServerViewAndFocusServicesFilter() {
+    renderServerView();
+    const nextInput = document.getElementById('serverServicesFilterInput');
+    if (nextInput) {
+      nextInput.focus();
+      const len = String(nextInput.value || '').length;
+      try { nextInput.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function matchesServerServiceFilter(service, filterText) {
+    const filter = String(filterText || '').trim().toLowerCase();
+    if (!filter) return true;
+    const haystack = [
+      service && service.name,
+      service && service.displayName,
+      service && service.status,
+      service && service.statusLabel,
+      service && service.rawStatus,
+      service && service.adapter
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+    return haystack.includes(filter);
+  }
+
+  function renderServerServices() {
+    const state = getActiveServerDashboardState();
+    const data = state && state.data ? state.data : null;
+    const services = data && Array.isArray(data.services) ? data.services : [];
+    const adapter = data && data.serviceAdapter ? String(data.serviceAdapter) : (state && state.loading ? 'loading' : 'not loaded');
+    const filterText = getServerServiceFilterText();
+    const filteredServices = services.filter(service => matchesServerServiceFilter(service, filterText));
+    const visibleServices = sortServerItems('services', filteredServices, (service, key) => {
+      if (key === 'status') return service && (service.statusLabel || service.status || service.rawStatus);
+      return service && (service.displayName || service.name);
+    });
+    const filterHasValue = Boolean(String(filterText || '').trim());
+    const countDetail = formatServerListCount(services.length, filteredServices.length, filterHasValue, Boolean(!data && state && state.loading));
+    const header = '<div class="server-section-title-row server-services-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Services</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right"><div class="server-services-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverServicesFilterInput" class="server-services-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter services" value="' + escapeHtml(filterText) + '" aria-label="Filter services"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Services Filter" data-tooltip="Clear Filter" data-server-services-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div></div></div>';
+
+    if (!data && state && state.loading) {
+      return '<section class="server-section-card server-services-card">' + header + '<div class="server-placeholder">Loading services...</div></section>';
+    }
+
+    if (!services.length) {
+      const message = data && adapter === 'generic-unix'
+        ? 'Services are limited for this Unix adapter. No safe service manager was detected.'
+        : data ? 'No services found.' : 'Services are not loaded yet.';
+      return '<section class="server-section-card server-services-card">' + header + '<div class="server-placeholder">' + escapeHtml(message) + '</div></section>';
+    }
+
+    if (!filteredServices.length) {
+      return '<section class="server-section-card server-services-card">' + header + '<div class="server-placeholder">No services match the current filter.</div></section>';
+    }
+
+    const columns = renderServerColumnHeader('services', 'server-service-main', [
+      { key: 'name', label: 'Service' }
+    ], '<div class="server-service-trailing server-list-column-header-trailing"><span class="server-list-column-header-actions-space server-service-actions-space" aria-hidden="true"></span>' + renderServerSortButton('services', 'status', 'Status') + '</div>');
+    return '<section class="server-section-card server-services-card">' + header + columns + '<div class="server-list server-services-list">'
+      + visibleServices.map(service => {
+        const name = String(service.name || service.displayName || '');
+        const displayName = String(service.displayName || name || 'Service');
+        const status = String(service.status || 'unknown');
+        const statusLabel = String(service.statusLabel || 'Unknown');
+        const rawStatus = String(service.rawStatus || statusLabel);
+        const serviceAdapter = String(service.adapter || adapter || 'unknown');
+        const startStopAction = service.canStop ? 'stop' : 'start';
+        const startStopLabel = service.canStop ? 'Stop' : 'Start';
+        const startStopDisabled = !(service.canStart || service.canStop);
+        const restartDisabled = !service.canRestart;
+        return '<div class="server-list-row server-service-row" data-server-service-name="' + escapeHtml(name) + '" data-server-service-adapter="' + escapeHtml(serviceAdapter) + '">'
+          + '<div class="server-list-main server-service-main"><div class="server-list-title server-service-name tooltip-above" data-tooltip="' + escapeHtml(name) + '">' + escapeHtml(displayName) + '</div></div>'
+          + '<div class="server-service-trailing">'
+          + '<div class="server-service-actions">'
+          + '<span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(startStopLabel + ' service') + '"><button class="secondary server-service-action-button" type="button" data-server-service-action="' + escapeHtml(startStopAction) + '" data-server-service-name="' + escapeHtml(name) + '" data-server-service-adapter="' + escapeHtml(serviceAdapter) + '"' + (startStopDisabled ? ' disabled' : '') + '>' + escapeHtml(startStopLabel) + '</button></span>'
+          + '<span class="tooltip-anchor tooltip-above" data-tooltip="Restart service"><button class="secondary server-service-action-button" type="button" data-server-service-action="restart" data-server-service-name="' + escapeHtml(name) + '" data-server-service-adapter="' + escapeHtml(serviceAdapter) + '"' + (restartDisabled ? ' disabled' : '') + '>Restart</button></span>'
+          + '</div>'
+          + '<span class="server-service-status ' + escapeHtml(status) + ' tooltip-above" data-tooltip="' + escapeHtml(rawStatus) + '">' + escapeHtml(statusLabel) + '</span>'
+          + '</div></div>';
+      }).join('')
+      + '</div></section>';
+  }
+
+  function renderServerProcesses() {
+    const state = getActiveServerDashboardState();
+    const data = state && state.data ? state.data : null;
+    const rawProcesses = data && Array.isArray(data.processes) ? data.processes : [];
+    const processes = getServerProcessesForRender(rawProcesses);
+    const adapter = data && data.processAdapter ? String(data.processAdapter) : (state && state.loading ? 'loading' : 'not loaded');
+    const filterText = getServerProcessFilterText();
+    const filteredProcesses = processes.filter(process => matchesServerProcessFilter(process, filterText));
+    const visibleProcesses = sortServerItems('processes', filteredProcesses, (process, key) => {
+      if (key === 'pid') return process && process.pid;
+      if (key === 'user') return process && process.user;
+      if (key === 'cpu') return process && process.cpu;
+      if (key === 'memory') return process && process.memory;
+      return process && (process.args || process.command);
+    });
+    const filterHasValue = Boolean(String(filterText || '').trim());
+    const countDetail = formatServerListCount(processes.length, filteredProcesses.length, filterHasValue, Boolean(!data && state && state.loading));
+    const header = '<div class="server-section-title-row server-processes-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Processes</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right"><div class="server-processes-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverProcessesFilterInput" class="server-processes-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter processes" value="' + escapeHtml(filterText) + '" aria-label="Filter processes"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Processes Filter" data-tooltip="Clear Filter" data-server-processes-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div></div></div>';
+
+    if (!data && state && state.loading) {
+      return '<section class="server-section-card server-processes-card">' + header + '<div class="server-placeholder">Loading processes...</div></section>';
+    }
+
+    if (!processes.length) {
+      const message = data ? 'No processes found.' : 'Processes are not loaded yet.';
+      return '<section class="server-section-card server-processes-card">' + header + '<div class="server-placeholder">' + escapeHtml(message) + '</div></section>';
+    }
+
+    if (!filteredProcesses.length) {
+      return '<section class="server-section-card server-processes-card">' + header + '<div class="server-placeholder">No processes match the current filter.</div></section>';
+    }
+
+    const columns = renderServerColumnHeader('processes', 'server-process-main', [
+      { key: 'command', label: 'Command' },
+      { key: 'pid', label: 'PID' },
+      { key: 'user', label: 'User' },
+      { key: 'cpu', label: 'CPU' },
+      { key: 'memory', label: 'Mem' }
+    ], '<div class="server-process-trailing server-list-column-header-trailing"><span class="server-list-column-header-actions-space server-process-actions-space" aria-hidden="true"></span></div>');
+    return '<section class="server-section-card server-processes-card">' + header + columns + '<div class="server-list server-processes-list">'
+      + visibleProcesses.map(process => {
+        const pid = String(process.pid || '');
+        const user = String(process.user || '—');
+        const cpu = String(process.cpu || '—');
+        const memory = String(process.memory || '—');
+        const command = String(process.args || process.command || '—');
+        const shortCommand = String(process.command || command || '—');
+        const adapterValue = String(process.adapter || adapter || 'ps');
+        const transientStatus = String(process.transientStatus || '');
+        const transientLabel = formatServerProcessTransientLabel(transientStatus);
+        const pidNumber = Number(pid);
+        const processCanKill = process.canKill !== false;
+        const canKill = !transientStatus && processCanKill && Number.isInteger(pidNumber) && pidNumber > 1;
+        const killTooltip = canKill ? 'Kill process' : (pidNumber === 1 ? 'PID 1 cannot be killed' : (processCanKill ? 'Kill unavailable' : 'Process cannot be killed'));
+        const rowClass = 'server-list-row server-process-row' + (transientStatus ? ' process-action-active' : '');
+        const cpuLabel = cpu !== '—' ? (/%$/.test(cpu) ? cpu : cpu + '%') : '—';
+        const memoryLabel = memory !== '—' ? (/%$/.test(memory) ? memory : memory + '%') : '—';
+        const dataset = ' data-server-process-pid="' + escapeHtml(pid) + '" data-server-process-user="' + escapeHtml(user) + '" data-server-process-cpu="' + escapeHtml(cpu) + '" data-server-process-memory="' + escapeHtml(memory) + '" data-server-process-command="' + escapeHtml(shortCommand) + '" data-server-process-args="' + escapeHtml(command) + '" data-server-process-adapter="' + escapeHtml(adapterValue) + '"';
+        return '<div class="' + rowClass + '"' + dataset + '>'
+          + '<div class="server-list-main server-process-main">'
+          + '<span class="server-process-command tooltip-above" data-tooltip="' + escapeHtml(command) + '">' + escapeHtml(command) + '</span>'
+          + '<span class="server-process-pid tooltip-above" data-tooltip="PID ' + escapeHtml(pid) + '">' + escapeHtml(pid) + '</span>'
+          + '<span class="server-process-user tooltip-above" data-tooltip="' + escapeHtml(user) + '">' + escapeHtml(user) + '</span>'
+          + '<span class="server-process-cpu tooltip-above" data-tooltip="CPU ' + escapeHtml(cpuLabel) + '">' + escapeHtml(cpuLabel) + '</span>'
+          + '<span class="server-process-memory tooltip-above" data-tooltip="Memory ' + escapeHtml(memoryLabel) + '">' + escapeHtml(memoryLabel) + '</span>'
+          + '</div><div class="server-process-trailing">'
+          + (transientLabel ? '<span class="server-process-status ' + escapeHtml(transientStatus) + '">' + escapeHtml(transientLabel) + '</span>' : '')
+          + '<div class="server-process-actions"><span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(killTooltip) + '"><button class="secondary server-process-action-button" type="button" data-server-process-action="kill"' + dataset + (canKill ? '' : ' disabled') + '>Kill</button></span></div>'
+          + '</div></div>';
+      }).join('')
+      + '</div></section>';
+  }
+
+  function getServerScheduledJobFilterKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function getServerScheduledJobFilterText() {
+    return serverScheduledJobFiltersByConnectionId.get(getServerScheduledJobFilterKey()) || '';
+  }
+
+  function setServerScheduledJobFilterText(value) {
+    const key = getServerScheduledJobFilterKey();
+    const text = String(value || '');
+    if (text) serverScheduledJobFiltersByConnectionId.set(key, text);
+    else serverScheduledJobFiltersByConnectionId.delete(key);
+  }
+
+  function renderServerViewAndFocusScheduledFilter() {
+    renderServerView();
+    const nextInput = document.getElementById('serverScheduledFilterInput');
+    if (nextInput) {
+      nextInput.focus();
+      const len = String(nextInput.value || '').length;
+      try { nextInput.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function matchesServerScheduledJobFilter(item, filterText) {
+    const filter = String(filterText || '').trim().toLowerCase();
+    if (!filter) return true;
+    const haystack = [
+      item && item.name,
+      item && item.countLabel,
+      item && item.typeLabel,
+      item && item.source,
+      item && item.sourceType,
+      item && item.user,
+      item && item.path
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+    return haystack.includes(filter);
+  }
+
+  function renderServerCron() {
+    const state = getActiveServerDashboardState();
+    const data = state && state.data ? state.data : null;
+    const items = data && Array.isArray(data.scheduledJobs) ? data.scheduledJobs : [];
+    const adapter = data && data.scheduledJobsAdapter ? String(data.scheduledJobsAdapter) : (state && state.loading ? 'loading' : 'not loaded');
+    const filterText = getServerScheduledJobFilterText();
+    const filteredItems = items.filter(item => matchesServerScheduledJobFilter(item, filterText));
+    const visibleItems = sortServerItems('cron', filteredItems, (item, key) => {
+      if (key === 'entries') return item && (item.count || item.countLabel);
+      if (key === 'type') return item && (item.typeLabel || item.sourceType);
+      return item && (item.name || item.source);
+    });
+    const filterHasValue = Boolean(String(filterText || '').trim());
+    const countDetail = formatServerListCount(items.length, filteredItems.length, filterHasValue, Boolean(!data && state && state.loading));
+    const filterBox = '<div class="server-scheduled-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverScheduledFilterInput" class="server-scheduled-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter cron jobs" value="' + escapeHtml(filterText) + '" aria-label="Filter cron jobs jobs"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Cron Jobs Filter" data-tooltip="Clear Filter" data-server-scheduled-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div>';
+    const header = '<div class="server-section-title-row server-scheduled-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Cron Jobs</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right">' + filterBox + '</div></div>';
+
+    if (!data && state && state.loading) {
+      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">Loading cron jobs...</div></section>';
+    }
+
+    if (!items.length) {
+      const message = data ? 'No cron jobs found.' : 'Cron jobs are not loaded yet.';
+      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">' + escapeHtml(message) + '</div></section>';
+    }
+
+    if (!filteredItems.length) {
+      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">No cron jobs match the current filter.</div></section>';
+    }
+
+    const columns = renderServerColumnHeader('cron', 'server-scheduled-main', [
+      { key: 'name', label: 'Name' },
+      { key: 'entries', label: 'Entries' },
+      { key: 'type', label: 'Type' }
+    ], '<div class="server-list-column-header-trailing"><span class="server-list-column-header-actions-space server-scheduled-actions-space" aria-hidden="true"></span></div>');
+    return '<section class="server-section-card server-scheduled-card">' + header + columns + '<div class="server-list server-scheduled-list">'
+      + visibleItems.map(item => {
+        const name = String(item.name || item.source || 'Scheduled item');
+        const countLabel = String(item.countLabel || '—');
+        const typeLabel = String(item.typeLabel || item.sourceType || '—');
+        const source = String(item.source || '');
+        const sourceType = String(item.sourceType || '');
+        const user = String(item.user || '');
+        const path = String(item.path || '');
+        const copyValue = String(item.copyValue || path || source || name);
+        const canOpen = item.canOpen !== false;
+        const dataset = ' data-server-scheduled-id="' + escapeHtml(item.id || '') + '" data-server-scheduled-name="' + escapeHtml(name) + '" data-server-scheduled-count="' + escapeHtml(countLabel) + '" data-server-scheduled-type-label="' + escapeHtml(typeLabel) + '" data-server-scheduled-source="' + escapeHtml(source) + '" data-server-scheduled-source-type="' + escapeHtml(sourceType) + '" data-server-scheduled-user="' + escapeHtml(user) + '" data-server-scheduled-path="' + escapeHtml(path) + '" data-server-scheduled-copy="' + escapeHtml(copyValue) + '"';
+        const openTooltip = canOpen ? 'Open Read-Only' : 'Open unavailable';
+        return '<div class="server-list-row server-scheduled-row"' + dataset + '>'
+          + '<div class="server-list-main server-scheduled-main">'
+          + '<span class="server-scheduled-name tooltip-above" data-tooltip="' + escapeHtml(source || name) + '">' + escapeHtml(name) + '</span>'
+          + '<span class="server-scheduled-count tooltip-above" data-tooltip="' + escapeHtml(countLabel) + '">' + escapeHtml(countLabel) + '</span>'
+          + '<span class="server-scheduled-type tooltip-above" data-tooltip="' + escapeHtml(typeLabel) + '">' + escapeHtml(typeLabel) + '</span>'
+          + '</div><div class="server-scheduled-actions">'
+          + '<span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(openTooltip) + '"><button class="secondary server-scheduled-action-button" type="button" data-server-scheduled-action="open"' + dataset + (canOpen ? '' : ' disabled') + '>View</button></span>'
+          + '<span class="tooltip-anchor tooltip-above" data-tooltip="Copy Source"><button class="secondary server-scheduled-action-button" type="button" data-server-scheduled-action="copy"' + dataset + '>Copy</button></span>'
+          + '</div></div>';
+      }).join('')
+      + '</div></section>';
+  }
+
+
+  function createServerPortForwardId() {
+    return 'pf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function sanitizeServerPortForward(value) {
+    if (!value || typeof value !== 'object') return null;
+    const id = String(value.id || '').trim();
+    const localPort = Number(value.localPort || 0);
+    const remotePort = Number(value.remotePort || 0);
+    if (!id || !isValidServerPort(localPort) || !isValidServerPort(remotePort)) return null;
+    const localHost = String(value.localHost || '').trim() || 'localhost';
+    const remoteHost = String(value.remoteHost || '').trim() || '127.0.0.1';
+    const name = String(value.name || '').trim() || buildServerPortForwardDefaultName(localPort, remotePort);
+    return {
+      id: id,
+      name: name,
+      localHost: localHost,
+      localPort: localPort,
+      remoteHost: remoteHost,
+      remotePort: remotePort,
+      autoStartOnConnect: Boolean(value.autoStartOnConnect),
+      createdAt: Number(value.createdAt || Date.now()),
+      updatedAt: Number(value.updatedAt || value.createdAt || Date.now())
+    };
+  }
+
+  function createServerPortForward(values) {
+    const now = Date.now();
+    return {
+      id: createServerPortForwardId(),
+      name: String(values.name || '').trim() || buildServerPortForwardDefaultName(values.localPort, values.remotePort),
+      localHost: String(values.localHost || '').trim() || 'localhost',
+      localPort: Number(values.localPort || 0),
+      remoteHost: String(values.remoteHost || '').trim() || '127.0.0.1',
+      remotePort: Number(values.remotePort || 0),
+      autoStartOnConnect: Boolean(values.autoStartOnConnect),
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  function buildServerPortForwardDefaultName(localPort, remotePort) {
+    const local = Number(localPort || 0);
+    const remote = Number(remotePort || 0);
+    if (local && remote) return local + ' → ' + remote;
+    return 'Port forward';
+  }
+
+  function getServerPortForwardStorageKey(session) {
+    return String((session && session.id) || activeConnectionId || '').trim();
+  }
+
+  function loadAllServerPortForwardsFromStorage() {
+    try {
+      return JSON.parse(localStorage.getItem(SERVER_PORT_FORWARDS_STORAGE_KEY) || '{}') || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveAllServerPortForwardsToStorage(all) {
+    try {
+      localStorage.setItem(SERVER_PORT_FORWARDS_STORAGE_KEY, JSON.stringify(all || {}));
+      postPersistentStorageSnapshot();
+    } catch (_) {
+      // Ignore storage write errors.
+    }
+  }
+
+  function getServerPortForwards(session) {
+    const connectionId = getServerPortForwardStorageKey(session);
+    if (!connectionId) return [];
+    if (serverPortForwardsSessionByConnectionId.has(connectionId)) {
+      return (serverPortForwardsSessionByConnectionId.get(connectionId) || []).map(sanitizeServerPortForward).filter(Boolean);
+    }
+    const all = loadAllServerPortForwardsFromStorage();
+    const normalized = Array.isArray(all[connectionId]) ? all[connectionId].map(sanitizeServerPortForward).filter(Boolean) : [];
+    serverPortForwardsSessionByConnectionId.set(connectionId, normalized);
+    return normalized;
+  }
+
+  function saveServerPortForwards(session, forwards) {
+    const connectionId = getServerPortForwardStorageKey(session);
+    if (!connectionId) return;
+    const normalized = (Array.isArray(forwards) ? forwards : []).map(sanitizeServerPortForward).filter(Boolean);
+    serverPortForwardsSessionByConnectionId.set(connectionId, normalized);
+    const all = loadAllServerPortForwardsFromStorage();
+    all[connectionId] = normalized;
+    saveAllServerPortForwardsToStorage(all);
+  }
+
+  function getServerPortForwardById(session, id) {
+    const normalizedId = String(id || '').trim();
+    if (!normalizedId) return null;
+    return getServerPortForwards(session).find(item => item.id === normalizedId) || null;
+  }
+
+  function getServerPortForwardFilterKey() {
+    return activeConnectionId || '__default__';
+  }
+
+  function getServerPortForwardFilterText() {
+    return serverPortForwardFiltersByConnectionId.get(getServerPortForwardFilterKey()) || '';
+  }
+
+  function setServerPortForwardFilterText(value) {
+    const key = getServerPortForwardFilterKey();
+    const text = String(value || '');
+    if (text) serverPortForwardFiltersByConnectionId.set(key, text);
+    else serverPortForwardFiltersByConnectionId.delete(key);
+  }
+
+  function renderServerViewAndFocusPortForwardsFilter() {
+    renderServerView();
+    const nextInput = document.getElementById('serverPortForwardsFilterInput');
+    if (nextInput) {
+      nextInput.focus();
+      const len = String(nextInput.value || '').length;
+      try { nextInput.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function matchesServerPortForwardFilter(item, filterText) {
+    const filter = String(filterText || '').trim().toLowerCase();
+    if (!filter) return true;
+    const haystack = [
+      item && item.name,
+      item && item.localHost,
+      item && item.localPort,
+      item && item.remoteHost,
+      item && item.remotePort,
+      item && item.autoStartOnConnect ? 'auto auto-start autostart' : '',
+      formatServerPortForwardTarget(item)
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+    return haystack.includes(filter);
+  }
+
+  function getServerPortForwardRuntimeMap(connectionId) {
+    const key = String(connectionId || '').trim();
+    if (!key) return new Map();
+    let map = serverPortForwardRuntimeByConnectionId.get(key);
+    if (!map) {
+      map = new Map();
+      serverPortForwardRuntimeByConnectionId.set(key, map);
+    }
+    return map;
+  }
+
+  function getServerPortForwardRuntimeState(connectionId, id) {
+    const map = getServerPortForwardRuntimeMap(connectionId);
+    return map.get(String(id || '').trim()) || { id: String(id || '').trim(), connectionId: connectionId, status: 'stopped', error: '' };
+  }
+
+  function setServerPortForwardRuntimeState(connectionId, state) {
+    const id = String(state && state.id || '').trim();
+    if (!connectionId || !id) return;
+    const map = getServerPortForwardRuntimeMap(connectionId);
+    map.set(id, {
+      id: id,
+      connectionId: connectionId,
+      status: String(state.status || 'stopped'),
+      error: String(state.error || ''),
+      localUrl: String(state.localUrl || '')
+    });
+  }
+
+  function handleServerPortForwardState(payload) {
+    const connectionId = String(payload.connectionId || '').trim();
+    const id = String(payload.id || '').trim();
+    if (!connectionId || !id) return;
+    setServerPortForwardRuntimeState(connectionId, payload);
+    const pendingKey = connectionId + ':' + id;
+    const pendingAction = serverPortForwardPendingActions.get(pendingKey) || '';
+    const nextStatus = String(payload.status || '').trim();
+    if (connectionId === activeConnectionId && pendingAction) {
+      if ((nextStatus === 'running' && pendingAction === 'start') || (nextStatus === 'stopped' && pendingAction === 'stop')) {
+        serverPortForwardPendingActions.delete(pendingKey);
+      } else if (nextStatus === 'error') {
+        const errorText = String(payload.error || '').trim();
+        showServerToolbarStatus(errorText ? 'Port forward failed: ' + errorText : 'Port forward failed.', 'error', 7000);
+        serverPortForwardPendingActions.delete(pendingKey);
+      }
+    }
+    if (connectionId === activeConnectionId) {
+      renderServerView();
+    }
+  }
+
+  function formatServerPortForwardTarget(item) {
+    if (!item) return '';
+    return String(item.localHost || 'localhost') + ':' + String(item.localPort || '') + ' → ' + String(item.remoteHost || '127.0.0.1') + ':' + String(item.remotePort || '');
+  }
+
+  function isServerPortForwardBusy(status) {
+    return status === 'starting' || status === 'stopping';
+  }
+
+  function isValidServerPort(port) {
+    const value = Number(port || 0);
+    return Number.isInteger(value) && value >= 1 && value <= 65535;
+  }
+
+  function normalizeServerPortForwardHost(value, fallback) {
+    return String(value || '').trim() || fallback;
+  }
+
+  function markServerPortForwardInputInvalid(input, invalid) {
+    if (!input) return;
+    input.classList.toggle('server-port-forward-input-invalid', Boolean(invalid));
+  }
+
+  function readServerPortForwardDialogValues(showFeedback) {
+    const name = String(serverPortForwardNameInput.value || '').trim();
+    const localHost = normalizeServerPortForwardHost(serverPortForwardLocalHostInput.value, 'localhost');
+    const remoteHost = normalizeServerPortForwardHost(serverPortForwardRemoteHostInput.value, '127.0.0.1');
+    const localPort = Number(String(serverPortForwardLocalPortInput.value || '').trim());
+    const remotePort = Number(String(serverPortForwardRemotePortInput.value || '').trim());
+    const autoStartOnConnect = Boolean(serverPortForwardAutoStartInput && serverPortForwardAutoStartInput.checked);
+    const localPortValid = isValidServerPort(localPort);
+    const remotePortValid = isValidServerPort(remotePort);
+    const localHostValid = Boolean(localHost);
+    const remoteHostValid = Boolean(remoteHost);
+    markServerPortForwardInputInvalid(serverPortForwardLocalPortInput, !localPortValid && showFeedback);
+    markServerPortForwardInputInvalid(serverPortForwardRemotePortInput, !remotePortValid && showFeedback);
+    markServerPortForwardInputInvalid(serverPortForwardLocalHostInput, !localHostValid && showFeedback);
+    markServerPortForwardInputInvalid(serverPortForwardRemoteHostInput, !remoteHostValid && showFeedback);
+    if (!localHostValid || !remoteHostValid || !localPortValid || !remotePortValid) {
+      if (showFeedback && serverPortForwardFeedback) serverPortForwardFeedback.textContent = 'Enter valid hosts and ports between 1 and 65535.';
+      return null;
+    }
+    if (serverPortForwardFeedback) serverPortForwardFeedback.textContent = '';
+    return { name: name || buildServerPortForwardDefaultName(localPort, remotePort), localHost, localPort, remoteHost, remotePort, autoStartOnConnect };
+  }
+
+  function showServerPortForwardDialog(mode, forwardId) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return;
+    const editing = mode === 'edit';
+    const forward = editing ? getServerPortForwardById(active, forwardId) : null;
+    const runtime = forward ? getServerPortForwardRuntimeState(activeConnectionId, forward.id) : null;
+    const status = runtime ? String(runtime.status || 'stopped') : 'stopped';
+    const running = status === 'running' || status === 'starting' || status === 'stopping';
+
+    serverPortForwardDialogOpen = true;
+    serverPortForwardDialogMode = editing && forward ? 'edit' : 'add';
+    serverPortForwardDialogForwardId = forward ? forward.id : '';
+    if (serverPortForwardTitle) serverPortForwardTitle.textContent = forward ? 'Edit Port Forward' : 'Add Port Forward';
+    if (serverPortForwardSubtitle) serverPortForwardSubtitle.textContent = forward ? formatServerPortForwardTarget(forward) : 'Create a local SSH port forward for this connection.';
+    serverPortForwardNameInput.value = forward ? forward.name : '';
+    serverPortForwardLocalHostInput.value = forward ? forward.localHost : 'localhost';
+    serverPortForwardLocalPortInput.value = forward ? String(forward.localPort) : '';
+    serverPortForwardRemoteHostInput.value = forward ? forward.remoteHost : '127.0.0.1';
+    serverPortForwardRemotePortInput.value = forward ? String(forward.remotePort) : '';
+    if (serverPortForwardAutoStartInput) serverPortForwardAutoStartInput.checked = Boolean(forward && forward.autoStartOnConnect);
+    if (serverPortForwardFeedback) serverPortForwardFeedback.textContent = '';
+    for (const input of [serverPortForwardNameInput, serverPortForwardLocalHostInput, serverPortForwardLocalPortInput, serverPortForwardRemoteHostInput, serverPortForwardRemotePortInput]) {
+      if (input) input.classList.remove('server-port-forward-input-invalid');
+    }
+    for (const input of [serverPortForwardNameInput, serverPortForwardLocalHostInput, serverPortForwardLocalPortInput, serverPortForwardRemoteHostInput, serverPortForwardRemotePortInput]) {
+      if (input) input.disabled = running;
+    }
+    if (serverPortForwardAutoStartInput) serverPortForwardAutoStartInput.disabled = running;
+    if (serverPortForwardRunningNote) serverPortForwardRunningNote.hidden = !running;
+    if (serverPortForwardDeleteButton) {
+      serverPortForwardDeleteButton.hidden = !forward;
+      serverPortForwardDeleteButton.disabled = running;
+    }
+    if (serverPortForwardSaveButton) serverPortForwardSaveButton.disabled = running;
+    serverPortForwardBackdrop.classList.add('visible');
+    serverPortForwardBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+      if (running) serverPortForwardCancelButton.focus();
+      else serverPortForwardNameInput.focus();
+    }, 0);
+  }
+
+  function hideServerPortForwardDialog() {
+    serverPortForwardDialogOpen = false;
+    serverPortForwardDialogMode = 'add';
+    serverPortForwardDialogForwardId = '';
+    serverPortForwardBackdrop.classList.remove('visible');
+    serverPortForwardBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function saveServerPortForwardDialog(startAfterSave) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return null;
+    const existing = serverPortForwardDialogMode === 'edit' ? getServerPortForwardById(active, serverPortForwardDialogForwardId) : null;
+    if (existing) {
+      const runtime = getServerPortForwardRuntimeState(activeConnectionId, existing.id);
+      if (runtime.status === 'running' || runtime.status === 'starting' || runtime.status === 'stopping') {
+        if (startAfterSave && runtime.status === 'running') requestStopServerPortForward(existing.id);
+        return existing;
+      }
+    }
+    const values = readServerPortForwardDialogValues(true);
+    if (!values) return null;
+    const forwards = getServerPortForwards(active).slice();
+    let saved;
+    if (existing) {
+      const index = forwards.findIndex(item => item.id === existing.id);
+      if (index < 0) return null;
+      saved = Object.assign({}, existing, values, { updatedAt: Date.now() });
+      forwards[index] = saved;
+    } else {
+      saved = createServerPortForward(values);
+      forwards.push(saved);
+    }
+    saveServerPortForwards(active, forwards);
+    hideServerPortForwardDialog();
+    renderServerView();
+    if (startAfterSave && saved) {
+      requestStartServerPortForward(saved);
+    }
+    return saved;
+  }
+
+  function requestServerPortForwardStatesForSession(session) {
+    if (!session || !isServerViewSupported(session)) return;
+    const connectionId = getServerPortForwardStorageKey(session);
+    if (!connectionId) return;
+    const ids = getServerPortForwards(session).map(item => item.id).filter(Boolean);
+    if (!ids.length) return;
+    vscode.postMessage({ type: 'requestPortForwardState', payload: { connectionId: connectionId, ids: ids } });
+  }
+
+  function maybeAutoStartServerPortForwardsForSession(session, isNewConnection) {
+    if (!isNewConnection || !session || !isServerViewSupported(session)) return;
+    const connectionId = getServerPortForwardStorageKey(session);
+    if (!connectionId || serverPortForwardAutoStartedConnectionIds.has(connectionId)) return;
+    serverPortForwardAutoStartedConnectionIds.add(connectionId);
+    const forwards = getServerPortForwards(session).filter(item => item && item.autoStartOnConnect);
+    forwards.forEach(forward => {
+      const runtime = getServerPortForwardRuntimeState(connectionId, forward.id);
+      if (runtime.status === 'running' || runtime.status === 'starting') return;
+      requestStartServerPortForwardForConnection(connectionId, forward);
+    });
+  }
+
+  function requestStartServerPortForwardForConnection(connectionId, forward) {
+    if (!forward || !connectionId) return;
+    serverPortForwardPendingActions.set(connectionId + ':' + forward.id, 'start');
+    setServerPortForwardRuntimeState(connectionId, { id: forward.id, connectionId: connectionId, status: 'starting', error: '' });
+    if (connectionId === activeConnectionId) renderServerView();
+    vscode.postMessage({ type: 'startPortForward', payload: { connectionId: connectionId, forward: forward } });
+  }
+
+  function requestStartServerPortForward(forward) {
+    requestStartServerPortForwardForConnection(activeConnectionId, forward);
+  }
+
+  function requestStopServerPortForward(forwardId) {
+    if (!forwardId || !activeConnectionId) return;
+    serverPortForwardPendingActions.set(activeConnectionId + ':' + forwardId, 'stop');
+    setServerPortForwardRuntimeState(activeConnectionId, { id: forwardId, connectionId: activeConnectionId, status: 'stopping', error: '' });
+    renderServerView();
+    vscode.postMessage({ type: 'stopPortForward', payload: { connectionId: activeConnectionId, id: forwardId } });
+  }
+
+  function handleServerPortForwardAction(action, forwardId) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return;
+    if (action === 'add') {
+      showServerPortForwardDialog('add', '');
+      return;
+    }
+    const forward = getServerPortForwardById(active, forwardId);
+    if (!forward) return;
+    const runtime = getServerPortForwardRuntimeState(activeConnectionId, forward.id);
+    if (action === 'stop') {
+      requestStopServerPortForward(forward.id);
+      return;
+    }
+    if (action === 'start') {
+      requestStartServerPortForward(forward);
+      return;
+    }
+    showServerPortForwardDialog('edit', forward.id);
+  }
+
+  function showServerPortForwardRemoveDialog() {
+    const active = getActiveSession();
+    if (!active || !serverPortForwardDialogForwardId) return;
+    const forward = getServerPortForwardById(active, serverPortForwardDialogForwardId);
+    if (!forward) return;
+    serverPortForwardRemoveDialogOpen = true;
+    serverPortForwardRemoveId = forward.id;
+    if (serverPortForwardRemovePath) serverPortForwardRemovePath.textContent = forward.name + ' — ' + formatServerPortForwardTarget(forward);
+    serverPortForwardRemoveBackdrop.classList.add('visible');
+    serverPortForwardRemoveBackdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => serverPortForwardRemoveCancelButton.focus(), 0);
+  }
+
+  function hideServerPortForwardRemoveDialog() {
+    serverPortForwardRemoveDialogOpen = false;
+    serverPortForwardRemoveId = '';
+    serverPortForwardRemoveBackdrop.classList.remove('visible');
+    serverPortForwardRemoveBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function confirmRemoveServerPortForward() {
+    const active = getActiveSession();
+    if (!active || !serverPortForwardRemoveId) return;
+    const runtime = getServerPortForwardRuntimeState(activeConnectionId, serverPortForwardRemoveId);
+    if (runtime.status === 'running' || runtime.status === 'starting' || runtime.status === 'stopping') {
+      requestStopServerPortForward(serverPortForwardRemoveId);
+    }
+    const forwards = getServerPortForwards(active).filter(item => item.id !== serverPortForwardRemoveId);
+    saveServerPortForwards(active, forwards);
+    hideServerPortForwardRemoveDialog();
+    hideServerPortForwardDialog();
+    renderServerView();
+  }
+
+  function renderServerPortForwarding() {
+    const active = getActiveSession();
+    const forwards = getServerPortForwards(active);
+    const filterText = getServerPortForwardFilterText();
+    const filtered = forwards.filter(item => matchesServerPortForwardFilter(item, filterText));
+    const visible = sortServerItems('portForwards', filtered, (item, key) => {
+      if (key === 'target') return formatServerPortForwardTarget(item);
+      if (key === 'status') return (item && item.autoStartOnConnect ? 'auto ' : '') + getServerPortForwardRuntimeState(activeConnectionId, item && item.id).status;
+      return item && item.name;
+    });
+    const filterHasValue = Boolean(String(filterText || '').trim());
+    const countDetail = formatServerListCount(forwards.length, filtered.length, filterHasValue, false);
+    const filterBox = '<div class="server-port-forwards-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverPortForwardsFilterInput" class="server-port-forwards-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter forwards" value="' + escapeHtml(filterText) + '" aria-label="Filter port forwards"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Port Forwarding Filter" data-tooltip="Clear Filter" data-server-port-forwards-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div>';
+    const addButton = '<span class="tooltip-anchor tooltip-above" data-tooltip="Add port forward"><button class="secondary remote-command-icon-button" type="button" aria-label="Add port forward" data-server-port-forward-action="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3h1v4.5H13v1H8.5V13h-1V8.5H3v-1h4.5V3Z"></path></svg></button></span>';
+    const header = '<div class="server-section-title-row server-port-forwards-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Port Forwarding</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right"><div class="server-section-title-actions">' + addButton + '</div><span class="server-section-title-separator" aria-hidden="true"></span>' + filterBox + '</div></div>';
+
+    if (!forwards.length) {
+      return '<section class="server-section-card server-port-forwards-card">' + header + '<div class="server-port-forward-empty">No port forwards yet. Use + to add one.</div></section>';
+    }
+
+    if (!filtered.length) {
+      return '<section class="server-section-card server-port-forwards-card">' + header + '<div class="server-port-forward-empty">No port forwards match the current filter.</div></section>';
+    }
+
+    const columns = renderServerColumnHeader('portForwards', 'server-port-forward-main', [
+      { key: 'name', label: 'Name' },
+      { key: 'target', label: 'Target' }
+    ], '<div class="server-port-forward-trailing server-list-column-header-trailing">' + renderServerSortButton('portForwards', 'status', 'Status') + '<span class="server-list-column-header-actions-space server-port-forward-actions-space" aria-hidden="true"></span></div>');
+    return '<section class="server-section-card server-port-forwards-card">' + header + columns + '<div class="server-list server-port-forwards-list">'
+      + visible.map(item => {
+        const runtime = getServerPortForwardRuntimeState(activeConnectionId, item.id);
+        const status = String(runtime.status || 'stopped');
+        const action = status === 'running' ? 'stop' : 'start';
+        const label = status === 'running' ? 'Stop' : 'Start';
+        const disabled = isServerPortForwardBusy(status);
+        const target = formatServerPortForwardTarget(item);
+        const statusTooltip = status === 'error' && runtime.error ? runtime.error : status;
+        const autoBadge = item.autoStartOnConnect ? '<span class="server-port-forward-auto-badge tooltip-above" data-tooltip="Auto-start on connect">auto-start</span>' : '';
+        return '<div class="server-list-row server-port-forward-row" data-server-port-forward-id="' + escapeHtml(item.id) + '" data-tooltip="Edit port forward">'
+          + '<div class="server-list-main server-port-forward-main"><span class="server-port-forward-name tooltip-above" data-tooltip="' + escapeHtml(item.name) + '">' + escapeHtml(item.name) + '</span><span class="server-port-forward-target tooltip-above" data-tooltip="' + escapeHtml(target) + '">' + escapeHtml(target) + '</span></div>'
+          + '<div class="server-port-forward-trailing">' + autoBadge + '<span class="server-port-forward-status ' + escapeHtml(status) + ' tooltip-above" data-tooltip="' + escapeHtml(statusTooltip) + '">' + escapeHtml(status) + '</span><div class="server-port-forward-actions"><span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(disabled ? status : label + ' forward') + '"><button class="secondary server-port-forward-action-button" type="button" data-server-port-forward-action="' + escapeHtml(action) + '" data-server-port-forward-id="' + escapeHtml(item.id) + '"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(label) + '</button></span></div></div>'
+          + '</div>';
+      }).join('')
+      + '</div></section>';
+  }
+
+  function renderServerSystemInfo(session) {
+    const state = getActiveServerDashboardState();
+    const data = state && state.data ? state.data : null;
+    const items = data && Array.isArray(data.systemInfo)
+      ? data.systemInfo
+      : [
+        { label: 'Protocol', value: getConnectionTypeLabel(session.connectionType) },
+        { label: 'Host', value: session.host || '—' },
+        { label: 'Port', value: String(session.port || '—') },
+        { label: 'User', value: session.username || '—' },
+        { label: 'Adapter', value: 'not loaded' },
+        { label: 'Sudo', value: formatServerSudoLabel(session) },
+        { label: 'Last refresh', value: state && state.loading ? 'Loading...' : '—' }
+      ];
+    const errorBlock = state && state.error ? '<div class="server-placeholder">' + escapeHtml(state.error) + '</div>' : '';
+    return '<section class="server-section-card full-width"><div class="server-section-title-row"><div class="server-section-title">System Info / Adapter Details</div></div>' + errorBlock + '<div class="server-system-info-grid">'
+      + items.map(item => '<div class="server-system-info-item"><div class="server-system-info-label">' + escapeHtml(item.label || '') + '</div><div class="server-system-info-value tooltip-above" data-tooltip="' + escapeHtml(item.value || '—') + '">' + escapeHtml(item.value || '—') + '</div></div>').join('')
+      + '</div></section>';
+  }
+
+
+  function renderServerUnsupported(session) {
+    const protocol = getConnectionTypeLabel(session && session.connectionType);
+    return '<div class="server-disabled-state"><div><div class="server-disabled-title">Server management requires SSH/SFTP.</div><div>' + escapeHtml(protocol) + ' connections support file browsing and transfers only.</div></div></div>';
+  }
+
+  function getServerAutoRefreshLabel(value) {
+    if (value === '15') return 'Auto: 15s';
+    if (value === '30') return 'Auto: 30s';
+    if (value === '60') return 'Auto: 1m';
+    if (value === '300') return 'Auto: 5m';
+    return 'Auto: Off';
+  }
+
+  function updateServerAutoRefreshDropdown() {
+    if (serverAutoRefreshDropdownLabel) serverAutoRefreshDropdownLabel.textContent = getServerAutoRefreshLabel(serverAutoRefreshValue);
+    if (!serverAutoRefreshDropdownMenu) return;
+    Array.from(serverAutoRefreshDropdownMenu.querySelectorAll('[data-server-auto-refresh]')).forEach(item => {
+      const selected = item.getAttribute('data-server-auto-refresh') === serverAutoRefreshValue;
+      item.classList.toggle('selected', selected);
+      item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+  }
+
+  function showServerAutoRefreshDropdown() {
+    if (!serverAutoRefreshDropdownButton || !serverAutoRefreshDropdownMenu || serverAutoRefreshDropdownButton.disabled) return;
+    hideProfileDropdown();
+    hideConnectionTypeDropdown();
+    hideAuthDropdown();
+    serverAutoRefreshDropdownOpen = true;
+    const picker = serverAutoRefreshDropdownButton.closest('#serverAutoRefreshPicker');
+    if (picker) picker.classList.add('open');
+    serverAutoRefreshDropdownButton.setAttribute('aria-expanded', 'true');
+    updateServerAutoRefreshDropdown();
+  }
+
+  function hideServerAutoRefreshDropdown() {
+    if (!serverAutoRefreshDropdownButton) return;
+    serverAutoRefreshDropdownOpen = false;
+    const picker = serverAutoRefreshDropdownButton.closest('#serverAutoRefreshPicker');
+    if (picker) picker.classList.remove('open');
+    serverAutoRefreshDropdownButton.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleServerAutoRefreshDropdown() {
+    if (serverAutoRefreshDropdownOpen) {
+      hideServerAutoRefreshDropdown();
+    } else {
+      showServerAutoRefreshDropdown();
+    }
+  }
+
+  function selectServerAutoRefresh(value) {
+    const nextValue = ['15', '30', '60', '300'].includes(value) ? value : 'off';
+    serverAutoRefreshValue = nextValue;
+    updateServerAutoRefreshDropdown();
+    updateServerAutoRefreshTimer();
+  }
+
+  function renderConnectionViewSwitchMarkup(extraClass) {
+    const className = 'connection-view-switch' + (extraClass ? ' ' + extraClass : '');
+    return '<div class="' + className + '" role="tablist" aria-label="Connection View"><button class="connection-view-switch-button" type="button" role="tab" aria-selected="false" aria-controls="filesView" data-connection-view="files">Files</button><button class="connection-view-switch-button" type="button" role="tab" aria-selected="false" aria-controls="serverView" data-connection-view="server">Server</button></div>';
+  }
+
+  function renderServerViewIfActiveRemoteCommandConnection(connectionId) {
+    if (getActiveConnectionView() !== 'server') return;
+    if (String(connectionId || activeConnectionId || '') !== String(activeConnectionId || '')) return;
+    renderServerView();
+  }
+
+  function renderServerView() {
+    if (!serverViewContent) return;
+    const previousScrollState = captureServerViewScrollState();
+    const active = getActiveSession();
+    if (!active) {
+      serverViewContent.removeAttribute('data-server-view-connection-id');
+      serverViewContent.innerHTML = '<div class="server-disabled-state"><div><div class="server-disabled-title">No active connection.</div><div>Connect to a host to use the Server view.</div></div></div>';
+      return;
+    }
+
+    const connectionId = String(active.id || activeConnectionId || '');
+    serverViewContent.setAttribute('data-server-view-connection-id', connectionId);
+
+    if (!isServerViewSupported(active)) {
+      serverViewContent.innerHTML = renderServerUnsupported(active);
+      return;
+    }
+
+    serverViewContent.innerHTML = '<div class="server-overview-grid">' + renderServerOverviewCards() + '</div>'
+      + '<div class="server-grid">' + renderServerQuickTasks() + renderServerLogs(active) + renderServerServices() + renderServerProcesses() + renderServerCron() + renderServerPortForwarding() + renderServerSystemInfo(active) + '</div>';
+    restoreServerViewScrollState(previousScrollState, connectionId);
+  }
+
+  function updateConnectionViewUi() {
+    const active = getActiveSession();
+    const hasActive = Boolean(active);
+    pruneConnectionViewState();
+
+    const activeView = getActiveConnectionView();
+    const serverSupported = isServerViewSupported(active);
+
+    if (filesView) filesView.classList.toggle('hidden', activeView !== 'files');
+    if (serverView) serverView.classList.toggle('hidden', activeView !== 'server');
+    if (pathbar) pathbar.classList.toggle('server-toolbar-mode', activeView === 'server');
+    if (serverToolbarStatus) {
+      serverToolbarStatus.hidden = activeView !== 'server';
+      if (activeView !== 'server') serverToolbarStatus.classList.remove('visible');
+    }
+    const showServerRefreshControls = activeView === 'server' && hasActive && serverSupported;
+    if (serverRefreshActions) serverRefreshActions.hidden = !showServerRefreshControls;
+    if (serverRefreshActionsSeparator) serverRefreshActionsSeparator.hidden = !showServerRefreshControls;
+    if (serverRefreshButton) serverRefreshButton.disabled = !showServerRefreshControls;
+    if (serverAutoRefreshDropdownButton) serverAutoRefreshDropdownButton.disabled = !showServerRefreshControls;
+    if (!showServerRefreshControls) hideServerAutoRefreshDropdown();
+    renderServerView();
+    updateServerRefreshBusyState();
+    maybeRequestServerDashboardForActiveView();
+    updateServerAutoRefreshTimer();
+
+    const showConnectionViewSwitch = !hasActive || serverSupported;
+    if (pathbar) pathbar.classList.toggle('hide-view-switch-actions', !showConnectionViewSwitch);
+    document.querySelectorAll('.connection-view-switch').forEach(switchEl => {
+      switchEl.hidden = !showConnectionViewSwitch;
+    });
+    document.querySelectorAll('.view-switch-separator').forEach(separator => {
+      separator.hidden = !showConnectionViewSwitch;
+    });
+    document.querySelectorAll('[data-connection-view]').forEach(button => {
+      const view = button.getAttribute('data-connection-view') || 'files';
+      const isActive = view === activeView;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      button.disabled = !hasActive || (view === 'server' && !serverSupported);
+      if (hasActive && view === 'server' && !serverSupported) { button.setAttribute('data-tooltip', 'Server management requires SSH/SFTP.'); } else { button.removeAttribute('data-tooltip'); }
+    });
+  }
+
+  function handleServerViewAction(action) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return;
+    if (action === 'open-files') {
+      setActiveConnectionView('files');
+      return;
+    }
+    if (action === 'open-terminal') {
+      vscode.postMessage({ type: 'requestOpenSshTerminal', payload: { connectionId: activeConnectionId, workingDirectory: normalizeUiRemotePath(currentPath.value || active.currentPath || '/') } });
+      return;
+    }
+    if (action === 'run-command') {
+      showRemoteCommandDialog(normalizeUiRemotePath(currentPath.value || active.currentPath || '/'));
+      return;
+    }
+    if (action === 'open-log-viewer') {
+      vscode.postMessage({ type: 'requestOpenLogViewer', payload: { connectionId: activeConnectionId } });
+      return;
+    }
+    if (action === 'refresh') {
+      requestServerDashboardRefresh(true);
+    }
+  }
+
+
+  function getRemoteCommandConnectionSudoDefault(connectionId) {
+    const active = sessions.find(item => item.id === connectionId) || getActiveSession();
+    const username = active ? String(active.username || '').trim() : '';
+    const isRootConnection = username.toLowerCase() === 'root';
+    return Boolean(active && active.sudoModeEnabled && !isRootConnection);
+  }
+
+  function resetRemoteCommandSessionForQuickTask(state, workingDirectory) {
+    if (!state || state.status === 'running') return;
+    state.status = 'idle';
+    state.commandId = '';
+    state.command = '';
+    state.workingDirectory = normalizeUiRemotePath(workingDirectory || state.workingDirectory || currentPath.value || '/');
+    state.useSudo = getRemoteCommandConnectionSudoDefault(state.connectionId || activeConnectionId);
+    state.outputText = '';
+    state.finalMessage = '';
+    state.outputViewLimited = false;
+    state.stopping = false;
+    state.forceKilling = false;
+    state.exitCode = undefined;
+    state.error = '';
+    state.startedAt = 0;
+    state.finishedAt = 0;
+    state.finishedBadgeVisible = false;
+    state.commandCount = 0;
+    state.failedCommandCount = 0;
+    clearRemoteCommandStopEscalationTimer();
+    remoteCommandCloseWarning.classList.remove('visible');
+    remoteCommandStopWarning.classList.remove('visible');
+  }
+
+  function handleServerQuickTaskAction(commandId, autoRun) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active) || !activeConnectionId) return;
+
+    const state = getRemoteCommandSession(activeConnectionId);
+    const workingDirectory = normalizeUiRemotePath(currentPath.value || active.currentPath || '/');
+    if (state.status === 'running') {
+      showRemoteCommandDialog(workingDirectory);
+      return;
+    }
+
+    const id = String(commandId || '').trim();
+    const item = getRemoteCommandSavedList(activeConnectionId).find(command => command.id === id);
+    if (!item) {
+      resetRemoteCommandSessionForQuickTask(state, workingDirectory);
+      showRemoteCommandDialog(workingDirectory);
+      renderRemoteCommandSession();
+      return;
+    }
+
+    resetRemoteCommandSessionForQuickTask(state, workingDirectory);
+    showRemoteCommandDialog(workingDirectory);
+    renderRemoteCommandSession();
+    loadRemoteCommandIntoEditor(item, false);
+
+    if (autoRun) {
+      runRemoteCommandFromDialog();
+    }
+  }
+
+  function handleServerQuickTaskAddAction() {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active) || !activeConnectionId) return;
+
+    const state = getRemoteCommandSession(activeConnectionId);
+    const workingDirectory = normalizeUiRemotePath(currentPath.value || active.currentPath || '/');
+    if (state.status === 'running') {
+      showRemoteCommandDialog(workingDirectory);
+      return;
+    }
+
+    resetRemoteCommandSessionForQuickTask(state, workingDirectory);
+    showRemoteCommandDialog(workingDirectory);
+    renderRemoteCommandSession();
+  }
+
+  function readServerScheduledJobDataset(element) {
+    return {
+      id: element.getAttribute('data-server-scheduled-id') || '',
+      name: element.getAttribute('data-server-scheduled-name') || '',
+      countLabel: element.getAttribute('data-server-scheduled-count') || '',
+      typeLabel: element.getAttribute('data-server-scheduled-type-label') || '',
+      source: element.getAttribute('data-server-scheduled-source') || '',
+      sourceType: element.getAttribute('data-server-scheduled-source-type') || '',
+      user: element.getAttribute('data-server-scheduled-user') || '',
+      path: element.getAttribute('data-server-scheduled-path') || '',
+      copyValue: element.getAttribute('data-server-scheduled-copy') || ''
+    };
+  }
+
+  function handleServerScheduledJobAction(action, item, feedbackTarget = null) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active) || !activeConnectionId) return;
+
+    const payload = Object.assign({}, item || {}, { connectionId: activeConnectionId, action: action || 'open' });
+    if (action === 'copy') {
+      const value = String(payload.copyValue || payload.path || payload.source || payload.name || '').trim();
+      if (!value) return;
+      void copyTextFromEditableMenu(value);
+      showTransientActionTooltip(feedbackTarget, 'Copied');
+      return;
+    }
+    vscode.postMessage({ type: 'requestServerScheduledJobAction', payload: payload });
+  }
+
+  function readServerProcessDataset(element) {
+    return {
+      pid: element.getAttribute('data-server-process-pid') || '',
+      user: element.getAttribute('data-server-process-user') || '',
+      cpu: element.getAttribute('data-server-process-cpu') || '',
+      memory: element.getAttribute('data-server-process-memory') || '',
+      command: element.getAttribute('data-server-process-command') || '',
+      args: element.getAttribute('data-server-process-args') || '',
+      adapter: element.getAttribute('data-server-process-adapter') || ''
+    };
+  }
+
+  function handleServerProcessAction(action, process) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active) || !activeConnectionId) return;
+
+    const pid = String(process && process.pid || '').trim();
+    if (!pid) return;
+
+    const payload = Object.assign({}, process || {}, { connectionId: activeConnectionId, pid: pid });
+    if (action === 'details') {
+      vscode.postMessage({ type: 'requestServerProcessDetails', payload: payload });
+      return;
+    }
+
+    if (action === 'kill') {
+      vscode.postMessage({ type: 'requestServerProcessAction', payload: payload });
+    }
+  }
+
+  function handleServerServiceAction(action, serviceName, adapter) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active) || !activeConnectionId) return;
+
+    const normalizedName = String(serviceName || '').trim();
+    const normalizedAdapter = String(adapter || '').trim();
+    if (!normalizedName) return;
+
+    if (action === 'details') {
+      vscode.postMessage({ type: 'requestServerServiceDetails', payload: { connectionId: activeConnectionId, name: normalizedName, adapter: normalizedAdapter } });
+      return;
+    }
+
+    if (action === 'start' || action === 'stop' || action === 'restart') {
+      vscode.postMessage({ type: 'requestServerServiceAction', payload: { connectionId: activeConnectionId, name: normalizedName, adapter: normalizedAdapter, action: action } });
+    }
+  }
+
+  function handleServerLogAction(action, shortcutId, path, feedbackTarget = null) {
+    const active = getActiveSession();
+    if (!active || !isServerViewSupported(active)) return;
+
+    if (action === 'add') {
+      showServerLogShortcutDialog('add', '');
+      return;
+    }
+
+    const shortcut = shortcutId ? getServerLogShortcutById(active, shortcutId) : null;
+    const normalizedPath = normalizeUiRemotePath((shortcut && shortcut.path) || path || '');
+    if (!activeConnectionId || !normalizedPath || normalizedPath === '/') return;
+
+    if (action === 'edit') {
+      if (shortcut) showServerLogShortcutDialog('edit', shortcut.id);
+      return;
+    }
+
+    if (action === 'remove') {
+      if (shortcut) showServerLogShortcutRemoveDialog(shortcut.id);
+      return;
+    }
+
+    if (action === 'copy') {
+      void copyTextFromEditableMenu(normalizedPath);
+      showTransientActionTooltip(feedbackTarget, 'Copied');
+      return;
+    }
+
+    const entry = {
+      path: normalizedPath,
+      name: (shortcut && shortcut.name) || getRemotePathBasename(normalizedPath),
+      type: 'file',
+      effectiveType: 'file',
+      linkTarget: '',
+      permissions: ''
+    };
+
+    if (action === 'open') {
+      vscode.postMessage({ type: 'openEntries', payload: { entries: [entry] } });
+      return;
+    }
+
+    if (action === 'follow') {
+      vscode.postMessage({ type: 'requestOpenLogViewer', payload: { connectionId: activeConnectionId, path: normalizedPath } });
+      return;
+    }
+
+    vscode.postMessage({ type: 'openEntriesReadOnly', payload: { entries: [entry] } });
+  }
+
   function updateSudoToggle() {
     const active = getActiveSession();
     const capabilities = getActiveRemoteCapabilities();
@@ -4874,14 +8426,15 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const isPrivilegedSession = enabled || isRootConnection;
 
     sudoToggle.checked = enabled;
-    sudoToggleState.textContent = 'Sudo';
     sudoToggleLabel.classList.toggle('enabled', enabled);
+    sudoToggleLabel.classList.toggle('disabled', Boolean(sudoToggle.disabled));
+    sudoToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     entriesTableWrap.classList.toggle('privileged-session', isPrivilegedSession);
     sudoToggleLabel.dataset.tooltip = !active
-      ? 'Connect to a Host to Enable Sudo Mode'
+      ? 'Enable Sudo Mode'
       : enabled
-        ? 'Disable Sudo Mode and Forget the Sudo Password'
-        : 'Enable Sudo Mode for This Connection';
+        ? 'Disable Sudo Mode'
+        : 'Enable Sudo Mode';
   }
 
   function updateActiveSessionUi() {
@@ -4991,7 +8544,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         separatorIcon.appendChild(separatorPath);
         separator.appendChild(separatorIcon);
         separator.dataset.breadcrumbToggle = parentPart.path;
-        separator.title = 'Show folders under ' + parentPart.path;
+        separator.setAttribute('data-tooltip', 'Show folders under ' + parentPart.path);
         separator.setAttribute('aria-label', 'Show folders under ' + parentPart.path);
         remotePathBreadcrumb.appendChild(separator);
       }
@@ -5004,7 +8557,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       button.type = 'button';
       button.textContent = part.label;
       button.dataset.breadcrumbPath = part.path;
-      button.title = part.path;
+      button.setAttribute('data-tooltip', part.path);
       button.className = 'breadcrumb-part-button' + (part.path === normalizedPath ? ' current' : '');
       button.setAttribute('aria-current', part.path === normalizedPath ? 'page' : 'false');
       segment.appendChild(button);
@@ -5046,6 +8599,29 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateRemotePathBreadcrumb();
   }
 
+  function findRemotePathBreadcrumbToggle(path) {
+    if (!remotePathBreadcrumb) return null;
+    const normalizedPath = normalizeUiRemotePath(path || '/');
+    return Array.from(remotePathBreadcrumb.querySelectorAll('[data-breadcrumb-toggle]'))
+      .find(item => normalizeUiRemotePath(item.dataset.breadcrumbToggle || '/') === normalizedPath) || null;
+  }
+
+  function refreshOpenRemotePathDropdown() {
+    if (!breadcrumbDropdownState.open || !activeConnectionId) return;
+    const normalizedPath = normalizeUiRemotePath(breadcrumbDropdownState.path || '/');
+    const requestId = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+    const anchor = findRemotePathBreadcrumbToggle(normalizedPath);
+    breadcrumbDropdownState = { open: true, path: normalizedPath, requestId, anchorPath: normalizedPath };
+    updateRemotePathBreadcrumb();
+    if (anchor) positionRemotePathDropdown(anchor);
+    renderRemotePathDropdown('loading', normalizedPath);
+
+    vscode.postMessage({
+      type: 'requestBreadcrumbDirectories',
+      payload: { path: normalizedPath, requestId }
+    });
+  }
+
   function positionRemotePathDropdown(anchor) {
     if (!remotePathDropdown || !remotePathBox || !anchor) return;
     const boxRect = remotePathBox.getBoundingClientRect();
@@ -5067,7 +8643,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const title = document.createElement('div');
     title.className = 'remote-path-dropdown-title';
     title.textContent = path || '/';
-    title.title = path || '/';
+    title.setAttribute('data-tooltip', path || '/');
     remotePathDropdown.appendChild(title);
 
     if (state === 'loading') {
@@ -5100,18 +8676,29 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       button.type = 'button';
       button.className = 'remote-path-dropdown-item';
       button.dataset.dropdownDirectoryPath = item.path || '';
-      button.title = item.path || item.name || '';
+      button.setAttribute('data-tooltip', item.path || item.name || '');
 
       const name = document.createElement('span');
       name.className = 'remote-path-dropdown-name';
       name.textContent = item.name || item.path || '';
       button.appendChild(name);
 
-      const meta = document.createElement('span');
-      meta.className = 'remote-path-dropdown-meta';
-      const ownerGroup = [item.owner, item.group].filter(Boolean).join(':');
-      meta.textContent = [item.permissions, ownerGroup].filter(Boolean).join(' · ');
-      button.appendChild(meta);
+      if (showRemotePathBreadcrumbDirectoryDetails) {
+        const meta = document.createElement('span');
+        meta.className = 'remote-path-dropdown-meta';
+
+        const ownerGroup = document.createElement('span');
+        ownerGroup.className = 'remote-path-dropdown-meta-owner';
+        ownerGroup.textContent = [item.owner, item.group].filter(Boolean).join(':');
+        meta.appendChild(ownerGroup);
+
+        const permissions = document.createElement('span');
+        permissions.className = 'remote-path-dropdown-meta-permissions';
+        permissions.textContent = item.permissions || '';
+        meta.appendChild(permissions);
+
+        button.appendChild(meta);
+      }
 
       remotePathDropdown.appendChild(button);
     });
@@ -5150,28 +8737,138 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return parts;
   }
 
+  function isSessionConnected(session) {
+    return Boolean(session) && (!session.connectionState || session.connectionState === 'connected');
+  }
+
+  function isSessionConnecting(session) {
+    return Boolean(session && session.connectionState === 'connecting');
+  }
+
+  function isSessionFailed(session) {
+    return Boolean(session && session.connectionState === 'failed');
+  }
+
+  function mergeIncomingSessionsWithClientPending(incomingSessions) {
+    const incomingIds = new Set((incomingSessions || []).map(session => session.id));
+    const pendingSessions = Array.from(clientPendingSessionsByConnectionId.values())
+      .filter(session => session && session.id && !incomingIds.has(session.id));
+    return [...(incomingSessions || []), ...pendingSessions];
+  }
+
+  function createClientConnectionId(payload) {
+    const profileId = String(payload && payload.id || '').trim();
+    if (profileId) return profileId;
+    return 'quick-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function createClientPendingSession(payload, connectionId) {
+    const id = String(connectionId || '').trim();
+    if (!id) return;
+
+    const session = {
+      id,
+      connectionType: normalizeConnectionTypeValue(payload.connectionType),
+      name: String(payload.name || '').trim() || (String(payload.username || '').trim() + '@' + String(payload.host || '').trim()),
+      host: String(payload.host || '').trim(),
+      port: Number(payload.port || getDefaultPortForConnectionType(payload.connectionType)),
+      username: String(payload.username || '').trim(),
+      authType: String(payload.authType || 'password'),
+      privateKeyPath: String(payload.privateKeyPath || '').trim(),
+      startPath: normalizeUiRemotePath(payload.startPath || '/'),
+      currentPath: normalizeUiRemotePath(payload.startPath || '/'),
+      keepAlive: payload.keepAlive !== false,
+      isQuickConnect: !payload.id,
+      sudoModeEnabled: false,
+      connectionState: 'connecting'
+    };
+
+    clientPendingSessionsByConnectionId.set(id, session);
+    sessions = mergeIncomingSessionsWithClientPending(sessions.filter(item => item.id !== id));
+    activeConnectionId = id;
+    currentEntries = [];
+    selectedEntryPath = '';
+    selectedEntryPaths.clear();
+    filterText = '';
+    filterInput.value = '';
+    updateFilterClearButton();
+    currentSort = { key: '', direction: '' };
+    entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connecting...</div></td></tr>';
+    currentPath.value = session.currentPath || '/';
+    setBusy(true, 'Connecting to ' + (session.name || session.host) + '...', 'connection', 'Cancel', id);
+    renderSessionTabs();
+    updateActiveSessionUi();
+    updateConnectionViewUi();
+    setControls();
+  }
+
+  function markClientPendingSessionFailed(connectionId, message) {
+    const id = String(connectionId || '').trim();
+    if (!id) return;
+    const existing = clientPendingSessionsByConnectionId.get(id) || sessions.find(session => session.id === id);
+    if (!existing || isSessionConnected(existing)) return;
+    const failed = Object.assign({}, existing, { connectionState: 'failed', error: String(message || 'Connection failed.') });
+    clientPendingSessionsByConnectionId.set(id, failed);
+    sessions = sessions.map(session => session.id === id ? failed : session);
+    renderSessionTabs();
+    if (activeConnectionId === id) updateActiveSessionUi();
+    setControls();
+  }
+
+  function removeClientPendingSession(connectionId) {
+    const id = String(connectionId || '').trim();
+    if (!id) return;
+    const session = clientPendingSessionsByConnectionId.get(id) || sessions.find(item => item.id === id);
+    clientPendingSessionsByConnectionId.delete(id);
+    filesStatusByConnectionId.delete(id);
+    sessions = sessions.filter(item => item.id !== id);
+    if (activeConnectionId === id) {
+      const fallback = sessions.find(isSessionConnected) || sessions[0];
+      activeConnectionId = fallback ? fallback.id : '';
+      if (fallback && isSessionConnected(fallback)) {
+        vscode.postMessage({ type: 'switchSession', payload: { connectionId: fallback.id } });
+      } else {
+        currentEntries = [];
+        entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
+        currentPath.value = '';
+        setStatus('No active connection.');
+      }
+    }
+    renderSessionTabs();
+    updateActiveSessionUi();
+    updateConnectionViewUi();
+    setControls();
+    if (session && isSessionConnecting(session)) vscode.postMessage({ type: 'cancelConnection', payload: { connectionId: id } });
+  }
+
+  function findSessionForCurrentForm(predicate) {
+    const matchesForm = session => {
+      if (!session) return false;
+      if (selectedProfileId) return session.id === selectedProfileId;
+      const hostValue = String(host.value || '').trim();
+      const portValue = Number(port.value || 22);
+      const usernameValue = String(username.value || '').trim();
+      const authTypeValue = String(authType.value || 'password');
+      const connectionTypeValue = normalizeConnectionTypeValue(connectionType.value);
+      return String(session.host || '').trim() === hostValue
+        && normalizeConnectionTypeValue(session.connectionType) === connectionTypeValue
+        && Number(session.port || getDefaultPortForConnectionType(session.connectionType)) === portValue
+        && String(session.username || '').trim() === usernameValue
+        && String(session.authType || 'password') === authTypeValue;
+    };
+    return sessions.find(session => matchesForm(session) && predicate(session));
+  }
+
+  function getPendingSessionForCurrentForm() {
+    return findSessionForCurrentForm(session => isSessionConnecting(session));
+  }
+
+  function hasAnyConnectingSession() {
+    return sessions.some(isSessionConnecting) || Array.from(clientPendingSessionsByConnectionId.values()).some(isSessionConnecting);
+  }
+
   function getConnectedSessionForCurrentForm() {
-    if (selectedProfileId) {
-      return sessions.find(item => item.id === selectedProfileId);
-    }
-
-    const hostValue = String(host.value || '').trim();
-    const portValue = Number(port.value || 22);
-    const usernameValue = String(username.value || '').trim();
-    const authTypeValue = String(authType.value || 'password');
-    const connectionTypeValue = normalizeConnectionTypeValue(connectionType.value);
-
-    if (!hostValue || !usernameValue || !Number.isFinite(portValue)) {
-      return undefined;
-    }
-
-    return sessions.find(item =>
-      String(item.host || '').trim() === hostValue &&
-      normalizeConnectionTypeValue(item.connectionType) === connectionTypeValue &&
-      Number(item.port || getDefaultPortForConnectionType(item.connectionType)) === portValue &&
-      String(item.username || '').trim() === usernameValue &&
-      String(item.authType || 'password') === authTypeValue
-    );
+    return findSessionForCurrentForm(session => isSessionConnected(session));
   }
 
   function getActiveSession() {
@@ -5821,6 +9518,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const connectionCount = Number(summary.connectionCount || 0);
     const favoriteCount = Number(summary.remotePathFavoriteCount || 0);
     const unsupportedCount = Number(summary.unsupportedConnectionCount || 0);
+    const savedCommandCount = Number(summary.savedCommandCount || 0);
+    const portForwardCount = Number(summary.portForwardCount || 0);
+    const serverLogShortcutCount = Number(summary.serverLogShortcutCount || 0);
+    const logViewerFavoriteCount = Number(summary.logViewerFavoriteCount || 0);
     const parts = [
       summary.hasSettings ? 'Settings included' : 'Settings not included',
       connectionCount === 1 ? '1 connection' : connectionCount + ' connections',
@@ -5828,6 +9529,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       summary.usernamesIncluded ? 'usernames included' : 'usernames not included',
       summary.hasEncryptedCredentials ? 'passwords/passphrases encrypted' : 'passwords/passphrases not included'
     ];
+
+    if (savedCommandCount) parts.push(savedCommandCount === 1 ? '1 saved command' : savedCommandCount + ' saved commands');
+    if (portForwardCount) parts.push(portForwardCount === 1 ? '1 port forward' : portForwardCount + ' port forwards');
+    if (serverLogShortcutCount) parts.push(serverLogShortcutCount === 1 ? '1 log shortcut' : serverLogShortcutCount + ' log shortcuts');
+    if (logViewerFavoriteCount) parts.push(logViewerFavoriteCount === 1 ? '1 log favorite' : logViewerFavoriteCount + ' log favorites');
 
     if (unsupportedCount) {
       parts.splice(2, 0, unsupportedCount === 1 ? '1 unsupported' : unsupportedCount + ' unsupported');
@@ -6250,7 +9956,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       dragHandle.innerHTML = MANAGE_ICON_DRAG;
       dragHandle.setAttribute('aria-hidden', 'true');
       if (!canReorderProfiles) {
-        dragHandle.title = 'Clear the filter to reorder saved connections.';
+        dragHandle.setAttribute('data-tooltip', 'Clear the filter to reorder saved connections.');
       }
       row.appendChild(dragHandle);
 
@@ -6398,6 +10104,76 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
   }
 
+  function mapToStorageObject(map) {
+    const raw = {};
+    if (!map || typeof map.entries !== 'function') return raw;
+    for (const [key, value] of map.entries()) {
+      const normalizedKey = String(key || '').trim();
+      if (!normalizedKey) continue;
+      raw[normalizedKey] = Array.isArray(value) ? value : [];
+    }
+    return raw;
+  }
+
+  function normalizePersistentStorageObject(value) {
+    const normalized = {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return normalized;
+    Object.keys(value).forEach(key => {
+      const normalizedKey = String(key || '').trim();
+      if (!normalizedKey || !Array.isArray(value[key])) return;
+      normalized[normalizedKey] = value[key].filter(item => item && typeof item === 'object');
+    });
+    return normalized;
+  }
+
+  function objectToMap(value) {
+    const normalized = normalizePersistentStorageObject(value);
+    const map = new Map();
+    Object.keys(normalized).forEach(key => {
+      map.set(key, normalized[key]);
+    });
+    return map;
+  }
+
+  function collectPersistentStorageSnapshot() {
+    return {
+      savedCommands: mapToStorageObject(remoteCommandSavedByConnectionId),
+      serverLogShortcuts: readServerLogShortcutsStorage(),
+      portForwards: loadAllServerPortForwardsFromStorage()
+    };
+  }
+
+  function postPersistentStorageSnapshot() {
+    if (persistentStorageApplyingSnapshot) return;
+    vscode.postMessage({
+      type: 'syncPersistentStorage',
+      payload: { snapshot: collectPersistentStorageSnapshot() }
+    });
+  }
+
+  function applyPersistentStorageSnapshot(snapshot) {
+    persistentStorageApplyingSnapshot = true;
+    try {
+      const savedCommands = normalizePersistentStorageObject(snapshot && snapshot.savedCommands);
+      remoteCommandSavedByConnectionId.clear();
+      objectToMap(savedCommands).forEach((value, key) => remoteCommandSavedByConnectionId.set(key, value));
+      persistRemoteCommandCollection(REMOTE_COMMAND_STORAGE_KEY, remoteCommandSavedByConnectionId);
+
+      const serverLogShortcuts = normalizePersistentStorageObject(snapshot && snapshot.serverLogShortcuts);
+      writeServerLogShortcutsStorage(serverLogShortcuts);
+      serverLogShortcutsSessionByConnectionId.clear();
+
+      const portForwards = normalizePersistentStorageObject(snapshot && snapshot.portForwards);
+      saveAllServerPortForwardsToStorage(portForwards);
+      serverPortForwardsSessionByConnectionId.clear();
+    } finally {
+      persistentStorageApplyingSnapshot = false;
+    }
+
+    renderRemoteCommandSavedList();
+    renderServerView();
+  }
+
   function hydrateRemoteCommandStorage() {
     if (!remoteCommandSavedByConnectionId.size) {
       for (const [key, value] of readRemoteCommandCollection(REMOTE_COMMAND_STORAGE_KEY).entries()) {
@@ -6413,6 +10189,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
 
   function persistRemoteCommandSaved() {
     persistRemoteCommandCollection(REMOTE_COMMAND_STORAGE_KEY, remoteCommandSavedByConnectionId);
+    postPersistentStorageSnapshot();
   }
 
   function persistRemoteCommandHistory() {
@@ -6489,7 +10266,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const active = sessions.find(item => item.id === connectionId) || getActiveSession();
     const hostValue = active ? String(active.host || '').trim() : String(host.value || '').trim();
     remoteCommandConnectedTo.textContent = hostValue || '-';
-    remoteCommandConnectedTo.title = hostValue || '';
+    if (hostValue) remoteCommandConnectedTo.setAttribute('data-tooltip', hostValue); else remoteCommandConnectedTo.removeAttribute('data-tooltip');
   }
 
   function updateRemoteCommandRunAs() {
@@ -6628,6 +10405,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteCommandCloseWarning.classList.remove('visible');
     remoteCommandStopWarning.classList.remove('visible');
     renderRemoteCommandSession();
+    renderServerViewIfActiveRemoteCommandConnection(state.connectionId);
     scrollRemoteCommandOutputToBottom();
 
     vscode.postMessage({
@@ -6718,6 +10496,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       setRemoteCommandStatus('Running...');
     }
     renderRemoteCommandBadge();
+    renderServerViewIfActiveRemoteCommandConnection(state.connectionId);
   }
 
   function handleRemoteCommandOutput(payload) {
@@ -6792,6 +10571,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
     renderRemoteCommandBadge();
     renderRemoteCommandHistoryList();
+    renderServerViewIfActiveRemoteCommandConnection(state.connectionId);
   }
 
   function formatRemoteCommandPrompt(command) {
@@ -7024,6 +10804,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return days + ' d ago';
   }
 
+  function getRemoteCommandItemRemotePath(item) {
+    const raw = String(item && (item.remotePath || item.workingDirectory || '') || '').trim();
+    return raw ? normalizeUiRemotePath(raw) : '';
+  }
+
   function loadRemoteCommandIntoEditor(item, append) {
     if (!item || getCurrentRemoteCommandSession().status === 'running') return;
     const command = String(item.command || '').trim();
@@ -7032,7 +10817,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteCommandInput.value = append && current ? current + '\\n' + command : command;
     const state = getCurrentRemoteCommandSession();
     state.command = remoteCommandInput.value;
-    state.workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || state.workingDirectory || '/');
+    const itemRemotePath = getRemoteCommandItemRemotePath(item);
+    if (!append && itemRemotePath) {
+      remoteCommandWorkingDirectory.value = itemRemotePath;
+      state.workingDirectory = itemRemotePath;
+    } else {
+      state.workingDirectory = normalizeUiRemotePath(remoteCommandWorkingDirectory.value || state.workingDirectory || '/');
+    }
     state.useSudo = collectRemoteCommandUseSudo();
     updateRemoteCommandControls();
     remoteCommandInput.focus();
@@ -7042,7 +10833,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (!remoteCommandSavedList) return;
     const list = getRemoteCommandSavedList(remoteCommandDialogConnectionId || activeConnectionId);
     if (remoteCommandEditingSavedId === '__new__') {
-      remoteCommandSavedList.innerHTML = renderRemoteCommandEditForm({ id: '__new__', name: '', details: '', command: String(remoteCommandInput.value || '').trim() }, true);
+      remoteCommandSavedList.innerHTML = renderRemoteCommandEditForm({
+        id: '__new__',
+        name: '',
+        details: '',
+        command: String(remoteCommandInput.value || '').trim(),
+        remotePath: normalizeUiRemotePath(remoteCommandWorkingDirectory.value || currentPath.value || '/')
+      }, true);
       wireRemoteCommandEditForm();
       return;
     }
@@ -7052,14 +10849,16 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
     remoteCommandSavedList.innerHTML = list.map(item => {
       if (remoteCommandEditingSavedId === item.id) return renderRemoteCommandEditForm(item, false);
-      return '<div class="remote-command-card" data-remote-command-saved-id="' + escapeHtml(item.id) + '" title="Load command">'
+      const remotePath = getRemoteCommandItemRemotePath(item);
+      return '<div class="remote-command-card" data-remote-command-saved-id="' + escapeHtml(item.id) + '" data-tooltip="Load command">'
         + '<div class="remote-command-card-header">'
         + '<div class="remote-command-card-name">' + escapeHtml(item.name || firstRemoteCommandLine(item.command) || 'Saved command') + '</div>'
-        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="append" title="Add to editor">+</button>'
-        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="edit" title="Edit saved command">✎</button>'
-        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="delete" title="Delete saved command">×</button>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="append" data-tooltip="Add to editor">+</button>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="edit" data-tooltip="Edit saved command">✎</button>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="delete" data-tooltip="Delete saved command">×</button>'
         + '</div>'
         + (item.details ? '<div class="remote-command-card-details">' + escapeHtml(item.details) + '</div>' : '')
+        + (remotePath ? '<div class="remote-command-card-meta tooltip-above" data-tooltip="' + escapeHtml(remotePath) + '">Remote path: ' + escapeHtml(truncateRemoteCommandText(remotePath, 90)) + '</div>' : '')
         + '<div class="remote-command-card-command">' + escapeHtml(truncateRemoteCommandText(item.command, 120)) + '</div>'
         + (remoteCommandDeletingSavedId === item.id ? '<div class="remote-command-delete-confirm" role="alert"><span>Delete saved command?</span><span class="remote-command-delete-confirm-actions"><button class="secondary" type="button" data-remote-command-action="cancel-delete">Cancel</button><button type="button" data-remote-command-action="confirm-delete">Delete</button></span></div>' : '')
         + '</div>';
@@ -7068,9 +10867,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   }
 
   function renderRemoteCommandEditForm(item, isNew) {
+    const remotePath = getRemoteCommandItemRemotePath(item);
     return '<form class="remote-command-edit-form" data-remote-command-edit-id="' + escapeHtml(item.id || '') + '">'
       + '<label>Name<input type="text" name="name" value="' + escapeHtml(item.name || '') + '" autocomplete="off" spellcheck="false" placeholder="Restart nginx"></label>'
       + '<label>Details<input type="text" name="details" value="' + escapeHtml(item.details || '') + '" autocomplete="off" spellcheck="false" placeholder="Explain what this command does"></label>'
+      + '<label>Remote path<input type="text" name="remotePath" value="' + escapeHtml(remotePath) + '" autocomplete="off" spellcheck="false" placeholder="/var/www/app"></label>'
       + '<label>Command<textarea name="command" spellcheck="false">' + escapeHtml(item.command || '') + '</textarea></label>'
       + '<div class="remote-command-edit-actions">'
       + '<button class="secondary" type="button" data-remote-command-edit-action="cancel">Cancel</button>'
@@ -7093,6 +10894,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const name = String((form.querySelector('input[name="name"]') || {}).value || '').trim();
     const details = String((form.querySelector('input[name="details"]') || {}).value || '').trim();
     const command = String((form.querySelector('textarea[name="command"]') || {}).value || '').trim();
+    const remotePathInput = form.querySelector('input[name="remotePath"]');
+    const remotePathRaw = String((remotePathInput || {}).value || '').trim();
+    const remotePath = remotePathRaw ? normalizeUiRemotePath(remotePathRaw) : '';
     if (!command) return;
     const now = Date.now();
     const existingIndex = list.findIndex(item => item.id === id && id !== '__new__');
@@ -7104,6 +10908,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       createdAt: existingIndex >= 0 ? list[existingIndex].createdAt || now : now,
       updatedAt: now
     };
+    if (remotePath) item.remotePath = remotePath;
     if (existingIndex >= 0) list[existingIndex] = item;
     else list.unshift(item);
     remoteCommandSavedByConnectionId.set(connectionId, list);
@@ -7111,6 +10916,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteCommandEditingSavedId = '';
     remoteCommandDeletingSavedId = '';
     renderRemoteCommandSavedList();
+    renderServerViewIfActiveRemoteCommandConnection(connectionId);
   }
 
   function deleteRemoteCommandSaved(id) {
@@ -7121,6 +10927,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteCommandEditingSavedId = '';
     remoteCommandDeletingSavedId = '';
     renderRemoteCommandSavedList();
+    renderServerViewIfActiveRemoteCommandConnection(connectionId);
   }
 
   function addRemoteCommandHistoryItem(state) {
@@ -7130,6 +10937,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const previous = list[0];
     if (previous && String(previous.command || '').trim() === command) {
       previous.ranAt = Date.now();
+      previous.workingDirectory = normalizeUiRemotePath(state.workingDirectory || '/');
       previous.exitCode = typeof state.exitCode === 'number' ? state.exitCode : undefined;
       previous.error = state.error || '';
       previous.usedSudo = Boolean(state.useSudo);
@@ -7158,10 +10966,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     }
     remoteCommandHistoryList.innerHTML = list.map(item => {
       const exitLabel = item.error ? 'failed' : (typeof item.exitCode === 'number' ? 'exit ' + item.exitCode : 'finished');
-      return '<div class="remote-command-card" data-remote-command-history-id="' + escapeHtml(item.id) + '" title="Load command">'
+      return '<div class="remote-command-card" data-remote-command-history-id="' + escapeHtml(item.id) + '" data-tooltip="Load command">'
         + '<div class="remote-command-card-header remote-command-card-header-compact">'
         + '<div class="remote-command-card-name">' + escapeHtml(truncateRemoteCommandText(firstRemoteCommandLine(item.command) || item.command, 90)) + '</div>'
-        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="save-history" title="Save as command">☆</button>'
+        + '<button class="secondary remote-command-icon-button" type="button" data-remote-command-action="save-history" data-tooltip="Save as command">☆</button>'
         + '</div>'
         + '<div class="remote-command-card-meta">' + escapeHtml(formatRemoteCommandRelativeTime(item.ranAt) + ' · ' + exitLabel) + '</div>'
         + '</div>';
@@ -7174,17 +10982,21 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const list = getRemoteCommandSavedList(connectionId);
     const command = String(item.command || '').trim();
     if (!command) return;
-    list.unshift({
+    const remotePath = getRemoteCommandItemRemotePath(item);
+    const savedItem = {
       id: createRemoteCommandId(),
       name: firstRemoteCommandLine(command) || 'Saved command',
       details: '',
       command,
       createdAt: Date.now(),
       updatedAt: Date.now()
-    });
+    };
+    if (remotePath) savedItem.remotePath = remotePath;
+    list.unshift(savedItem);
     remoteCommandSavedByConnectionId.set(connectionId, list);
     persistRemoteCommandSaved();
     renderRemoteCommandSavedList();
+    renderServerViewIfActiveRemoteCommandConnection(connectionId);
   }
 
   function browseRemoteCommandWorkingDirectory() {
@@ -7258,10 +11070,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const selectedEntries = Array.isArray(entries) ? entries.filter(entry => entry && !isParentEntry(entry)) : [];
     if (!selectedEntries.length) return;
 
+    const prefillOwner = getCommonOwnerGroupDialogValue(selectedEntries, 'owner');
+    const prefillGroup = getCommonOwnerGroupDialogValue(selectedEntries, 'group');
+
     ownerGroupEntries = selectedEntries.map(actionPayload);
     ownerGroupDialogOpen = true;
-    ownerGroupOwnerInput.value = '';
-    ownerGroupGroupInput.value = '';
+    ownerGroupOwnerInput.value = prefillOwner;
+    ownerGroupGroupInput.value = prefillGroup;
     ownerGroupRecursiveInput.checked = false;
     ownerGroupValidation.textContent = '';
 
@@ -7277,6 +11092,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       : '';
 
     updateOwnerGroupApplyState();
+    ensureOwnerGroupSuggestionsRequested();
     ownerGroupBackdrop.classList.add('visible');
     ownerGroupBackdrop.setAttribute('aria-hidden', 'false');
     setTimeout(() => ownerGroupOwnerInput.focus(), 0);
@@ -7285,8 +11101,195 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function hideOwnerGroupDialog() {
     ownerGroupDialogOpen = false;
     ownerGroupEntries = [];
+    hideOwnerGroupSuggestions();
     ownerGroupBackdrop.classList.remove('visible');
     ownerGroupBackdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function getOwnerGroupSuggestionCache(connectionId) {
+    const id = String(connectionId || activeConnectionId || '').trim();
+    if (!id) return { owners: [], groups: [], loading: false, loaded: true, error: '' };
+    let cache = ownerGroupSuggestionsByConnectionId.get(id);
+    if (!cache) {
+      cache = { owners: [], groups: [], loading: false, loaded: false, error: '' };
+      ownerGroupSuggestionsByConnectionId.set(id, cache);
+    }
+    return cache;
+  }
+
+  function ensureOwnerGroupSuggestionsRequested() {
+    if (!ownerGroupDialogOpen || !activeConnectionId) return;
+    const cache = getOwnerGroupSuggestionCache(activeConnectionId);
+    if (cache.loading || cache.loaded) return;
+    cache.loading = true;
+    cache.error = '';
+    vscode.postMessage({ type: 'requestOwnerGroupSuggestions', payload: { connectionId: activeConnectionId } });
+  }
+
+  function handleOwnerGroupSuggestions(payload) {
+    const connectionId = String(payload.connectionId || '').trim();
+    if (!connectionId) return;
+    const cache = getOwnerGroupSuggestionCache(connectionId);
+    cache.owners = normalizeOwnerGroupSuggestions(payload.owners || []);
+    cache.groups = normalizeOwnerGroupSuggestions(payload.groups || []);
+    cache.loading = false;
+    cache.loaded = true;
+    cache.error = payload.error ? String(payload.error) : '';
+    if (ownerGroupDialogOpen && connectionId === activeConnectionId && ownerGroupActiveSuggestionKind) {
+      renderOwnerGroupSuggestions(ownerGroupActiveSuggestionKind);
+    }
+  }
+
+  function normalizeOwnerGroupSuggestions(values) {
+    if (!Array.isArray(values)) return [];
+    const seen = new Set();
+    return values
+      .map(value => ({
+        name: String(value && value.name || '').trim(),
+        id: String(value && value.id || '').trim(),
+        detail: String(value && value.detail || '').trim()
+      }))
+      .filter(value => {
+        if (!value.name || seen.has(value.name)) return false;
+        seen.add(value.name);
+        return true;
+      })
+      .slice(0, 500);
+  }
+
+  function showOwnerGroupSuggestions(kind) {
+    ownerGroupActiveSuggestionKind = kind;
+    ensureOwnerGroupSuggestionsRequested();
+    renderOwnerGroupSuggestions(kind);
+  }
+
+  function isOwnerGroupSuggestionsOpen() {
+    return Boolean(
+      ownerGroupActiveSuggestionKind
+      && (
+        (ownerGroupOwnerSuggestions && ownerGroupOwnerSuggestions.classList.contains('visible'))
+        || (ownerGroupGroupSuggestions && ownerGroupGroupSuggestions.classList.contains('visible'))
+      )
+    );
+  }
+
+  function hideOwnerGroupSuggestions() {
+    ownerGroupActiveSuggestionKind = '';
+    if (ownerGroupSuggestionRepositionFrame) {
+      cancelAnimationFrame(ownerGroupSuggestionRepositionFrame);
+      ownerGroupSuggestionRepositionFrame = 0;
+    }
+    if (ownerGroupOwnerSuggestions) ownerGroupOwnerSuggestions.classList.remove('visible');
+    if (ownerGroupGroupSuggestions) ownerGroupGroupSuggestions.classList.remove('visible');
+    if (ownerGroupOwnerInput) ownerGroupOwnerInput.setAttribute('aria-expanded', 'false');
+    if (ownerGroupGroupInput) ownerGroupGroupInput.setAttribute('aria-expanded', 'false');
+  }
+
+  function ensureOwnerGroupSuggestionPortal() {
+    if (ownerGroupOwnerSuggestions && ownerGroupOwnerSuggestions.parentElement !== document.body) {
+      document.body.appendChild(ownerGroupOwnerSuggestions);
+    }
+    if (ownerGroupGroupSuggestions && ownerGroupGroupSuggestions.parentElement !== document.body) {
+      document.body.appendChild(ownerGroupGroupSuggestions);
+    }
+  }
+
+  function positionOwnerGroupSuggestions(kind) {
+    const isOwner = kind === 'owner';
+    const input = isOwner ? ownerGroupOwnerInput : ownerGroupGroupInput;
+    const menu = isOwner ? ownerGroupOwnerSuggestions : ownerGroupGroupSuggestions;
+    if (!ownerGroupDialogOpen || !input || !menu || !menu.classList.contains('visible')) return;
+
+    ensureOwnerGroupSuggestionPortal();
+
+    const rect = input.getBoundingClientRect();
+    const margin = 8;
+    const gap = 4;
+    const width = Math.max(180, Math.round(rect.width));
+    const maxLeft = window.innerWidth - width - margin;
+    const left = Math.max(margin, Math.min(Math.round(rect.left), maxLeft));
+    const availableBelow = window.innerHeight - rect.bottom - margin - gap;
+    const availableAbove = rect.top - margin - gap;
+    const preferredHeight = Math.min(220, Math.max(120, menu.scrollHeight || 190));
+    const placeBelow = availableBelow >= Math.min(preferredHeight, 160) || availableBelow >= availableAbove;
+    const maxHeight = Math.max(72, Math.min(220, placeBelow ? availableBelow : availableAbove));
+    const top = placeBelow
+      ? Math.round(rect.bottom + gap)
+      : Math.max(margin, Math.round(rect.top - gap - maxHeight));
+
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    menu.style.width = width + 'px';
+    menu.style.maxHeight = Math.round(maxHeight) + 'px';
+  }
+
+  function scheduleOwnerGroupSuggestionsPosition() {
+    if (!ownerGroupDialogOpen || !ownerGroupActiveSuggestionKind) return;
+    if (ownerGroupSuggestionRepositionFrame) cancelAnimationFrame(ownerGroupSuggestionRepositionFrame);
+    ownerGroupSuggestionRepositionFrame = requestAnimationFrame(() => {
+      ownerGroupSuggestionRepositionFrame = 0;
+      positionOwnerGroupSuggestions(ownerGroupActiveSuggestionKind);
+    });
+  }
+
+  function renderOwnerGroupSuggestions(kind) {
+    const isOwner = kind === 'owner';
+    const input = isOwner ? ownerGroupOwnerInput : ownerGroupGroupInput;
+    const menu = isOwner ? ownerGroupOwnerSuggestions : ownerGroupGroupSuggestions;
+    if (!ownerGroupDialogOpen || !input || !menu || ownerGroupActiveSuggestionKind !== kind) return;
+
+    const cache = getOwnerGroupSuggestionCache(activeConnectionId);
+    const source = isOwner ? cache.owners : cache.groups;
+    const filter = String(input.value || '').trim().toLowerCase();
+    const matches = source
+      .filter(item => {
+        if (!filter) return true;
+        return item.name.toLowerCase().includes(filter)
+          || item.id.toLowerCase().includes(filter)
+          || item.detail.toLowerCase().includes(filter);
+      })
+      .slice(0, 80);
+
+    if (cache.loading && !source.length) {
+      menu.innerHTML = '<div class="owner-group-suggestion-empty">Loading suggestions...</div>';
+    } else if (matches.length) {
+      menu.innerHTML = matches.map(item => '<button type="button" class="owner-group-suggestion-item" role="option" data-owner-group-kind="' + escapeHtml(kind) + '" data-owner-group-value="' + escapeHtml(item.name) + '"><span class="owner-group-suggestion-name">' + escapeHtml(item.name) + '</span><span class="owner-group-suggestion-detail">' + escapeHtml(item.detail || item.id || '') + '</span></button>').join('');
+    } else if (cache.loaded && source.length) {
+      menu.innerHTML = '<div class="owner-group-suggestion-empty">No matching suggestions. You can type manually.</div>';
+    } else if (cache.error) {
+      menu.innerHTML = '<div class="owner-group-suggestion-empty error">Suggestions unavailable. You can type manually.</div>';
+    } else {
+      menu.innerHTML = '<div class="owner-group-suggestion-empty">No suggestions. You can type manually.</div>';
+    }
+
+    ensureOwnerGroupSuggestionPortal();
+    menu.classList.add('visible');
+    input.setAttribute('aria-expanded', 'true');
+    positionOwnerGroupSuggestions(kind);
+  }
+
+  function handleOwnerGroupSuggestionClick(event, expectedKind) {
+    const item = event.target && event.target.closest ? event.target.closest('[data-owner-group-value]') : null;
+    if (!item) return;
+    const kind = item.dataset.ownerGroupKind || expectedKind;
+    const value = item.dataset.ownerGroupValue || '';
+    if (kind === 'owner') ownerGroupOwnerInput.value = value;
+    if (kind === 'group') ownerGroupGroupInput.value = value;
+    hideOwnerGroupSuggestions();
+    updateOwnerGroupApplyState();
+    if (kind === 'owner') ownerGroupOwnerInput.focus();
+    if (kind === 'group') ownerGroupGroupInput.focus();
+  }
+
+  function getCommonOwnerGroupDialogValue(entries, key) {
+    const values = (Array.isArray(entries) ? entries : [])
+      .map(entry => formatMetadata(entry && entry[key]).trim())
+      .filter(Boolean);
+
+    if (!values.length) return '';
+
+    const first = values[0];
+    return values.every(value => value === first) ? first : '';
   }
 
   function updateOwnerGroupApplyState() {
@@ -7790,7 +11793,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     pathFavoritesList.innerHTML = favoriteRemotePaths.map(path => {
       const escapedPath = escapeHtml(path);
       return '<div class="remote-path-favorite-item">' +
-        '<button type="button" class="remote-path-favorite-path" data-favorite-path="' + escapedPath + '" title="' + escapedPath + '">' + escapedPath + '</button>' +
+        '<button type="button" class="remote-path-favorite-path" data-favorite-path="' + escapedPath + '" data-tooltip="' + escapedPath + '">' + escapedPath + '</button>' +
         '<button type="button" class="remote-path-favorite-remove" data-favorite-action="remove" data-favorite-path="' + escapedPath + '" aria-label="Remove ' + escapedPath + '">×</button>' +
         '</div>';
     }).join('');
@@ -8079,26 +12082,58 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const active = getActiveSession();
     const hostValue = active ? String(active.host || '').trim() : String(host.value || '').trim();
     remoteSearchConnectedTo.textContent = hostValue || '-';
-    remoteSearchConnectedTo.title = hostValue || '';
+    if (hostValue) remoteSearchConnectedTo.setAttribute('data-tooltip', hostValue); else remoteSearchConnectedTo.removeAttribute('data-tooltip');
   }
 
-  function updateRemoteSearchRunAs() {
-    if (!remoteSearchRunAs) return;
-
-    const active = getActiveSession();
+  function getRemoteSearchSudoContext(connectionId) {
+    const key = connectionId || activeConnectionId;
+    const active = (key ? sessions.find(item => item.id === key) : null) || getActiveSession();
     const username = active ? String(active.username || '').trim() : '';
     const connectionType = String((active && active.connectionType) || getActiveConnectionType() || 'sftp').toLowerCase();
     const isRootConnection = username.toLowerCase() === 'root';
     const isSftp = connectionType === 'sftp';
     const connectionSudoEnabled = Boolean(active && active.sudoModeEnabled && !isRootConnection && isSftp);
-    const useSudo = connectionSudoEnabled || Boolean(isSftp && remoteSearchUseSudo && remoteSearchUseSudo.checked && !isRootConnection);
+    return { active, username, isRootConnection, isSftp, connectionSudoEnabled };
+  }
+
+  function collectRemoteSearchEffectiveUseSudo(connectionId) {
+    const context = getRemoteSearchSudoContext(connectionId);
+    if (!context.isSftp || context.isRootConnection) return false;
+    if (context.connectionSudoEnabled) return true;
+    return Boolean(remoteSearchUseSudo && remoteSearchUseSudo.checked);
+  }
+
+  function collectRemoteSearchFormUseSudo(connectionId) {
+    const key = String(connectionId || activeConnectionId || '');
+    const context = getRemoteSearchSudoContext(key);
+    if (!context.isSftp || context.isRootConnection) return false;
+    if (context.connectionSudoEnabled) {
+      const saved = key ? remoteSearchFormsByConnectionId.get(key) : null;
+      return Boolean(saved && saved.useSudo);
+    }
+    return Boolean(remoteSearchUseSudo && remoteSearchUseSudo.checked);
+  }
+
+  function updateRemoteSearchRunAs() {
+    if (!remoteSearchRunAs) return;
+
+    const context = getRemoteSearchSudoContext(activeConnectionId);
+    const useSudo = collectRemoteSearchEffectiveUseSudo(activeConnectionId);
 
     remoteSearchRunAs.textContent = useSudo
       ? 'root via sudo'
-      : isRootConnection
+      : context.isRootConnection
         ? 'root'
-        : (username || (isSftp ? 'SSH user' : 'FTP user'));
+        : (context.username || (context.isSftp ? 'SSH user' : 'FTP user'));
     remoteSearchRunAs.classList.toggle('sudo', useSudo);
+
+    if (remoteSearchUseSudo) {
+      remoteSearchUseSudo.checked = useSudo;
+      remoteSearchUseSudo.disabled = context.connectionSudoEnabled || remoteSearchState.status === 'running';
+    }
+    if (remoteSearchSudoNote) {
+      remoteSearchSudoNote.textContent = context.connectionSudoEnabled ? 'Enabled by connection Sudo Mode' : '';
+    }
   }
 
   function updateRemoteSearchMeta() {
@@ -8172,7 +12207,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       fileName: '*',
       searchInsideFiles: false,
       textToFind: '',
-      useSudo: Boolean(session && session.sudoModeEnabled && String(session.connectionType || '').toLowerCase() === 'sftp')
+      useSudo: false
     };
   }
 
@@ -8186,6 +12221,19 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       return Object.assign(getDefaultRemoteSearchFormForConnection(key), snapshot.options);
     }
     return getDefaultRemoteSearchFormForConnection(key);
+  }
+
+  function normalizeRemoteSearchFormForStorage(connectionId, form) {
+    const key = String(connectionId || activeConnectionId || '');
+    const normalized = Object.assign(getDefaultRemoteSearchFormForConnection(key), form || {});
+    const context = getRemoteSearchSudoContext(key);
+    if (!context.isSftp || context.isRootConnection) {
+      normalized.useSudo = false;
+    } else if (context.connectionSudoEnabled) {
+      const existing = key ? remoteSearchFormsByConnectionId.get(key) : null;
+      normalized.useSudo = Boolean(existing && existing.useSudo);
+    }
+    return normalized;
   }
 
   function applyRemoteSearchForm(form) {
@@ -8208,7 +12256,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
   function saveRemoteSearchFormForConnection(connectionId) {
     const key = String(connectionId || '');
     if (!key) return;
-    remoteSearchFormsByConnectionId.set(key, collectRemoteSearchPayload());
+    remoteSearchFormsByConnectionId.set(key, normalizeRemoteSearchFormForStorage(key, collectRemoteSearchPayload()));
   }
 
   function saveRemoteSearchFormForActiveConnection() {
@@ -8222,7 +12270,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     if (remoteSearchState.status !== 'running') {
       const key = String(activeConnectionId || '');
       const currentForm = getRemoteSearchFormForConnection(key);
-      remoteSearchFormsByConnectionId.set(key, Object.assign({}, currentForm, { scopePath: normalizeSearchScopePath(currentPath.value || '/') }));
+      remoteSearchFormsByConnectionId.set(key, normalizeRemoteSearchFormForStorage(key, Object.assign({}, currentForm, { scopePath: normalizeSearchScopePath(currentPath.value || '/') })));
     }
     applyRemoteSearchFormForActiveConnection();
     clearRemoteSearchValidation();
@@ -8242,7 +12290,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteSearchBackdrop.setAttribute('aria-hidden', 'true');
   }
 
-  function collectRemoteSearchPayload() {
+  function collectRemoteSearchPayload(options) {
+    const useEffectiveSudo = Boolean(options && options.effectiveSudo);
     return {
       scopePath: normalizeSearchScopePath(remoteSearchScopePath.value || currentPath.value || '/'),
       includeSubdirectories: Boolean(remoteSearchSubdirectories.checked),
@@ -8251,7 +12300,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       fileName: String(remoteSearchFileName.value || '*').trim() || '*',
       searchInsideFiles: isRemoteSearchSftp() && Boolean(remoteSearchInsideFiles.checked),
       textToFind: String(remoteSearchTextToFind.value || ''),
-      useSudo: isRemoteSearchSftp() && Boolean(remoteSearchUseSudo.checked)
+      useSudo: useEffectiveSudo ? collectRemoteSearchEffectiveUseSudo(activeConnectionId) : collectRemoteSearchFormUseSudo(activeConnectionId)
     };
   }
 
@@ -8264,7 +12313,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       return;
     }
 
-    const payload = collectRemoteSearchPayload();
+    const payload = collectRemoteSearchPayload({ effectiveSudo: true });
     if (!String(remoteSearchScopePath.value || '').trim()) {
       setRemoteSearchValidation('Remote path is required.', remoteSearchScopePath);
       return;
@@ -8369,7 +12418,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     remoteSearchState = normalized;
     const options = remoteSearchState.options || {};
     if (remoteSearchState.status !== 'idle') {
-      remoteSearchFormsByConnectionId.set(remoteSearchState.connectionId || activeConnectionId || '', Object.assign(getDefaultRemoteSearchFormForConnection(remoteSearchState.connectionId || activeConnectionId || ''), options));
+      remoteSearchFormsByConnectionId.set(remoteSearchState.connectionId || activeConnectionId || '', normalizeRemoteSearchFormForStorage(remoteSearchState.connectionId || activeConnectionId || '', options));
       applyRemoteSearchForm(options);
       clearRemoteSearchValidation();
     } else if (remoteSearchDialogOpen) {
@@ -8444,7 +12493,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       clearRemoteSearchValidation();
     }
 
-    if (remoteSearchPrimaryButton) remoteSearchPrimaryButton.textContent = remoteSearchState.status === 'running' ? 'Cancel' : 'Search';
+    if (remoteSearchPrimaryButton) remoteSearchPrimaryButton.textContent = remoteSearchState.status === 'running' ? 'Stop' : 'Search';
     if (remoteSearchCopyButton) remoteSearchCopyButton.disabled = !Array.isArray(remoteSearchState.results) || remoteSearchState.results.length === 0;
     if (remoteSearchClearButton) remoteSearchClearButton.disabled = remoteSearchState.status === 'running';
 
@@ -9215,6 +13264,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     const canCopyCurrentPath = Boolean(activeConnectionId) && !hasEntryActions;
     const canDownload = hasEntryActions;
     const canUploadWithEntryActions = Boolean(activeConnectionId) && canDownload;
+    const hasTransferActions = canDownload || canUploadWithEntryActions;
+    const hasItemToolActions = canCompress || canCalculateChecksums || canShowProperties || canChangePermissions || canChangeOwnerGroup;
     const canDelete = hasEntryActions;
 
     contextOpen.style.display = canOpen ? '' : 'none';
@@ -9229,7 +13280,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     contextMakeCopy.style.display = canMakeCopy ? '' : 'none';
     contextRename.style.display = canRename ? '' : 'none';
 
-    contextCopySeparator.style.display = (canCopy || canCompress) && (canMakeCopy || canRename || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
+    contextCopySeparator.style.display = canCopy && (canMakeCopy || canRename || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
     contextCopyPath.style.display = canCopy ? '' : 'none';
     contextCopyName.style.display = canCopy ? '' : 'none';
     contextCompressSubmenu.style.display = canCompress ? '' : 'none';
@@ -9241,11 +13292,12 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       contextCopyName.textContent = isSingleDirectory ? 'Copy Directory Name' : 'Copy Filename';
     }
 
-    contextItemSeparator.style.display = (canDownload || canCalculateChecksums || canShowProperties || canChangePermissions || canChangeOwnerGroup) && (canCopy || canCompress || canMakeCopy || canRename || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
+    contextItemSeparator.style.display = (hasTransferActions || hasItemToolActions) && (canCopy || canMakeCopy || canRename || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
     contextDownload.style.display = canDownload ? '' : 'none';
     contextDownload.textContent = selectedEntries.length > 1 ? 'Download Selected...' : 'Download...';
     contextUploadEntry.style.display = canUploadWithEntryActions ? '' : 'none';
     contextUploadEntry.textContent = 'Upload...';
+    contextTransferSeparator.style.display = hasTransferActions && hasItemToolActions ? '' : 'none';
     contextCalculateChecksums.style.display = canCalculateChecksums ? '' : 'none';
     contextFileProperties.style.display = canShowProperties ? '' : 'none';
     contextSetPermissions.style.display = canChangePermissions ? '' : 'none';
@@ -9459,7 +13511,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       const col = entriesTable.querySelector('col[data-column="' + column + '"]');
       if (col) col.style.width = width + 'px';
     }
-    entriesTable.style.minWidth = totalWidth + 'px';
+    entriesTable.style.minWidth = '100%';
+    entriesTable.style.maxWidth = '100%';
   }
 
   function startColumnResize(event) {
@@ -9553,6 +13606,27 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return String(value);
   }
 
+  function showServerToolbarStatus(message, kind = 'info', durationMs = 0) {
+    if (!serverToolbarStatus) return;
+    const text = String(message || '').trim();
+    if (serverToolbarStatusTimer) {
+      window.clearTimeout(serverToolbarStatusTimer);
+      serverToolbarStatusTimer = 0;
+    }
+    serverToolbarStatus.textContent = text;
+    if (text) serverToolbarStatus.setAttribute('data-tooltip', text); else serverToolbarStatus.removeAttribute('data-tooltip');
+    serverToolbarStatus.classList.toggle('error', kind === 'error');
+    serverToolbarStatus.classList.toggle('visible', Boolean(text) && getActiveConnectionView() === 'server');
+    if (!text) return;
+    const timeout = Number(durationMs || 0) || (kind === 'error' ? 7000 : 3000);
+    serverToolbarStatusTimer = window.setTimeout(() => {
+      serverToolbarStatus.textContent = '';
+      serverToolbarStatus.removeAttribute('data-tooltip');
+      serverToolbarStatus.classList.remove('visible', 'error');
+      serverToolbarStatusTimer = 0;
+    }, timeout);
+  }
+
   function showStatusCopyFeedback(message) {
     if (!statusCopyFeedback) return;
     statusCopyFeedback.textContent = message || 'Copied';
@@ -9561,7 +13635,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     statusCopyFeedbackTimer = window.setTimeout(() => {
       statusCopyFeedback.classList.remove('visible');
       statusCopyFeedbackTimer = 0;
-    }, 1400);
+    }, TOOLTIP_TRANSIENT_DURATION_MS);
   }
 
   function updateTransferQueueState(payload) {
@@ -9764,7 +13838,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         ? '<div class="transfer-queue-failed-error">' + escapeHtml(parsed.detail) + '</div>'
         : '';
 
-      return '<div class="transfer-queue-failed-item" title="' + escapeHtml(parsed.raw) + '">' +
+      return '<div class="transfer-queue-failed-item tooltip-above" data-tooltip="' + escapeHtml(parsed.raw) + '">' +
         '<div class="transfer-queue-failed-path">- ' + escapeHtml(parsed.path) + '</div>' +
         detailHtml +
         '</div>';
@@ -9793,7 +13867,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
         ? '<div class="transfer-queue-canceled-error">' + escapeHtml(parsed.detail) + '</div>'
         : '';
 
-      return '<div class="transfer-queue-canceled-item" title="' + escapeHtml(parsed.raw) + '">' +
+      return '<div class="transfer-queue-canceled-item tooltip-above" data-tooltip="' + escapeHtml(parsed.raw) + '">' +
         '<div class="transfer-queue-canceled-path">- ' + escapeHtml(parsed.path) + '</div>' +
         detailHtml +
         '</div>';
@@ -9855,31 +13929,65 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return [text, outputText].filter(Boolean).join(' ');
   }
 
-  function setBusy(isBusy, message, cancelAction = '', cancelLabel = 'Cancel') {
-    busy = isBusy;
-    statusCancelAction = isBusy ? String(cancelAction || '') : '';
-    statusCancelLabel = String(cancelLabel || 'Cancel');
+  function getStatusConnectionKey(connectionId) {
+    const key = String(connectionId || '').trim();
+    return key || (activeConnectionId || '__global__');
+  }
+
+  function createFilesStatusState(isBusy, message, options = {}) {
+    return {
+      busy: Boolean(isBusy),
+      message: String(message || ''),
+      isError: Boolean(options.isError),
+      showOutputLink: Boolean(options.showOutputLink),
+      outputLinkText: String(options.outputLinkText || 'See details in Output.'),
+      cancelAction: Boolean(isBusy) ? String(options.cancelAction || '') : '',
+      cancelLabel: String(options.cancelLabel || 'Cancel')
+    };
+  }
+
+  function applyFilesStatusState(state) {
+    const nextState = state || createFilesStatusState(false, activeConnectionId ? 'Ready.' : 'No active connection.');
+    busy = Boolean(nextState.busy);
+    statusCancelAction = busy ? String(nextState.cancelAction || '') : '';
+    statusCancelLabel = String(nextState.cancelLabel || 'Cancel');
     if (!busy && isConnectionTransitionBusy()) {
       connectionButtonState = '';
     }
-    if (busy) {
-      hideContextMenu();
-      hideProfileDropdown();
-    }
     setControls();
-    if (message) statusText.textContent = message;
-    setStatusOutputLink(false);
-    status.className = isBusy ? 'statusbar busy' : 'statusbar';
+    statusText.textContent = nextState.message || (activeConnectionId ? 'Ready.' : 'No active connection.');
+    setStatusOutputLink(Boolean(nextState.showOutputLink), nextState.outputLinkText || 'See details in Output.');
+    status.className = busy ? 'statusbar busy' : (nextState.isError ? 'statusbar error' : 'statusbar');
   }
 
-  function setStatus(message, isError = false, showOutputLink = false, outputLinkText = 'See details in Output.') {
-    busy = false;
-    statusCancelAction = '';
-    statusCancelLabel = 'Cancel';
-    setControls();
-    statusText.textContent = message;
-    setStatusOutputLink(showOutputLink, outputLinkText);
-    status.className = isError ? 'statusbar error' : 'statusbar';
+  function storeFilesStatusState(connectionId, state) {
+    const key = getStatusConnectionKey(connectionId);
+    filesStatusByConnectionId.set(key, state);
+  }
+
+  function restoreFilesStatusForActiveConnection() {
+    const key = activeConnectionId || '__global__';
+    const stored = filesStatusByConnectionId.get(key);
+    applyFilesStatusState(stored || createFilesStatusState(false, activeConnectionId ? 'Ready.' : 'No active connection.'));
+  }
+
+  function setBusy(isBusy, message, cancelAction = '', cancelLabel = 'Cancel', connectionId = '') {
+    const targetConnectionId = String(connectionId || '').trim();
+    const state = createFilesStatusState(Boolean(isBusy), message, { cancelAction, cancelLabel });
+    storeFilesStatusState(targetConnectionId, state);
+    if (targetConnectionId && targetConnectionId !== activeConnectionId) return;
+    if (isBusy) {
+      hideContextMenu();
+    }
+    applyFilesStatusState(state);
+  }
+
+  function setStatus(message, isError = false, showOutputLink = false, outputLinkText = 'See details in Output.', connectionId = '') {
+    const targetConnectionId = String(connectionId || '').trim();
+    const state = createFilesStatusState(false, message, { isError, showOutputLink, outputLinkText });
+    storeFilesStatusState(targetConnectionId, state);
+    if (targetConnectionId && targetConnectionId !== activeConnectionId) return;
+    applyFilesStatusState(state);
   }
 
   function setStatusOutputLink(show, text = 'See details in Output.') {
@@ -9893,26 +14001,40 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     return !busy || statusCancelAction === 'transfer';
   }
 
-  function setControls() {
-    const hasActiveSession = Boolean(activeConnectionId);
+  function setControls(options) {
+    options = options || {};
+    const animateToolbarLayout = options.animateToolbarLayout !== false;
+    const activeSession = getActiveSession();
+    const hasActiveSession = Boolean(activeConnectionId && isSessionConnected(activeSession));
     const connectedSession = getConnectedSessionForCurrentForm();
     const isConnectedForm = Boolean(connectedSession);
-    const shouldLockConnectionPicker = busy;
-    const shouldLockConnectionDetails = busy || isConnectedForm;
+    const pendingFormSession = getPendingSessionForCurrentForm();
+    const hasConnectingSession = hasAnyConnectingSession();
+    const shouldLockConnectionPicker = false;
+    const shouldLockConnectionDetails = isConnectedForm || Boolean(pendingFormSession) || hasConnectingSession || connectionButtonState === 'disconnecting';
     const isSftpConnectionMethod = isSftpFormConnection();
     const capabilities = getActiveRemoteCapabilities();
+    const activeView = getActiveConnectionView();
+    const showServerRefreshControls = activeView === 'server' && hasActiveSession && isServerViewSupported(activeSession);
     const showRunRemoteCommand = capabilities.canRunCommand;
     const showSshTerminal = capabilities.canOpenSshTerminal;
     const showLogViewer = showSshTerminal;
     const showSudoMode = capabilities.canUseSudo;
-    const nextToolbarCapabilityState = (showRunRemoteCommand ? '1' : '0') + ':' + (showSshTerminal ? '1' : '0') + ':' + (showSudoMode ? '1' : '0');
-    const shouldAnimateToolbarLayout = Boolean(toolbarCapabilityState && toolbarCapabilityState !== nextToolbarCapabilityState);
+    const showConnectionViewSwitch = !activeSession || isSessionConnected(activeSession) && isServerViewSupported(activeSession);
+    const nextToolbarCapabilityState = (showServerRefreshControls ? '1' : '0') + ':' + (showRunRemoteCommand ? '1' : '0') + ':' + (showSshTerminal ? '1' : '0') + ':' + (showSudoMode ? '1' : '0') + ':' + (showConnectionViewSwitch ? '1' : '0');
+    const shouldAnimateToolbarLayout = animateToolbarLayout && Boolean(toolbarCapabilityState && toolbarCapabilityState !== nextToolbarCapabilityState);
     const toolbarLayoutSnapshot = shouldAnimateToolbarLayout ? prepareToolbarLayoutTransition() : null;
 
     if (pathbar) {
       pathbar.classList.toggle('hide-command-actions', false);
       pathbar.classList.toggle('hide-sudo-actions', !showSudoMode);
+      pathbar.classList.toggle('hide-view-switch-actions', !showConnectionViewSwitch);
     }
+    if (serverRefreshActions) serverRefreshActions.hidden = !showServerRefreshControls;
+    if (serverRefreshActionsSeparator) serverRefreshActionsSeparator.hidden = !showServerRefreshControls;
+    if (serverRefreshButton) serverRefreshButton.disabled = !showServerRefreshControls;
+    if (serverAutoRefreshDropdownButton) serverAutoRefreshDropdownButton.disabled = !showServerRefreshControls;
+    if (!showServerRefreshControls) hideServerAutoRefreshDropdown();
     if (commandActions) commandActions.style.display = '';
     if (commandActionsSeparator) commandActionsSeparator.style.display = '';
     if (runRemoteCommandAction) runRemoteCommandAction.style.display = showRunRemoteCommand ? '' : 'none';
@@ -9924,18 +14046,18 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     toolbarCapabilityState = nextToolbarCapabilityState;
     if (shouldAnimateToolbarLayout) finishToolbarLayoutTransition(toolbarLayoutSnapshot);
 
-    connectButton.disabled = busy;
-    connectButton.textContent = connectionButtonState === 'connecting'
+    connectButton.disabled = Boolean(pendingFormSession) || connectionButtonState === 'disconnecting';
+    connectButton.textContent = pendingFormSession
       ? 'Connecting...'
       : connectionButtonState === 'disconnecting'
         ? 'Disconnecting...'
         : (isConnectedForm ? 'Disconnect' : 'Connect');
     connectButton.classList.toggle('secondary', isConnectedForm || connectionButtonState === 'disconnecting');
 
-    saveProfileButton.disabled = busy || isConnectedForm;
+    saveProfileButton.disabled = isConnectedForm || Boolean(pendingFormSession) || hasConnectingSession;
     profileSelect.disabled = shouldLockConnectionPicker;
     profileDropdownButton.disabled = shouldLockConnectionPicker;
-    manageProfilesButton.disabled = busy;
+    manageProfilesButton.disabled = false;
     showSettingsButton.disabled = false;
     showOutputButton.disabled = false;
 
@@ -9957,13 +14079,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
       hideTemporaryPassword(passphrase);
     }
     updateConnectionCredentialRevealControls();
-    if (connectButton) connectButton.title = '';
+    if (connectButton) connectButton.removeAttribute('data-tooltip');
     updateFtpsCertificateFields(shouldLockConnectionDetails);
 
     if (shouldLockConnectionDetails || !connectionTypeDropdownButton || connectionTypeDropdownButton.disabled) hideConnectionTypeDropdown();
     if (shouldLockConnectionDetails || !authDropdownButton || authDropdownButton.disabled) hideAuthDropdown();
-    if (busy) hideProfileDropdown();
-
     currentPath.disabled = busy || !hasActiveSession;
     if (currentPath.disabled && remotePathEditing) {
       exitRemotePathEditMode({ reset: true, keepFocus: true });
@@ -9988,6 +14108,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string): st
     updateRemotePathNavigationControls();
     sudoToggle.disabled = busy || !hasActiveSession || !capabilities.canUseSudo;
     updateSudoToggle();
+    updateConnectionViewUi();
     scheduleRemotePathLayoutUpdate();
   }
 

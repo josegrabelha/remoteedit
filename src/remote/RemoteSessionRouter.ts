@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { FtpSessionManager } from '../ftp/FtpSessionManager';
 import { SftpSessionManager } from '../ssh/SftpSessionManager';
 import { normalizeConnectionType, SFTP_CONNECTION_TYPE } from './RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions } from './RemoteSessionManager';
+import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions } from './RemoteSessionManager';
 import type { Client } from 'ssh2';
 import type {
   ActiveConnection,
@@ -195,6 +195,10 @@ export class RemoteSessionRouter implements RemoteSessionManager {
 
   changeOwnerGroup(connectionId: string, remotePath: string, options: RemoteChangeOwnerGroupOptions): Promise<void> {
     return this.getManagerForActiveConnection(connectionId).changeOwnerGroup(connectionId, remotePath, options);
+  }
+
+  listOwnerGroupSuggestions(connectionId: string): Promise<RemoteOwnerGroupSuggestions> {
+    return this.getManagerForActiveConnection(connectionId).listOwnerGroupSuggestions(connectionId);
   }
 
   chmod(connectionId: string, remotePath: string, mode: string | number, options?: RemoteChmodOptions): Promise<void> {

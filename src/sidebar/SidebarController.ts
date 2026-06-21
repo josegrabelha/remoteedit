@@ -23,6 +23,39 @@ interface ConnectionChangeNotifier {
 
 const QUICK_CONNECT_ID = '__remoteeditQuickConnect';
 
+const COMPOUND_FILE_EXTENSIONS = [
+  '.tar.gz',
+  '.tar.bz2',
+  '.tar.xz',
+  '.tar.Z',
+  '.tar.lz',
+  '.tar.lzma',
+  '.tar.zst'
+];
+
+function buildCopyFileName(fileName: string, copyIndex: number): string {
+  const suffix = `_copy${copyIndex <= 1 ? '' : copyIndex}`;
+  const lowerName = fileName.toLowerCase();
+  const compoundExtension = COMPOUND_FILE_EXTENSIONS.find(extension => lowerName.endsWith(extension.toLowerCase()));
+
+  if (compoundExtension) {
+    const originalExtension = fileName.slice(fileName.length - compoundExtension.length);
+    const baseName = fileName.slice(0, fileName.length - compoundExtension.length);
+    return `${baseName}${suffix}${originalExtension}`;
+  }
+
+  const lastDotIndex = fileName.lastIndexOf('.');
+  const hasSimpleExtension = lastDotIndex > 0;
+
+  if (!hasSimpleExtension) {
+    return `${fileName}${suffix}`;
+  }
+
+  const baseName = fileName.slice(0, lastDotIndex);
+  const extension = fileName.slice(lastDotIndex);
+  return `${baseName}${suffix}${extension}`;
+}
+
 type SidebarConnectionDraft = ConnectionProfileInput & {
   password?: string;
   passphrase?: string;
@@ -174,6 +207,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.createRemoteFile', item => this.createRemoteEntry(item, 'file')),
       vscode.commands.registerCommand('remoteedit.sidebar.createRemoteDirectory', item => this.createRemoteEntry(item, 'directory')),
       vscode.commands.registerCommand('remoteedit.sidebar.renameRemoteEntry', item => this.renameRemoteEntry(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.makeCopyRemoteFile', item => this.makeCopyRemoteFile(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.deleteRemoteEntry', item => this.deleteRemoteEntry(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.showRemoteEntryProperties', item => this.showRemoteEntryProperties(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.calculateRemoteChecksums', item => this.calculateRemoteChecksums(item)),
@@ -447,7 +481,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
   private async pickBackupExportOptions(): Promise<ConnectionBackupExportOptions | undefined> {
     const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'favorites' | 'usernames' | 'credentials' }> = [
-      { label: 'Remote Edit settings', description: 'Export extension settings', option: 'settings', picked: true },
+      { label: 'Remote Edit settings', description: 'Export Remote Edit settings', option: 'settings', picked: true },
       { label: 'Saved connections', description: 'Export saved connection profiles', option: 'connections', picked: true },
       { label: 'Remote path favorites', description: 'Export favorites stored with saved connections', option: 'favorites', picked: true },
       { label: 'Include usernames', description: 'Include saved usernames in exported connections', option: 'usernames', picked: true },
@@ -491,7 +525,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
   private async pickBackupImportOptions(summary: RemoteEditBackupSummary): Promise<ConnectionBackupImportOptions | undefined> {
     const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'favorites' | 'usernames' | 'credentials' }> = [
-      { label: 'Remote Edit settings', description: summary.hasSettings ? 'Import extension settings' : 'Not available in this backup', option: 'settings', picked: summary.hasSettings },
+      { label: 'Remote Edit settings', description: summary.hasSettings ? 'Import Remote Edit settings' : 'Not available in this backup', option: 'settings', picked: summary.hasSettings },
       { label: 'Saved connections', description: `${summary.supportedConnectionCount} supported connection(s)`, option: 'connections', picked: summary.supportedConnectionCount > 0 },
       { label: 'Remote path favorites', description: `${summary.remotePathFavoriteCount} favorite path(s)`, option: 'favorites', picked: summary.remotePathFavoriteCount > 0 },
       { label: 'Include usernames', description: summary.usernamesIncluded ? 'Restore usernames from backup' : 'No usernames found in this backup', option: 'usernames', picked: summary.usernamesIncluded },
@@ -592,7 +626,11 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       `Connections: ${summary.supportedConnectionCount}${summary.unsupportedConnectionCount ? ` supported, ${summary.unsupportedConnectionCount} unsupported` : ''}`,
       `Remote path favorites: ${summary.remotePathFavoriteCount}`,
       `Usernames: ${summary.usernamesIncluded ? 'Yes' : 'No'}`,
-      `Encrypted credentials: ${summary.hasEncryptedCredentials ? 'Yes' : 'No'}`
+      `Encrypted credentials: ${summary.hasEncryptedCredentials ? 'Yes' : 'No'}`,
+      `Saved commands: ${summary.savedCommandCount}`,
+      `Port forwards: ${summary.portForwardCount}`,
+      `Server log shortcuts: ${summary.serverLogShortcutCount}`,
+      `Log Viewer favorites: ${summary.logViewerFavoriteCount}`
     ];
 
     return lines.join('\n');
@@ -616,6 +654,22 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
     if (result.credentialsRestored) {
       parts.push(`Credentials restored: ${result.credentialsRestored}.`);
+    }
+
+    if (result.savedCommandsImported) {
+      parts.push(`Saved commands imported: ${result.savedCommandsImported}.`);
+    }
+
+    if (result.portForwardsImported) {
+      parts.push(`Port forwards imported: ${result.portForwardsImported}.`);
+    }
+
+    if (result.serverLogShortcutsImported) {
+      parts.push(`Server log shortcuts imported: ${result.serverLogShortcutsImported}.`);
+    }
+
+    if (result.logViewerFavoritesImported) {
+      parts.push(`Log Viewer favorites imported: ${result.logViewerFavoritesImported}.`);
     }
 
     if (result.skippedUnsupported) {
@@ -1206,6 +1260,84 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
   }
 
+  private async makeCopyRemoteFile(item: RemoteEditSidebarItem | undefined): Promise<void> {
+    if (!item?.connectionId || !item.remotePath) {
+      return;
+    }
+
+    if (this.getRemoteItemType(item) !== 'file') {
+      void vscode.window.showErrorMessage('Select a single remote file to make a copy.');
+      return;
+    }
+
+    const currentName = this.getRemoteItemName(item);
+    const parentPath = this.dirnameRemotePath(item.remotePath);
+    const defaultName = await this.buildAvailableCopyName(item.connectionId, parentPath, currentName);
+    const copyName = await vscode.window.showInputBox({
+      title: 'Remote Edit: Make a Copy',
+      prompt: 'Enter the name for the remote file copy.',
+      value: defaultName,
+      valueSelection: [0, defaultName.length],
+      validateInput: value => {
+        const nameError = this.validateRemoteEntryName(value, 'The copy name cannot be empty.');
+        if (nameError) {
+          return nameError;
+        }
+
+        if (value.trim() === currentName) {
+          return 'The copy name must be different from the original file name.';
+        }
+
+        return undefined;
+      }
+    });
+
+    if (copyName === undefined) {
+      return;
+    }
+
+    const trimmedName = copyName.trim();
+    const newPath = this.joinRemotePath(parentPath, trimmedName);
+    let overwrite = false;
+
+    try {
+      const existingTarget = await this.tryStatRemotePath(item.connectionId, newPath);
+
+      if (existingTarget) {
+        if (existingTarget.type !== 'file') {
+          throw new Error(`A remote ${existingTarget.type} already exists at ${newPath}. Choose another name.`);
+        }
+
+        const confirmed = await vscode.window.showWarningMessage(
+          `Overwrite remote file '${trimmedName}'?`,
+          { modal: true, detail: newPath },
+          'Overwrite'
+        );
+
+        if (confirmed !== 'Overwrite') {
+          return;
+        }
+
+        overwrite = true;
+      }
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Window,
+        title: `Copying ${currentName}...`,
+        cancellable: false
+      }, async () => {
+        await this.sessions.copyFile(item.connectionId!, item.remotePath!, newPath, overwrite);
+      });
+
+      this.output.appendLine(`[Sidebar] Copied remote file: ${item.remotePath} -> ${newPath}`);
+      void vscode.window.showInformationMessage(`Copied to ${trimmedName}.`);
+      this.refreshOpenConnections();
+      RemoteEditSharedState.fireRemoteDirectoryChanged(item.connectionId, parentPath, 'sidebar');
+    } catch (error) {
+      this.showSidebarCommandError(error);
+    }
+  }
+
   private async renameRemoteEntry(item: RemoteEditSidebarItem | undefined): Promise<void> {
     if (!item?.connectionId || !item.remotePath) {
       return;
@@ -1667,6 +1799,20 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     return trimmed.endsWith(extension) ? trimmed : `${trimmed}${extension}`;
+  }
+
+  private async buildAvailableCopyName(connectionId: string, parentPath: string, fileName: string): Promise<string> {
+    for (let index = 1; index <= 999; index += 1) {
+      const candidate = buildCopyFileName(fileName, index);
+      const candidatePath = this.joinRemotePath(parentPath, candidate);
+      const existingTarget = await this.tryStatRemotePath(connectionId, candidatePath);
+
+      if (!existingTarget) {
+        return candidate;
+      }
+    }
+
+    return buildCopyFileName(fileName, Date.now());
   }
 
   private async buildDefaultArchiveName(connectionId: string, baseDirectory: string, entries: Array<{ name: string }>, format: RemoteArchiveFormat): Promise<string> {

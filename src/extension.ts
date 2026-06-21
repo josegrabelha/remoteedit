@@ -19,9 +19,14 @@ interface StatusBarButtonState {
 const CONFIG_SECTION = 'remoteedit';
 const COMMAND_OPEN = 'remoteedit.open';
 const STATUS_BAR_TOOLTIP = 'Open Remote Edit';
+const SESSION_ONLY_DIAGNOSTIC_SETTINGS = [
+  'diagnostics.debugLogs',
+  'diagnostics.performanceLogs'
+] as const;
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Remote Edit');
+  void resetSessionOnlyDiagnosticsSettings(output);
   const sessions: RemoteSessionManager = new RemoteSessionRouter(output);
   const connectionManager = new ConnectionManager(context);
   const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);
@@ -93,6 +98,44 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   // Cleanup is handled by the disposable registered during activation.
+}
+
+
+async function resetSessionOnlyDiagnosticsSettings(output: vscode.OutputChannel): Promise<void> {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const updates: Array<Thenable<void>> = [];
+
+  for (const key of SESSION_ONLY_DIAGNOSTIC_SETTINGS) {
+    const inspection = config.inspect<boolean>(key);
+
+    if (inspection?.globalValue !== undefined) {
+      updates.push(config.update(key, undefined, vscode.ConfigurationTarget.Global));
+    }
+
+    if (inspection?.workspaceValue !== undefined) {
+      updates.push(config.update(key, undefined, vscode.ConfigurationTarget.Workspace));
+    }
+
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const folderConfig = vscode.workspace.getConfiguration(CONFIG_SECTION, folder.uri);
+      const folderInspection = folderConfig.inspect<boolean>(key);
+
+      if (folderInspection?.workspaceFolderValue !== undefined) {
+        updates.push(folderConfig.update(key, undefined, vscode.ConfigurationTarget.WorkspaceFolder));
+      }
+    }
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  try {
+    await Promise.all(updates);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOutputLog(output, 'WARN', `Failed to reset session-only diagnostics settings: ${message}`);
+  }
 }
 
 function getStatusBarButtonText(style: StatusBarButtonStyle): string {

@@ -1,4 +1,22 @@
 # Changelog
+## [1.8.0] - 2026-06-20
+
+### Added
+
+* Added Server View for SSH/SFTP connections with overview, system information, services, processes, scheduled jobs, log shortcuts, port forwarding, and Quick Tasks.
+* Added a Remote Path breadcrumb setting to show or hide directory details.
+
+### Improved
+
+* Improved Import/Export to include saved commands, port forwards, server log shortcuts, and Log Viewer favorites.
+* Saved Commands now preserve and restore the Remote Path.
+* Improved the Remote Path breadcrumb directory picker with aligned owner/group and permissions details.
+* Improved several UI and usability details across the Webview, Log Viewer, and Server View.
+
+### Changed
+
+* Renamed the Remote Search running action from Cancel to Stop.
+
 ## [1.7.3] - 2026-06-15
 
 ### Changed

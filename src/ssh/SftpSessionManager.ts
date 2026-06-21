@@ -9,7 +9,7 @@ import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { isSftpConnectionType, SFTP_CONNECTION_TYPE } from '../remote/RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteListDirectoryOptions } from '../remote/RemoteSessionManager';
+import type { RemoteSessionManager, RemoteListDirectoryOptions, RemoteOwnerGroupSuggestions, RemotePrincipalSuggestion } from '../remote/RemoteSessionManager';
 import type {
   ActiveConnection,
   AuthType,
@@ -107,6 +107,7 @@ export class SftpSessionManager implements RemoteSessionManager {
   private readonly connections = new Map<string, ActiveConnection>();
   private readonly ownerNameCaches = new Map<string, Map<string, string>>();
   private readonly groupNameCaches = new Map<string, Map<string, string>>();
+  private readonly ownerGroupSuggestionCaches = new Map<string, { expiresAt: number; suggestions: RemoteOwnerGroupSuggestions }>();
   private readonly sudoPasswords = new Map<string, string>();
   private readonly readFileCache = new Map<string, CachedReadFile>();
   private readonly directoryListingCache = new Map<string, CachedDirectoryListing>();
@@ -205,7 +206,8 @@ export class SftpSessionManager implements RemoteSessionManager {
       authType: options.authType,
       privateKeyPath: options.privateKeyPath,
       startPath,
-      keepAlive: options.keepAlive !== false
+      keepAlive: options.keepAlive !== false,
+      isQuickConnect: Boolean(options.isQuickConnect)
     };
 
     this.connections.set(options.connectionId, connection);
@@ -240,6 +242,7 @@ export class SftpSessionManager implements RemoteSessionManager {
     this.connections.delete(connectionId);
     this.ownerNameCaches.delete(connectionId);
     this.groupNameCaches.delete(connectionId);
+    this.ownerGroupSuggestionCaches.delete(connectionId);
     this.sudoPasswords.delete(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearDirectoryListingCache(connectionId);
@@ -1260,6 +1263,24 @@ export class SftpSessionManager implements RemoteSessionManager {
     }
 
     this.clearReadFileCache(connectionId, normalizedPath);
+  }
+
+
+  async listOwnerGroupSuggestions(connectionId: string): Promise<RemoteOwnerGroupSuggestions> {
+    const now = Date.now();
+    const cached = this.ownerGroupSuggestionCaches.get(connectionId);
+    if (cached && cached.expiresAt > now) {
+      return cached.suggestions;
+    }
+
+    const client = this.getClient(connectionId);
+    const output = await this.runRemoteCommand(client, buildOwnerGroupSuggestionCommand());
+    const suggestions = parseOwnerGroupSuggestionOutput(output);
+    this.ownerGroupSuggestionCaches.set(connectionId, {
+      expiresAt: now + 5 * 60 * 1000,
+      suggestions
+    });
+    return suggestions;
   }
 
   async chmod(connectionId: string, remotePath: string, mode: string | number, options: ChmodOptions = {}): Promise<void> {
@@ -3235,4 +3256,94 @@ function mapEntryType(type: string): RemoteEntryType {
     default:
       return 'unknown';
   }
+}
+
+
+function buildOwnerGroupSuggestionCommand(): string {
+  return [
+    "printf '__REMOTE_EDIT_USERS__\\n'",
+    "if command -v getent >/dev/null 2>&1; then getent passwd 2>/dev/null; elif command -v lsuser >/dev/null 2>&1; then lsuser -a id ALL 2>/dev/null; elif [ -r /etc/passwd ]; then cat /etc/passwd 2>/dev/null; fi",
+    "printf '__REMOTE_EDIT_GROUPS__\\n'",
+    "if command -v getent >/dev/null 2>&1; then getent group 2>/dev/null; elif command -v lsgroup >/dev/null 2>&1; then lsgroup -a id ALL 2>/dev/null; elif [ -r /etc/group ]; then cat /etc/group 2>/dev/null; fi"
+  ].join('; ');
+}
+
+function parseOwnerGroupSuggestionOutput(output: string): RemoteOwnerGroupSuggestions {
+  const owners: RemotePrincipalSuggestion[] = [];
+  const groups: RemotePrincipalSuggestion[] = [];
+  let section: 'owners' | 'groups' | '' = '';
+
+  for (const rawLine of String(output || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line === '__REMOTE_EDIT_USERS__') {
+      section = 'owners';
+      continue;
+    }
+    if (line === '__REMOTE_EDIT_GROUPS__') {
+      section = 'groups';
+      continue;
+    }
+
+    const parsed = section === 'owners'
+      ? parseOwnerGroupUserLine(line)
+      : section === 'groups'
+        ? parseOwnerGroupGroupLine(line)
+        : undefined;
+
+    if (!parsed) continue;
+    if (section === 'owners') owners.push(parsed);
+    if (section === 'groups') groups.push(parsed);
+  }
+
+  return {
+    owners: dedupeOwnerGroupSuggestions(owners).slice(0, 500),
+    groups: dedupeOwnerGroupSuggestions(groups).slice(0, 500)
+  };
+}
+
+function parseOwnerGroupUserLine(line: string): RemotePrincipalSuggestion | undefined {
+  const passwdParts = line.split(':');
+  if (passwdParts.length >= 3 && passwdParts[0]) {
+    return {
+      name: passwdParts[0],
+      id: passwdParts[2] || '',
+      detail: passwdParts[2] ? `uid ${passwdParts[2]}` : ''
+    };
+  }
+
+  const aixMatch = line.match(/^(\S+)\s+.*?\bid=(\d+)/);
+  if (aixMatch) {
+    return { name: aixMatch[1], id: aixMatch[2], detail: `uid ${aixMatch[2]}` };
+  }
+
+  return undefined;
+}
+
+function parseOwnerGroupGroupLine(line: string): RemotePrincipalSuggestion | undefined {
+  const groupParts = line.split(':');
+  if (groupParts.length >= 3 && groupParts[0]) {
+    return {
+      name: groupParts[0],
+      id: groupParts[2] || '',
+      detail: groupParts[2] ? `gid ${groupParts[2]}` : ''
+    };
+  }
+
+  const aixMatch = line.match(/^(\S+)\s+.*?\bid=(\d+)/);
+  if (aixMatch) {
+    return { name: aixMatch[1], id: aixMatch[2], detail: `gid ${aixMatch[2]}` };
+  }
+
+  return undefined;
+}
+
+function dedupeOwnerGroupSuggestions(values: RemotePrincipalSuggestion[]): RemotePrincipalSuggestion[] {
+  const seen = new Set<string>();
+  return values.filter(value => {
+    const name = String(value?.name || '').trim();
+    if (!name || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
 }

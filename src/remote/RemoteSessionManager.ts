@@ -46,6 +46,17 @@ export interface RemoteChmodOptions {
   recursive?: boolean;
 }
 
+export interface RemotePrincipalSuggestion {
+  name: string;
+  id?: string;
+  detail?: string;
+}
+
+export interface RemoteOwnerGroupSuggestions {
+  owners: RemotePrincipalSuggestion[];
+  groups: RemotePrincipalSuggestion[];
+}
+
 export interface RemoteSessionManager {
   connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection>;
   disconnect(connectionId: string): Promise<void>;
@@ -102,6 +113,7 @@ export interface RemoteSessionManager {
     cancellationToken?: ConnectionCancellationToken
   ): Promise<RemoteChecksumSummary>;
   changeOwnerGroup(connectionId: string, remotePath: string, options: RemoteChangeOwnerGroupOptions): Promise<void>;
+  listOwnerGroupSuggestions(connectionId: string): Promise<RemoteOwnerGroupSuggestions>;
   chmod(connectionId: string, remotePath: string, mode: string | number, options?: RemoteChmodOptions): Promise<void>;
 
   enableSudoMode(connectionId: string, password: string): Promise<void>;

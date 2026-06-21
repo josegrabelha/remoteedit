@@ -3,17 +3,19 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AsyncLocalStorage } from 'async_hooks';
-import { ConnectionManager, type ConnectionBackupExportOptions, type ConnectionBackupImportOptions, type RemoteEditBackupFile, type RemoteEditBackupImportResult } from '../connection/ConnectionManager';
+import { ConnectionManager, type ConnectionBackupExportOptions, type ConnectionBackupImportOptions, type RemoteEditBackupFile, type RemoteEditBackupImportResult, type RemoteEditPersistentWebviewStorage } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
-import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
+import type { ActiveConnection, ConnectOptions, RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, type RemoteEntry, type RemoteChecksumSummary, type RemoteChecksumValue, type RemoteCommandStreamingControl } from '../ssh/SftpSessionManager';
 import { SshTerminalService } from '../ssh/SshTerminalService';
+import { PortForwardManager, type SavedPortForwardConfig, type PortForwardRuntimeState } from '../ssh/PortForwardManager';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import { RemoteSearchService, type RemoteSearchSnapshot, type RemoteSearchResult, type RemoteSearchOptions, type RemoteSearchResultMeta } from '../search/RemoteSearchService';
 import { LogViewerPanel } from '../logViewer/LogViewerPanel';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
 import { RemoteEditOperationCancelledError, formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { appendDebugLog, appendOutputLog, appendPerformanceLog, createPerformanceTimer, type OutputLogDetails } from '../utils/outputLogger';
+import { shellQuote } from '../utils/shellUtils';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
 import { handleRemoteEditPanelMessage } from './RemoteEditPanelHandlers';
@@ -25,6 +27,20 @@ import { calculateModeFromPermissionState, parsePermissionString, type SetPermis
 
 interface ConnectionChangeNotifier {
   onDidChangeConnections?: vscode.Event<void>;
+}
+
+interface InputDialogOptions {
+  title: string;
+  prompt?: string;
+  placeHolder?: string;
+  label?: string;
+  value?: string;
+  valueSelection?: readonly [number, number];
+  password?: boolean;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  validationMessage?: string;
+  validateInput?: (value: string) => string | undefined | null | PromiseLike<string | undefined | null>;
 }
 
 type TransferConflictDecision = 'overwrite' | 'skip' | 'cancel' | 'merge';
@@ -93,6 +109,7 @@ interface ConfirmDialogOptions {
   confirmLabel: string;
   cancelLabel?: string;
   danger?: boolean;
+  hideCancel?: boolean;
 }
 
 interface AggregateTransferState {
@@ -106,6 +123,73 @@ interface ActiveRemoteCommandState {
   cancellationSource: vscode.CancellationTokenSource;
   control?: RemoteCommandStreamingControl;
   stopMode?: 'stop' | 'force';
+}
+
+interface ServerDashboardOverviewItem {
+  label: string;
+  value: string;
+  help: string;
+}
+
+interface ServerDashboardSystemInfoItem {
+  label: string;
+  value: string;
+}
+
+interface ServerDashboardServiceItem {
+  id: string;
+  name: string;
+  displayName: string;
+  status: 'running' | 'stopped' | 'failed' | 'unknown';
+  statusLabel: string;
+  rawStatus: string;
+  description: string;
+  adapter: string;
+  canStart: boolean;
+  canStop: boolean;
+  canRestart: boolean;
+}
+
+interface ServerDashboardProcessItem {
+  id: string;
+  pid: string;
+  user: string;
+  cpu: string;
+  memory: string;
+  command: string;
+  args: string;
+  adapter: string;
+  canKill: boolean;
+}
+
+interface ServerDashboardScheduledJobItem {
+  id: string;
+  name: string;
+  countLabel: string;
+  typeLabel: string;
+  source: string;
+  sourceType: string;
+  user: string;
+  path: string;
+  canOpen: boolean;
+  canEdit: boolean;
+  copyValue: string;
+}
+
+interface ServerDashboardSnapshot {
+  connectionId: string;
+  requestId: string;
+  refreshedAt: number;
+  overview: ServerDashboardOverviewItem[];
+  systemInfo: ServerDashboardSystemInfoItem[];
+  services: ServerDashboardServiceItem[];
+  serviceAdapter: string;
+  processes: ServerDashboardProcessItem[];
+  processAdapter: string;
+  scheduledJobs: ServerDashboardScheduledJobItem[];
+  scheduledJobsAdapter: string;
+  capabilities: string[];
+  error?: string;
 }
 
 interface PendingRemoteSearchResultBatch {
@@ -138,6 +222,13 @@ interface ActiveTransferState {
   connectionId: string;
   canceling: boolean;
   status: 'Preparing' | 'Running' | 'Waiting';
+}
+
+interface PendingConnectionSnapshot extends ActiveConnection {
+  connectionState: 'connecting' | 'failed';
+  currentPath: string;
+  sudoModeEnabled: boolean;
+  error?: string;
 }
 
 export interface TransferQueueItemSnapshot {
@@ -224,17 +315,22 @@ export class RemoteEditPanel {
   private readonly maxCompletedTransfersPerConnection = 50;
   private readonly sshTerminalService: SshTerminalService;
   private readonly remoteSearchService: RemoteSearchService;
+  private readonly portForwardManager: PortForwardManager;
   private readonly pendingRemoteSearchResultBatches = new Map<string, PendingRemoteSearchResultBatch>();
   private runningTransfers = 0;
   private sessionOrder: string[] = [];
 
-  private activeConnectionCancellationSource: vscode.CancellationTokenSource | undefined;
+  private readonly activeConnectionCancellationSources = new Map<string, vscode.CancellationTokenSource>();
+  private readonly pendingConnectionOptions = new Map<string, ConnectOptions>();
   private readonly disconnectingConnectionIds = new Set<string>();
   private directoryListRequestSequence = 0;
   private readonly activeRemoteCommands = new Map<string, ActiveRemoteCommandState>();
   private pendingPermissionsDialogResolve: ((result?: SetPermissionsDialogResult) => void) | undefined;
   private readonly pendingConfirmDialogs = new Map<string, (confirmed: boolean) => void>();
+  private readonly pendingInputDialogs = new Map<string, (value: string | undefined) => void>();
+  private readonly virtualDocuments = new Map<string, string>();
   private confirmDialogSequence = 0;
+  private inputDialogSequence = 0;
   private pendingImportBackupFile: RemoteEditBackupFile | undefined;
 
   static open(
@@ -597,6 +693,7 @@ export class RemoteEditPanel {
   ) {
     this.state.initializeFromSessions(this.sessions.listConnections());
     this.sshTerminalService = new SshTerminalService(this.sessions);
+    this.portForwardManager = new PortForwardManager(this.sessions, state => this.postPortForwardState(state));
     this.remoteSearchService = new RemoteSearchService(this.sessions, this.output, {
       onStarted: snapshot => this.postRemoteSearchStarted(snapshot),
       onResult: (result, meta) => this.queueRemoteSearchResult(result, meta),
@@ -604,13 +701,19 @@ export class RemoteEditPanel {
     });
 
     this.disposables.push(
+      vscode.workspace.registerTextDocumentContentProvider('remoteedit-virtual', {
+        provideTextDocumentContent: uri => this.virtualDocuments.get(uri.toString()) || ''
+      }),
       vscode.commands.registerCommand('remoteedit.cancelTransfer', () => this.cancelActiveTransfer()),
       RemoteEditSharedState.onProfilesChanged(event => {
         if (event.source === 'webview') {
           return;
         }
 
-        void this.sendProfiles(event.selectedId).catch(error => this.showCommandError(error));
+        void (async () => {
+          await this.sendProfiles(event.selectedId);
+          this.postPersistentStorageSnapshot();
+        })().catch(error => this.showCommandError(error));
       }),
       RemoteEditSharedState.onRemoteDirectoryChanged(event => {
         if (event.source === 'webview') {
@@ -619,7 +722,14 @@ export class RemoteEditPanel {
 
         void this.refreshCurrentDirectoryFromSharedChange(event.connectionId, event.remotePath).catch(error => this.showCommandError(error));
       }),
-      LogViewerPanel.onDidChangeActiveSessionCount(() => this.postLogViewerActiveSessionCount())
+      LogViewerPanel.onDidChangeActiveSessionCount(() => this.postLogViewerActiveSessionCount()),
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (!event.affectsConfiguration('remoteedit.remotePathBreadcrumb.showDirectoryDetails')) {
+          return;
+        }
+
+        this.postRemotePathBreadcrumbSettings();
+      })
     );
 
     const connectionChangeEvent = (this.sessions as RemoteSessionManager & ConnectionChangeNotifier).onDidChangeConnections;
@@ -647,10 +757,12 @@ export class RemoteEditPanel {
     this.isDisposed = true;
     this.panel = undefined;
     this.disposePanelDisposables();
+    // Keep active port forwards alive while the Remote Edit connection remains active.
     this.stopAllRemoteCommands(true);
     this.clearAllPendingRemoteSearchResults();
     this.resolvePendingPermissionsDialog();
     this.resolvePendingConfirmDialogs();
+    this.resolvePendingInputDialogs();
   }
 
   private disposePanelDisposables(): void {
@@ -671,6 +783,8 @@ export class RemoteEditPanel {
           this.postPendingTransferConflict();
           this.postRemoteSearchState();
           this.postLogViewerActiveSessionCount();
+          this.postAllPortForwardStates();
+          this.postPersistentStorageSnapshot();
         },
         saveConnection: payload => this.saveConnection(payload),
         pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
@@ -678,6 +792,7 @@ export class RemoteEditPanel {
         deleteConnection: payload => this.deleteConnection(payload),
         renameConnection: payload => this.renameConnection(payload),
         reorderConnections: payload => this.reorderConnections(payload),
+        syncPersistentStorage: payload => this.syncPersistentStorage(payload),
         requestImportConnectionsSettings: () => this.requestImportConnectionsSettings(),
         exportConnectionsSettings: payload => this.exportConnectionsSettings(payload),
         importConnectionsSettings: payload => this.importConnectionsSettings(payload),
@@ -712,9 +827,19 @@ export class RemoteEditPanel {
         removeQueuedTransfer: payload => this.removeQueuedTransfer(payload),
         requestSetPermissions: payload => this.requestSetPermissions(payload),
         requestChangeOwnerGroup: payload => this.requestChangeOwnerGroup(payload),
+        requestOwnerGroupSuggestions: payload => this.requestOwnerGroupSuggestions(payload),
         requestRunRemoteCommand: payload => this.requestRunRemoteCommand(payload),
         requestOpenSshTerminal: payload => this.requestOpenSshTerminal(payload),
         requestOpenLogViewer: payload => this.requestOpenLogViewer(payload),
+        requestServerDashboard: payload => this.requestServerDashboard(payload),
+        requestServerServiceDetails: payload => this.requestServerServiceDetails(payload),
+        requestServerServiceAction: payload => this.requestServerServiceAction(payload),
+        requestServerProcessDetails: payload => this.requestServerProcessDetails(payload),
+        requestServerProcessAction: payload => this.requestServerProcessAction(payload),
+        requestServerScheduledJobAction: payload => this.requestServerScheduledJobAction(payload),
+        requestPortForwardState: payload => this.requestPortForwardState(payload),
+        startPortForward: payload => this.startPortForward(payload),
+        stopPortForward: payload => this.stopPortForward(payload),
         requestRemoteSearchState: () => this.postRemoteSearchState(),
         browseRemoteSearchScope: payload => this.browseRemoteSearchScope(payload),
         startRemoteSearch: payload => this.startRemoteSearch(payload),
@@ -728,6 +853,7 @@ export class RemoteEditPanel {
         copyRemotePath: payload => this.copyRemotePath(payload),
         copyStatus: payload => this.copyStatus(payload),
         confirmDialogResponse: payload => this.handleConfirmDialogResponse(payload),
+        inputDialogResponse: payload => this.handleInputDialogResponse(payload),
         transferConflictResponse: payload => this.handleTransferConflictResponse(payload),
         log: logMessage => this.logDebug(logMessage),
         performanceLog: payload => this.logWebviewPerformance(payload),
@@ -746,7 +872,11 @@ export class RemoteEditPanel {
       }
       const handledAsBackupOperation = this.postBackupOperationError(message.type, friendlyMessage);
       if (!handledAsBackupOperation) {
-        this.postError(statusMessage, { showOutputLink: this.shouldShowStatusOutputLink(message.type, messageText, friendlyMessage, statusMessage) });
+        if (this.isServerViewMessageType(message.type)) {
+          this.postServerStatus(statusMessage, true);
+        } else {
+          this.postError(statusMessage, { showOutputLink: this.shouldShowStatusOutputLink(message.type, messageText, friendlyMessage, statusMessage) });
+        }
       }
     }
   }
@@ -869,6 +999,7 @@ export class RemoteEditPanel {
     this.sessions.disableSudoMode(connectionId);
 
     try {
+      await this.portForwardManager.stopAllForConnection(connectionId);
       await this.sessions.disconnect(connectionId);
     } catch {
       // Ignore cleanup errors while marking a stale session as unavailable.
@@ -892,18 +1023,22 @@ export class RemoteEditPanel {
     });
   }
 
-  private setActiveConnection(connectionId: string | undefined): void {
+  private setActiveConnection(connectionId: string | undefined, syncSharedState = true): void {
     this.state.setActiveConnectionId(connectionId);
-    RemoteEditSharedState.setActiveConnection(connectionId);
+
+    if (syncSharedState) {
+      RemoteEditSharedState.setActiveConnection(connectionId);
+    }
   }
 
   private syncSessionsFromSharedManager(): void {
-    if (this.activeConnectionCancellationSource || this.disconnectingConnectionIds.size > 0) {
+    if (this.activeConnectionCancellationSources.size > 0 || this.disconnectingConnectionIds.size > 0) {
       return;
     }
 
     const connectedSessions = this.sessions.listConnections();
     const connectedIds = new Set(connectedSessions.map(connection => connection.id));
+    void this.portForwardManager.stopAllExceptConnections(connectedIds);
 
     this.state.initializeFromSessions(connectedSessions);
 
@@ -978,25 +1113,64 @@ export class RemoteEditPanel {
     this.postMessage(RemoteEditOutboundMessageType.ProfilesLoaded, { profiles, selectedId });
   }
 
+  private buildPendingConnectionSnapshot(connectionId: string): PendingConnectionSnapshot | undefined {
+    const attempt = this.pendingConnectionOptions.get(connectionId);
+
+    if (!attempt) {
+      return undefined;
+    }
+
+    const startPath = normalizeRemotePath(attempt.startPath || '/');
+
+    return {
+      id: connectionId,
+      connectionType: attempt.connectionType || 'sftp',
+      name: attempt.name || `${attempt.username}@${attempt.host}`,
+      host: attempt.host,
+      port: attempt.port,
+      username: attempt.username,
+      authType: attempt.authType,
+      privateKeyPath: attempt.privateKeyPath,
+      startPath,
+      currentPath: this.state.getCurrentPath(connectionId, startPath),
+      keepAlive: attempt.keepAlive !== false,
+      ftpsAllowSelfSignedCertificate: attempt.ftpsAllowSelfSignedCertificate,
+      ftpsCaCertificatePath: attempt.ftpsCaCertificatePath,
+      isQuickConnect: Boolean(attempt.isQuickConnect),
+      sudoModeEnabled: false,
+      connectionState: 'connecting'
+    };
+  }
+
   private sendSessions(): void {
     const openConnections = this.sessions.listConnections();
     const openConnectionIds = new Set(openConnections.map(connection => connection.id));
-    this.sessionOrder = this.sessionOrder.filter(connectionId => openConnectionIds.has(connectionId));
+    const pendingConnections = Array.from(this.activeConnectionCancellationSources.keys())
+      .filter(connectionId => !openConnectionIds.has(connectionId))
+      .map(connectionId => this.buildPendingConnectionSnapshot(connectionId))
+      .filter((connection): connection is PendingConnectionSnapshot => Boolean(connection));
+    const allConnectionIds = new Set([
+      ...openConnections.map(connection => connection.id),
+      ...pendingConnections.map(connection => connection.id)
+    ]);
+    this.sessionOrder = this.sessionOrder.filter(connectionId => allConnectionIds.has(connectionId));
 
-    for (const connection of openConnections) {
+    for (const connection of [...openConnections, ...pendingConnections]) {
       if (!this.sessionOrder.includes(connection.id)) {
         this.sessionOrder.push(connection.id);
       }
     }
 
     const orderIndex = new Map(this.sessionOrder.map((connectionId, index) => [connectionId, index]));
-    const sessions = [...openConnections]
-      .sort((first, second) => (orderIndex.get(first.id) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(second.id) ?? Number.MAX_SAFE_INTEGER))
-      .map(connection => ({
+    const sessions = [
+      ...openConnections.map(connection => ({
         ...connection,
+        connectionState: 'connected' as const,
         currentPath: this.state.getCurrentPath(connection.id, connection.startPath || '/'),
         sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id)
-      }));
+      })),
+      ...pendingConnections
+    ].sort((first, second) => (orderIndex.get(first.id) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(second.id) ?? Number.MAX_SAFE_INTEGER));
 
     this.postMessage(RemoteEditOutboundMessageType.SessionsChanged, {
       sessions,
@@ -1035,12 +1209,13 @@ export class RemoteEditPanel {
       return;
     }
 
-    const password = await vscode.window.showInputBox({
+    const password = await this.showWebviewInputBox({
       title: 'Enable Sudo Mode',
       prompt: 'Enter the sudo password for this connection. The password is kept only in memory for the current session.',
       password: true,
-      ignoreFocusOut: true,
-      placeHolder: 'Sudo password'
+      placeHolder: 'Sudo password',
+      label: 'Sudo password',
+      confirmLabel: 'Enable'
     });
 
     if (!password) {
@@ -1142,6 +1317,33 @@ export class RemoteEditPanel {
   }
 
 
+  private async syncPersistentStorage(payload: any): Promise<void> {
+    const snapshot = this.normalizePersistentStoragePayload(payload);
+    await this.connectionManager.syncPersistentWebviewStorageSnapshot(snapshot, {
+      migrationOnly: Boolean(payload?.migrationOnly)
+    });
+    this.postPersistentStorageSnapshot();
+  }
+
+  private normalizePersistentStoragePayload(payload: any): RemoteEditPersistentWebviewStorage {
+    const source = payload && typeof payload === 'object' && payload.snapshot && typeof payload.snapshot === 'object'
+      ? payload.snapshot
+      : payload;
+
+    return {
+      savedCommands: source && typeof source === 'object' ? source.savedCommands : undefined,
+      serverLogShortcuts: source && typeof source === 'object' ? source.serverLogShortcuts : undefined,
+      portForwards: source && typeof source === 'object' ? source.portForwards : undefined
+    };
+  }
+
+  private postPersistentStorageSnapshot(): void {
+    this.postMessage(
+      RemoteEditOutboundMessageType.PersistentStorageSnapshot,
+      this.connectionManager.getPersistentWebviewStorageSnapshot()
+    );
+  }
+
   private async requestImportConnectionsSettings(): Promise<void> {
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: true,
@@ -1228,6 +1430,7 @@ export class RemoteEditPanel {
 
     await this.sendProfiles();
     RemoteEditSharedState.fireProfilesChanged(undefined, 'webview');
+    this.postPersistentStorageSnapshot();
 
     if (options.importMode === 'replace') {
       this.postMessage(RemoteEditOutboundMessageType.ConnectionFormCleared, {});
@@ -1339,18 +1542,43 @@ export class RemoteEditPanel {
   }
 
   private async connect(payload: any): Promise<void> {
-    const options = await this.connectionManager.buildConnectOptions(payload || {});
+    const clientConnectionId = String(payload?.clientConnectionId || payload?.id || '').trim();
+    let options: ConnectOptions;
+
+    try {
+      options = await this.connectionManager.buildConnectOptions(payload || {});
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (clientConnectionId) {
+        this.setActiveConnection(clientConnectionId, false);
+        this.postBusy(false, 'Connection failed.', false, undefined, clientConnectionId);
+        this.postError(message || 'Connection failed.', { connectionId: clientConnectionId, showOutputLink: true });
+        return;
+      }
+
+      throw error;
+    }
+
+    if (!payload?.id && clientConnectionId) {
+      options.connectionId = clientConnectionId;
+    }
+
+    const connectionId = options.connectionId;
     const target = `${options.username}@${options.host}:${options.port}`;
 
-    if (this.activeConnectionCancellationSource) {
-      this.postStatus('A connection attempt is already in progress.');
+    if (this.activeConnectionCancellationSources.has(connectionId)) {
+      this.postStatus('A connection attempt is already in progress for this tab.', connectionId);
       return;
     }
 
     const cancellationSource = new vscode.CancellationTokenSource();
-    this.activeConnectionCancellationSource = cancellationSource;
+    this.activeConnectionCancellationSources.set(connectionId, cancellationSource);
+    this.pendingConnectionOptions.set(connectionId, options);
+    this.setActiveConnection(connectionId, false);
+    this.state.setCurrentPath(connectionId, normalizeRemotePath(options.startPath || '/'));
+    this.sendSessions();
 
-    this.postBusy(true, `Connecting to ${options.name || options.host}...`, 'connection', 'Cancel');
+    this.postBusy(true, `Connecting to ${options.name || options.host}...`, 'connection', 'Cancel', connectionId);
     this.logInfo('Connecting to remote host.', { Target: target, Protocol: String(options.connectionType || 'sftp').toUpperCase(), Authentication: options.authType });
 
     let connection;
@@ -1358,24 +1586,30 @@ export class RemoteEditPanel {
     try {
       connection = await this.sessions.connect(options, cancellationSource.token);
     } catch (error) {
-      if (isRemoteEditOperationCancelled(error)
+      const canceled = isRemoteEditOperationCancelled(error)
         || cancellationSource.token.isCancellationRequested
-        || ['Connection cancelled', 'Connection canceled'].some(message => String(error instanceof Error ? error.message : error).includes(message))) {
-        this.postBusy(false, 'Connection canceled.');
+        || ['Connection cancelled', 'Connection canceled'].some(message => String(error instanceof Error ? error.message : error).includes(message));
+
+      if (canceled) {
         this.logInfo('Connection canceled.', { Target: target });
-        return;
+        this.postBusy(false, 'Connection canceled.', false, undefined, connectionId);
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logWarn('Connection failed.', { Target: target, Error: message });
+        this.postBusy(false, 'Connection failed.', false, undefined, connectionId);
+        this.postError(message || 'Connection failed.', { connectionId, showOutputLink: true });
       }
 
-      throw error;
+      return;
     } finally {
-      if (this.activeConnectionCancellationSource === cancellationSource) {
-        this.activeConnectionCancellationSource = undefined;
-      }
+      this.activeConnectionCancellationSources.delete(connectionId);
+      this.pendingConnectionOptions.delete(connectionId);
       cancellationSource.dispose();
+      this.sendSessions();
     }
 
     if (cancellationSource.token.isCancellationRequested) {
-      this.postBusy(false, 'Connection canceled.');
+      this.postBusy(false, 'Connection canceled.', false, undefined, connectionId);
       this.logInfo('Connection canceled.', { Target: target });
       return;
     }
@@ -1385,31 +1619,36 @@ export class RemoteEditPanel {
       await this.sendProfiles(connection.id);
     }
 
-    this.setActiveConnection(connection.id);
     this.state.setCurrentPath(connection.id, connection.startPath);
     RemoteEditSharedState.setNavigation(connection.id, connection.startPath, connection.startPath, 'webview');
-    this.updatePanelTitle();
 
-    this.sendSessions();
-    await this.listDirectory(connection.startPath);
-
-    if (!this.sessions.hasConnection(connection.id) || this.state.getActiveConnectionId() !== connection.id) {
-      return;
+    if (this.state.getActiveConnectionId() === connection.id || !this.state.getActiveConnectionId()) {
+      this.setActiveConnection(connection.id);
+      this.updatePanelTitle();
+      this.sendSessions();
+      await this.listDirectory(connection.startPath);
+    } else {
+      this.updatePanelTitle();
+      this.sendSessions();
     }
 
     this.logInfo('Connected to remote host.', { Connection: connection.id, Target: target, StartPath: connection.startPath });
-    this.postBusy(false, 'Connected.');
+    this.postBusy(false, 'Connected.', false, undefined, connection.id);
   }
 
-  private async cancelConnection(): Promise<void> {
-    const source = this.activeConnectionCancellationSource;
+  private async cancelConnection(payload?: any): Promise<void> {
+    const requestedConnectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const source = requestedConnectionId
+      ? this.activeConnectionCancellationSources.get(requestedConnectionId)
+      : Array.from(this.activeConnectionCancellationSources.values())[0];
 
     if (!source) {
-      this.postStatus('No connection attempt is in progress.');
+      this.postStatus('No connection attempt is in progress.', requestedConnectionId || undefined);
       return;
     }
 
-    this.postBusy(true, 'Canceling connection...');
+    const connectionId = requestedConnectionId || Array.from(this.activeConnectionCancellationSources.entries()).find(([, value]) => value === source)?.[0] || '';
+    this.postBusy(true, 'Canceling connection...', 'connection', 'Cancel', connectionId || undefined);
     source.cancel();
   }
 
@@ -1418,6 +1657,11 @@ export class RemoteEditPanel {
 
     if (!connectionId) {
       this.postStatus('No active connection.');
+      return;
+    }
+
+    if (this.activeConnectionCancellationSources.has(connectionId)) {
+      await this.cancelConnection({ connectionId });
       return;
     }
 
@@ -1430,6 +1674,7 @@ export class RemoteEditPanel {
     this.postBusy(true, 'Disconnecting...');
     this.disconnectingConnectionIds.add(connectionId);
     try {
+      await this.portForwardManager.stopAllForConnection(connectionId);
       await this.sessions.disconnect(connectionId);
     } finally {
       this.disconnectingConnectionIds.delete(connectionId);
@@ -1881,15 +2126,32 @@ export class RemoteEditPanel {
     }
 
     if (failedEntries.length) {
-      const detail = failedEntries.map(item => `${item.path}: ${item.error}`).join('\n');
-      void vscode.window.showWarningMessage(
-        `Opened ${resolvedEntries.length - failedEntries.length} of ${this.formatCount(resolvedEntries.length, 'remote file')}.`,
-        { modal: false, detail }
-      );
+      if (resolvedEntries.length === 1) {
+        const failed = failedEntries[0];
+        await this.showRemoteFileOpenFailureDialog(
+          readOnly ? 'Could not open remote file read-only' : 'Could not open remote file',
+          failed.path,
+          this.formatRemoteFileOpenFailureReason(failed.error, failed.path)
+        );
+      } else {
+        const openedCount = resolvedEntries.length - failedEntries.length;
+        const detail = failedEntries
+          .map(item => `Path: ${item.path}\nReason: ${this.formatRemoteFileOpenFailureReason(item.error, item.path)}`)
+          .join('\n\n');
+        await this.showConfirmDialog({
+          title: 'Some remote files could not be opened',
+          message: `Opened ${openedCount} of ${this.formatCount(resolvedEntries.length, 'remote file')}.`,
+          details: detail,
+          confirmLabel: 'OK',
+          hideCancel: true
+        });
+      }
     }
 
     const openSuccessMessage = failedEntries.length
-      ? `Opened ${resolvedEntries.length - failedEntries.length} of ${this.formatCount(resolvedEntries.length, 'remote file')}.`
+      ? failedEntries.length === resolvedEntries.length
+        ? (readOnly ? 'Remote file could not be opened read-only.' : 'Remote file could not be opened.')
+        : `Opened ${resolvedEntries.length - failedEntries.length} of ${this.formatCount(resolvedEntries.length, 'remote file')}.`
       : resolvedEntries.length === 1
         ? (readOnly ? 'File opened read-only.' : 'File opened.')
         : (readOnly
@@ -2082,10 +2344,12 @@ export class RemoteEditPanel {
       throw new Error(`Select a remote location to create a new ${label}.`);
     }
 
-    const newName = await vscode.window.showInputBox({
-      title: entryKind === 'directory' ? 'Remote Edit: Create New Directory' : 'Remote Edit: Create New File',
+    const newName = await this.showWebviewInputBox({
+      title: entryKind === 'directory' ? 'Create New Directory' : 'Create New File',
       prompt: `Enter the name for the new remote ${label}.`,
       placeHolder: entryKind === 'directory' ? 'new-folder' : 'new-file.txt',
+      label: entryKind === 'directory' ? 'Directory name' : 'File name',
+      confirmLabel: 'Create',
       validateInput: value => {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -2148,11 +2412,13 @@ export class RemoteEditPanel {
     const parentPath = dirnameRemotePath(remotePath);
     const defaultName = await this.buildAvailableCopyName(connectionId, parentPath, currentName);
 
-    const copyName = await vscode.window.showInputBox({
-      title: 'Remote Edit: Make a Copy',
+    const copyName = await this.showWebviewInputBox({
+      title: 'Make a Copy',
       prompt: 'Enter the name for the remote file copy.',
+      label: 'Copy name',
       value: defaultName,
       valueSelection: [0, defaultName.length],
+      confirmLabel: 'Copy',
       validateInput: value => {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -2346,11 +2612,13 @@ export class RemoteEditPanel {
       throw new Error('Select a remote item to rename.');
     }
 
-    const newName = await vscode.window.showInputBox({
-      title: 'Remote Edit: Rename',
+    const newName = await this.showWebviewInputBox({
+      title: 'Rename',
       prompt: 'Enter the new name for the selected remote item.',
+      label: 'New name',
       value: currentName,
       valueSelection: [0, currentName.length],
+      confirmLabel: 'Rename',
       validateInput: value => {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -2496,11 +2764,13 @@ export class RemoteEditPanel {
     }
 
     const defaultName = await this.buildDefaultArchiveName(connectionId, baseDirectory, entries, format);
-    const archiveNameInput = await vscode.window.showInputBox({
-      title: 'Remote Edit: Compress to Archive',
+    const archiveNameInput = await this.showWebviewInputBox({
+      title: 'Compress to Archive',
       prompt: 'Enter the archive filename to create in the current remote directory.',
+      label: 'Archive name',
       value: defaultName,
       valueSelection: [0, defaultName.length],
+      confirmLabel: 'Create',
       validateInput: value => {
         const normalized = this.normalizeArchiveName(value, format);
         if (!normalized) {
@@ -4453,6 +4723,1639 @@ export class RemoteEditPanel {
   }
 
 
+
+  private async requestPortForwardState(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const ids = Array.isArray(payload?.ids) ? payload.ids.map((id: unknown) => String(id || '').trim()).filter(Boolean) : [];
+
+    if (!connectionId) {
+      return;
+    }
+
+    if (ids.length > 0) {
+      for (const id of ids) {
+        this.postPortForwardState(this.portForwardManager.getState(connectionId, id));
+      }
+      return;
+    }
+
+    for (const state of this.portForwardManager.listStates(connectionId)) {
+      this.postPortForwardState(state);
+    }
+  }
+
+  private async startPortForward(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const config = this.parsePortForwardConfig(payload?.forward || payload || {});
+
+    if (!connectionId) {
+      throw new Error('No active connection.');
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+    if (!connection || String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      throw new Error('Port forwarding requires an active SSH/SFTP connection.');
+    }
+
+    const state = await this.portForwardManager.startForward(connectionId, config);
+    this.postPortForwardState(state);
+
+    if (state.status === 'error' && state.error) {
+      this.logError('Port forwarding failed.', {
+        Connection: connection.name || connectionId,
+        Forward: this.formatPortForwardLabel(config),
+        Details: state.error
+      });
+    } else if (state.status === 'running') {
+      this.logInfo('Started port forward.', {
+        Connection: connection.name || connectionId,
+        Forward: this.formatPortForwardLabel(config)
+      });
+    }
+  }
+
+  private async stopPortForward(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const forwardId = String(payload?.id || payload?.forwardId || payload?.forward?.id || '').trim();
+
+    if (!connectionId || !forwardId) {
+      return;
+    }
+
+    const state = await this.portForwardManager.stopForward(connectionId, forwardId);
+    this.postPortForwardState(state);
+  }
+
+  private parsePortForwardConfig(value: any): SavedPortForwardConfig {
+    const id = String(value?.id || '').trim();
+    const localPort = Number(value?.localPort || 0);
+    const remotePort = Number(value?.remotePort || 0);
+    const localHost = String(value?.localHost || '').trim() || 'localhost';
+    const remoteHost = String(value?.remoteHost || '').trim() || '127.0.0.1';
+    const name = String(value?.name || '').trim() || `${localPort || ''} → ${remotePort || ''}`.trim() || 'Port forward';
+
+    if (!id) {
+      throw new Error('Port forward id is required.');
+    }
+
+    if (!Number.isInteger(localPort) || localPort < 1 || localPort > 65535 || !Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) {
+      throw new Error('Ports must be between 1 and 65535.');
+    }
+
+    return { id, name, localHost, localPort, remoteHost, remotePort, autoStartOnConnect: Boolean(value?.autoStartOnConnect) };
+  }
+
+  private formatPortForwardLabel(config: SavedPortForwardConfig): string {
+    return `${config.localHost}:${config.localPort} → ${config.remoteHost}:${config.remotePort}`;
+  }
+
+  private postPortForwardState(state: PortForwardRuntimeState): void {
+    this.postMessage(RemoteEditOutboundMessageType.PortForwardStateChanged, state);
+  }
+
+  private postAllPortForwardStates(): void {
+    for (const connection of this.sessions.listConnections()) {
+      for (const state of this.portForwardManager.listStates(connection.id)) {
+        this.postPortForwardState(state);
+      }
+    }
+  }
+
+  private async requestServerServiceDetails(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const serviceName = String(payload?.name || '').trim();
+    const adapter = String(payload?.adapter || '').trim();
+
+    if (!connectionId || !serviceName) {
+      return;
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+    if (!connection || String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      await this.showConfirmDialog({
+        title: 'Service Details',
+        message: 'Service details are unavailable.',
+        details: 'Server services require an active SSH/SFTP connection.',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      return;
+    }
+
+    const command = this.buildServerServiceDetailsCommand(adapter, serviceName);
+    if (!command) {
+      await this.showConfirmDialog({
+        title: 'Service Details',
+        message: serviceName,
+        details: `Adapter ${adapter || 'unknown'} does not support service details yet.`,
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      return;
+    }
+
+    try {
+      const result = await this.runServerManagementCommand(connectionId, command);
+      const output = this.normalizeServerCommandOutput(result.stdout, result.stderr, result.code);
+      await this.showConfirmDialog({
+        title: 'Service Details',
+        message: serviceName,
+        details: output || 'No details returned.',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.showConfirmDialog({
+        title: 'Service Details',
+        message: serviceName,
+        details: message || 'Could not read service details.',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+    }
+  }
+
+  private async requestServerServiceAction(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const serviceName = String(payload?.name || '').trim();
+    const adapter = String(payload?.adapter || '').trim();
+    const action = String(payload?.action || '').trim().toLowerCase();
+
+    if (!connectionId || !serviceName || !['start', 'stop', 'restart'].includes(action)) {
+      return;
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+    if (!connection || String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      this.postServerStatus('Server services require an active SSH/SFTP connection.', true);
+      return;
+    }
+
+    const command = this.buildServerServiceActionCommand(adapter, serviceName, action as 'start' | 'stop' | 'restart');
+    if (!command) {
+      await this.showConfirmDialog({
+        title: 'Service action unavailable',
+        message: serviceName,
+        details: `Adapter ${adapter || 'unknown'} does not support ${action} yet.`,
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      return;
+    }
+
+    const label = this.formatServerServiceActionLabel(action);
+    const confirmed = await this.showConfirmDialog({
+      title: `${label} service?`,
+      message: `${label} ${serviceName}?`,
+      details: `Adapter: ${adapter || 'unknown'}\nService: ${serviceName}`,
+      confirmLabel: label,
+      cancelLabel: 'Cancel',
+      danger: action === 'stop' || action === 'restart'
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result = await this.runServerManagementCommand(connectionId, command);
+      if (result.code !== 0) {
+        await this.showConfirmDialog({
+          title: 'Service action failed',
+          message: `${label} failed for ${serviceName}.`,
+          details: this.normalizeServerCommandOutput(result.stdout, result.stderr, result.code),
+          confirmLabel: 'OK',
+          hideCancel: true
+        });
+        return;
+      }
+
+      await this.requestServerDashboard({ connectionId, requestId: '' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.showConfirmDialog({
+        title: 'Service action failed',
+        message: `${label} failed for ${serviceName}.`,
+        details: message || 'Unknown error',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+    }
+  }
+
+  private async requestServerProcessDetails(payload: any): Promise<void> {
+    const pid = String(payload?.pid || '').trim();
+    if (!/^\d+$/.test(pid)) {
+      return;
+    }
+
+    const details = [
+      `PID: ${pid}`,
+      `User: ${String(payload?.user || '—')}`,
+      `CPU: ${String(payload?.cpu || '—')}`,
+      `Memory: ${String(payload?.memory || '—')}`,
+      `Command: ${String(payload?.command || '—')}`,
+      `Args: ${String(payload?.args || '—')}`
+    ].join('\n');
+
+    await this.showConfirmDialog({
+      title: 'Process Details',
+      message: `PID ${pid}`,
+      details,
+      confirmLabel: 'OK',
+      hideCancel: true
+    });
+  }
+
+  private async requestServerProcessAction(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const pid = String(payload?.pid || '').trim();
+    const processSnapshot = this.buildServerProcessActionSnapshot(payload);
+
+    if (!connectionId || !/^\d+$/.test(pid)) {
+      return;
+    }
+
+    if (pid === '1') {
+      await this.showConfirmDialog({
+        title: 'Process action unavailable',
+        message: 'PID 1 cannot be killed from Remote Edit.',
+        details: 'Remote Edit blocks kill actions for PID 1 as a safety measure.',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      return;
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+    if (!connection || String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      this.postServerStatus('Process actions require an active SSH/SFTP connection.', true);
+      return;
+    }
+
+    const confirmed = await this.showConfirmDialog({
+      title: 'Kill process?',
+      message: `Kill PID ${pid}?`,
+      details: [
+        `PID: ${pid}`,
+        `User: ${processSnapshot.user}`,
+        `Command: ${processSnapshot.command}`,
+        '',
+        'This will send SIGTERM to the process.'
+      ].join('\n'),
+      confirmLabel: 'Kill',
+      cancelLabel: 'Cancel',
+      danger: true
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.postServerProcessActionState(connectionId, pid, 'killing', processSnapshot);
+
+    try {
+      const termResult = await this.runServerManagementCommand(connectionId, this.buildServerProcessKillCommand(pid, false));
+      const termOutput = this.parseServerProcessKillOutput(termResult.stdout, termResult.stderr);
+
+      if (!termOutput.stillRunning) {
+        await this.finishServerProcessTerminated(connectionId, pid, processSnapshot);
+        return;
+      }
+
+      if (termOutput.killRc !== 0) {
+        this.postServerProcessActionState(connectionId, pid, 'clear', processSnapshot);
+        await this.showConfirmDialog({
+          title: 'Kill process failed',
+          message: `Could not kill PID ${pid}.`,
+          details: this.normalizeServerCommandOutput(termResult.stdout, termResult.stderr, termResult.code),
+          confirmLabel: 'OK',
+          hideCancel: true
+        });
+        await this.requestServerDashboard({ connectionId, requestId: '' });
+        return;
+      }
+
+      this.postServerProcessActionState(connectionId, pid, 'still-running', processSnapshot);
+      const forceConfirmed = await this.showConfirmDialog({
+        title: 'Process is still running.',
+        message: 'Force kill?',
+        details: [
+          `PID: ${pid}`,
+          `User: ${processSnapshot.user}`,
+          `Command: ${processSnapshot.command}`,
+          '',
+          'This will send SIGKILL (kill -9). The process cannot clean up before exiting.'
+        ].join('\n'),
+        confirmLabel: 'Force Kill',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+
+      if (!forceConfirmed) {
+        this.postServerProcessActionState(connectionId, pid, 'clear', processSnapshot);
+        await this.requestServerDashboard({ connectionId, requestId: '' });
+        return;
+      }
+
+      this.postServerProcessActionState(connectionId, pid, 'killing', processSnapshot);
+      const forceResult = await this.runServerManagementCommand(connectionId, this.buildServerProcessKillCommand(pid, true));
+      const forceOutput = this.parseServerProcessKillOutput(forceResult.stdout, forceResult.stderr);
+
+      if (!forceOutput.stillRunning) {
+        await this.finishServerProcessTerminated(connectionId, pid, processSnapshot);
+        return;
+      }
+
+      this.postServerProcessActionState(connectionId, pid, 'clear', processSnapshot);
+      await this.showConfirmDialog({
+        title: 'Force kill failed',
+        message: `PID ${pid} is still running or could not be killed.`,
+        details: this.normalizeServerCommandOutput(forceResult.stdout, forceResult.stderr, forceResult.code),
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      await this.requestServerDashboard({ connectionId, requestId: '' });
+      return;
+    } catch (error) {
+      this.postServerProcessActionState(connectionId, pid, 'clear', processSnapshot);
+      const message = error instanceof Error ? error.message : String(error);
+      await this.showConfirmDialog({
+        title: 'Kill process failed',
+        message: `Could not kill PID ${pid}.`,
+        details: message || 'Unknown error',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      await this.requestServerDashboard({ connectionId, requestId: '' });
+    }
+  }
+
+  private async requestServerScheduledJobAction(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    const action = String(payload?.action || 'open').trim().toLowerCase();
+    const sourceType = String(payload?.sourceType || '').trim();
+    const name = String(payload?.name || '').trim();
+    const path = String(payload?.path || '').trim();
+    const user = String(payload?.user || '').trim();
+    const copyValue = String(payload?.copyValue || path || name || user || '').trim();
+
+    if (!connectionId) {
+      return;
+    }
+
+    if (action === 'copy') {
+      if (!copyValue) {
+        return;
+      }
+      await vscode.env.clipboard.writeText(copyValue);
+      return;
+    }
+
+    if (sourceType === 'user') {
+      if (action === 'edit') {
+        await this.showConfirmDialog({
+          title: 'Edit user crontab',
+          message: 'Editing user crontabs is not enabled yet.',
+          details: 'Remote Edit currently opens user crontabs read-only. Editing user crontabs needs a safer apply flow with validation and backup.',
+          confirmLabel: 'OK',
+          hideCancel: true
+        });
+        return;
+      }
+
+      await this.openUserCrontabReadOnly(connectionId, user || name || 'current');
+      return;
+    }
+
+    if (!path || path === '/') {
+      await this.showConfirmDialog({
+        title: 'Cron job source unavailable',
+        message: 'This cron job source cannot be opened.',
+        details: copyValue || 'No remote path is available for this item.',
+        confirmLabel: 'OK',
+        hideCancel: true
+      });
+      return;
+    }
+
+    const entry = {
+      path,
+      name: path.split('/').filter(Boolean).pop() || name || path,
+      type: 'file',
+      effectiveType: 'file'
+    };
+
+    if (action === 'edit') {
+      await this.openEntries({ entries: [entry] });
+    } else {
+      await this.openEntriesReadOnly({ entries: [entry] });
+    }
+  }
+
+  private async openUserCrontabReadOnly(connectionId: string, user: string): Promise<void> {
+    const normalizedUser = String(user || '').trim();
+    if (!normalizedUser) {
+      return;
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+    if (!connection || String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      this.postServerStatus('Cron job actions require an active SSH/SFTP connection.', true);
+      return;
+    }
+
+    const currentUser = String(connection.username || '').trim();
+    const command = currentUser && normalizedUser === currentUser
+      ? 'crontab -l 2>&1'
+      : `crontab -u ${shellQuote(normalizedUser)} -l 2>/dev/null || crontab -l ${shellQuote(normalizedUser)} 2>&1`;
+
+    let output = '';
+    const result = await this.runServerManagementCommand(connectionId, command);
+    output = `${result.stdout || ''}${result.stderr ? `
+${result.stderr}` : ''}`.trimEnd();
+
+    if (result.code !== 0 && !output) {
+      output = `Could not read crontab for ${normalizedUser}.`;
+    }
+
+    const content = `${output || '# No crontab content.'}
+`;
+    const safeUser = normalizedUser.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^-+|-+$/g, '') || 'user';
+    const uri = vscode.Uri.from({
+      scheme: 'remoteedit-virtual',
+      authority: 'scheduled-jobs',
+      path: `/${safeUser}.crontab`,
+      query: `connectionId=${encodeURIComponent(connectionId)}&user=${encodeURIComponent(normalizedUser)}&ts=${Date.now()}`
+    });
+
+    this.virtualDocuments.set(uri.toString(), content);
+    await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
+  }
+
+  private buildServerProcessActionSnapshot(payload: any): ServerDashboardProcessItem {
+    const pid = String(payload?.pid || '').trim();
+    return {
+      id: `process-${pid || 'unknown'}`,
+      pid,
+      user: String(payload?.user || '—'),
+      cpu: String(payload?.cpu || '—'),
+      memory: String(payload?.memory || '—'),
+      command: String(payload?.command || '—'),
+      args: String(payload?.args || payload?.command || '—'),
+      adapter: String(payload?.adapter || 'ps'),
+      canKill: /^\d+$/.test(pid) && pid !== '1' && !this.isServerKernelThreadProcess(payload?.command, payload?.args)
+    };
+  }
+
+  private postServerProcessActionState(connectionId: string, pid: string, status: 'killing' | 'still-running' | 'terminated' | 'clear', process: ServerDashboardProcessItem): void {
+    this.postMessage(RemoteEditOutboundMessageType.ServerProcessActionState, {
+      connectionId,
+      pid,
+      status,
+      process
+    });
+  }
+
+  private async finishServerProcessTerminated(connectionId: string, pid: string, process: ServerDashboardProcessItem): Promise<void> {
+    this.postServerProcessActionState(connectionId, pid, 'terminated', process);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    this.postServerProcessActionState(connectionId, pid, 'clear', process);
+    await this.requestServerDashboard({ connectionId, requestId: '' });
+  }
+
+  private buildServerProcessKillCommand(pid: string, force: boolean): string {
+    const signal = force ? '-9 ' : '';
+    return [
+      `__remote_edit_pid=${pid}`,
+      'remote_edit_process_exists() {',
+      '  ps -p "$1" -o pid= >/dev/null 2>&1 && return 0',
+      '  ps -ef 2>/dev/null | awk -v p="$1" \'NR > 1 && $2 == p { found = 1 } END { exit(found ? 0 : 1) }\'',
+      '}',
+      'if remote_edit_process_exists "$__remote_edit_pid"; then',
+      '  printf "REMOTE_EDIT_PROCESS_EXISTS_BEFORE=yes\\n"',
+      'else',
+      '  printf "REMOTE_EDIT_PROCESS_EXISTS_BEFORE=no\\n"',
+      'fi',
+      `kill ${signal}"$__remote_edit_pid"`,
+      '__remote_edit_kill_rc=$?',
+      'sleep 1',
+      'printf "REMOTE_EDIT_KILL_RC=%s\\n" "$__remote_edit_kill_rc"',
+      'if remote_edit_process_exists "$__remote_edit_pid"; then',
+      '  printf "REMOTE_EDIT_PROCESS_EXISTS_AFTER=yes\\n"',
+      '  printf "REMOTE_EDIT_PROCESS_STILL_RUNNING=yes\\n"',
+      'else',
+      '  printf "REMOTE_EDIT_PROCESS_EXISTS_AFTER=no\\n"',
+      '  printf "REMOTE_EDIT_PROCESS_STILL_RUNNING=no\\n"',
+      'fi',
+      'exit 0'
+    ].join('\n');
+  }
+
+  private parseServerProcessKillOutput(stdout: string, stderr: string): { killRc: number; stillRunning: boolean; existsBefore: boolean; existsAfter: boolean } {
+    const text = `${stdout || ''}\n${stderr || ''}`;
+    const rcMatch = /REMOTE_EDIT_KILL_RC=(\d+)/.exec(text);
+    const runningMatch = /REMOTE_EDIT_PROCESS_STILL_RUNNING=(yes|no)/.exec(text);
+    const beforeMatch = /REMOTE_EDIT_PROCESS_EXISTS_BEFORE=(yes|no)/.exec(text);
+    const afterMatch = /REMOTE_EDIT_PROCESS_EXISTS_AFTER=(yes|no)/.exec(text);
+    return {
+      killRc: rcMatch ? Number(rcMatch[1]) : 1,
+      stillRunning: runningMatch ? runningMatch[1] === 'yes' : false,
+      existsBefore: beforeMatch ? beforeMatch[1] === 'yes' : true,
+      existsAfter: afterMatch ? afterMatch[1] === 'yes' : runningMatch ? runningMatch[1] === 'yes' : false
+    };
+  }
+
+  private async runServerManagementCommand(connectionId: string, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+    let stdout = '';
+    let stderr = '';
+    const result = await this.sessions.runRemoteCommandStreaming(
+      connectionId,
+      '/',
+      command,
+      {
+        onStdout: chunk => { stdout += chunk || ''; },
+        onStderr: chunk => { stderr += chunk || ''; }
+      }
+    );
+
+    return {
+      code: typeof result.code === 'number' ? result.code : 0,
+      stdout,
+      stderr
+    };
+  }
+
+  private buildServerServiceDetailsCommand(adapter: string, serviceName: string): string {
+    const normalizedAdapter = String(adapter || '').trim().toLowerCase();
+    const quotedName = shellQuote(serviceName);
+
+    if (normalizedAdapter === 'linux-systemd') {
+      return `systemctl status --no-pager --full ${quotedName} 2>&1 || true`;
+    }
+
+    if (normalizedAdapter === 'aix-src') {
+      return `lssrc -s ${quotedName} 2>&1 || true`;
+    }
+
+    if (normalizedAdapter === 'linux-sysv') {
+      return `if command -v service >/dev/null 2>&1; then service ${quotedName} status; elif [ -x /etc/init.d/${quotedName} ]; then /etc/init.d/${quotedName} status; else echo 'Service command not found.'; exit 127; fi 2>&1 || true`;
+    }
+
+    return '';
+  }
+
+  private buildServerServiceActionCommand(adapter: string, serviceName: string, action: 'start' | 'stop' | 'restart'): string {
+    const normalizedAdapter = String(adapter || '').trim().toLowerCase();
+    const quotedName = shellQuote(serviceName);
+
+    if (normalizedAdapter === 'linux-systemd') {
+      return `systemctl ${action} ${quotedName}`;
+    }
+
+    if (normalizedAdapter === 'linux-sysv') {
+      return `if command -v service >/dev/null 2>&1; then service ${quotedName} ${action}; elif [ -x /etc/init.d/${quotedName} ]; then /etc/init.d/${quotedName} ${action}; else echo 'Service command not found.'; exit 127; fi`;
+    }
+
+    if (normalizedAdapter === 'aix-src') {
+      if (action === 'start') {
+        return `startsrc -s ${quotedName}`;
+      }
+      if (action === 'stop') {
+        return `stopsrc -s ${quotedName}`;
+      }
+      return [
+        `stopsrc -s ${quotedName}`,
+        '__remote_edit_stop_status=$?',
+        'sleep 1',
+        `startsrc -s ${quotedName}`,
+        '__remote_edit_start_status=$?',
+        'if [ "$__remote_edit_stop_status" -ne 0 ] || [ "$__remote_edit_start_status" -ne 0 ]; then exit 1; fi',
+        'exit 0'
+      ].join('\n');
+    }
+
+    return '';
+  }
+
+  private formatServerServiceActionLabel(action: string): string {
+    switch (action) {
+      case 'start': return 'Start';
+      case 'stop': return 'Stop';
+      case 'restart': return 'Restart';
+      default: return 'Run';
+    }
+  }
+
+  private normalizeServerCommandOutput(stdout: string, stderr: string, code: number): string {
+    const output = [String(stdout || '').trim(), String(stderr || '').trim()].filter(Boolean).join('\n\n').trim();
+    const exitLine = code === 0 ? '' : `Exit code: ${code}`;
+    return [output, exitLine].filter(Boolean).join('\n\n').trim();
+  }
+
+  private async requestServerDashboard(payload: any): Promise<void> {
+    const requestedConnectionId = String(payload?.connectionId || '').trim();
+    const connectionId = requestedConnectionId || this.state.getActiveConnectionId() || '';
+    const requestId = String(payload?.requestId || '').trim();
+
+    if (!connectionId) {
+      this.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
+        connectionId,
+        requestId,
+        refreshedAt: Date.now(),
+        overview: this.createUnavailableServerOverview('No connection'),
+        systemInfo: [],
+        services: [],
+        serviceAdapter: 'unknown',
+        processes: [],
+        processAdapter: 'unknown',
+        scheduledJobs: [],
+        scheduledJobsAdapter: 'unknown',
+        capabilities: [],
+        error: 'No active connection.'
+      });
+      return;
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+    if (!connection) {
+      this.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
+        connectionId,
+        requestId,
+        refreshedAt: Date.now(),
+        overview: this.createUnavailableServerOverview('Disconnected'),
+        systemInfo: [],
+        services: [],
+        serviceAdapter: 'unknown',
+        processes: [],
+        processAdapter: 'unknown',
+        capabilities: [],
+        error: 'Connection is no longer active.'
+      });
+      return;
+    }
+
+    if (String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      this.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
+        connectionId,
+        requestId,
+        refreshedAt: Date.now(),
+        overview: this.createUnavailableServerOverview('Unsupported'),
+        systemInfo: [],
+        services: [],
+        serviceAdapter: 'unknown',
+        processes: [],
+        processAdapter: 'unknown',
+        capabilities: [],
+        error: 'Server dashboard requires SSH/SFTP.'
+      });
+      return;
+    }
+
+    let output = '';
+    try {
+      await this.sessions.runRemoteCommandStreaming(
+        connectionId,
+        '/',
+        this.buildServerDashboardSnapshotCommand(),
+        {
+          onStdout: chunk => { output += chunk || ''; },
+          onStderr: () => undefined
+        }
+      );
+
+      const fields = this.parseServerDashboardSnapshotOutput(output);
+      this.postMessage(RemoteEditOutboundMessageType.ServerDashboard, this.buildServerDashboardSnapshot(connectionId, requestId, connection, fields));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
+        connectionId,
+        requestId,
+        refreshedAt: Date.now(),
+        overview: this.createUnavailableServerOverview('Unavailable'),
+        systemInfo: this.buildFallbackServerSystemInfo(connection, [], Date.now()),
+        services: [],
+        serviceAdapter: 'unknown',
+        processes: [],
+        processAdapter: 'unknown',
+        capabilities: [],
+        error: message || 'Could not refresh the server dashboard.'
+      });
+      this.logWarn('Could not refresh server dashboard.', { Connection: connectionId, Details: message });
+    }
+  }
+
+  private buildServerDashboardSnapshotCommand(): string {
+    return String.raw`remote_edit_print() {
+  remote_edit_key="$1"
+  shift
+  remote_edit_value="$*"
+  remote_edit_value=$(printf '%s' "$remote_edit_value" | tr '\r\n' '  ')
+  printf '%s=%s\n' "$remote_edit_key" "$remote_edit_value"
+}
+remote_edit_cmd_exists() { command -v "$1" >/dev/null 2>&1; }
+remote_edit_os=$(uname -s 2>/dev/null || printf 'unknown')
+remote_edit_kernel=$(uname -r 2>/dev/null || printf '')
+remote_edit_arch=$(uname -m 2>/dev/null || printf '')
+if [ "$remote_edit_os" = "AIX" ]; then
+  remote_edit_aix_arch=$(uname -p 2>/dev/null || printf '')
+  if [ -z "$remote_edit_aix_arch" ] && remote_edit_cmd_exists bootinfo; then
+    remote_edit_aix_arch=$(bootinfo -p 2>/dev/null || printf '')
+  fi
+  if [ -n "$remote_edit_aix_arch" ]; then
+    remote_edit_arch="$remote_edit_aix_arch"
+  fi
+fi
+remote_edit_host=$(hostname 2>/dev/null || uname -n 2>/dev/null || printf '')
+remote_edit_user=$(whoami 2>/dev/null || id -un 2>/dev/null || printf '')
+remote_edit_id=$(id 2>/dev/null || printf '')
+remote_edit_home=$HOME
+remote_edit_shell=$SHELL
+remote_edit_server_time=$(date '+%Y-%m-%d %H:%M %z' 2>/dev/null || printf '')
+if [ -z "$remote_edit_server_time" ]; then
+  remote_edit_server_time=$(date '+%Y-%m-%d %H:%M' 2>/dev/null || printf '')
+fi
+if [ -z "$remote_edit_server_time" ]; then
+  remote_edit_server_time=$(date 2>/dev/null || printf '')
+fi
+remote_edit_os_version=''
+if [ "$remote_edit_os" = "Linux" ] && [ -r /etc/os-release ]; then
+  remote_edit_os_version=$(awk -F= '/^PRETTY_NAME=/{ value=$2; gsub(/^"|"$/, "", value); print value; exit }' /etc/os-release 2>/dev/null)
+fi
+if [ -z "$remote_edit_os_version" ] && [ "$remote_edit_os" = "AIX" ] && remote_edit_cmd_exists oslevel; then
+  remote_edit_os_version=$(oslevel -s 2>/dev/null || oslevel 2>/dev/null || printf '')
+fi
+if [ -z "$remote_edit_os_version" ]; then
+  remote_edit_os_version=$(uname -sr 2>/dev/null || printf '')
+fi
+remote_edit_uptime=$(uptime 2>/dev/null || printf '')
+remote_edit_uptime_seconds=''
+if [ -r /proc/uptime ]; then
+  remote_edit_uptime_seconds=$(awk '{ print int($1) }' /proc/uptime 2>/dev/null)
+fi
+remote_edit_disk_root=$(df -P / 2>/dev/null | awk 'NR==2 { print $2 "|" $3 "|" $4 "|" $5 }')
+remote_edit_memory=''
+if remote_edit_cmd_exists free; then
+  remote_edit_memory=$(free -m 2>/dev/null | awk '/^Mem:/ { print $2 "|" $3 "|" $4 "|free"; exit }')
+elif remote_edit_cmd_exists svmon && remote_edit_cmd_exists pagesize; then
+  remote_edit_pagesize=$(pagesize 2>/dev/null || printf '0')
+  remote_edit_memory=$(svmon -G 2>/dev/null | awk -v p="$remote_edit_pagesize" '/^memory/ && p > 0 { printf "%d|%d|%d|svmon", ($2*p)/1048576, ($3*p)/1048576, ($4*p)/1048576; exit }')
+fi
+remote_edit_has_systemd='no'
+if [ -d /run/systemd/system ] || remote_edit_cmd_exists systemctl; then
+  remote_edit_has_systemd='yes'
+fi
+remote_edit_capabilities=''
+for remote_edit_capability in systemctl journalctl crontab ps lssrc service svmon free df uptime; do
+  if remote_edit_cmd_exists "$remote_edit_capability"; then
+    if [ -n "$remote_edit_capabilities" ]; then
+      remote_edit_capabilities="$remote_edit_capabilities,$remote_edit_capability"
+    else
+      remote_edit_capabilities="$remote_edit_capability"
+    fi
+  fi
+done
+remote_edit_service_index=0
+remote_edit_print_service() {
+  remote_edit_print "SERVICE_$remote_edit_service_index" "$*"
+  remote_edit_service_index=$((remote_edit_service_index + 1))
+}
+remote_edit_process_index=0
+remote_edit_print_process() {
+  remote_edit_print "PROCESS_$remote_edit_process_index" "$*"
+  remote_edit_process_index=$((remote_edit_process_index + 1))
+}
+remote_edit_scheduled_index=0
+remote_edit_print_scheduled() {
+  remote_edit_print "SCHEDULED_$remote_edit_scheduled_index" "$*"
+  remote_edit_scheduled_index=$((remote_edit_scheduled_index + 1))
+}
+remote_edit_count_user_cron_jobs() {
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=/ { next }
+    $1 ~ /^@[A-Za-z0-9_-]+$/ && NF >= 2 { count++; next }
+    NF >= 6 { count++ }
+    END { print count + 0 }
+  '
+}
+remote_edit_count_system_cron_jobs() {
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=/ { next }
+    $1 ~ /^@[A-Za-z0-9_-]+$/ && NF >= 3 { count++; next }
+    NF >= 7 { count++ }
+    END { print count + 0 }
+  '
+}
+remote_edit_collect_scheduled_jobs() {
+  remote_edit_print_user_crontab() {
+    remote_edit_cron_user="$1"
+    remote_edit_cron_output="$2"
+    [ -n "$remote_edit_cron_user" ] || return
+    [ -n "$remote_edit_cron_output" ] || return
+    remote_edit_count=$(printf '%s
+' "$remote_edit_cron_output" | remote_edit_count_user_cron_jobs)
+    if [ "$remote_edit_count" = "0" ]; then
+      remote_edit_label="0 jobs"
+    else
+      remote_edit_label="$remote_edit_count jobs"
+      [ "$remote_edit_count" = "1" ] && remote_edit_label="1 job"
+    fi
+    remote_edit_print_scheduled "user|$remote_edit_cron_user|$remote_edit_label|user crontab|$remote_edit_cron_user||$remote_edit_cron_user|yes|no|$remote_edit_cron_user crontab"
+  }
+
+  remote_edit_read_user_crontab() {
+    remote_edit_cron_user="$1"
+    [ -n "$remote_edit_cron_user" ] || return
+    if [ "$remote_edit_cron_user" = "$remote_edit_user" ]; then
+      crontab -l 2>/dev/null || true
+      return
+    fi
+    if [ "$remote_edit_os" = "AIX" ]; then
+      crontab -l "$remote_edit_cron_user" 2>/dev/null || true
+    else
+      crontab -u "$remote_edit_cron_user" -l 2>/dev/null || true
+    fi
+  }
+
+  remote_edit_is_real_user() {
+    remote_edit_check_user="$1"
+    [ -n "$remote_edit_check_user" ] || return 1
+    case "$remote_edit_check_user" in .*|*/*|*:*|*' '*|*_*) return 1 ;; esac
+    if [ "$remote_edit_os" = "AIX" ] && remote_edit_cmd_exists lsuser; then
+      lsuser "$remote_edit_check_user" >/dev/null 2>&1 && return 0
+    fi
+    if remote_edit_cmd_exists getent; then
+      getent passwd "$remote_edit_check_user" >/dev/null 2>&1 && return 0
+    fi
+    if [ -r /etc/passwd ]; then
+      awk -F: -v u="$remote_edit_check_user" '$1 == u { found = 1 } END { exit(found ? 0 : 1) }' /etc/passwd 2>/dev/null && return 0
+    fi
+    [ "$remote_edit_check_user" = "$remote_edit_user" ] && return 0
+    return 1
+  }
+
+  remote_edit_find_user_spool_file() {
+    remote_edit_spool_user="$1"
+    [ -n "$remote_edit_spool_user" ] || return
+    for remote_edit_spool_dir in /var/spool/cron /var/spool/cron/crontabs /var/cron/tabs /usr/spool/cron/crontabs; do
+      remote_edit_spool_file="$remote_edit_spool_dir/$remote_edit_spool_user"
+      [ -f "$remote_edit_spool_file" ] || continue
+      printf '%s
+' "$remote_edit_spool_file"
+      return
+    done
+  }
+
+  remote_edit_read_user_crontab_with_fallback() {
+    remote_edit_fallback_user="$1"
+    remote_edit_fallback_file="$2"
+    remote_edit_output=$(remote_edit_read_user_crontab "$remote_edit_fallback_user")
+    if [ -n "$remote_edit_output" ]; then
+      printf '%s
+' "$remote_edit_output"
+      return
+    fi
+    if [ -z "$remote_edit_fallback_file" ]; then
+      remote_edit_fallback_file=$(remote_edit_find_user_spool_file "$remote_edit_fallback_user")
+    fi
+    if [ -n "$remote_edit_fallback_file" ] && [ -r "$remote_edit_fallback_file" ]; then
+      cat "$remote_edit_fallback_file" 2>/dev/null || true
+    fi
+  }
+
+  if remote_edit_cmd_exists crontab; then
+    remote_edit_current_file=$(remote_edit_find_user_spool_file "$remote_edit_user")
+    remote_edit_current_cron=$(remote_edit_read_user_crontab_with_fallback "$remote_edit_user" "$remote_edit_current_file")
+    remote_edit_print_user_crontab "$remote_edit_user" "$remote_edit_current_cron"
+
+    remote_edit_seen_cron_users=" $remote_edit_user "
+    remote_edit_user_scan_count=0
+    for remote_edit_spool_dir in /var/spool/cron /var/spool/cron/crontabs /var/cron/tabs /usr/spool/cron/crontabs; do
+      [ -d "$remote_edit_spool_dir" ] || continue
+      [ -r "$remote_edit_spool_dir" ] || continue
+      for remote_edit_cron_user_file in "$remote_edit_spool_dir"/*; do
+        [ -f "$remote_edit_cron_user_file" ] || continue
+        remote_edit_cron_user=$(basename "$remote_edit_cron_user_file" 2>/dev/null || printf '')
+        [ -n "$remote_edit_cron_user" ] || continue
+        case "$remote_edit_cron_user" in .*|*.tmp|*.bak|*.old|*~|*_*) continue ;; esac
+        case "$remote_edit_seen_cron_users" in *" $remote_edit_cron_user "*) continue ;; esac
+        remote_edit_is_real_user "$remote_edit_cron_user" || continue
+        remote_edit_seen_cron_users="$remote_edit_seen_cron_users$remote_edit_cron_user "
+        remote_edit_user_scan_count=$((remote_edit_user_scan_count + 1))
+        [ "$remote_edit_user_scan_count" -gt 50 ] && break
+        remote_edit_user_cron=$(remote_edit_read_user_crontab_with_fallback "$remote_edit_cron_user" "$remote_edit_cron_user_file")
+        remote_edit_print_user_crontab "$remote_edit_cron_user" "$remote_edit_user_cron"
+      done
+    done
+  fi
+
+  if [ -r /etc/crontab ]; then
+    remote_edit_count=$(remote_edit_count_system_cron_jobs < /etc/crontab 2>/dev/null || printf '0')
+    remote_edit_label="$remote_edit_count jobs"
+    [ "$remote_edit_count" = "1" ] && remote_edit_label="1 job"
+    remote_edit_print_scheduled "file|/etc/crontab|$remote_edit_label|system crontab|/etc/crontab|/etc/crontab||yes|yes|/etc/crontab"
+  elif [ -e /etc/crontab ]; then
+    remote_edit_print_scheduled "file|/etc/crontab|Permission denied|system crontab|/etc/crontab|/etc/crontab||no|no|/etc/crontab"
+  fi
+
+  if [ -d /etc/cron.d ]; then
+    if [ -r /etc/cron.d ]; then
+      for remote_edit_cron_file in /etc/cron.d/*; do
+        [ -f "$remote_edit_cron_file" ] || continue
+        remote_edit_base=$(basename "$remote_edit_cron_file" 2>/dev/null || printf '')
+        [ -n "$remote_edit_base" ] || continue
+        case "$remote_edit_base" in .*|*.dpkg-*|*.rpm*|*~) continue ;; esac
+        if [ -r "$remote_edit_cron_file" ]; then
+          remote_edit_count=$(remote_edit_count_system_cron_jobs < "$remote_edit_cron_file" 2>/dev/null || printf '0')
+          remote_edit_label="$remote_edit_count jobs"
+          [ "$remote_edit_count" = "1" ] && remote_edit_label="1 job"
+          remote_edit_print_scheduled "cron-d|$remote_edit_cron_file|$remote_edit_label|cron.d|$remote_edit_cron_file|$remote_edit_cron_file||yes|yes|$remote_edit_cron_file"
+        else
+          remote_edit_print_scheduled "cron-d|$remote_edit_cron_file|Permission denied|cron.d|$remote_edit_cron_file|$remote_edit_cron_file||no|no|$remote_edit_cron_file"
+        fi
+      done
+    else
+      remote_edit_print_scheduled "cron-d|/etc/cron.d|Permission denied|cron.d|/etc/cron.d|/etc/cron.d||no|no|/etc/cron.d"
+    fi
+  fi
+
+  for remote_edit_periodic in hourly daily weekly monthly; do
+    remote_edit_dir="/etc/cron.$remote_edit_periodic"
+    [ -d "$remote_edit_dir" ] || continue
+    if [ ! -r "$remote_edit_dir" ]; then
+      remote_edit_print_scheduled "periodic|$remote_edit_dir|Permission denied|$remote_edit_periodic|$remote_edit_dir|$remote_edit_dir||no|no|$remote_edit_dir"
+      continue
+    fi
+    for remote_edit_script in "$remote_edit_dir"/*; do
+      [ -f "$remote_edit_script" ] || continue
+      remote_edit_base=$(basename "$remote_edit_script" 2>/dev/null || printf '')
+      [ -n "$remote_edit_base" ] || continue
+      case "$remote_edit_base" in .*|*.dpkg-*|*.rpm*|*~) continue ;; esac
+      if [ -r "$remote_edit_script" ]; then
+        remote_edit_print_scheduled "periodic|$remote_edit_script|script|$remote_edit_periodic|$remote_edit_script|$remote_edit_script||yes|yes|$remote_edit_script"
+      else
+        remote_edit_print_scheduled "periodic|$remote_edit_script|Permission denied|$remote_edit_periodic|$remote_edit_script|$remote_edit_script||no|no|$remote_edit_script"
+      fi
+    done
+  done
+}
+remote_edit_collect_processes() {
+  if ! remote_edit_cmd_exists ps; then
+    return
+  fi
+  remote_edit_process_adapter=ps
+  remote_edit_process_output=$(ps -eo pid,user,pcpu,pmem,comm,args 2>/dev/null | awk '
+    NR > 1 && $1 ~ /^[0-9]+$/ {
+      pid=$1; user=$2; cpu=$3; mem=$4; comm=$5; args="";
+      for (i=6; i<=NF; i++) { args = args (args ? " " : "") $i; }
+      if (args == "") args=comm;
+      gsub(/\|/, "/", user); gsub(/\|/, "/", cpu); gsub(/\|/, "/", mem); gsub(/\|/, "/", comm); gsub(/\|/, "/", args);
+      print pid "|" user "|" cpu "|" mem "|" comm "|" args;
+    }
+  ')
+  if [ -z "$remote_edit_process_output" ]; then
+    remote_edit_process_output=$(ps -eo pid,user,pcpu,pmem,args 2>/dev/null | awk '
+      NR > 1 && $1 ~ /^[0-9]+$/ {
+        pid=$1; user=$2; cpu=$3; mem=$4; args="";
+        for (i=5; i<=NF; i++) { args = args (args ? " " : "") $i; }
+        comm=args; sub(/[[:space:]].*$/, "", comm);
+        gsub(/\|/, "/", user); gsub(/\|/, "/", cpu); gsub(/\|/, "/", mem); gsub(/\|/, "/", comm); gsub(/\|/, "/", args);
+        print pid "|" user "|" cpu "|" mem "|" comm "|" args;
+      }
+    ')
+  fi
+  if [ -z "$remote_edit_process_output" ]; then
+    remote_edit_process_output=$(ps -ef 2>/dev/null | awk '
+      NR > 1 && $2 ~ /^[0-9]+$/ {
+        user=$1; pid=$2; args="";
+        for (i=8; i<=NF; i++) { args = args (args ? " " : "") $i; }
+        comm=args; sub(/[[:space:]].*$/, "", comm);
+        gsub(/\|/, "/", user); gsub(/\|/, "/", comm); gsub(/\|/, "/", args);
+        print pid "|" user "|||" comm "|" args;
+      }
+    ')
+  fi
+  printf '%s
+' "$remote_edit_process_output" | while IFS='|' read -r remote_edit_process_pid remote_edit_process_user remote_edit_process_cpu remote_edit_process_memory remote_edit_process_command remote_edit_process_args; do
+    [ -n "$remote_edit_process_pid" ] || continue
+    remote_edit_print_process "$remote_edit_process_adapter|$remote_edit_process_pid|$remote_edit_process_user|$remote_edit_process_cpu|$remote_edit_process_memory|$remote_edit_process_command|$remote_edit_process_args"
+  done
+}
+remote_edit_collect_processes
+remote_edit_collect_scheduled_jobs
+if [ "$remote_edit_os" = "Linux" ]; then
+  remote_edit_systemd_units=''
+  if [ "$remote_edit_has_systemd" = "yes" ] && remote_edit_cmd_exists systemctl; then
+    remote_edit_systemd_units=$(systemctl list-units --type=service --all --no-legend --no-pager --full 2>/dev/null || systemctl --type=service --all --no-legend --no-pager --full list-units 2>/dev/null || printf '')
+    if [ -z "$remote_edit_systemd_units" ]; then
+      remote_edit_systemd_units=$(systemctl list-units --type service --all --no-legend --no-pager --full 2>/dev/null || printf '')
+    fi
+    if [ -z "$remote_edit_systemd_units" ]; then
+      remote_edit_systemd_units=$(systemctl list-unit-files --type=service --no-legend --no-pager --full 2>/dev/null | awk 'NF >= 1 && $1 ~ /\.service$/ { print $1 " loaded unknown unknown " $2 }')
+    fi
+  fi
+
+  if [ -n "$remote_edit_systemd_units" ]; then
+    printf '%s
+' "$remote_edit_systemd_units" | awk '
+      NF >= 1 {
+        if ($1 !~ /\.service$/ && $2 ~ /\.service$/) { unit=$2; active=$4; unit_sub_state=$5; start=6; }
+        else { unit=$1; active=$3; unit_sub_state=$4; start=5; }
+        if (unit !~ /\.service$/) next;
+        if (active == "") active="unknown";
+        if (unit_sub_state == "") unit_sub_state="unknown";
+        desc="";
+        for (i=start; i<=NF; i++) { desc = desc (desc ? " " : "") $i; }
+        gsub(/\|/, "/", unit); gsub(/\|/, "/", active); gsub(/\|/, "/", unit_sub_state); gsub(/\|/, "/", desc);
+        print unit "|" active " " unit_sub_state "|" desc;
+      }
+    ' | while IFS='|' read -r remote_edit_service_name remote_edit_service_status remote_edit_service_description; do
+      [ -n "$remote_edit_service_name" ] || continue
+      remote_edit_print_service "linux-systemd|$remote_edit_service_name|$remote_edit_service_status|$remote_edit_service_description"
+    done
+  elif remote_edit_cmd_exists service; then
+    service --status-all 2>&1 | awk '
+      /^ *\[/ {
+        marker=$2; name=$4;
+        if (name == "") name=$NF;
+        status="unknown";
+        if (marker == "+") status="running";
+        else if (marker == "-") status="stopped";
+        if (name != "" && name != "]") print name "|" status "|service --status-all";
+        next;
+      }
+    ' | while IFS='|' read -r remote_edit_service_name remote_edit_service_status remote_edit_service_description; do
+      [ -n "$remote_edit_service_name" ] || continue
+      remote_edit_print_service "linux-sysv|$remote_edit_service_name|$remote_edit_service_status|$remote_edit_service_description"
+    done
+  elif [ -d /etc/init.d ]; then
+    for remote_edit_init_script in /etc/init.d/*; do
+      [ -f "$remote_edit_init_script" ] || continue
+      [ -x "$remote_edit_init_script" ] || continue
+      remote_edit_service_name=$(basename "$remote_edit_init_script" 2>/dev/null || printf '')
+      [ -n "$remote_edit_service_name" ] || continue
+      remote_edit_print_service "linux-sysv|$remote_edit_service_name|unknown|$remote_edit_init_script"
+    done
+  fi
+elif [ "$remote_edit_os" = "AIX" ] && remote_edit_cmd_exists lssrc; then
+  lssrc -a 2>/dev/null | awk '
+    NR > 1 && $1 != "" {
+      subsystem=$1; group=$2; pid=""; status="";
+      if ($3 ~ /^[0-9]+$/) { pid=$3; status=$4; } else { status=$3; }
+      if (status == "") status="unknown";
+      desc=group;
+      if (pid != "") desc = desc " pid " pid;
+      gsub(/\|/, "/", subsystem); gsub(/\|/, "/", status); gsub(/\|/, "/", desc);
+      print subsystem "|" status "|" desc;
+    }
+  ' | while IFS='|' read -r remote_edit_service_name remote_edit_service_status remote_edit_service_description; do
+    [ -n "$remote_edit_service_name" ] || continue
+    remote_edit_print_service "aix-src|$remote_edit_service_name|$remote_edit_service_status|$remote_edit_service_description"
+  done
+fi
+remote_edit_print OS "$remote_edit_os"
+remote_edit_print OS_VERSION "$remote_edit_os_version"
+remote_edit_print KERNEL "$remote_edit_kernel"
+remote_edit_print ARCH "$remote_edit_arch"
+remote_edit_print HOSTNAME "$remote_edit_host"
+remote_edit_print USER "$remote_edit_user"
+remote_edit_print ID "$remote_edit_id"
+remote_edit_print HOME "$remote_edit_home"
+remote_edit_print SHELL "$remote_edit_shell"
+remote_edit_print SERVER_TIME "$remote_edit_server_time"
+remote_edit_print UPTIME "$remote_edit_uptime"
+remote_edit_print UPTIME_SECONDS "$remote_edit_uptime_seconds"
+remote_edit_print DISK_ROOT "$remote_edit_disk_root"
+remote_edit_print MEMORY "$remote_edit_memory"
+remote_edit_print HAS_SYSTEMD "$remote_edit_has_systemd"
+remote_edit_print CAPABILITIES "$remote_edit_capabilities"
+exit 0`;
+  }
+
+  private parseServerDashboardSnapshotOutput(output: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const rawLine of String(output || '').split(/\r?\n/)) {
+      const index = rawLine.indexOf('=');
+      if (index <= 0) {
+        continue;
+      }
+
+      const key = rawLine.slice(0, index).trim();
+      if (!/^[A-Z0-9_]+$/.test(key)) {
+        continue;
+      }
+
+      result[key] = rawLine.slice(index + 1).trim();
+    }
+
+    return result;
+  }
+
+  private buildServerDashboardSnapshot(connectionId: string, requestId: string, connection: any, fields: Record<string, string>): ServerDashboardSnapshot {
+    const refreshedAt = Date.now();
+    const capabilities = this.parseServerCapabilities(fields.CAPABILITIES);
+    const adapter = this.detectServerAdapter(fields, capabilities);
+    const identity = this.parseServerIdentity(fields.ID, String(connection?.username || fields.USER || '').trim());
+    const services = this.parseServerDashboardServices(fields, adapter);
+    const processes = this.parseServerDashboardProcesses(fields);
+    const scheduledJobs = this.parseServerDashboardScheduledJobs(fields);
+
+    return {
+      connectionId,
+      requestId,
+      refreshedAt,
+      overview: [
+        this.formatServerUptime(fields.UPTIME_SECONDS, fields.UPTIME),
+        this.formatServerLoad(fields.UPTIME),
+        this.formatServerMemory(fields.MEMORY),
+        this.formatServerDisk(fields.DISK_ROOT)
+      ],
+      systemInfo: [
+        { label: 'OS', value: this.normalizeServerInfoValue(fields.OS) },
+        { label: 'OS Version', value: this.normalizeServerInfoValue(fields.OS_VERSION || fields.KERNEL) },
+        { label: 'Adapter', value: adapter },
+        { label: 'Hostname', value: this.normalizeServerInfoValue(fields.HOSTNAME || connection?.host) },
+        { label: 'User', value: identity.user },
+        { label: 'Group', value: identity.group },
+        { label: 'Home', value: this.normalizeServerInfoValue(fields.HOME) },
+        { label: 'Shell', value: this.normalizeServerInfoValue(fields.SHELL) },
+        { label: 'Architecture', value: this.normalizeServerInfoValue(fields.ARCH) },
+        { label: 'Protocol', value: 'SSH/SFTP' },
+        { label: 'Sudo', value: this.formatServerSudoStatus(connection) },
+        { label: 'Capabilities', value: this.formatServerCapabilities(capabilities) },
+        { label: 'Server Time', value: this.formatServerTime(fields.SERVER_TIME) },
+        { label: 'Last refresh', value: this.formatServerRefreshTime(refreshedAt) }
+      ],
+      services,
+      serviceAdapter: services[0]?.adapter || adapter,
+      processes,
+      processAdapter: processes[0]?.adapter || (capabilities.includes('ps') ? 'ps' : 'unknown'),
+      scheduledJobs,
+      scheduledJobsAdapter: scheduledJobs.length ? 'cron' : (capabilities.includes('crontab') ? 'cron' : 'unknown'),
+      capabilities
+    };
+  }
+
+  private buildFallbackServerSystemInfo(connection: any, capabilities: string[], refreshedAt: number): ServerDashboardSystemInfoItem[] {
+    const identity = this.parseServerIdentity('', String(connection?.username || '').trim());
+    return [
+      { label: 'OS', value: '—' },
+      { label: 'OS Version', value: '—' },
+      { label: 'Adapter', value: 'unknown' },
+      { label: 'Hostname', value: this.normalizeServerInfoValue(connection?.host) },
+      { label: 'User', value: identity.user },
+      { label: 'Group', value: identity.group },
+      { label: 'Protocol', value: 'SSH/SFTP' },
+      { label: 'Sudo', value: this.formatServerSudoStatus(connection) },
+      { label: 'Capabilities', value: this.formatServerCapabilities(capabilities) },
+      { label: 'Server Time', value: '—' },
+      { label: 'Last refresh', value: this.formatServerRefreshTime(refreshedAt) }
+    ];
+  }
+
+  private createUnavailableServerOverview(reason: string): ServerDashboardOverviewItem[] {
+    return ['Uptime', 'Load', 'Memory', 'Disk'].map(label => ({ label, value: '—', help: reason }));
+  }
+
+  private normalizeServerInfoValue(value: unknown): string {
+    const text = String(value ?? '').trim();
+    return text || '—';
+  }
+
+  private parseServerCapabilities(value: string | undefined): string[] {
+    return String(value || '')
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+
+  private parseServerDashboardServices(fields: Record<string, string>, adapter: string): ServerDashboardServiceItem[] {
+    const services: ServerDashboardServiceItem[] = [];
+
+    Object.keys(fields)
+      .filter(key => /^SERVICE_\d+$/i.test(key))
+      .sort((left, right) => Number(left.replace(/\D/g, '')) - Number(right.replace(/\D/g, '')))
+      .forEach((key, index) => {
+        const parts = String(fields[key] || '').split('|');
+        const serviceAdapter = String(parts[0] || adapter || '').trim() || adapter || 'unknown';
+        const name = String(parts[1] || '').trim();
+        const rawStatus = String(parts[2] || '').trim();
+        const description = String(parts.slice(3).join('|') || '').trim();
+
+        if (!name) {
+          return;
+        }
+
+        const status = this.normalizeServerServiceStatus(serviceAdapter, rawStatus);
+        services.push({
+          id: this.createServerServiceId(serviceAdapter, name, index),
+          name,
+          displayName: name,
+          status,
+          statusLabel: this.formatServerServiceStatusLabel(status),
+          rawStatus: rawStatus || 'unknown',
+          description,
+          adapter: serviceAdapter,
+          canStart: status === 'stopped' || status === 'failed',
+          canStop: status === 'running',
+          canRestart: status === 'running' || status === 'failed'
+        });
+      });
+
+    return services.sort((left, right) => {
+      const statusOrder = (status: ServerDashboardServiceItem['status']) => {
+        switch (status) {
+          case 'failed': return 0;
+          case 'running': return 1;
+          case 'stopped': return 2;
+          default: return 3;
+        }
+      };
+      const statusDelta = statusOrder(left.status) - statusOrder(right.status);
+      if (statusDelta !== 0) {
+        return statusDelta;
+      }
+      return left.displayName.localeCompare(right.displayName, undefined, { sensitivity: 'base' });
+    });
+  }
+
+  private parseServerDashboardScheduledJobs(fields: Record<string, string>): ServerDashboardScheduledJobItem[] {
+    const items: ServerDashboardScheduledJobItem[] = [];
+    const seen = new Set<string>();
+
+    Object.keys(fields)
+      .filter(key => /^SCHEDULED_\d+$/i.test(key))
+      .sort((left, right) => Number(left.replace(/\D/g, '')) - Number(right.replace(/\D/g, '')))
+      .forEach((key, index) => {
+        const parts = String(fields[key] || '').split('|');
+        const sourceType = String(parts[0] || '').trim() || 'unknown';
+        const name = String(parts[1] || '').trim();
+        const countLabel = String(parts[2] || '').trim() || '—';
+        const typeLabel = String(parts[3] || '').trim() || sourceType;
+        const source = String(parts[4] || name || '').trim();
+        const path = String(parts[5] || '').trim();
+        const user = String(parts[6] || '').trim();
+        const canOpen = String(parts[7] || '').trim().toLowerCase() === 'yes';
+        const canEdit = String(parts[8] || '').trim().toLowerCase() === 'yes';
+        const copyValue = String(parts.slice(9).join('|') || path || source || name).trim();
+
+        if (!name && !source) {
+          return;
+        }
+
+        const identity = `${sourceType}|${path}|${user}|${name}`;
+        if (seen.has(identity)) {
+          return;
+        }
+        seen.add(identity);
+
+        items.push({
+          id: this.createServerScheduledJobId(sourceType, path || source || name, user, index),
+          name: name || source || user || 'Scheduled item',
+          countLabel,
+          typeLabel,
+          source: source || path || name,
+          sourceType,
+          user,
+          path,
+          canOpen,
+          canEdit,
+          copyValue: copyValue || source || path || name
+        });
+      });
+
+    return items.sort((left, right) => {
+      const order = (item: ServerDashboardScheduledJobItem): number => {
+        if (item.sourceType === 'user') return 0;
+        if (item.sourceType === 'file') return 1;
+        if (item.sourceType === 'cron-d') return 2;
+        if (item.sourceType === 'periodic') return 3;
+        return 4;
+      };
+      const orderDiff = order(left) - order(right);
+      if (orderDiff !== 0) return orderDiff;
+      return left.name.localeCompare(right.name);
+    });
+  }
+
+  private createServerScheduledJobId(sourceType: string, source: string, user: string, index: number): string {
+    const raw = `${sourceType}-${user || ''}-${source || ''}-${index}`;
+    return raw.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 140) || `scheduled-${index}`;
+  }
+
+  private parseServerDashboardProcesses(fields: Record<string, string>): ServerDashboardProcessItem[] {
+    const processes: ServerDashboardProcessItem[] = [];
+
+    Object.keys(fields)
+      .filter(key => /^PROCESS_\d+$/i.test(key))
+      .sort((left, right) => Number(left.replace(/\D/g, '')) - Number(right.replace(/\D/g, '')))
+      .forEach((key, index) => {
+        const parts = String(fields[key] || '').split('|');
+        const adapter = String(parts[0] || 'ps').trim() || 'ps';
+        const pid = String(parts[1] || '').trim();
+        const user = String(parts[2] || '').trim() || '—';
+        const cpu = this.formatServerProcessMetric(parts[3]);
+        const memory = this.formatServerProcessMetric(parts[4]);
+        const command = String(parts[5] || '').trim();
+        const args = String(parts.slice(6).join('|') || command || '').trim();
+
+        if (!/^\d+$/.test(pid)) {
+          return;
+        }
+
+        processes.push({
+          id: this.createServerProcessId(adapter, pid, index),
+          pid,
+          user,
+          cpu,
+          memory,
+          command: command || args || '—',
+          args: args || command || '—',
+          adapter,
+          canKill: pid !== '1' && !this.isServerKernelThreadProcess(command, args)
+        });
+      });
+
+    return processes.sort((left, right) => Number(left.pid) - Number(right.pid));
+  }
+
+  private isServerKernelThreadProcess(command: unknown, args: unknown): boolean {
+    const commandText = String(command ?? '').trim();
+    const argsText = String(args ?? '').trim();
+    const isBracketOnly = (value: string): boolean => /^\[[^\]]+\]$/.test(value);
+    return isBracketOnly(commandText) || isBracketOnly(argsText);
+  }
+
+  private formatServerProcessMetric(value: unknown): string {
+    const text = String(value ?? '').trim();
+    if (!text) {
+      return '—';
+    }
+    return text.endsWith('%') ? text : `${text}%`;
+  }
+
+  private createServerProcessId(adapter: string, pid: string, index: number): string {
+    const safeAdapter = String(adapter || 'process').replace(/[^A-Za-z0-9._-]/g, '-');
+    const safePid = String(pid || 'pid').replace(/[^0-9]/g, '') || 'pid';
+    return `${safeAdapter}-${safePid}-${index}`;
+  }
+
+  private createServerServiceId(adapter: string, name: string, index: number): string {
+    const safeAdapter = String(adapter || 'service').replace(/[^A-Za-z0-9._-]/g, '-');
+    const safeName = String(name || 'item').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 96) || 'item';
+    return `${safeAdapter}-${safeName}-${index}`;
+  }
+
+  private normalizeServerServiceStatus(adapter: string, rawStatus: string): ServerDashboardServiceItem['status'] {
+    const text = String(rawStatus || '').trim().toLowerCase();
+    const normalizedAdapter = String(adapter || '').trim().toLowerCase();
+
+    if (normalizedAdapter === 'aix-src') {
+      if (/\bactive\b/.test(text)) return 'running';
+      if (/\binoperative\b/.test(text)) return 'stopped';
+      return 'unknown';
+    }
+
+    if (/\bfailed\b|\berror\b/.test(text)) return 'failed';
+    if (/\bactive\b|\brunning\b/.test(text)) return 'running';
+    if (/\binactive\b|\bstopped\b|\bdead\b|\bexited\b/.test(text)) return 'stopped';
+    return 'unknown';
+  }
+
+  private formatServerServiceStatusLabel(status: ServerDashboardServiceItem['status']): string {
+    switch (status) {
+      case 'running': return 'Running';
+      case 'stopped': return 'Stopped';
+      case 'failed': return 'Failed';
+      default: return 'Unknown';
+    }
+  }
+
+  private detectServerAdapter(fields: Record<string, string>, capabilities: string[]): string {
+    const osName = String(fields.OS || '').trim().toLowerCase();
+    const capabilitySet = new Set(capabilities.map(item => item.toLowerCase()));
+
+    if (osName === 'linux') {
+      if (fields.HAS_SYSTEMD === 'yes' || capabilitySet.has('systemctl')) {
+        return 'linux-systemd';
+      }
+      if (capabilitySet.has('service')) {
+        return 'linux-sysv';
+      }
+      return 'generic-unix';
+    }
+
+    if (osName === 'aix') {
+      return capabilitySet.has('lssrc') ? 'aix-src' : 'generic-unix';
+    }
+
+    return osName ? 'generic-unix' : 'unknown';
+  }
+
+  private formatServerSudoStatus(connection: any): string {
+    const username = String(connection?.username || '').trim();
+    if (username.toLowerCase() === 'root') {
+      return 'Root user';
+    }
+    return this.sessions.isSudoModeEnabled(String(connection?.id || '')) ? 'Enabled' : 'Disabled';
+  }
+
+  private parseServerIdentity(idOutput: string | undefined, fallbackUserName?: string): { user: string; group: string } {
+    const text = String(idOutput || '').trim();
+    const uidMatch = /uid=(\d+)(?:\(([^)]+)\))?/i.exec(text);
+    const gidMatch = /gid=(\d+)(?:\(([^)]+)\))?/i.exec(text);
+
+    const uid = uidMatch?.[1] || '';
+    const uidName = uidMatch?.[2] || String(fallbackUserName || '').trim();
+    const gid = gidMatch?.[1] || '';
+    const gidName = gidMatch?.[2] || '';
+
+    return {
+      user: this.formatServerIdentityValue(uidName, uid),
+      group: this.formatServerIdentityValue(gidName, gid)
+    };
+  }
+
+  private formatServerIdentityValue(name: string | undefined, id: string | undefined): string {
+    const normalizedName = String(name || '').trim();
+    const normalizedId = String(id || '').trim();
+
+    if (normalizedName && normalizedId) {
+      return `${normalizedName} (${normalizedId})`;
+    }
+    if (normalizedName) {
+      return normalizedName;
+    }
+    if (normalizedId) {
+      return normalizedId;
+    }
+    return '—';
+  }
+
+  private formatServerCapabilities(capabilities: string[]): string {
+    const capabilitySet = new Set((capabilities || []).map(item => String(item || '').trim().toLowerCase()).filter(Boolean));
+    const features: string[] = [];
+
+    if (capabilitySet.has('systemctl') || capabilitySet.has('service') || capabilitySet.has('lssrc')) {
+      features.push('Services');
+    }
+    if (capabilitySet.has('journalctl')) {
+      features.push('Logs');
+    }
+    if (capabilitySet.has('crontab')) {
+      features.push('Cron');
+    }
+    if (capabilitySet.has('ps')) {
+      features.push('Processes');
+    }
+    if (capabilitySet.has('df')) {
+      features.push('Disk');
+    }
+    if (capabilitySet.has('free') || capabilitySet.has('svmon')) {
+      features.push('Memory');
+    }
+
+    return features.length ? features.join(', ') : '—';
+  }
+
+  private formatServerUptime(secondsText: string | undefined, rawUptime: string | undefined): ServerDashboardOverviewItem {
+    const seconds = Number(String(secondsText || '').trim());
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return { label: 'Uptime', value: this.formatServerDuration(seconds), help: 'System uptime' };
+    }
+
+    const raw = String(rawUptime || '').trim();
+    const match = /\bup\s+(.+?)(?:,\s+\d+\s+users?|,\s+load averages?:|,\s+load average:|$)/i.exec(raw);
+    const duration = this.formatServerUptimeText(match?.[1] || raw);
+    return { label: 'Uptime', value: duration || '—', help: duration ? 'System uptime' : 'Not available' };
+  }
+
+  private formatServerDuration(totalSeconds: number): string {
+    const seconds = Math.max(0, Math.floor(totalSeconds));
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${Math.max(0, minutes)}m`;
+  }
+
+  private formatServerUptimeText(value: string | undefined): string {
+    const text = String(value || '').trim();
+    if (!text) {
+      return '';
+    }
+
+    const daysMatch = /(\d+)\s+days?/i.exec(text);
+    const hoursMinutesMatch = /(\d+):(\d{2})/.exec(text);
+    if (daysMatch || hoursMinutesMatch) {
+      const days = Number(daysMatch?.[1] || 0);
+      const hours = Number(hoursMinutesMatch?.[1] || 0);
+      const minutes = Number(hoursMinutesMatch?.[2] || 0);
+      const totalSeconds = (days * 86400) + (hours * 3600) + (minutes * 60);
+      if (totalSeconds > 0) {
+        return this.formatServerDuration(totalSeconds);
+      }
+    }
+
+    const hourMatch = /(\d+)\s*(?:hours?|hrs?|h)\b/i.exec(text);
+    const minuteMatch = /(\d+)\s*(?:minutes?|mins?|m)\b/i.exec(text);
+    if (hourMatch || minuteMatch) {
+      const hours = Number(hourMatch?.[1] || 0);
+      const minutes = Number(minuteMatch?.[1] || 0);
+      const totalSeconds = (hours * 3600) + (minutes * 60);
+      if (totalSeconds > 0) {
+        return this.formatServerDuration(totalSeconds);
+      }
+    }
+
+    return '';
+  }
+
+  private formatServerLoad(rawUptime: string | undefined): ServerDashboardOverviewItem {
+    const raw = String(rawUptime || '').trim();
+    const match = /load averages?:\s*([0-9.,]+)[, ]+([0-9.,]+)[, ]+([0-9.,]+)/i.exec(raw);
+    if (match) {
+      const one = this.formatServerLoadNumber(match[1]);
+      const five = this.formatServerLoadNumber(match[2]);
+      const fifteen = this.formatServerLoadNumber(match[3]);
+      return { label: 'Load', value: one || '—', help: five && fifteen ? `5m ${five} • 15m ${fifteen}` : 'Not available' };
+    }
+
+    return { label: 'Load', value: '—', help: 'Not available' };
+  }
+
+  private formatServerLoadNumber(value: string | undefined): string {
+    return String(value || '')
+      .trim()
+      .replace(/[,.]+$/, '')
+      .replace(',', '.');
+  }
+
+  private formatServerMemory(memoryText: string | undefined): ServerDashboardOverviewItem {
+    const parts = String(memoryText || '').split('|');
+    const totalMb = Number(parts[0]);
+    const usedMb = Number(parts[1]);
+
+    if (Number.isFinite(totalMb) && totalMb > 0 && Number.isFinite(usedMb)) {
+      const percent = Math.max(0, Math.min(100, Math.round((usedMb / totalMb) * 100)));
+      return {
+        label: 'Memory',
+        value: `${percent}%`,
+        help: `${formatBytes(usedMb * 1024 * 1024)} / ${formatBytes(totalMb * 1024 * 1024)}`
+      };
+    }
+
+    return { label: 'Memory', value: '—', help: 'Not available' };
+  }
+
+  private formatServerDisk(diskText: string | undefined): ServerDashboardOverviewItem {
+    const parts = String(diskText || '').split('|');
+    const totalKb = Number(parts[0]);
+    const usedKb = Number(parts[1]);
+    const freeKb = Number(parts[2]);
+    const percentText = String(parts[3] || '').trim();
+
+    if (Number.isFinite(totalKb) && totalKb > 0 && Number.isFinite(usedKb)) {
+      const value = percentText || `${Math.round((usedKb / totalKb) * 100)}%`;
+      const usedLabel = formatBytes(usedKb * 1024);
+      const totalLabel = formatBytes(totalKb * 1024);
+      const freeLabel = Number.isFinite(freeKb) ? formatBytes(freeKb * 1024) : '';
+      return {
+        label: 'Disk',
+        value,
+        help: `${usedLabel} / ${totalLabel}${freeLabel ? ` • ${freeLabel} free` : ''}`
+      };
+    }
+
+    return { label: 'Disk', value: '—', help: 'Not available' };
+  }
+
+  private formatServerTime(value: unknown): string {
+    const text = String(value ?? '').trim();
+    if (!text) {
+      return '—';
+    }
+
+    return text.replace(/([+-]\d{2})(\d{2})\b/, 'UTC$1:$2');
+  }
+
+  private formatServerRefreshTime(timestamp: number): string {
+    const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `${time} local`;
+  }
+
+
   private async requestOpenLogViewer(payload: any): Promise<void> {
     const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
     const remotePath = String(payload?.path || '').trim();
@@ -4471,7 +6374,22 @@ export class RemoteEditPanel {
     }
 
     if (remotePath) {
-      LogViewerPanel.openForFile(this.context, this.sessions, this.output, connectionId, remotePath);
+      const normalizedPath = normalizeRemotePath(remotePath);
+      try {
+        const stat = await this.sessions.stat(connectionId, normalizedPath);
+        if (stat.type !== 'file') {
+          throw new Error(stat.type === 'directory' ? 'Remote path is a directory, not a file.' : 'Remote path is not a regular file.');
+        }
+      } catch (error) {
+        await this.showRemoteFileOpenFailureDialog(
+          'Could not open remote log file',
+          normalizedPath,
+          this.formatRemoteFileOpenFailureReason(error, normalizedPath)
+        );
+        return;
+      }
+
+      LogViewerPanel.openForFile(this.context, this.sessions, this.output, connectionId, normalizedPath);
       return;
     }
 
@@ -4530,12 +6448,13 @@ export class RemoteEditPanel {
         return;
       }
 
-      const password = await vscode.window.showInputBox({
+      const password = String(payload?.sudoPassword || '') || await this.showWebviewInputBox({
         title: 'Run Command with Sudo',
         prompt: 'Enter the sudo password for this connection. The password is kept only in memory for the current session.',
         password: true,
-        ignoreFocusOut: true,
-        placeHolder: 'Sudo password'
+        placeHolder: 'Sudo password',
+        label: 'Sudo password',
+        confirmLabel: 'Run'
       });
 
       if (!password) {
@@ -4931,12 +6850,13 @@ export class RemoteEditPanel {
       const useSudo = Boolean(payload?.useSudo) && connection.connectionType === 'sftp';
 
       if (useSudo && !this.sessions.isSudoModeEnabled(connectionId)) {
-        const password = await vscode.window.showInputBox({
+        const password = String(payload?.sudoPassword || '') || await this.showWebviewInputBox({
           title: 'Run Search with Sudo Mode',
           prompt: 'Enter the sudo password for this connection. The password is kept only in memory for the current session.',
           password: true,
-          ignoreFocusOut: true,
-          placeHolder: 'Sudo password'
+          placeHolder: 'Sudo password',
+          label: 'Sudo password',
+          confirmLabel: 'Search'
         });
 
         if (!password) {
@@ -4991,35 +6911,52 @@ export class RemoteEditPanel {
     const connectionId = this.requireActiveConnectionId();
     const requestedPath = normalizeRemotePath(String(payload?.scopePath || this.getActivePath() || '/'));
     const parentPath = dirnameRemotePath(requestedPath);
+    const includeFiles = Boolean(payload?.includeFiles);
+    const purpose = String(payload?.purpose || '');
+    const requestId = String(payload?.requestId || '');
     const timer = createPerformanceTimer();
 
     appendDebugLog(this.output, 'RemoteSearch', 'Browse scope directory requested.', {
       Connection: connectionId,
-      Path: requestedPath
+      Path: requestedPath,
+      IncludeFiles: includeFiles ? 'Yes' : 'No',
+      Purpose: purpose || 'remoteSearch'
     });
 
     try {
       const entries = await this.sessions.listDirectory(connectionId, requestedPath, { forceRefresh: false });
-      const directories = entries
-        .filter(entry => entry.name !== '..' && (entry.effectiveType || entry.type) === 'directory')
-        .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' }))
-        .map(entry => ({
-          name: String(entry.name || ''),
-          path: normalizeRemotePath(entry.path),
-          type: 'directory'
-        }));
+      const visibleEntries = entries
+        .filter(entry => entry.name !== '..')
+        .map(entry => {
+          const effectiveType = (entry.effectiveType || entry.type) === 'directory' ? 'directory' : 'file';
+          return {
+            name: String(entry.name || ''),
+            path: normalizeRemotePath(entry.path),
+            type: effectiveType
+          };
+        })
+        .filter(entry => includeFiles ? (entry.type === 'directory' || entry.type === 'file') : entry.type === 'directory')
+        .sort((left, right) => {
+          if (left.type !== right.type) {
+            return left.type === 'directory' ? -1 : 1;
+          }
+          return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
+        });
 
       this.postMessage(RemoteEditOutboundMessageType.RemoteSearchScopeEntriesListed, {
         connectionId,
         path: requestedPath,
         parentPath,
-        entries: directories
+        entries: visibleEntries,
+        purpose,
+        requestId
       });
 
       appendPerformanceLog(this.output, 'RemoteSearch', 'browse scope directory listed', {
         Connection: connectionId,
         Path: requestedPath,
-        Directories: directories.length,
+        Entries: visibleEntries.length,
+        IncludeFiles: includeFiles ? 'Yes' : 'No',
         Total: `${timer()}ms`
       });
     } catch (error) {
@@ -5029,7 +6966,9 @@ export class RemoteEditPanel {
         path: requestedPath,
         parentPath,
         entries: [],
-        error: message || 'Unable to list this directory.'
+        error: message || 'Unable to list this directory.',
+        purpose,
+        requestId
       });
 
       appendDebugLog(this.output, 'RemoteSearch', 'Browse scope directory failed.', {
@@ -5042,6 +6981,27 @@ export class RemoteEditPanel {
         Path: requestedPath,
         Total: `${timer()}ms`
       });
+    }
+  }
+
+  private async requestOwnerGroupSuggestions(payload: any): Promise<void> {
+    const connectionId = String(payload?.connectionId || this.state.getActiveConnectionId() || '').trim();
+    if (!connectionId || !this.sessions.hasConnection(connectionId)) {
+      this.postMessage(RemoteEditOutboundMessageType.OwnerGroupSuggestions, { connectionId, owners: [], groups: [] });
+      return;
+    }
+
+    try {
+      const suggestions = await this.sessions.listOwnerGroupSuggestions(connectionId);
+      this.postMessage(RemoteEditOutboundMessageType.OwnerGroupSuggestions, {
+        connectionId,
+        owners: Array.isArray(suggestions?.owners) ? suggestions.owners : [],
+        groups: Array.isArray(suggestions?.groups) ? suggestions.groups : []
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logDebug('Could not load owner/group suggestions.', { Connection: connectionId, Details: message });
+      this.postMessage(RemoteEditOutboundMessageType.OwnerGroupSuggestions, { connectionId, owners: [], groups: [], error: message });
     }
   }
 
@@ -5735,6 +7695,124 @@ export class RemoteEditPanel {
     this.logInfo(message, { Operation: operation, ...details });
   }
 
+  private async showRemoteFileOpenFailureDialog(title: string, remotePath: string, reason: string): Promise<void> {
+    await this.showConfirmDialog({
+      title,
+      message: 'Remote file could not be opened.',
+      details: `Path: ${remotePath}\nReason: ${reason || 'Unknown error'}`,
+      confirmLabel: 'OK',
+      hideCancel: true
+    });
+  }
+
+  private formatRemoteFileOpenFailureReason(error: unknown, remotePath?: string): string {
+    let text = error instanceof Error ? error.message : String(error || '');
+    const path = String(remotePath || '').trim();
+
+    text = text
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)[0] || '';
+
+    text = text
+      .replace(/^(?:error|details):\s*/i, '')
+      .replace(/^_?[a-z]*stat:\s*/i, '')
+      .replace(/^getConnection:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (/no such file|not found|does not exist/i.test(text)) {
+      const match = /(no such file[^:]*|not found|does not exist)[:\s]*(.*)$/i.exec(text);
+      const messagePath = String(match?.[2] || '').trim();
+      return `No such file${messagePath || path ? `: ${messagePath || path}` : ''}`;
+    }
+
+    if (/permission denied|access denied/i.test(text)) {
+      return 'Permission denied.';
+    }
+
+    if (/is a directory/i.test(text)) {
+      return 'Remote path is a directory, not a file.';
+    }
+
+    return text || 'Unknown error';
+  }
+
+  private async showWebviewInputBox(options: InputDialogOptions): Promise<string | undefined> {
+    let value = String(options.value ?? '');
+    let validationMessage = String(options.validationMessage || '');
+
+    while (true) {
+      const result = await this.showInputDialog({
+        ...options,
+        value,
+        validationMessage
+      });
+
+      if (result === undefined) {
+        return undefined;
+      }
+
+      const validationResult = options.validateInput
+        ? await Promise.resolve(options.validateInput(result))
+        : undefined;
+
+      if (!validationResult) {
+        return result;
+      }
+
+      value = result;
+      validationMessage = String(validationResult);
+    }
+  }
+
+  private async showInputDialog(options: InputDialogOptions): Promise<string | undefined> {
+    if (this.isDisposed || !this.panel) {
+      return undefined;
+    }
+
+    const requestId = `${Date.now()}-${++this.inputDialogSequence}`;
+
+    return new Promise<string | undefined>(resolve => {
+      this.pendingInputDialogs.set(requestId, resolve);
+      this.postMessage(RemoteEditOutboundMessageType.ShowInputDialog, {
+        requestId,
+        title: options.title,
+        prompt: options.prompt || '',
+        placeHolder: options.placeHolder || '',
+        label: options.label || '',
+        value: options.value || '',
+        valueSelection: options.valueSelection || undefined,
+        password: Boolean(options.password),
+        confirmLabel: options.confirmLabel || 'OK',
+        cancelLabel: options.cancelLabel || 'Cancel',
+        validationMessage: options.validationMessage || ''
+      });
+    });
+  }
+
+  private handleInputDialogResponse(payload: any): void {
+    const requestId = String(payload?.requestId || '');
+    const resolve = this.pendingInputDialogs.get(requestId);
+
+    if (!resolve) {
+      return;
+    }
+
+    this.pendingInputDialogs.delete(requestId);
+    resolve(Boolean(payload?.confirmed) ? String(payload?.value ?? '') : undefined);
+  }
+
+  private resolvePendingInputDialogs(): void {
+    for (const resolve of this.pendingInputDialogs.values()) {
+      resolve(undefined);
+    }
+
+    this.pendingInputDialogs.clear();
+  }
+
   private async showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     if (this.isDisposed || !this.panel) {
       return false;
@@ -5751,7 +7829,8 @@ export class RemoteEditPanel {
         details: options.details || '',
         confirmLabel: options.confirmLabel,
         cancelLabel: options.cancelLabel || 'Cancel',
-        danger: Boolean(options.danger)
+        danger: Boolean(options.danger),
+        hideCancel: Boolean(options.hideCancel)
       });
     });
   }
@@ -5776,22 +7855,51 @@ export class RemoteEditPanel {
     this.pendingConfirmDialogs.clear();
   }
 
-  private postStatus(message: string): void {
-    this.postMessage(RemoteEditOutboundMessageType.Status, { message });
+  private isServerViewMessageType(messageType: string): boolean {
+    const serverViewMessageTypes: readonly string[] = [
+      RemoteEditIncomingMessageType.RequestServerDashboard,
+      RemoteEditIncomingMessageType.RequestServerServiceDetails,
+      RemoteEditIncomingMessageType.RequestServerServiceAction,
+      RemoteEditIncomingMessageType.RequestServerProcessDetails,
+      RemoteEditIncomingMessageType.RequestServerProcessAction,
+      RemoteEditIncomingMessageType.RequestServerScheduledJobAction,
+      RemoteEditIncomingMessageType.RequestPortForwardState,
+      RemoteEditIncomingMessageType.StartPortForward,
+      RemoteEditIncomingMessageType.StopPortForward
+    ];
+
+    return serverViewMessageTypes.includes(messageType);
+  }
+
+  private postServerStatus(message: string, isError = false, durationMs?: number): void {
+    this.postMessage(RemoteEditOutboundMessageType.ServerStatus, {
+      message,
+      kind: isError ? 'error' : 'info',
+      isError,
+      durationMs: durationMs || (isError ? 7000 : 3000)
+    });
+  }
+
+  private postStatus(message: string, connectionId?: string): void {
+    this.postMessage(RemoteEditOutboundMessageType.Status, {
+      message,
+      connectionId: connectionId ?? this.state.getActiveConnectionId() ?? ''
+    });
   }
 
   private postStatusCopyFeedback(message: string): void {
     this.postMessage(RemoteEditOutboundMessageType.StatusCopyFeedback, { message });
   }
 
-  private postBusy(isBusy: boolean, message: string, cancelAction: boolean | 'transfer' | 'connection' = false, cancelLabel?: string): void {
+  private postBusy(isBusy: boolean, message: string, cancelAction: boolean | 'transfer' | 'connection' = false, cancelLabel?: string, connectionId?: string): void {
     const action = cancelAction === true ? 'transfer' : (cancelAction || '');
     this.postMessage(RemoteEditOutboundMessageType.Busy, {
       isBusy,
       message,
       canCancelTransfer: action === 'transfer',
       cancelAction: action,
-      cancelLabel: cancelLabel || (action === 'transfer' ? 'Cancel Transfer' : 'Cancel')
+      cancelLabel: cancelLabel || (action === 'transfer' ? 'Cancel Transfer' : 'Cancel'),
+      connectionId: connectionId ?? this.state.getActiveConnectionId() ?? ''
     });
   }
 
@@ -5799,11 +7907,20 @@ export class RemoteEditPanel {
     this.postError(message, { showOutputLink: true });
   }
 
-  private postError(message: string, options?: { showOutputLink?: boolean }): void {
+  private postError(message: string, options?: { showOutputLink?: boolean; connectionId?: string }): void {
     this.postMessage(RemoteEditOutboundMessageType.Error, {
       message,
       showOutputLink: Boolean(options?.showOutputLink),
-      outputLinkText: 'See details in Output.'
+      outputLinkText: 'See details in Output.',
+      connectionId: options?.connectionId ?? this.state.getActiveConnectionId() ?? ''
+    });
+  }
+
+  private postRemotePathBreadcrumbSettings(): void {
+    this.postMessage(RemoteEditOutboundMessageType.RemotePathBreadcrumbSettingsChanged, {
+      showDirectoryDetails: vscode.workspace
+        .getConfiguration('remoteedit.remotePathBreadcrumb')
+        .get<boolean>('showDirectoryDetails', true)
     });
   }
 
@@ -5826,9 +7943,11 @@ export class RemoteEditPanel {
     RemoteEditPanel.currentPanel = undefined;
 
     this.stopAllRemoteCommands(true);
+    void this.portForwardManager.dispose();
     this.clearAllPendingRemoteSearchResults();
     this.resolvePendingPermissionsDialog();
     this.resolvePendingConfirmDialogs();
+    this.resolvePendingInputDialogs();
     this.cancelPendingTransferConflict();
     this.clearAllQueuedTransfers();
     this.clearAllCompletedTransfers();
@@ -5841,6 +7960,10 @@ export class RemoteEditPanel {
   }
 
   private renderHtml(webview: vscode.Webview): string {
-    return renderRemoteEditHtml(webview, getNonce());
+    return renderRemoteEditHtml(webview, getNonce(), {
+      showRemotePathBreadcrumbDirectoryDetails: vscode.workspace
+        .getConfiguration('remoteedit.remotePathBreadcrumb')
+        .get<boolean>('showDirectoryDetails', true)
+    });
   }
 }

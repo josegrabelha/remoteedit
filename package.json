@@ -1,8 +1,8 @@
 {
   "name": "remoteedit",
   "displayName": "Remote Edit",
-  "description": "Browse, edit, and save remote files over SSH/SFTP, FTP, and FTPS directly from VS Code.",
-  "version": "1.7.3",
+  "description": "Remote files and server tools for VS Code over SSH/SFTP, FTP, and FTPS.",
+  "version": "1.8.0",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -189,13 +189,13 @@
       },
       {
         "command": "remoteedit.sidebar.openRemoteDirectory",
-        "title": "Open Directory",
+        "title": "Enter Directory",
         "icon": "$(folder-opened)",
         "category": "Remote Edit"
       },
       {
         "command": "remoteedit.primary.openDirectoryAsRootDirectory",
-        "title": "Open Directory",
+        "title": "Enter Directory",
         "icon": "$(folder-opened)",
         "category": "Remote Edit"
       },
@@ -227,6 +227,12 @@
         "command": "remoteedit.sidebar.renameRemoteEntry",
         "title": "Rename...",
         "icon": "$(edit)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.makeCopyRemoteFile",
+        "title": "Make a Copy...",
+        "icon": "$(copy)",
         "category": "Remote Edit"
       },
       {
@@ -429,6 +435,12 @@
             "default": 1000,
             "description": "Controls the Remote Edit status bar button priority. Higher values appear closer to the left within the selected alignment group.",
             "order": 40
+          },
+          "remoteedit.remotePathBreadcrumb.showDirectoryDetails": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show permissions and owner/group details in the Remote Path breadcrumb directory picker.",
+            "order": 50
           }
         }
       },
@@ -560,13 +572,13 @@
           "remoteedit.diagnostics.debugLogs": {
             "type": "boolean",
             "default": false,
-            "description": "Enable detailed debug logs for Remote Edit diagnostics.",
+            "description": "Enable detailed debug logs for the current VS Code session. This setting is session-only and is automatically reset when VS Code is restarted or reloaded.",
             "order": 10
           },
           "remoteedit.diagnostics.performanceLogs": {
             "type": "boolean",
             "default": false,
-            "description": "Enable performance logs for directory listing, rendering, cache, transfers, Remote Search, and Log Viewer diagnostics.",
+            "description": "Enable performance timing logs for the current VS Code session. This setting is session-only and is automatically reset when VS Code is restarted or reloaded.",
             "order": 20
           }
         }
@@ -1163,7 +1175,7 @@
         {
           "command": "remoteedit.sidebar.copyRemotePath",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp)",
-          "group": "7_copy@1"
+          "group": "3_copy@1"
         },
         {
           "command": "remoteedit.sidebar.refreshRemoteDirectory",
@@ -1203,7 +1215,7 @@
         {
           "command": "remoteedit.sidebar.copyRemotePath",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp)",
-          "group": "7_copy@1"
+          "group": "3_copy@1"
         },
         {
           "command": "remoteedit.sidebar.refreshRemoteDirectory",
@@ -1243,7 +1255,7 @@
         {
           "command": "remoteedit.sidebar.compressToArchive",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
-          "group": "4_archive@1"
+          "group": "6_item@1"
         },
         {
           "command": "remoteedit.sidebar.downloadRemoteEntry",
@@ -1253,12 +1265,12 @@
         {
           "command": "remoteedit.sidebar.showRemoteEntryProperties",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
-          "group": "6_item@1"
+          "group": "6_item@2"
         },
         {
           "command": "remoteedit.sidebar.setRemotePermissions",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp)",
-          "group": "6_item@2"
+          "group": "6_item@3"
         },
         {
           "command": "remoteedit.sidebar.createRemoteFile",
@@ -1313,7 +1325,7 @@
         {
           "command": "remoteedit.sidebar.compressToArchive",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
-          "group": "4_archive@1"
+          "group": "6_item@1"
         },
         {
           "command": "remoteedit.sidebar.downloadRemoteEntry",
@@ -1323,12 +1335,12 @@
         {
           "command": "remoteedit.sidebar.showRemoteEntryProperties",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
-          "group": "6_item@1"
+          "group": "6_item@2"
         },
         {
           "command": "remoteedit.sidebar.setRemotePermissions",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp)",
-          "group": "6_item@2"
+          "group": "6_item@3"
         },
         {
           "command": "remoteedit.sidebar.createRemoteFile",
@@ -1371,9 +1383,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "remoteedit.sidebar.renameRemoteEntry",
+          "command": "remoteedit.sidebar.makeCopyRemoteFile",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
           "group": "2_manage@1"
+        },
+        {
+          "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "2_manage@2"
         },
         {
           "command": "remoteedit.sidebar.copyRemotePath",
@@ -1388,7 +1405,7 @@
         {
           "command": "remoteedit.sidebar.compressToArchive",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "4_archive@1"
+          "group": "6_item@1"
         },
         {
           "command": "remoteedit.sidebar.downloadRemoteEntry",
@@ -1403,17 +1420,17 @@
         {
           "command": "remoteedit.sidebar.calculateRemoteChecksums",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "6_item@1"
+          "group": "6_item@2"
         },
         {
           "command": "remoteedit.sidebar.showRemoteEntryProperties",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "6_item@2"
+          "group": "6_item@3"
         },
         {
           "command": "remoteedit.sidebar.setRemotePermissions",
           "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
-          "group": "6_item@3"
+          "group": "6_item@4"
         },
         {
           "command": "remoteedit.sidebar.deleteRemoteEntry",
@@ -1548,32 +1565,32 @@
         {
           "command": "remoteedit.sidebar.openSshTerminal",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.favoritePath.sftp",
-          "group": "navigation@2"
+          "group": "8_tools@2"
         },
         {
           "command": "remoteedit.sidebar.openSshTerminal",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.sftp",
-          "group": "navigation@2"
+          "group": "8_tools@2"
         },
         {
           "command": "remoteedit.sidebar.openSshTerminal",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.favorite.sftp",
-          "group": "navigation@2"
+          "group": "8_tools@2"
         },
         {
           "command": "remoteedit.sidebar.openSshTerminal",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.sftp",
-          "group": "navigation@2"
+          "group": "8_tools@2"
         },
         {
           "command": "remoteedit.sidebar.openSshTerminal",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.favorite.sftp",
-          "group": "navigation@2"
+          "group": "8_tools@2"
         },
         {
           "command": "remoteedit.sidebar.openSshTerminal",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteFile.sftp",
-          "group": "navigation@3"
+          "group": "8_tools@2"
         },
         {
           "command": "remoteedit.sidebar.selectCaCertificatePath",
@@ -1618,32 +1635,32 @@
         {
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.sftp",
-          "group": "navigation@4"
+          "group": "8_tools@1"
         },
         {
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.filesGroup.favorite.sftp",
-          "group": "navigation@4"
+          "group": "8_tools@1"
         },
         {
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.sftp",
-          "group": "navigation@4"
+          "group": "8_tools@1"
         },
         {
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteDirectory.favorite.sftp",
-          "group": "navigation@4"
+          "group": "8_tools@1"
         },
         {
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.remoteFile.sftp",
-          "group": "navigation@4"
+          "group": "8_tools@1"
         },
         {
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.favoritePath.sftp",
-          "group": "navigation@4"
+          "group": "8_tools@1"
         },
         {
           "command": "remoteedit.sidebar.openLogViewer",
@@ -1775,6 +1792,10 @@
         },
         {
           "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.makeCopyRemoteFile",
           "when": "false"
         },
         {
@@ -1926,34 +1947,31 @@
     "sftp",
     "ftp",
     "ftps",
-    "secure shell",
-    "ssh client",
     "remote",
     "remote edit",
-    "remote file editor",
-    "remote file editing",
     "remote files",
+    "remote file editor",
     "remote file browser",
     "remote file manager",
-    "file browser",
     "file transfer",
     "upload",
     "download",
-    "search",
     "remote search",
-    "file search",
     "sudo",
     "permissions",
-    "chmod",
-    "chown",
     "remote command",
+    "saved commands",
+    "quick tasks",
     "remote server",
-    "linux server",
-    "server",
+    "server tools",
+    "server view",
+    "services",
+    "processes",
+    "cron",
+    "logs",
+    "log viewer",
+    "port forwarding",
     "linux",
-    "unix",
-    "aix",
-    "devops",
     "sysadmin"
   ]
 }

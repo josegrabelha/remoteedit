@@ -1,8 +1,8 @@
 # Remote Edit
 
-**Remote Edit** is a full-featured remote file manager and editor for Visual Studio Code with SSH/SFTP, FTP, and FTPS support.
+**Remote Edit** is a VS Code extension for working with remote files and server tools over SSH/SFTP, FTP, and FTPS.
 
-Connect to remote servers, browse files, edit content directly in VS Code, transfer files, manage connections, and choose the workflow that fits you best.
+Connect to remote servers, browse and edit files, transfer content, run commands, inspect server status, view logs, manage SSH port forwards, and choose the workflow that fits you best.
 
 ![Remote Edit Webview](images/remoteedit-hero.png)
 
@@ -15,8 +15,9 @@ The Remote Edit Webview provides the complete visual experience for managing rem
 - Browse remote files and folders
 - Open and edit files directly in VS Code
 - Manage connections
-- Run remote commands
+- Run remote commands and Quick Tasks
 - Search remote files by name or content
+- Use Server View for system information, services, processes, scheduled jobs, and port forwarding
 - Manage permissions and ownership
 - Use Sudo Mode
 - Upload and download files
@@ -34,7 +35,7 @@ Choose the workflow that fits you best. Use the full-featured Remote Edit Webvie
 
 ## When to Use Remote Edit
 
-Remote Edit is useful when you need to quickly browse, edit, upload or download files on remote servers without opening a full remote workspace.
+Remote Edit is useful when you need to work with remote servers without opening a full remote workspace. Use it to browse and edit files, transfer content, run commands, inspect server status, view logs, search remotely, and manage SSH port forwards directly from VS Code.
 
 ## Webview or Native Sidebar?
 
@@ -44,13 +45,16 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 
 ## Highlights
 
-- SSH/SFTP, FTP and FTPS support
+- SSH/SFTP, FTP, and FTPS support
 - Full-featured Remote File Browser
 - Native VS Code Sidebar
+- Server View dashboard for SSH/SFTP connections
 - Open files directly in VS Code
 - SSH Terminal Access
 - Unified Remote Search
 - Dedicated Log Viewer
+- Quick Tasks and Saved Commands
+- SSH Port Forwarding
 - Multiple Simultaneous Transfers
 - Transfer Queue Management
 - Import and Export Backups
@@ -75,7 +79,10 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 | Import / Export | ✓ |
 | SSH Terminal | ✓ |
 | Remote Commands | ✓ |
+| Saved Commands / Quick Tasks | ✓ |
 | Remote Search | ✓ |
+| Server View | ✓ |
+| Port Forwarding | ✓ |
 | Log Viewer | ✓ |
 | Sudo Mode | ✓ |
 | Permissions Management | ✓ |
@@ -85,11 +92,29 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 
 ## Supported Protocols
 
-| Protocol | Browse | Upload | Download | Edit | File Search | Content Search | Remote Commands | Terminal | Log Viewer | Sudo Mode |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| SSH/SFTP | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| FTP | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - |
-| FTPS | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - |
+| Protocol | Browse | Upload | Download | Edit | File Search | Content Search | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| SSH/SFTP | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| FTP | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - | - |
+| FTPS | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - | - |
+
+## Server View
+
+Switch an active SSH/SFTP connection from **Files** to **Server** to inspect and manage common server-side information without leaving the Remote Edit Webview.
+
+![Remote Edit Server View](images/remoteedit-server-view.png)
+
+- Review system information, uptime, memory, disk, load, shell, home directory, and current user details
+- Inspect services and run supported start, stop, and restart actions
+- Review running processes and kill selected processes when needed
+- Open, follow, edit, or copy saved server log shortcuts
+- Review scheduled jobs from user crontab and system cron locations
+- Manage SSH port forwarding definitions from the Port Forwarding card
+- Run saved commands as Quick Tasks from the Server View
+- Use manual refresh or optional auto refresh intervals while the Server View is open
+- Refresh automatically when Sudo Mode is enabled or disabled while the Server View is active
+
+Server View is available for SSH/SFTP connections. FTP/FTPS connections can browse and transfer files, but they cannot run remote shell commands required by Server View.
 
 ## Remote Search
 
@@ -106,7 +131,7 @@ Use Remote Search from the Webview toolbar to find remote files without leaving 
 - Use sudo for protected SSH/SFTP paths when Sudo Mode is available
 - View live results while the search is running
 - Keep searches running after closing the modal and track active searches with the toolbar badge
-- Cancel long-running searches
+- Stop long-running searches
 - Copy all results, selected paths, or selected filenames
 - Open result files in edit or read-only mode
 
@@ -124,8 +149,11 @@ Run non-interactive commands on active SSH/SFTP connections without leaving the 
 - Stop long-running commands and force kill commands that do not stop cleanly
 - Copy or clear command output
 - Save frequently used commands per connection
-- Reuse command history for the current connection
+- Save and restore the remote path used by each saved command
+- Reuse command history for the current session
 - Run with Sudo Mode when the active SSH/SFTP connection supports sudo
+
+Saved Commands are also available as Quick Tasks in Server View. Command history is session-only and is not included in backups.
 
 Remote Commands require SSH/SFTP because FTP/FTPS cannot execute remote shell commands.
 
@@ -148,7 +176,7 @@ Use Log Viewer from an active SSH/SFTP connection to monitor remote logs without
 - Optional line wrap and line numbers
 - Uses Sudo Mode when the active SSH/SFTP connection has sudo enabled
 
-Log Viewer is intentionally limited to SSH/SFTP connections because FTP/FTPS cannot run remote `tail -f` commands. The viewer shows continuity markers when the initial output is bounded, when portable `tail -f` is used, or when buffered/older loaded lines are discarded.
+Log Viewer is intentionally limited to SSH/SFTP connections because FTP/FTPS cannot run remote `tail -f` commands. The viewer shows continuity markers when output is limited, portable tail mode is used, or older buffered lines are discarded.
 
 ## Transfer Queue
 
@@ -160,7 +188,7 @@ Upload and download files with built-in queue management.
 - Individual transfer cancellation
 - Progress tracking
 - Multiple simultaneous transfers
-- FTP, FTPS and SFTP support
+- FTP, FTPS, and SFTP support
 
 ```json
 "remoteedit.maxConcurrentTransfers": 2
@@ -176,6 +204,17 @@ For SSH/SFTP connections, Remote Edit can open native VS Code terminals directly
 
 Terminal access is available from both the Webview and the Native Sidebar.
 
+## Port Forwarding
+
+For SSH/SFTP connections, Remote Edit can manage local-to-remote SSH port forwarding definitions from the Server View.
+
+- Add and edit named port forwards
+- Start and stop forwards from the Port Forwarding card
+- Optionally auto-start selected forwards when a connection opens
+- Save port forward definitions as part of Remote Edit backups
+
+Runtime state is not exported. Backups save the definitions, not whether a forward was running at the time of export.
+
 ## Sudo Mode
 
 Need to edit protected system files?
@@ -183,6 +222,18 @@ Need to edit protected system files?
 Enable Sudo Mode and work with privileged files directly from VS Code.
 
 Sudo passwords are never stored and are only kept in memory during the active session.
+
+## Remote Path Breadcrumb Picker
+
+The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping to sibling directories. The directory picker can show owner/group and permission details in aligned columns.
+
+Use this setting to hide those details when you prefer a simpler directory list:
+
+```json
+"remoteedit.remotePathBreadcrumb.showDirectoryDetails": true
+```
+
+Default: `true`
 
 ## File Operations
 
@@ -218,7 +269,7 @@ Transfer files and folders between your local machine and remote servers.
 
 ## Saved Connections
 
-Save frequently used SSH/SFTP, FTP and FTPS connections for quick access.
+Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 
 - Password authentication
 - SSH private key authentication
@@ -229,14 +280,20 @@ Save frequently used SSH/SFTP, FTP and FTPS connections for quick access.
 
 ## Import and Export
 
-Create password-protected backups of:
+Create password-protected backups of Remote Edit data:
 
 - Remote Edit settings
 - Saved connections
 - Remote path favorites
 - Encrypted credentials
+- Saved Commands with Remote Path
+- Port Forwarding definitions
+- Server Log Shortcuts
+- Log Viewer favorite files
 
-Import supports Merge and Replace modes and provides a summary before changes are applied.
+Import supports Merge and Replace modes and provides a summary before changes are applied. Webview and Sidebar import/export actions use the same shared backend data source, so backups are consistent from either entry point.
+
+Session-only data is not included in backups. This includes command history, diagnostics debug/performance logging, open tabs, running/stopped state, Sudo Mode state, transfer runtime state, filters, and Log Viewer buffers.
 
 ## Quick Access
 
@@ -249,7 +306,7 @@ Open Remote Edit from:
 
 ## Native Sidebar Details
 
-The Primary Sidebar provides quick access to the main Remote Edit Webview, Log Viewer, saved connections, Quick Connect, open remote sessions, favorites and transfers.
+The Primary Sidebar provides quick access to the main Remote Edit Webview, Log Viewer, saved connections, Quick Connect, open remote sessions, favorites, transfers, and import/export backups.
 
 The Log Viewer item appears below `Remote Edit (Advanced View)` and is enabled only when there is an active SSH/SFTP connection.
 
@@ -265,6 +322,7 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.statusBarButtonPosition`
 - `remoteedit.statusBarButtonStyle`
 - `remoteedit.statusBarButtonPriority`
+- `remoteedit.remotePathBreadcrumb.showDirectoryDetails`
 
 ### Sidebar
 
@@ -302,10 +360,10 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 ### Diagnostics
 
-- `remoteedit.diagnostics.debugLogs`
-- `remoteedit.diagnostics.performanceLogs`
+- `remoteedit.diagnostics.debugLogs` — Enable debug logs for the current VS Code session. Automatically turns off when VS Code is restarted or reloaded.
+- `remoteedit.diagnostics.performanceLogs` — Enable performance timing logs for the current VS Code session. Automatically turns off when VS Code is restarted or reloaded.
 
-Enable debug and performance logs when troubleshooting directory browsing, cache behavior, transfers, Remote Search, or Log Viewer sessions. Then reproduce the issue and copy the relevant entries from the `Remote Edit` Output channel when opening a GitHub issue.
+Enable debug and performance logs only while troubleshooting directory browsing, cache behavior, transfers, Remote Search, or Log Viewer sessions. Then reproduce the issue and copy the relevant entries from the `Remote Edit` Output channel when opening a GitHub issue.
 
 ## Security
 

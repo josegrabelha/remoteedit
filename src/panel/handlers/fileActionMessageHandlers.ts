@@ -39,6 +39,9 @@ export async function tryHandleFileActionMessage(
     case RemoteEditIncomingMessageType.RequestChangeOwnerGroup:
       await handlers.requestChangeOwnerGroup(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestOwnerGroupSuggestions:
+      await handlers.requestOwnerGroupSuggestions(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.RequestRunRemoteCommand:
       await handlers.requestRunRemoteCommand(message.payload);
       return true;

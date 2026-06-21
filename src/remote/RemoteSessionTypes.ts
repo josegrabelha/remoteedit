@@ -17,6 +17,7 @@ export interface ConnectOptions {
   keepAlive?: boolean;
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
+  isQuickConnect?: boolean;
 }
 
 export interface ConnectionCancellationToken {
@@ -67,6 +68,7 @@ export interface ActiveConnection {
   keepAlive: boolean;
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
+  isQuickConnect?: boolean;
 }
 
 export interface RemoteCommandStreamingControl {

@@ -1,4 +1,10 @@
 # Changelog
+## [1.8.2] - 2026-06-22
+
+### Improved
+
+* Improved the Webview Connection Profile dropdown with inline connect/disconnect actions for saved profiles.
+
 ## [1.8.1] - 2026-06-21
 
 ### Added

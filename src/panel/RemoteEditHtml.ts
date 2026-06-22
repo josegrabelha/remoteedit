@@ -454,6 +454,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   .profile-dropdown-item { width: 100%; min-height: 34px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; align-items: center; padding: 6px 7px; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
   .profile-dropdown-item:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
   .profile-dropdown-item.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  .connection-profile-dropdown-menu .profile-dropdown-item { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; cursor: pointer; }
+  .connection-profile-dropdown-menu .profile-dropdown-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .profile-dropdown-name-row { min-width: 0; display: flex; align-items: center; gap: 5px; }
+  .profile-dropdown-name.connected { color: var(--vscode-testing-iconPassed, #73c991); }
+  .profile-dropdown-action { justify-self: end; align-self: center; width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; line-height: 0; opacity: 0; pointer-events: none; border: 0 !important; border-radius: 3px; background: transparent !important; color: var(--vscode-icon-foreground, var(--vscode-foreground)); box-shadow: none !important; outline: none; }
+  .profile-dropdown-action:hover:not(:disabled), .profile-dropdown-action:focus-visible { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)) !important; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+  .profile-dropdown-item.selected .profile-dropdown-action,
+  .profile-dropdown-item.selected .profile-dropdown-action:hover:not(:disabled),
+  .profile-dropdown-item.selected .profile-dropdown-action:focus-visible { color: var(--vscode-list-activeSelectionForeground); }
+  .profile-dropdown-item:hover .profile-dropdown-action, .profile-dropdown-action:focus-visible, .profile-dropdown-action.busy { opacity: 1; pointer-events: auto; }
+  .profile-dropdown-action-icon { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: currentColor; }
+  .profile-dropdown-action-icon svg { width: 16px; height: 16px; display: block; fill: currentColor; color: currentColor; }
+  .profile-dropdown-action-spinner { display: none; width: 14px; height: 14px; border: 1.6px solid currentColor; border-right-color: transparent; border-radius: 50%; color: currentColor; opacity: 0.82; animation: profile-action-spin 0.75s linear infinite; }
+  .profile-dropdown-action.busy .profile-dropdown-action-spinner { display: inline-flex; }
+  .profile-dropdown-action.busy .profile-dropdown-action-icon { display: none; }
+  @keyframes profile-action-spin { 100% { transform: rotate(360deg); } }
   .profile-dropdown-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-dropdown-meta { color: var(--vscode-descriptionForeground); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-dropdown-item.selected .profile-dropdown-meta { color: inherit; opacity: 0.78; }
@@ -2612,6 +2628,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   let statusCopyFeedbackTimer = 0;
   let serverToolbarStatusTimer = 0;
   const serverPortForwardPendingActions = new Map();
+  const profileDisconnectingIds = new Set();
   let filePropertiesDialogOpen = false;
   let filePropertiesRemotePath = '';
   let checksumsDialogOpen = false;
@@ -3142,6 +3159,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
         }
         sessions = mergeIncomingSessionsWithClientPending(incomingSessions);
         const activeSessionIds = new Set(sessions.map(session => session.id));
+        Array.from(profileDisconnectingIds).forEach(connectionId => {
+          if (!activeSessionIds.has(connectionId)) profileDisconnectingIds.delete(connectionId);
+        });
         Array.from(filesStatusByConnectionId.keys()).forEach(connectionId => {
           if (connectionId !== '__global__' && !activeSessionIds.has(connectionId)) filesStatusByConnectionId.delete(connectionId);
         });
@@ -3165,15 +3185,24 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
         activeConnectionId = payload.activeConnectionId || '';
         connectionButtonState = '';
         renderSessionTabs();
+        if (profileDropdownOpen) renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
         updateActiveSessionUi();
         if (activeConnectionId !== previousActiveConnectionId) restoreFilesStatusForActiveConnection();
         updateConnectionViewUi();
         initializeNavigationHistoryForActiveSession();
+        const keepProfileDropdownOpenAfterSessionChange = profileDropdownOpen;
         if (activeConnectionId && activeConnectionId !== previousActiveConnectionId) {
           syncConnectionFormWithActiveSession({ preserveStatus: true });
         }
         updateRemotePathNavigationControls();
         setControls();
+        if (keepProfileDropdownOpenAfterSessionChange) {
+          profileDropdownOpen = true;
+          if (profileDropdownButton) profileDropdownButton.setAttribute('aria-expanded', 'true');
+          const profilePicker = profileDropdownButton ? profileDropdownButton.closest('.profile-picker') : null;
+          if (profilePicker) profilePicker.classList.add('open');
+          renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
+        }
         maybeRequestServerDashboardForActiveView();
         updateServerAutoRefreshTimer();
         if (activeConnectionId !== previousActiveConnectionId) {
@@ -3209,6 +3238,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
         const disconnectedPreviousActiveConnectionId = activeConnectionId;
         sessions = [];
         clientPendingSessionsByConnectionId.clear();
+        profileDisconnectingIds.clear();
         filesStatusByConnectionId.clear();
         activeConnectionViewsByConnectionId.clear();
         serverDashboardStatesByConnectionId.clear();
@@ -3251,6 +3281,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
         updateConnectionViewUi();
         initializeNavigationHistoryForActiveSession();
         updateSortIndicators();
+        if (profileDropdownOpen) renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
         entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
         currentPath.value = '';
         exitRemotePathEditMode({ reset: false, keepFocus: true });
@@ -3352,7 +3383,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
         break;
       case 'error':
         connectionButtonState = '';
-        if (payload.connectionId) markClientPendingSessionFailed(payload.connectionId, payload.message || 'Connection failed.');
+        if (payload.connectionId) {
+          profileDisconnectingIds.delete(String(payload.connectionId || ''));
+          markClientPendingSessionFailed(payload.connectionId, payload.message || 'Connection failed.');
+          if (profileDropdownOpen) renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
+        }
         setBusy(false, '', '', 'Cancel', payload.connectionId || '');
         if (importBackupDialogOpen && importBackupResult) {
           showBackupResult(importBackupResult, payload.message || 'Unknown error.', true);
@@ -3414,7 +3449,22 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
     toggleProfileDropdown();
   });
 
+  profileDropdownMenu.addEventListener('mousedown', event => {
+    const actionButton = event.target && event.target.closest ? event.target.closest('[data-profile-action]') : null;
+    if (!actionButton) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
   profileDropdownMenu.addEventListener('click', event => {
+    const actionButton = event.target && event.target.closest ? event.target.closest('[data-profile-action]') : null;
+    if (actionButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleProfileDropdownAction(actionButton.dataset.profileActionId || '');
+      return;
+    }
+
     const item = event.target && event.target.closest ? event.target.closest('[data-profile-id]') : null;
     if (!item) return;
     selectProfile(item.dataset.profileId || '');
@@ -5848,10 +5898,11 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
       profileSelect.appendChild(option);
     }
 
+    const wasProfileDropdownOpen = profileDropdownOpen;
     const exists = profiles.some(profile => profile.id === previousId);
     const nextId = exists ? previousId : '';
-    selectProfile(nextId, { preserveStatus: true });
-    renderProfileDropdown();
+    selectProfile(nextId, { preserveStatus: true, keepDropdownOpen: wasProfileDropdownOpen });
+    renderProfileDropdown({ preserveFilter: wasProfileDropdownOpen, preserveScroll: wasProfileDropdownOpen });
     renderManageProfilesList();
     setControls();
   }
@@ -5859,7 +5910,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   function selectProfile(profileId, options = {}) {
     selectedProfileId = profileId || '';
     profileSelect.value = selectedProfileId;
-    hideProfileDropdown();
+    if (!options.keepDropdownOpen) hideProfileDropdown();
 
     const profile = selectedProfileId ? profiles.find(item => item.id === selectedProfileId) : undefined;
     if (profile) {
@@ -5870,7 +5921,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
     }
 
     updateProfileDropdownLabel();
-    renderProfileDropdown();
+    renderProfileDropdown({ preserveFilter: options.keepDropdownOpen, preserveScroll: options.keepDropdownOpen });
     setControls();
   }
 
@@ -5902,6 +5953,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
 
   function renderProfileDropdown(options = {}) {
     if (!profileDropdownMenu) return;
+    const currentList = profileDropdownMenu.querySelector ? profileDropdownMenu.querySelector('.profile-dropdown-list') : null;
+    const previousListScrollTop = options.preserveScroll && currentList ? currentList.scrollTop : 0;
     const filterTextBeforeRender = profileDropdownFilterText;
     profileDropdownMenu.innerHTML = '';
 
@@ -5947,6 +6000,13 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
 
     updateProfileDropdownLabel();
 
+    if (options.preserveScroll && previousListScrollTop) {
+      requestAnimationFrame(() => {
+        const nextList = profileDropdownMenu.querySelector ? profileDropdownMenu.querySelector('.profile-dropdown-list') : null;
+        if (nextList) nextList.scrollTop = previousListScrollTop;
+      });
+    }
+
     if (options.focusFilter) {
       setTimeout(() => {
         const nextFilterInput = document.getElementById('profileDropdownFilterInput');
@@ -5959,28 +6019,77 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   }
 
   function buildProfileDropdownItem(id, name, meta, options = {}) {
-    const isSelected = String(id || '') === selectedProfileId;
+    const profileId = String(id || '');
+    const isSelected = profileId === selectedProfileId;
     const showSelectedVisual = isSelected && !options.suppressSelectedVisual;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'profile-dropdown-item' + (showSelectedVisual ? ' selected' : '');
-    button.dataset.profileId = id || '';
-    button.setAttribute('role', 'option');
-    button.setAttribute('aria-selected', String(isSelected));
+    const item = document.createElement('div');
+    item.className = 'profile-dropdown-item' + (showSelectedVisual ? ' selected' : '');
+    item.dataset.profileId = profileId;
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(isSelected));
+    item.tabIndex = 0;
+
+    const main = document.createElement('span');
+    main.className = 'profile-dropdown-main';
+
+    const nameRow = document.createElement('span');
+    nameRow.className = 'profile-dropdown-name-row';
+
+    const connectedSession = profileId ? getConnectedSessionForProfileId(profileId) : null;
+    const pendingSession = profileId ? getPendingSessionForProfileId(profileId) : null;
+    const disconnecting = profileId ? profileDisconnectingIds.has(profileId) : false;
+    const isConnected = Boolean(connectedSession);
+    const isBusy = Boolean(pendingSession) || disconnecting;
 
     const nameElement = document.createElement('span');
-    nameElement.className = 'profile-dropdown-name';
+    nameElement.className = 'profile-dropdown-name' + (isConnected ? ' connected' : '');
     nameElement.textContent = name || 'Unnamed connection';
-    button.appendChild(nameElement);
+    nameRow.appendChild(nameElement);
+    main.appendChild(nameRow);
 
     if (meta) {
       const metaElement = document.createElement('span');
       metaElement.className = 'profile-dropdown-meta';
       metaElement.textContent = meta;
-      button.appendChild(metaElement);
+      main.appendChild(metaElement);
     }
 
-    return button;
+    item.appendChild(main);
+
+    if (profileId) {
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'profile-dropdown-action' + (isConnected ? ' connected' : '') + (isBusy ? ' busy' : '');
+      action.dataset.profileAction = isConnected ? 'disconnect' : 'connect';
+      action.dataset.profileActionId = profileId;
+      action.disabled = isBusy;
+      action.setAttribute('aria-label', (isConnected ? 'Disconnect ' : 'Connect ') + (name || 'connection'));
+
+      action.setAttribute('data-tooltip', disconnecting ? 'Disconnecting' : (pendingSession ? 'Connecting' : (isConnected ? 'Disconnect' : 'Connect')));
+
+      const spinner = document.createElement('span');
+      spinner.className = 'profile-dropdown-action-spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      action.appendChild(spinner);
+
+      if (!isBusy) {
+        const icon = document.createElement('span');
+        icon.className = 'profile-dropdown-action-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = isConnected ? PROFILE_ACTION_DISCONNECT_ICON : PROFILE_ACTION_CONNECT_ICON;
+        action.appendChild(icon);
+      }
+      item.appendChild(action);
+    }
+
+    item.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      selectProfile(profileId);
+      hideProfileDropdown();
+    });
+
+    return item;
   }
 
   function toggleProfileDropdown() {
@@ -8886,6 +8995,74 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
     return findSessionForCurrentForm(session => isSessionConnected(session));
   }
 
+  function getSessionForProfileId(profileId, predicate) {
+    const id = String(profileId || '').trim();
+    if (!id) return null;
+    return sessions.find(session => session && session.id === id && predicate(session)) || null;
+  }
+
+  function getPendingSessionForProfileId(profileId) {
+    return getSessionForProfileId(profileId, session => isSessionConnecting(session));
+  }
+
+  function getConnectedSessionForProfileId(profileId) {
+    return getSessionForProfileId(profileId, session => isSessionConnected(session));
+  }
+
+  function collectConnectionPayloadFromProfile(profile) {
+    if (!profile) return null;
+    const connectionTypeValue = normalizeConnectionTypeValue(profile.connectionType);
+    return {
+      id: profile.id,
+      name: profile.name,
+      host: profile.host,
+      connectionType: connectionTypeValue,
+      port: profile.port || getDefaultPortForConnectionType(connectionTypeValue),
+      username: profile.username,
+      authType: connectionTypeValue === 'sftp' ? (profile.authType || 'password') : 'password',
+      password: '',
+      rememberPassword: Boolean(profile.hasSavedPassword),
+      privateKeyPath: profile.privateKeyPath || '',
+      passphrase: '',
+      rememberPassphrase: Boolean(profile.hasSavedPassphrase),
+      startPath: profile.startPath || '',
+      keepAlive: profile.keepAlive !== false,
+      ftpsAllowSelfSignedCertificate: Boolean(profile.ftpsAllowSelfSignedCertificate),
+      ftpsCaCertificatePath: profile.ftpsCaCertificatePath || ''
+    };
+  }
+
+  function handleProfileDropdownAction(profileId) {
+    const id = String(profileId || '').trim();
+    if (!id) return;
+
+    const connectedSession = getConnectedSessionForProfileId(id);
+    if (connectedSession) {
+      profileDisconnectingIds.add(id);
+      renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
+      setBusy(true, 'Disconnecting...', '', 'Cancel', connectedSession.id);
+      vscode.postMessage({ type: 'disconnect', payload: { connectionId: connectedSession.id } });
+      return;
+    }
+
+    const pendingSession = getPendingSessionForProfileId(id);
+    if (pendingSession) {
+      activateClientSession(pendingSession.id);
+      renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
+      return;
+    }
+
+    const profile = profiles.find(item => item && item.id === id);
+    if (!profile) return;
+    const payload = collectConnectionPayloadFromProfile(profile);
+    if (!payload) return;
+    const clientConnectionId = createClientConnectionId(payload);
+    payload.clientConnectionId = clientConnectionId;
+    createClientPendingSession(payload, clientConnectionId);
+    renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
+    vscode.postMessage({ type: 'connect', payload });
+  }
+
   function getActiveSession() {
     return sessions.find(item => item.id === activeConnectionId);
   }
@@ -8897,7 +9074,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
     const profile = profiles.find(item => item.id === active.id);
     if (profile) {
       if (selectedProfileId !== profile.id || lastSyncedActiveConnectionId !== active.id) {
-        selectProfile(profile.id, { preserveStatus: true });
+        selectProfile(profile.id, { preserveStatus: true, keepDropdownOpen: profileDropdownOpen });
       }
       lastSyncedActiveConnectionId = active.id;
       return;
@@ -8905,10 +9082,10 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
 
     selectedProfileId = '';
     profileSelect.value = '';
-    hideProfileDropdown();
+    if (!profileDropdownOpen) hideProfileDropdown();
     fillFormFromSession(active);
     updateProfileDropdownLabel();
-    renderProfileDropdown();
+    renderProfileDropdown({ preserveFilter: profileDropdownOpen, preserveScroll: profileDropdownOpen });
     lastSyncedActiveConnectionId = active.id;
     if (!options.preserveStatus) setStatus('Active connection loaded.');
     setControls();
@@ -9679,6 +9856,9 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
     manageProfilesBackdrop.setAttribute('aria-hidden', 'true');
   }
 
+  // SVGs copied from the same icons used by the Sidebar inline actions.
+  const PROFILE_ACTION_CONNECT_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor" focusable="false" aria-hidden="true"><path d="M10.723 4H10V1.5C10 1.224 9.776 1 9.5 1C9.224 1 9 1.224 9 1.5V4H7V1.5C7 1.224 6.776 1 6.5 1C6.224 1 6 1.224 6 1.5V4H5.277C4.573 4 4 4.573 4 5.278V8C4 10.036 5.529 11.722 7.5 11.969V14.5C7.5 14.776 7.724 15 8 15C8.276 15 8.5 14.776 8.5 14.5V11.969C10.471 11.722 12 10.037 12 8V5.278C12 4.573 11.427 4 10.723 4ZM11 8C11 9.654 9.654 11 8 11C6.346 11 5 9.654 5 8V5.278C5 5.125 5.124 5 5.277 5H10.722C10.875 5 10.999 5.125 10.999 5.278V8H11Z"/></svg>';
+  const PROFILE_ACTION_DISCONNECT_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor" focusable="false" aria-hidden="true"><path d="M15.3542 0.646006C15.1592 0.451006 14.8422 0.451006 14.6472 0.646006L12.5772 2.71601C11.2072 1.71701 9.20723 1.87301 7.93723 3.14401L7.80623 3.27501C7.31923 3.76201 7.31923 4.55501 7.80623 5.04301L10.9882 8.22501C11.2312 8.46901 11.5512 8.59101 11.8722 8.59101C12.1932 8.59101 12.5132 8.46901 12.7562 8.22501L12.9762 8.00501C13.6522 7.33001 14.0162 6.43101 14.0012 5.47601C13.9892 4.72001 13.7412 4.00601 13.2912 3.41701L15.3542 1.35401C15.5492 1.15901 15.5492 0.841006 15.3542 0.646006ZM12.2682 7.29701L12.0482 7.51701C11.9502 7.61501 11.7922 7.61501 11.6942 7.51701L8.51223 4.33501C8.41423 4.23701 8.41423 4.07901 8.51223 3.98101L8.64323 3.85001C9.16723 3.32601 9.86023 3.06001 10.5402 3.06001C11.1502 3.06001 11.7512 3.27401 12.2112 3.70801C12.7092 4.17601 12.9882 4.80901 12.9992 5.49101C13.0092 6.17301 12.7502 6.81501 12.2682 7.29701ZM8.14623 9.14601L7.26623 10.026L5.97323 8.73301L6.85323 7.85301C7.04823 7.65801 7.04823 7.34101 6.85323 7.14601C6.65823 6.95101 6.34123 6.95101 6.14623 7.14601L5.26623 8.02601L5.01323 7.77301C4.52723 7.28701 3.73223 7.28701 3.24523 7.77401L3.02523 7.99401C2.34923 8.66901 1.98523 9.56801 2.00023 10.523C2.01223 11.279 2.26023 11.993 2.71023 12.582L0.647227 14.645C0.452227 14.84 0.452227 15.157 0.647227 15.352C0.745227 15.45 0.873227 15.498 1.00123 15.498C1.12923 15.498 1.25723 15.449 1.35523 15.352L3.42523 13.282C4.02223 13.717 4.73723 13.934 5.46123 13.934C6.39923 13.934 7.34923 13.571 8.06523 12.854L8.19623 12.723C8.68323 12.236 8.68323 11.443 8.19623 10.955L7.97423 10.733L8.85423 9.85301C9.04923 9.65801 9.04923 9.34101 8.85423 9.14601C8.65923 8.95101 8.34223 8.95101 8.14723 9.14601H8.14623ZM7.48923 12.018L7.35723 12.149C6.36323 13.144 4.76123 13.208 3.78923 12.291C3.29123 11.823 3.01223 11.19 3.00123 10.508C2.99123 9.82601 3.25123 9.18401 3.73323 8.70201L3.95323 8.48201C4.00223 8.43301 4.06523 8.40901 4.13023 8.40901C4.19523 8.40901 4.25823 8.43301 4.30723 8.48201C5.37118 9.54596 6.42725 10.602 7.48723 11.662C7.58523 11.76 7.58523 11.918 7.48723 12.016L7.48923 12.018Z"/></svg>';
   const MANAGE_ICON_RENAME = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M200-200h57.46l391.77-391.77-57.46-57.46L200-257.46V-200Zm-40 40v-114.15l489.23-489.23q5.85-5.85 13.08-8.54 7.23-2.69 14.69-2.69 7.46 0 14.88 2.69 7.43 2.69 13.27 8.54l57.23 57.23q5.85 5.84 8.54 13.27 2.69 7.42 2.69 14.88 0 7.46-2.69 14.69-2.69 7.23-8.54 13.08L274.15-160H160Zm432-489.23 57.23 57.46L592-649.23Z"></path></svg>';
   const MANAGE_ICON_SAVE = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="M382-267.69 194.69-455l28.31-28.31 159 159 355-355L765.31-651 382-267.69Z"></path></svg>';
   const MANAGE_ICON_CANCEL = '<svg viewBox="0 -960 960 960" focusable="false" aria-hidden="true"><path d="m256-227.69-28.31-28.31 224-224-224-224L256-732.31l224 224 224-224 28.31 28.31-224 224 224 224L704-227.69l-224-224-224 224Z"></path></svg>';
@@ -14095,7 +14275,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
 
     saveProfileButton.disabled = isConnectedForm || Boolean(pendingFormSession) || hasConnectingSession;
     profileSelect.disabled = shouldLockConnectionPicker;
-    profileDropdownButton.disabled = shouldLockConnectionPicker;
+    profileDropdownButton.disabled = shouldLockConnectionPicker && !profileDropdownOpen;
     manageProfilesButton.disabled = false;
     showSettingsButton.disabled = false;
     showOutputButton.disabled = false;

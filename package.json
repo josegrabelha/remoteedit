@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Remote files and server tools for VS Code over SSH/SFTP, FTP, and FTPS.",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

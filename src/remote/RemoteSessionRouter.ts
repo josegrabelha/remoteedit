@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { FtpSessionManager } from '../ftp/FtpSessionManager';
 import { SftpSessionManager } from '../ssh/SftpSessionManager';
 import { normalizeConnectionType, SFTP_CONNECTION_TYPE } from './RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions } from './RemoteSessionManager';
+import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions, RemoteEntryMetadataNotifier, RemoteEntryMetadataUpdate } from './RemoteSessionManager';
 import type { Client } from 'ssh2';
 import type {
   ActiveConnection,
@@ -19,6 +19,8 @@ import type { RemoteEditProgressReporter } from '../utils/progressUtils';
 export class RemoteSessionRouter implements RemoteSessionManager {
   private readonly onDidChangeConnectionsEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeConnections = this.onDidChangeConnectionsEmitter.event;
+  private readonly onRemoteEntryMetadataUpdatedEmitter = new vscode.EventEmitter<RemoteEntryMetadataUpdate>();
+  readonly onRemoteEntryMetadataUpdated = this.onRemoteEntryMetadataUpdatedEmitter.event;
 
   private readonly sftpSessions: RemoteSessionManager;
   private readonly ftpSessions: RemoteSessionManager;
@@ -33,6 +35,11 @@ export class RemoteSessionRouter implements RemoteSessionManager {
     ftpSessions = ftpSessions || new FtpSessionManager(output);
     this.sftpSessions = sftpSessions;
     this.ftpSessions = ftpSessions;
+
+    const ftpMetadataEvent = (ftpSessions as RemoteSessionManager & RemoteEntryMetadataNotifier).onRemoteEntryMetadataUpdated;
+    if (ftpMetadataEvent) {
+      ftpMetadataEvent(event => this.onRemoteEntryMetadataUpdatedEmitter.fire(event));
+    }
   }
 
   async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {

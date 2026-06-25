@@ -1,10 +1,9 @@
-import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 import * as vscode from 'vscode';
-import type { AuthType, ConnectionBackupExportOptions, ConnectionBackupImportOptions, ConnectionManager, ConnectionProfile, ConnectionProfileInput, RemoteEditBackupFile, RemoteEditBackupImportResult, RemoteEditBackupSummary } from '../connection/ConnectionManager';
+import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
+import { buildCopyFileName } from '../panel/FileNameUtils';
+import { buildArchiveBaseName, normalizeArchiveName } from '../panel/ArchiveUtils';
 import { getDefaultPortForConnectionType, normalizeConnectionType, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
 import type { RemoteArchiveFormat, RemoteEntry, RemoteEntryType, RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { SshTerminalService } from '../ssh/SshTerminalService';
@@ -14,52 +13,18 @@ import {
   RemoteEditActionsTreeProvider,
   OpenConnectionsTreeProvider,
   TransfersTreeProvider
-} from './SidebarTreeProviders';
-import { getParentRemotePath, normalizeRemotePath, type ConnectionDetailField, RemoteEditSidebarItem } from './SidebarItems';
+} from './TreeProviders';
+import { getParentRemotePath, normalizeRemotePath, type ConnectionDetailField, RemoteEditSidebarItem } from './Items';
+import { SidebarBackupController } from './BackupController';
+import { QUICK_CONNECT_ID, SidebarConnectionDraftStore } from './ConnectionDraftStore';
+import { buildRemoteEntryProperties, formatBytes, formatChecksumLine, permissionModeFromString } from './RemoteEntryProperties';
+import { SudoModeDecorationProvider } from './SudoModeDecorationProvider';
+import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 interface ConnectionChangeNotifier {
   onDidChangeConnections?: vscode.Event<void>;
 }
 
-const QUICK_CONNECT_ID = '__remoteeditQuickConnect';
-
-const COMPOUND_FILE_EXTENSIONS = [
-  '.tar.gz',
-  '.tar.bz2',
-  '.tar.xz',
-  '.tar.Z',
-  '.tar.lz',
-  '.tar.lzma',
-  '.tar.zst'
-];
-
-function buildCopyFileName(fileName: string, copyIndex: number): string {
-  const suffix = `_copy${copyIndex <= 1 ? '' : copyIndex}`;
-  const lowerName = fileName.toLowerCase();
-  const compoundExtension = COMPOUND_FILE_EXTENSIONS.find(extension => lowerName.endsWith(extension.toLowerCase()));
-
-  if (compoundExtension) {
-    const originalExtension = fileName.slice(fileName.length - compoundExtension.length);
-    const baseName = fileName.slice(0, fileName.length - compoundExtension.length);
-    return `${baseName}${suffix}${originalExtension}`;
-  }
-
-  const lastDotIndex = fileName.lastIndexOf('.');
-  const hasSimpleExtension = lastDotIndex > 0;
-
-  if (!hasSimpleExtension) {
-    return `${fileName}${suffix}`;
-  }
-
-  const baseName = fileName.slice(0, lastDotIndex);
-  const extension = fileName.slice(lastDotIndex);
-  return `${baseName}${suffix}${extension}`;
-}
-
-type SidebarConnectionDraft = ConnectionProfileInput & {
-  password?: string;
-  passphrase?: string;
-};
 
 export class RemoteEditSidebarController implements vscode.Disposable {
   private readonly actionsProvider: RemoteEditActionsTreeProvider;
@@ -68,14 +33,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   private readonly connectionsTreeView: vscode.TreeView<RemoteEditSidebarItem>;
   private readonly openConnectionsTreeView: vscode.TreeView<RemoteEditSidebarItem>;
   private readonly transfersProvider = new TransfersTreeProvider();
+  private readonly backupController: SidebarBackupController;
   private readonly sudoModeDecorationProvider: SudoModeDecorationProvider;
   private readonly sshTerminalService: SshTerminalService;
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly draftConnections = new Map<string, SidebarConnectionDraft>();
+  private readonly connectionDrafts = new SidebarConnectionDraftStore();
   private readonly connectingProfileIds = new Set<string>();
   private openConnectionsNavigationSequence = 0;
   private openConnectionsRevealChain: Promise<void> = Promise.resolve();
-  private quickConnectDraft: SidebarConnectionDraft = this.createDefaultQuickConnectDraft();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -87,17 +52,28 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       hasLogViewerConnection: () => Boolean(this.resolveLogViewerConnectionId())
     });
     this.connectionsProvider = new ConnectionsTreeProvider(connectionManager, {
-      getQuickConnectProfile: () => this.buildQuickConnectProfile(),
-      getDraftProfile: profile => this.mergeProfileWithDraft(profile),
-      getNewDraftProfiles: () => this.getNewDraftProfiles(),
-      getDraftProfileById: profileId => this.getDraftProfileById(profileId),
-      hasDraft: profileId => this.draftConnections.has(profileId),
+      getQuickConnectProfile: () => this.connectionDrafts.buildQuickConnectProfile(),
+      getDraftProfile: profile => this.connectionDrafts.mergeProfileWithDraft(profile),
+      getNewDraftProfiles: () => this.connectionDrafts.getNewDraftProfiles(),
+      getDraftProfileById: profileId => this.connectionDrafts.getDraftProfileById(profileId),
+      hasDraft: profileId => this.connectionDrafts.hasDraft(profileId),
       isConnected: profileId => this.sessions.hasConnection(profileId),
       isConnecting: profileId => this.connectingProfileIds.has(profileId)
     });
     this.openConnectionsProvider = new OpenConnectionsTreeProvider(sessions, connectionManager, output);
     this.sudoModeDecorationProvider = new SudoModeDecorationProvider(sessions);
     this.sshTerminalService = new SshTerminalService(sessions);
+    this.backupController = new SidebarBackupController({
+      context,
+      connectionManager,
+      output,
+      onImported: () => {
+        this.connectionDrafts.clearAll();
+        this.connectionsProvider.refresh();
+        this.openConnectionsProvider.refresh();
+        RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar', 'profileListChanged');
+      }
+    });
     this.connectionsTreeView = vscode.window.createTreeView('remoteedit.connectionsView', {
       treeDataProvider: this.connectionsProvider,
       showCollapseAll: true
@@ -130,6 +106,16 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.refreshOpenConnectionDirectory(event.connectionId, event.remotePath);
     }));
     this.disposables.push(this.connectionsTreeView.onDidChangeSelection(event => this.expandSelectedConnection(event.selection[0])));
+    this.disposables.push(this.connectionsTreeView.onDidExpandElement(event => {
+      if (event.element.kind === 'connectionGroup' && event.element.groupId) {
+        this.connectionsProvider.markGroupExpanded(event.element.groupId);
+      }
+    }));
+    this.disposables.push(this.connectionsTreeView.onDidCollapseElement(event => {
+      if (event.element.kind === 'connectionGroup' && event.element.groupId) {
+        this.connectionsProvider.markGroupCollapsed(event.element.groupId);
+      }
+    }));
     this.disposables.push(vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('remoteedit.sidebar.showItemInfoOnHover')) {
         this.openConnectionsProvider.refresh();
@@ -159,9 +145,19 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return;
       }
 
-      this.draftConnections.clear();
+      const timer = createPerformanceTimer();
+      appendDebugLog(this.output, 'Sidebar', 'Profiles changed event received.', {
+        Source: event.source || 'unknown',
+        Reason: event.reason || 'unspecified',
+        SelectedId: event.selectedId || ''
+      });
+      this.connectionDrafts.clear();
       this.connectionsProvider.refresh();
       this.openConnectionsProvider.refresh();
+      appendPerformanceLog(this.output, 'Sidebar', `Refreshed profile trees after profiles changed in ${timer()}ms`, {
+        Source: event.source || 'unknown',
+        Reason: event.reason || 'unspecified'
+      });
     }));
 
     this.disposables.push(
@@ -175,7 +171,11 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.exportBackup', () => this.exportBackup()),
       vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importBackup()),
       vscode.commands.registerCommand('remoteedit.sidebar.quickConnect', () => this.revealQuickConnect()),
-      vscode.commands.registerCommand('remoteedit.sidebar.refreshConnections', () => this.connectionsProvider.refresh()),
+      vscode.commands.registerCommand('remoteedit.sidebar.refreshConnections', () => {
+        this.connectionsProvider.refresh();
+        void this.updateConnectionsFilterContext();
+      }),
+      vscode.commands.registerCommand('remoteedit.sidebar.expandConnectionGroups', () => this.expandConnectionGroups()),
       vscode.commands.registerCommand('remoteedit.sidebar.filterConnections', () => this.filterConnections()),
       vscode.commands.registerCommand('remoteedit.sidebar.clearConnectionsFilter', () => this.clearConnectionsFilter()),
       vscode.commands.registerCommand('remoteedit.sidebar.refreshOpenConnections', () => this.refreshOpenConnections()),
@@ -187,7 +187,10 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.clearCompletedTransfers', () => this.clearCompletedTransfers()),
       vscode.commands.registerCommand('remoteedit.sidebar.openSavedConnection', item => this.openSavedConnection(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.renameSavedConnection', item => this.renameSavedConnection(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.moveConnectionToGroup', item => this.moveSavedConnectionToGroup(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.deleteSavedConnection', item => this.deleteSavedConnection(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.renameConnectionGroup', item => this.renameConnectionGroup(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.deleteConnectionGroup', item => this.deleteConnectionGroup(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.connectQuickConnect', () => this.connectQuickConnect()),
       vscode.commands.registerCommand('remoteedit.sidebar.clearQuickConnect', () => this.clearQuickConnect()),
       vscode.commands.registerCommand('remoteedit.sidebar.saveConnectionChanges', item => this.saveConnectionChanges(item)),
@@ -381,316 +384,21 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private async exportBackup(): Promise<void> {
-    try {
-      const options = await this.pickBackupExportOptions();
-
-      if (!options) {
-        return;
-      }
-
-      if (!options.includeSettings && !options.includeConnections) {
-        void vscode.window.showWarningMessage('Remote Edit: Select at least one export option.');
-        return;
-      }
-
-      const target = await vscode.window.showSaveDialog({
-        filters: { 'JSON backup': ['json'], 'All files': ['*'] },
-        saveLabel: 'Export',
-        title: 'Export Remote Edit backup',
-        defaultUri: vscode.Uri.file(path.join(os.homedir(), `remoteedit-backup-${this.formatBackupFileDate(new Date())}.json`))
-      });
-
-      if (!target) {
-        return;
-      }
-
-      const backup = await this.connectionManager.buildBackupFile({
-        ...options,
-        extensionVersion: String((this.context.extension.packageJSON as { version?: string })?.version || '')
-      });
-
-      await fs.writeFile(target.fsPath, `${JSON.stringify(backup, null, 2)}\n`, 'utf8');
-      this.output.appendLine(`[Sidebar] Exported Remote Edit backup: ${target.fsPath}`);
-      void vscode.window.showInformationMessage('Remote Edit: Export completed successfully.');
-    } catch (error) {
-      this.showSidebarCommandError(error);
-    }
+    await this.backupController.exportBackup();
   }
 
   private async importBackup(): Promise<void> {
-    try {
-      const selected = await vscode.window.showOpenDialog({
-        canSelectFiles: true,
-        canSelectFolders: false,
-        canSelectMany: false,
-        filters: { 'JSON backup': ['json'], 'All files': ['*'] },
-        openLabel: 'Import',
-        title: 'Import Remote Edit backup'
-      });
-
-      const selectedPath = selected?.[0]?.fsPath;
-      if (!selectedPath) {
-        return;
-      }
-
-      let backup: RemoteEditBackupFile;
-      try {
-        const raw = await fs.readFile(selectedPath, 'utf8');
-        backup = JSON.parse(raw) as RemoteEditBackupFile;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.output.appendLine(`[Sidebar] Could not read Remote Edit backup: ${message}`);
-        void vscode.window.showErrorMessage('Remote Edit: Import failed. Invalid backup file.');
-        return;
-      }
-
-      const summary = this.connectionManager.summarizeBackupFile(backup);
-      const shouldContinue = await vscode.window.showInformationMessage(
-        'Remote Edit backup summary',
-        { modal: true, detail: this.buildImportSummaryDetails(summary) },
-        'Continue'
-      );
-
-      if (shouldContinue !== 'Continue') {
-        return;
-      }
-
-      const options = await this.pickBackupImportOptions(summary);
-
-      if (!options) {
-        return;
-      }
-
-      if (!options.includeSettings && !options.includeConnections) {
-        void vscode.window.showWarningMessage('Remote Edit: Select at least one import option.');
-        return;
-      }
-
-      const result = await this.connectionManager.importBackupFile(backup, options);
-      this.draftConnections.clear();
-      this.quickConnectDraft = this.createDefaultQuickConnectDraft();
-      this.connectionsProvider.refresh();
-      this.openConnectionsProvider.refresh();
-      RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar');
-      this.output.appendLine(`[Sidebar] Imported Remote Edit backup: ${selectedPath}`);
-      void vscode.window.showInformationMessage(this.buildImportResultMessage(result));
-    } catch (error) {
-      this.showSidebarCommandError(error);
-    }
+    await this.backupController.importBackup();
   }
 
-  private async pickBackupExportOptions(): Promise<ConnectionBackupExportOptions | undefined> {
-    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'favorites' | 'usernames' | 'credentials' }> = [
-      { label: 'Remote Edit settings', description: 'Export Remote Edit settings', option: 'settings', picked: true },
-      { label: 'Saved connections', description: 'Export saved connection profiles', option: 'connections', picked: true },
-      { label: 'Remote path favorites', description: 'Export favorites stored with saved connections', option: 'favorites', picked: true },
-      { label: 'Include usernames', description: 'Include saved usernames in exported connections', option: 'usernames', picked: true },
-      { label: 'Include encrypted saved passwords/passphrases', description: 'Requires an export password', option: 'credentials' }
-    ];
-
-    const selected = await vscode.window.showQuickPick(items, {
-      title: 'Export Remote Edit backup',
-      placeHolder: 'Select what to export',
-      canPickMany: true,
-      ignoreFocusOut: true
-    });
-
-    if (!selected) {
-      return undefined;
+  private async expandConnectionGroups(): Promise<void> {
+    if (!(await this.connectionsProvider.hasVisibleConnectionGroups())) {
+      await this.updateConnectionsFilterContext();
+      return;
     }
 
-    const selectedOptions = new Set(selected.map(item => item.option));
-    const includeConnections = selectedOptions.has('connections');
-    const includeUsernames = includeConnections && selectedOptions.has('usernames');
-    const includeCredentials = includeConnections && includeUsernames && selectedOptions.has('credentials');
-    let credentialPassword = '';
-
-    if (includeCredentials) {
-      credentialPassword = await this.promptBackupPassword('Export Remote Edit backup', 'Enter a password to encrypt saved passwords/passphrases in the backup.', true) || '';
-
-      if (!credentialPassword) {
-        return undefined;
-      }
-    }
-
-    return {
-      includeSettings: selectedOptions.has('settings'),
-      includeConnections,
-      includeFavorites: includeConnections && selectedOptions.has('favorites'),
-      includeUsernames,
-      includeCredentials,
-      credentialPassword
-    };
-  }
-
-  private async pickBackupImportOptions(summary: RemoteEditBackupSummary): Promise<ConnectionBackupImportOptions | undefined> {
-    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'favorites' | 'usernames' | 'credentials' }> = [
-      { label: 'Remote Edit settings', description: summary.hasSettings ? 'Import Remote Edit settings' : 'Not available in this backup', option: 'settings', picked: summary.hasSettings },
-      { label: 'Saved connections', description: `${summary.supportedConnectionCount} supported connection(s)`, option: 'connections', picked: summary.supportedConnectionCount > 0 },
-      { label: 'Remote path favorites', description: `${summary.remotePathFavoriteCount} favorite path(s)`, option: 'favorites', picked: summary.remotePathFavoriteCount > 0 },
-      { label: 'Include usernames', description: summary.usernamesIncluded ? 'Restore usernames from backup' : 'No usernames found in this backup', option: 'usernames', picked: summary.usernamesIncluded },
-      { label: 'Restore encrypted saved passwords/passphrases', description: summary.hasEncryptedCredentials ? 'Requires the export password' : 'No encrypted credentials found', option: 'credentials' }
-    ];
-
-    const selected = await vscode.window.showQuickPick(items, {
-      title: 'Import Remote Edit backup',
-      placeHolder: 'Select what to import',
-      canPickMany: true,
-      ignoreFocusOut: true
-    });
-
-    if (!selected) {
-      return undefined;
-    }
-
-    const selectedOptions = new Set(selected.map(item => item.option));
-    const includeConnections = selectedOptions.has('connections') && summary.supportedConnectionCount > 0;
-    const includeUsernames = includeConnections && selectedOptions.has('usernames');
-    const restoreCredentials = includeConnections && includeUsernames && summary.hasEncryptedCredentials && selectedOptions.has('credentials');
-    let credentialPassword = '';
-
-    const mode = includeConnections
-      ? await vscode.window.showQuickPick([
-        { label: 'Merge', description: 'Add new connections and update matching IDs', value: 'merge' as const },
-        { label: 'Replace', description: 'Replace all saved connections with the backup connections', value: 'replace' as const }
-      ], {
-        title: 'Import Mode',
-        placeHolder: 'Choose how saved connections should be imported',
-        ignoreFocusOut: true
-      })
-      : { value: 'merge' as const };
-
-    if (!mode) {
-      return undefined;
-    }
-
-    if (restoreCredentials) {
-      credentialPassword = await this.promptBackupPassword('Import Remote Edit backup', 'Enter the export password to restore encrypted saved passwords/passphrases.', false) || '';
-
-      if (!credentialPassword) {
-        return undefined;
-      }
-    }
-
-    return {
-      includeSettings: selectedOptions.has('settings') && summary.hasSettings,
-      includeConnections,
-      includeFavorites: includeConnections && selectedOptions.has('favorites'),
-      includeUsernames,
-      restoreCredentials,
-      credentialPassword,
-      importMode: mode.value
-    };
-  }
-
-  private async promptBackupPassword(title: string, prompt: string, confirm: boolean): Promise<string | undefined> {
-    const password = await vscode.window.showInputBox({
-      title,
-      prompt,
-      password: true,
-      ignoreFocusOut: true,
-      placeHolder: 'Backup password'
-    });
-
-    if (!password) {
-      return undefined;
-    }
-
-    if (!confirm) {
-      return password;
-    }
-
-    const confirmation = await vscode.window.showInputBox({
-      title,
-      prompt: 'Confirm the backup password.',
-      password: true,
-      ignoreFocusOut: true,
-      placeHolder: 'Confirm backup password'
-    });
-
-    if (confirmation === undefined) {
-      return undefined;
-    }
-
-    if (password !== confirmation) {
-      void vscode.window.showErrorMessage('Remote Edit: Backup passwords do not match.');
-      return undefined;
-    }
-
-    return password;
-  }
-
-  private buildImportSummaryDetails(summary: RemoteEditBackupSummary): string {
-    const lines = [
-      `Settings: ${summary.hasSettings ? 'Yes' : 'No'}`,
-      `Connections: ${summary.supportedConnectionCount}${summary.unsupportedConnectionCount ? ` supported, ${summary.unsupportedConnectionCount} unsupported` : ''}`,
-      `Remote path favorites: ${summary.remotePathFavoriteCount}`,
-      `Usernames: ${summary.usernamesIncluded ? 'Yes' : 'No'}`,
-      `Encrypted credentials: ${summary.hasEncryptedCredentials ? 'Yes' : 'No'}`,
-      `Saved commands: ${summary.savedCommandCount}`,
-      `Port forwards: ${summary.portForwardCount}`,
-      `Server log shortcuts: ${summary.serverLogShortcutCount}`,
-      `Log Viewer favorites: ${summary.logViewerFavoriteCount}`
-    ];
-
-    return lines.join('\n');
-  }
-
-  private buildImportResultMessage(result: RemoteEditBackupImportResult): string {
-    const parts = ['Remote Edit: Import completed successfully.'];
-
-    if (result.settingsImported) {
-      parts.push('Settings imported.');
-    }
-
-    if (result.added || result.updated || result.replaced) {
-      parts.push(`Connections added: ${result.added}.`);
-      parts.push(`Connections updated: ${result.updated}.`);
-    }
-
-    if (result.favoritesImported) {
-      parts.push(`Favorites imported: ${result.favoritesImported}.`);
-    }
-
-    if (result.credentialsRestored) {
-      parts.push(`Credentials restored: ${result.credentialsRestored}.`);
-    }
-
-    if (result.savedCommandsImported) {
-      parts.push(`Saved commands imported: ${result.savedCommandsImported}.`);
-    }
-
-    if (result.portForwardsImported) {
-      parts.push(`Port forwards imported: ${result.portForwardsImported}.`);
-    }
-
-    if (result.serverLogShortcutsImported) {
-      parts.push(`Server log shortcuts imported: ${result.serverLogShortcutsImported}.`);
-    }
-
-    if (result.logViewerFavoritesImported) {
-      parts.push(`Log Viewer favorites imported: ${result.logViewerFavoritesImported}.`);
-    }
-
-    if (result.skippedUnsupported) {
-      parts.push(`Unsupported connections skipped: ${result.skippedUnsupported}.`);
-    }
-
-    return parts.join(' ');
-  }
-
-  private formatBackupFileDate(date: Date): string {
-    const pad = (value: number) => String(value).padStart(2, '0');
-
-    return [
-      date.getFullYear(),
-      pad(date.getMonth() + 1),
-      pad(date.getDate())
-    ].join('') + '-' + [
-      pad(date.getHours()),
-      pad(date.getMinutes()),
-      pad(date.getSeconds())
-    ].join('');
+    this.connectionsProvider.expandAllGroups();
+    await this.updateConnectionsFilterContext();
   }
 
   private async filterConnections(): Promise<void> {
@@ -717,11 +425,20 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private async updateConnectionsFilterContext(): Promise<void> {
-    await vscode.commands.executeCommand(
-      'setContext',
-      'remoteedit.connectionsFilterActive',
-      Boolean(this.connectionsProvider.getFilterText())
-    );
+    const hasConnectionGroups = await this.connectionsProvider.hasVisibleConnectionGroups();
+
+    await Promise.all([
+      vscode.commands.executeCommand(
+        'setContext',
+        'remoteedit.connectionsFilterActive',
+        Boolean(this.connectionsProvider.getFilterText())
+      ),
+      vscode.commands.executeCommand(
+        'setContext',
+        'remoteedit.connectionsHaveGroups',
+        hasConnectionGroups
+      )
+    ]);
   }
 
 
@@ -747,152 +464,18 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
 
-  private createDefaultQuickConnectDraft(): SidebarConnectionDraft {
-    return {
-      id: QUICK_CONNECT_ID,
-      name: 'Quick Connect',
-      connectionType: 'sftp',
-      port: getDefaultPortForConnectionType('sftp'),
-      authType: 'password',
-      startPath: '/',
-      keepAlive: true
-    };
-  }
-
-  private buildQuickConnectProfile(): ConnectionProfile {
-    const draft = this.normalizeDraftForType(this.quickConnectDraft);
-    const connectionType = normalizeConnectionType(draft.connectionType || 'sftp');
-    const authType = this.normalizeAuthTypeForDraft(draft.authType, connectionType);
-    const now = Date.now();
-
-    return {
-      id: QUICK_CONNECT_ID,
-      name: 'Quick Connect',
-      host: String(draft.host || '').trim(),
-      port: Number(draft.port || getDefaultPortForConnectionType(connectionType)),
-      connectionType,
-      username: String(draft.username || '').trim(),
-      authType,
-      startPath: String(draft.startPath || '/').trim(),
-      privateKeyPath: authType === 'privateKey' ? String(draft.privateKeyPath || '').trim() : undefined,
-      keepAlive: draft.keepAlive !== false,
-      ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(draft.ftpsAllowSelfSignedCertificate) : false,
-      ftpsCaCertificatePath: connectionType === 'ftps' ? String(draft.ftpsCaCertificatePath || '').trim() : '',
-      hasSavedPassword: authType === 'password' && Boolean(draft.password),
-      hasSavedPassphrase: authType === 'privateKey' && Boolean(draft.passphrase),
-      favoriteRemotePaths: [],
-      createdAt: now,
-      updatedAt: now
-    };
-  }
-
-  private mergeProfileWithDraft(profile: ConnectionProfile): ConnectionProfile {
-    const draft = this.draftConnections.get(profile.id);
-
-    if (!draft) {
-      return profile;
-    }
-
-    const mergedInput = this.normalizeDraftForType({ ...profile, ...draft });
-    const connectionType = normalizeConnectionType(mergedInput.connectionType || profile.connectionType || 'sftp');
-    const authType = this.normalizeAuthTypeForDraft(mergedInput.authType || profile.authType, connectionType);
-
-    return {
-      ...profile,
-      host: String(mergedInput.host ?? profile.host ?? '').trim(),
-      port: Number(mergedInput.port ?? profile.port ?? getDefaultPortForConnectionType(connectionType)),
-      connectionType,
-      username: String(mergedInput.username ?? profile.username ?? '').trim(),
-      authType,
-      startPath: String(mergedInput.startPath ?? profile.startPath ?? '').trim(),
-      privateKeyPath: authType === 'privateKey' ? String(mergedInput.privateKeyPath ?? profile.privateKeyPath ?? '').trim() : undefined,
-      keepAlive: typeof mergedInput.keepAlive === 'boolean' ? mergedInput.keepAlive : profile.keepAlive !== false,
-      ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(mergedInput.ftpsAllowSelfSignedCertificate ?? profile.ftpsAllowSelfSignedCertificate ?? false) : false,
-      ftpsCaCertificatePath: connectionType === 'ftps' ? String(mergedInput.ftpsCaCertificatePath ?? profile.ftpsCaCertificatePath ?? '').trim() : '',
-      hasSavedPassword: authType === 'password' ? (typeof draft.password === 'string' ? Boolean(draft.password) : draft.rememberPassword === false ? false : profile.hasSavedPassword) : false,
-      hasSavedPassphrase: authType === 'privateKey' ? (typeof draft.passphrase === 'string' ? Boolean(draft.passphrase) : draft.rememberPassphrase === false ? false : profile.hasSavedPassphrase) : false
-    };
-  }
-
-  private getNewDraftProfiles(): ConnectionProfile[] {
-    return Array.from(this.draftConnections.entries())
-      .filter(([profileId]) => this.isNewDraftId(profileId))
-      .map(([, draft]) => this.buildDraftProfile(draft));
-  }
-
-  private getDraftProfileById(profileId: string): ConnectionProfile | undefined {
-    const draft = this.draftConnections.get(profileId);
-    return draft ? this.buildDraftProfile(draft) : undefined;
-  }
-
-  private buildDraftProfile(draftInput: SidebarConnectionDraft): ConnectionProfile {
-    const draft = this.normalizeDraftForType(draftInput);
-    const connectionType = normalizeConnectionType(draft.connectionType || 'sftp');
-    const authType = this.normalizeAuthTypeForDraft(draft.authType, connectionType);
-    const now = Date.now();
-
-    return {
-      id: String(draft.id || this.buildNewDraftId()),
-      name: String(draft.name || 'New Connection').trim(),
-      host: String(draft.host || '').trim(),
-      port: Number(draft.port || getDefaultPortForConnectionType(connectionType)),
-      connectionType,
-      username: String(draft.username || '').trim(),
-      authType,
-      startPath: String(draft.startPath || '/').trim(),
-      privateKeyPath: authType === 'privateKey' ? String(draft.privateKeyPath || '').trim() : undefined,
-      keepAlive: draft.keepAlive !== false,
-      ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(draft.ftpsAllowSelfSignedCertificate) : false,
-      ftpsCaCertificatePath: connectionType === 'ftps' ? String(draft.ftpsCaCertificatePath || '').trim() : '',
-      hasSavedPassword: authType === 'password' && Boolean(draft.password),
-      hasSavedPassphrase: authType === 'privateKey' && Boolean(draft.passphrase),
-      favoriteRemotePaths: [],
-      createdAt: now,
-      updatedAt: now
-    };
-  }
-
-  private buildNewDraftId(): string {
-    return `__remoteeditNewConnection:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  private isNewDraftId(profileId: string | undefined): boolean {
-    return Boolean(profileId && profileId.startsWith('__remoteeditNewConnection:'));
-  }
-
-
-  private normalizeDraftForType(draft: SidebarConnectionDraft): SidebarConnectionDraft {
-    const connectionType = normalizeConnectionType(draft.connectionType || 'sftp');
-    const authType = this.normalizeAuthTypeForDraft(draft.authType, connectionType);
-
-    return {
-      ...draft,
-      connectionType,
-      authType,
-      privateKeyPath: authType === 'privateKey' ? draft.privateKeyPath : undefined,
-      ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(draft.ftpsAllowSelfSignedCertificate) : false,
-      ftpsCaCertificatePath: connectionType === 'ftps' ? draft.ftpsCaCertificatePath : undefined
-    };
-  }
-
-  private normalizeAuthTypeForDraft(authType: AuthType | undefined, connectionType: RemoteConnectionType): AuthType {
-    return connectionType === 'sftp' && authType === 'privateKey' ? 'privateKey' : 'password';
-  }
-
-  private isQuickConnectId(profileId: string | undefined): boolean {
-    return profileId === QUICK_CONNECT_ID;
-  }
-
   private revealQuickConnect(): void {
-    const item = RemoteEditSidebarItem.quickConnect(this.buildQuickConnectProfile());
+    const item = RemoteEditSidebarItem.quickConnect(this.connectionDrafts.buildQuickConnectProfile());
     void this.connectionsTreeView.reveal(item, { expand: true, focus: true, select: true });
   }
 
   private async addConnection(): Promise<void> {
+    const wizardTimer = createPerformanceTimer();
     const profiles = await this.connectionManager.listProfiles();
+    const groups = await this.connectionManager.listGroups();
     const existingNames = new Set([
       ...profiles.map(profile => profile.name.trim().toLowerCase()),
-      ...this.getNewDraftProfiles().map(profile => profile.name.trim().toLowerCase())
+      ...this.connectionDrafts.getNewDraftProfiles().map(profile => profile.name.trim().toLowerCase())
     ]);
 
     const name = await vscode.window.showInputBox({
@@ -919,24 +502,311 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    const profileId = this.buildNewDraftId();
-    this.draftConnections.set(profileId, this.normalizeDraftForType({
-      id: profileId,
-      name: name.trim(),
-      connectionType: 'sftp',
-      port: getDefaultPortForConnectionType('sftp'),
-      authType: 'password',
-      startPath: '/',
-      keepAlive: true
-    }));
+    const groupSelection = await this.promptSidebarConnectionGroup(groups);
+    if (!groupSelection) {
+      return;
+    }
 
-    this.connectionsProvider.refresh();
-
-    const item = RemoteEditSidebarItem.fromConnectionProfile(this.buildDraftProfile(this.draftConnections.get(profileId)!), {
-      draft: true,
-      connected: false
+    const selectedType = await vscode.window.showQuickPick([
+      { label: 'SFTP', description: 'SSH File Transfer Protocol', value: 'sftp' as RemoteConnectionType },
+      { label: 'FTPS', description: 'FTP over TLS/SSL', value: 'ftps' as RemoteConnectionType },
+      { label: 'FTP', description: 'File Transfer Protocol', value: 'ftp' as RemoteConnectionType }
+    ], {
+      title: 'Add Connection',
+      placeHolder: 'Select connection type',
+      ignoreFocusOut: true
     });
-    void this.connectionsTreeView.reveal(item, { expand: true, focus: true, select: true });
+
+    if (!selectedType) {
+      return;
+    }
+
+    const connectionType = normalizeConnectionType(selectedType.value);
+    const defaultPort = getDefaultPortForConnectionType(connectionType);
+    const host = await vscode.window.showInputBox({
+      title: 'Add Connection',
+      prompt: 'Enter the remote hostname or IP address.',
+      placeHolder: 'server.example.com',
+      validateInput: value => this.validateConnectionDetailInput('host', value),
+      ignoreFocusOut: true
+    });
+
+    if (host === undefined) {
+      return;
+    }
+
+    const portValue = await vscode.window.showInputBox({
+      title: 'Add Connection',
+      prompt: 'Enter the remote port.',
+      value: String(defaultPort),
+      validateInput: value => this.validateConnectionDetailInput('port', value),
+      ignoreFocusOut: true
+    });
+
+    if (portValue === undefined) {
+      return;
+    }
+
+    const username = await vscode.window.showInputBox({
+      title: 'Add Connection',
+      prompt: 'Enter the username.',
+      placeHolder: 'username',
+      validateInput: value => String(value || '').trim() ? undefined : 'Username is required.',
+      ignoreFocusOut: true
+    });
+
+    if (username === undefined) {
+      return;
+    }
+
+    let ftpsAllowSelfSignedCertificate = false;
+    let ftpsCaCertificatePath = '';
+
+    if (connectionType === 'ftps') {
+      const certificateMode = await vscode.window.showQuickPick([
+        { label: 'Use CA certificate', description: 'Require a CA certificate path', value: 'ca' as const },
+        { label: 'Allow self-signed/untrusted certificate', description: 'Skip CA certificate validation for this profile', value: 'selfSigned' as const }
+      ], {
+        title: 'Add Connection',
+        placeHolder: 'Select FTPS certificate handling',
+        ignoreFocusOut: true
+      });
+
+      if (!certificateMode) {
+        return;
+      }
+
+      ftpsAllowSelfSignedCertificate = certificateMode.value === 'selfSigned';
+
+      if (!ftpsAllowSelfSignedCertificate) {
+        const caCertificatePath = await vscode.window.showInputBox({
+          title: 'Add Connection',
+          prompt: 'Enter the CA certificate path for this FTPS connection.',
+          placeHolder: '/path/to/ca.pem',
+          validateInput: value => this.validateConnectionDetailInput('ftpsCaCertificatePath', value),
+          ignoreFocusOut: true
+        });
+
+        if (caCertificatePath === undefined) {
+          return;
+        }
+
+        ftpsCaCertificatePath = caCertificatePath.trim();
+      }
+    }
+
+    let authType: AuthType = 'password';
+    let privateKeyPath = '';
+    let password = '';
+    let passphrase = '';
+
+    if (connectionType === 'sftp') {
+      const selectedAuth = await vscode.window.showQuickPick([
+        { label: 'Password', value: 'password' as AuthType },
+        { label: 'Private key', value: 'privateKey' as AuthType }
+      ], {
+        title: 'Add Connection',
+        placeHolder: 'Select authentication method',
+        ignoreFocusOut: true
+      });
+
+      if (!selectedAuth) {
+        return;
+      }
+
+      authType = selectedAuth.value;
+    }
+
+    if (authType === 'privateKey') {
+      const keyPath = await vscode.window.showInputBox({
+        title: 'Add Connection',
+        prompt: 'Enter the private key path.',
+        placeHolder: '~/.ssh/id_rsa',
+        validateInput: value => this.validateConnectionDetailInput('privateKeyPath', value),
+        ignoreFocusOut: true
+      });
+
+      if (keyPath === undefined) {
+        return;
+      }
+
+      privateKeyPath = keyPath.trim();
+      const enteredPassphrase = await vscode.window.showInputBox({
+        title: 'Add Connection',
+        prompt: 'Enter the passphrase to save with this connection. Leave empty to save without a passphrase.',
+        password: true,
+        ignoreFocusOut: true
+      });
+
+      if (enteredPassphrase === undefined) {
+        return;
+      }
+
+      passphrase = enteredPassphrase;
+    } else {
+      const enteredPassword = await vscode.window.showInputBox({
+        title: 'Add Connection',
+        prompt: 'Enter the password to save with this connection. Leave empty to save without a password.',
+        password: true,
+        ignoreFocusOut: true
+      });
+
+      if (enteredPassword === undefined) {
+        return;
+      }
+
+      password = enteredPassword;
+    }
+
+    const startPath = await vscode.window.showInputBox({
+      title: 'Add Connection',
+      prompt: 'Enter the remote start path.',
+      value: '/',
+      validateInput: value => String(value || '').trim() ? undefined : 'Start path is required.',
+      ignoreFocusOut: true
+    });
+
+    if (startPath === undefined) {
+      return;
+    }
+
+    const keepAliveSelection = await vscode.window.showQuickPick([
+      { label: 'On', description: 'Keep the connection alive when supported', value: true },
+      { label: 'Off', description: 'Do not send keep-alive requests', value: false }
+    ], {
+      title: 'Add Connection',
+      placeHolder: 'Keep Alive',
+      ignoreFocusOut: true
+    });
+
+    if (!keepAliveSelection) {
+      return;
+    }
+
+    let createdGroupId: string | undefined;
+
+    try {
+      let groupId = groupSelection.groupId;
+
+      if (groupSelection.newGroupName) {
+        const group = await this.connectionManager.createGroup(groupSelection.newGroupName);
+        groupId = group.id;
+        createdGroupId = group.id;
+      }
+
+      const savedProfile = await this.connectionManager.saveProfile({
+        name: name.trim(),
+        groupId,
+        connectionType,
+        host: host.trim(),
+        port: Number(portValue),
+        username: username.trim(),
+        authType,
+        privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
+        password: authType === 'password' ? password : undefined,
+        passphrase: authType === 'privateKey' ? passphrase : undefined,
+        rememberPassword: authType === 'password' && Boolean(password),
+        rememberPassphrase: authType === 'privateKey' && Boolean(passphrase),
+        startPath: normalizeRemotePath(startPath),
+        keepAlive: keepAliveSelection.value,
+        ftpsAllowSelfSignedCertificate,
+        ftpsCaCertificatePath
+      });
+
+      this.connectionsProvider.refresh();
+      RemoteEditSharedState.fireProfilesChanged(savedProfile.id, 'sidebar', 'saveProfile');
+
+      const item = RemoteEditSidebarItem.fromConnectionProfile(savedProfile, {
+        connected: false,
+        connecting: false
+      });
+      void this.connectionsTreeView.reveal(item, { expand: true, focus: true, select: true }).then(undefined, () => undefined);
+      appendDebugLog(this.output, 'Sidebar', 'New connection guided flow completed.', {
+        Profile: savedProfile.name,
+        ConnectionType: savedProfile.connectionType,
+        GroupId: savedProfile.groupId || 'none'
+      });
+      appendPerformanceLog(this.output, 'Sidebar', `New connection guided flow completed in ${wizardTimer()}ms`, {
+        ConnectionType: savedProfile.connectionType,
+        GroupId: savedProfile.groupId || 'none'
+      });
+      void vscode.window.showInformationMessage('Connection saved.');
+    } catch (error) {
+      if (createdGroupId) {
+        await this.connectionManager.deleteGroup(createdGroupId, false).catch(() => undefined);
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
+    }
+  }
+
+  private async promptSidebarConnectionGroup(groups: ConnectionGroup[]): Promise<{ groupId?: string; newGroupName?: string } | undefined> {
+    const orderedGroups = [...groups].sort((a, b) => {
+      const nameCompare = String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+      return nameCompare || String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    type SidebarGroupPickItem = vscode.QuickPickItem & { value: 'none' | 'existing' | 'new'; group?: ConnectionGroup };
+    const existingGroupNames = new Set(orderedGroups.map(group => group.name.trim().toLowerCase()));
+    const noGroupItem: SidebarGroupPickItem = {
+      label: 'No group',
+      description: 'Save without a connection group',
+      value: 'none'
+    };
+    const newGroupItem: SidebarGroupPickItem = {
+      label: '+ New group...',
+      description: 'Create a connection group',
+      value: 'new'
+    };
+    const selected = await this.showQuickPickWithActiveItem<SidebarGroupPickItem>({
+      title: 'Add Connection',
+      placeHolder: 'Select connection group',
+      activeItem: noGroupItem,
+      items: [
+        newGroupItem,
+        { label: '', kind: vscode.QuickPickItemKind.Separator },
+        noGroupItem,
+        ...orderedGroups.map(group => ({ label: group.name, description: 'Connection group', value: 'existing' as const, group }))
+      ]
+    });
+
+    if (!selected) {
+      return undefined;
+    }
+
+    if (selected.value === 'existing') {
+      return selected.group ? { groupId: selected.group.id } : undefined;
+    }
+
+    if (selected.value === 'new') {
+      const groupName = await vscode.window.showInputBox({
+        title: 'Add Connection Group',
+        prompt: 'Enter a name for the new connection group.',
+        placeHolder: 'Production',
+        validateInput: value => {
+          const trimmed = String(value || '').trim();
+
+          if (!trimmed) {
+            return 'Group name is required.';
+          }
+
+          if (existingGroupNames.has(trimmed.toLowerCase())) {
+            return `A connection group named "${trimmed}" already exists.`;
+          }
+
+          return undefined;
+        },
+        ignoreFocusOut: true
+      });
+
+      if (groupName === undefined) {
+        return undefined;
+      }
+
+      return { newGroupName: groupName.trim() };
+    }
+
+    return {};
   }
 
   private openRemoteEdit(): void {
@@ -1413,7 +1283,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     try {
       const connection = this.sessions.getConnection(item.connectionId);
       const stats = item.remoteEntry ? undefined : await this.sessions.stat(item.connectionId, item.remotePath);
-      const properties = this.buildRemoteEntryProperties(item, connection, stats);
+      const properties = buildRemoteEntryProperties(item, this.getRemoteItemName(item), connection, stats);
       const copyContent = [properties.title, '', ...properties.rows.map(row => `${row[0]}: ${row[1] || '—'}`)].join('\n');
       const detail = properties.rows.map(row => `${row[0]}: ${row[1] || '—'}`).join('\n');
 
@@ -1433,157 +1303,6 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     } catch (error) {
       this.showSidebarCommandError(error);
     }
-  }
-
-  private buildRemoteEntryProperties(
-    item: RemoteEditSidebarItem,
-    connection: ReturnType<RemoteSessionManager['getConnection']>,
-    stats?: { type: 'file' | 'directory' | 'unknown'; size: number; modifyTime: number; accessTime: number }
-  ): { title: string; rows: Array<[string, string]> } {
-    const entry = item.remoteEntry;
-    const entryType = this.getEffectiveEntryType(entry, stats?.type);
-    const isDirectory = entryType === 'directory';
-    const isFile = entryType === 'file';
-    const isLink = entry?.type === 'link';
-    const title = isDirectory
-      ? 'Directory Properties'
-      : isLink
-        ? 'Link Properties'
-        : isFile
-          ? 'File Properties'
-          : 'Item Properties';
-    const pathLabel = isDirectory
-      ? 'Remote directory'
-      : isLink
-        ? 'Remote link'
-        : isFile
-          ? 'Remote file'
-          : 'Remote Path';
-    const name = entry?.name || this.getRemoteItemName(item) || '—';
-    const remotePath = entry?.path || item.remotePath || '—';
-
-    const rows: Array<[string, string]> = [
-      ['Name', name],
-      [pathLabel, remotePath],
-      ['Type', this.formatPropertyType(entry, entryType)]
-    ];
-
-    if (!isDirectory) {
-      rows.push(['Size', this.formatPropertySize(entry?.size ?? stats?.size)]);
-    }
-
-    rows.push(
-      ['Modified', this.formatPropertyDate(entry?.modifyTime ?? stats?.modifyTime) || '—'],
-      ['Permissions', this.formatPermissionsValue(entry?.permissions)],
-      ['Owner', this.formatMetadata(entry?.owner) || '—'],
-      ['Group', this.formatMetadata(entry?.group) || '—']
-    );
-
-    if (isLink && entry?.linkTarget) {
-      rows.push(['Symlink target', entry.linkTarget]);
-    }
-
-    if (isLink && entry?.effectiveType) {
-      rows.push(['Resolved type', this.capitalizeText(entry.effectiveType)]);
-    }
-
-    rows.push(
-      ['Connection', connection ? connection.name : '—'],
-      ['Host', connection ? this.formatSessionTarget(connection) : '—']
-    );
-
-    return { title, rows };
-  }
-
-  private getEffectiveEntryType(entry: RemoteEntry | undefined, statType?: 'file' | 'directory' | 'unknown'): RemoteEntryType {
-    if (entry?.effectiveType) {
-      return entry.effectiveType;
-    }
-
-    if (entry?.type) {
-      return entry.type;
-    }
-
-    return statType || 'unknown';
-  }
-
-  private formatPropertyType(entry: RemoteEntry | undefined, entryType: RemoteEntryType): string {
-    if (entry?.type === 'link') {
-      const resolvedType = entry.effectiveType ? ` (${this.capitalizeText(entry.effectiveType)})` : '';
-      return `Symbolic link${resolvedType}`;
-    }
-
-    return this.capitalizeText(entry?.type || entryType || 'unknown');
-  }
-
-  private formatPermissionsValue(permissions: unknown): string {
-    const text = String(permissions || '').trim();
-
-    if (!text) {
-      return '—';
-    }
-
-    const mode = this.permissionModeFromSymbolic(text);
-    return mode ? `${text} (${mode})` : text;
-  }
-
-  private permissionModeFromSymbolic(permissions: string): string {
-    const text = String(permissions || '').trim();
-
-    if (text.length < 10) {
-      return '';
-    }
-
-    const chars = text.slice(-9);
-    const valueFor = (read: string, write: string, execute: string): number => {
-      let value = 0;
-      if (read === 'r') value += 4;
-      if (write === 'w') value += 2;
-      if (execute === 'x' || execute === 's' || execute === 't') value += 1;
-      return value;
-    };
-    const owner = valueFor(chars[0], chars[1], chars[2]);
-    const group = valueFor(chars[3], chars[4], chars[5]);
-    const other = valueFor(chars[6], chars[7], chars[8]);
-    let special = 0;
-
-    if (chars[2] === 's' || chars[2] === 'S') special += 4;
-    if (chars[5] === 's' || chars[5] === 'S') special += 2;
-    if (chars[8] === 't' || chars[8] === 'T') special += 1;
-
-    return `${special ? String(special) : ''}${owner}${group}${other}`;
-  }
-
-  private formatPropertySize(size: unknown): string {
-    const value = Number(size || 0);
-
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
-    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
-  }
-
-  private formatPropertyDate(value: unknown): string {
-    const timestamp = Number(value || 0);
-    return timestamp ? new Date(timestamp).toLocaleString() : '';
-  }
-
-  private formatMetadata(value: unknown): string {
-    if (value === undefined || value === null || value === '') {
-      return '';
-    }
-
-    return String(value);
-  }
-
-  private formatSessionTarget(connection: { username?: string; host: string; port: number }): string {
-    const userPart = connection.username ? `${connection.username}@` : '';
-    return `${userPart}${connection.host}:${connection.port}`;
-  }
-
-  private capitalizeText(value: unknown): string {
-    const text = String(value || 'unknown');
-    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   private async calculateRemoteChecksums(item: RemoteEditSidebarItem | undefined): Promise<void> {
@@ -1609,13 +1328,13 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return await this.sessions.calculateChecksums(item.connectionId!, item.remotePath!);
       });
 
-      const sha256 = this.formatChecksumLine(result.sha256);
-      const md5 = this.formatChecksumLine(result.md5);
+      const sha256 = formatChecksumLine(result.sha256);
+      const md5 = formatChecksumLine(result.md5);
       const copyContent = [
         `Checksums for ${name}`,
         '',
         `Remote file: ${item.remotePath}`,
-        `Size: ${this.formatBytes(stats.size)}`,
+        `Size: ${formatBytes(stats.size)}`,
         `Modified: ${this.formatTimestamp(stats.modifyTime)}`,
         '',
         `SHA-256: ${sha256}`,
@@ -1624,7 +1343,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       ].join('\n');
       const detail = [
         `Remote file: ${item.remotePath}`,
-        `Size: ${this.formatBytes(stats.size)}`,
+        `Size: ${formatBytes(stats.size)}`,
         `Modified: ${this.formatTimestamp(stats.modifyTime)}`,
         '',
         `SHA-256: ${sha256}`,
@@ -1680,7 +1399,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       value: defaultName,
       valueSelection: [0, defaultName.length],
       validateInput: value => {
-        const normalized = this.normalizeArchiveName(value, format);
+        const normalized = normalizeArchiveName(value, format);
         if (!normalized) {
           return 'The archive name cannot be empty.';
         }
@@ -1701,7 +1420,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    const archiveName = this.normalizeArchiveName(archiveNameInput, format);
+    const archiveName = normalizeArchiveName(archiveNameInput, format);
     const archivePath = this.joinRemotePath(baseDirectory, archiveName);
     let overwrite = false;
 
@@ -1790,17 +1509,6 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
   }
 
-  private normalizeArchiveName(value: string, format: RemoteArchiveFormat): string {
-    const extension = `.${format}`;
-    const trimmed = String(value || '').trim();
-
-    if (!trimmed) {
-      return '';
-    }
-
-    return trimmed.endsWith(extension) ? trimmed : `${trimmed}${extension}`;
-  }
-
   private async buildAvailableCopyName(connectionId: string, parentPath: string, fileName: string): Promise<string> {
     for (let index = 1; index <= 999; index += 1) {
       const candidate = buildCopyFileName(fileName, index);
@@ -1816,7 +1524,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private async buildDefaultArchiveName(connectionId: string, baseDirectory: string, entries: Array<{ name: string }>, format: RemoteArchiveFormat): Promise<string> {
-    const baseName = this.buildArchiveBaseName(entries);
+    const baseName = buildArchiveBaseName(entries);
     const extension = `.${format}`;
 
     for (let index = 0; index <= 999; index += 1) {
@@ -1831,28 +1539,13 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     return `${baseName}-${Date.now()}${extension}`;
   }
 
-  private buildArchiveBaseName(entries: Array<{ name: string }>): string {
-    if (entries.length !== 1) {
-      return 'archive';
-    }
-
-    const rawName = entries[0].name || 'archive';
-    const withoutKnownArchiveExtension = rawName
-      .replace(/\.tar\.gz$/i, '')
-      .replace(/\.tar\.bz2$/i, '')
-      .replace(/\.tar\.xz$/i, '')
-      .replace(/\.tar\.z$/i, '');
-
-    return withoutKnownArchiveExtension || rawName || 'archive';
-  }
-
   private async setRemotePermissions(item: RemoteEditSidebarItem | undefined): Promise<void> {
     if (!item?.connectionId || !item.remotePath) {
       return;
     }
 
     const currentPermissions = String(item.remoteEntry?.permissions || '').trim();
-    const currentMode = this.permissionModeFromString(currentPermissions);
+    const currentMode = permissionModeFromString(currentPermissions);
     const mode = await vscode.window.showInputBox({
       title: 'Remote Edit: Set Permissions',
       prompt: `Enter the octal permissions for ${this.getRemoteItemName(item) || item.remotePath}.`,
@@ -1919,7 +1612,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    const visibleProfile = this.mergeProfileWithDraft(profile);
+    const visibleProfile = this.connectionDrafts.mergeProfileWithDraft(profile);
     await vscode.env.clipboard.writeText(visibleProfile.host);
     void vscode.window.showInformationMessage(`Copied hostname: ${visibleProfile.host}`);
   }
@@ -1985,27 +1678,6 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     return normalizedParent === '/' ? `/${name}` : `${normalizedParent}/${name}`;
   }
 
-  private formatBytes(size: number): string {
-    if (!Number.isFinite(size) || size < 0) {
-      return '0 B';
-    }
-
-    if (size < 1024) {
-      return `${size} B`;
-    }
-
-    const units = ['KB', 'MB', 'GB', 'TB'];
-    let value = size / 1024;
-    let unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-
-    return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`;
-  }
-
   private formatTimestamp(value: number): string {
     if (!value) {
       return '—';
@@ -2020,45 +1692,6 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     return date.toLocaleString();
   }
 
-
-  private permissionModeFromString(permissions: string): string | undefined {
-    const text = String(permissions || '').trim();
-
-    if (/^[0-7]{3,4}$/.test(text)) {
-      return text.padStart(4, '0');
-    }
-
-    if (!/^[bcdlps-]?[rwxStTs-]{9}$/.test(text)) {
-      return undefined;
-    }
-
-    const symbolic = text.length === 10 ? text.slice(1) : text;
-    const triples = [symbolic.slice(0, 3), symbolic.slice(3, 6), symbolic.slice(6, 9)];
-    const special = [symbolic[2], symbolic[5], symbolic[8]];
-    let specialValue = 0;
-
-    if (special[0] === 's' || special[0] === 'S') specialValue += 4;
-    if (special[1] === 's' || special[1] === 'S') specialValue += 2;
-    if (special[2] === 't' || special[2] === 'T') specialValue += 1;
-
-    const digits = triples.map(part => {
-      let value = 0;
-      if (part[0] === 'r') value += 4;
-      if (part[1] === 'w') value += 2;
-      if (part[2] === 'x' || part[2] === 's' || part[2] === 't') value += 1;
-      return String(value);
-    }).join('');
-
-    return `${specialValue}${digits}`;
-  }
-
-  private formatChecksumLine(checksum: { value?: string; error?: string; command?: string }): string {
-    if (checksum.value) {
-      return checksum.command ? `${checksum.value} (${checksum.command})` : checksum.value;
-    }
-
-    return checksum.error || 'Not available';
-  }
 
   private showSidebarCommandError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
@@ -2126,18 +1759,24 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
+    if (!this.connectionDrafts.isQuickConnectId(profileId) && this.sessions.hasConnection(profileId)) {
+      void vscode.window.showInformationMessage('Disconnect to edit this connection.');
+      this.connectionsProvider.refresh();
+      return;
+    }
+
     if (field === 'credentials') {
       await this.manageConnectionCredentials(profileId);
       return;
     }
 
-    const isQuickConnect = this.isQuickConnectId(profileId);
+    const isQuickConnect = this.connectionDrafts.isQuickConnectId(profileId);
     const storedProfile = isQuickConnect ? undefined : await this.connectionManager.getProfile(profileId);
     const draftProfile = isQuickConnect
-      ? this.buildQuickConnectProfile()
+      ? this.connectionDrafts.buildQuickConnectProfile()
       : storedProfile
-        ? this.mergeProfileWithDraft(storedProfile)
-        : this.getDraftProfileById(profileId);
+        ? this.connectionDrafts.mergeProfileWithDraft(storedProfile)
+        : this.connectionDrafts.getDraftProfileById(profileId);
 
     if (!draftProfile) {
       this.connectionsProvider.refresh();
@@ -2149,13 +1788,13 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
     try {
       if (field === 'keepAlive') {
-        this.updateDraftValue(profileId, { keepAlive: currentProfile.keepAlive === false });
+        this.connectionDrafts.updateDraftValue(profileId, { keepAlive: currentProfile.keepAlive === false });
         this.connectionsProvider.refresh();
         return;
       }
 
       if (field === 'ftpsAllowSelfSignedCertificate') {
-        this.updateDraftValue(profileId, {
+        this.connectionDrafts.updateDraftValue(profileId, {
           ftpsAllowSelfSignedCertificate: !currentProfile.ftpsAllowSelfSignedCertificate
         });
         this.connectionsProvider.refresh();
@@ -2182,7 +1821,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         const nextDefaultPort = getDefaultPortForConnectionType(nextType);
         const shouldUpdatePort = !currentProfile.port || currentProfile.port === previousDefaultPort;
 
-        this.updateDraftValue(profileId, {
+        this.connectionDrafts.updateDraftValue(profileId, {
           connectionType: nextType,
           authType: nextType === 'sftp' ? currentProfile.authType : 'password',
           port: shouldUpdatePort ? nextDefaultPort : currentProfile.port,
@@ -2210,7 +1849,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
           return;
         }
 
-        this.updateDraftValue(profileId, { authType: selected.value });
+        this.connectionDrafts.updateDraftValue(profileId, { authType: selected.value });
         this.connectionsProvider.refresh();
         return;
       }
@@ -2229,7 +1868,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return;
       }
 
-      this.updateConnectionDetailDraft(profileId, field, value);
+      this.connectionDrafts.updateConnectionDetailDraft(profileId, field, value);
       this.connectionsProvider.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2245,13 +1884,19 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    const isQuickConnect = this.isQuickConnectId(profileId);
+    if (!this.connectionDrafts.isQuickConnectId(profileId) && this.sessions.hasConnection(profileId)) {
+      void vscode.window.showInformationMessage('Disconnect to edit this connection.');
+      this.connectionsProvider.refresh();
+      return;
+    }
+
+    const isQuickConnect = this.connectionDrafts.isQuickConnectId(profileId);
     const storedProfile = isQuickConnect ? undefined : await this.connectionManager.getProfile(profileId);
     const profile = isQuickConnect
-      ? this.buildQuickConnectProfile()
+      ? this.connectionDrafts.buildQuickConnectProfile()
       : storedProfile
-        ? this.mergeProfileWithDraft(storedProfile)
-        : this.getDraftProfileById(profileId);
+        ? this.connectionDrafts.mergeProfileWithDraft(storedProfile)
+        : this.connectionDrafts.getDraftProfileById(profileId);
 
     if (!profile) {
       this.connectionsProvider.refresh();
@@ -2280,7 +1925,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return;
       }
 
-      this.updateDraftValue(profileId, { ftpsCaCertificatePath: selectedPath });
+      this.connectionDrafts.updateDraftValue(profileId, { ftpsCaCertificatePath: selectedPath });
       this.connectionsProvider.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2295,13 +1940,19 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    const isQuickConnect = this.isQuickConnectId(profileId);
+    if (!this.connectionDrafts.isQuickConnectId(profileId) && this.sessions.hasConnection(profileId)) {
+      void vscode.window.showInformationMessage('Disconnect to edit this connection.');
+      this.connectionsProvider.refresh();
+      return;
+    }
+
+    const isQuickConnect = this.connectionDrafts.isQuickConnectId(profileId);
     const storedProfile = isQuickConnect ? undefined : await this.connectionManager.getProfile(profileId);
     const profile = isQuickConnect
-      ? this.buildQuickConnectProfile()
+      ? this.connectionDrafts.buildQuickConnectProfile()
       : storedProfile
-        ? this.mergeProfileWithDraft(storedProfile)
-        : this.getDraftProfileById(profileId);
+        ? this.connectionDrafts.mergeProfileWithDraft(storedProfile)
+        : this.connectionDrafts.getDraftProfileById(profileId);
 
     if (!profile) {
       this.connectionsProvider.refresh();
@@ -2347,9 +1998,9 @@ export class RemoteEditSidebarController implements vscode.Disposable {
           return;
         }
 
-        this.updateDraftValue(profileId, { password, rememberPassword: !isQuickConnect });
+        this.connectionDrafts.updateDraftValue(profileId, { password, rememberPassword: !isQuickConnect });
       } else if (selected.action === 'clearPassword') {
-        this.updateDraftValue(profileId, { password: '', rememberPassword: false });
+        this.connectionDrafts.updateDraftValue(profileId, { password: '', rememberPassword: false });
       } else if (selected.action === 'updatePassphrase') {
         const passphrase = await vscode.window.showInputBox({
           title: isQuickConnect ? 'Set Passphrase' : 'Update Saved Passphrase',
@@ -2367,9 +2018,9 @@ export class RemoteEditSidebarController implements vscode.Disposable {
           return;
         }
 
-        this.updateDraftValue(profileId, { passphrase, rememberPassphrase: !isQuickConnect });
+        this.connectionDrafts.updateDraftValue(profileId, { passphrase, rememberPassphrase: !isQuickConnect });
       } else if (selected.action === 'clearPassphrase') {
-        this.updateDraftValue(profileId, { passphrase: '', rememberPassphrase: false });
+        this.connectionDrafts.updateDraftValue(profileId, { passphrase: '', rememberPassphrase: false });
       }
 
       this.connectionsProvider.refresh();
@@ -2379,51 +2030,304 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
   }
 
-  private updateDraftValue(profileId: string, value: SidebarConnectionDraft): void {
-    if (this.isQuickConnectId(profileId)) {
-      this.quickConnectDraft = this.normalizeDraftForType({ ...this.quickConnectDraft, ...value });
+
+  private async renameConnectionGroup(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
+    const groupId = typeof item === 'string' ? item : item?.groupId;
+
+    if (!groupId) {
       return;
     }
 
-    const current = this.draftConnections.get(profileId) || { id: profileId };
-    this.draftConnections.set(profileId, this.normalizeDraftForType({ ...current, ...value, id: profileId }));
-  }
+    const groups = await this.connectionManager.listGroups();
+    const group = groups.find(candidate => candidate.id === groupId);
 
-  private updateConnectionDetailDraft(profileId: string, field: ConnectionDetailField, value: string): void {
-    switch (field) {
-      case 'host':
-        this.updateDraftValue(profileId, { host: value });
-        break;
-      case 'port':
-        this.updateDraftValue(profileId, { port: value });
-        break;
-      case 'username':
-        this.updateDraftValue(profileId, { username: value });
-        break;
-      case 'startPath':
-        this.updateDraftValue(profileId, { startPath: value });
-        break;
-      case 'privateKeyPath':
-        this.updateDraftValue(profileId, { privateKeyPath: value });
-        break;
-      case 'ftpsCaCertificatePath':
-        this.updateDraftValue(profileId, { ftpsCaCertificatePath: value });
-        break;
-      default:
-        break;
+    if (!group) {
+      void vscode.window.showErrorMessage('The selected connection group no longer exists.');
+      this.connectionsProvider.refresh();
+      return;
+    }
+
+    const existingNames = new Set(
+      groups
+        .filter(candidate => candidate.id !== group.id)
+        .map(candidate => candidate.name.trim().toLowerCase())
+    );
+
+    const name = await vscode.window.showInputBox({
+      title: 'Rename Connection Group',
+      prompt: 'Enter the new connection group name.',
+      value: group.name,
+      validateInput: value => {
+        const trimmed = String(value || '').trim();
+
+        if (!trimmed) {
+          return 'Group name is required.';
+        }
+
+        if (existingNames.has(trimmed.toLowerCase())) {
+          return `A connection group named "${trimmed}" already exists.`;
+        }
+
+        return undefined;
+      },
+      ignoreFocusOut: true
+    });
+
+    if (name === undefined) {
+      return;
+    }
+
+    try {
+      await this.connectionManager.renameGroup(group.id, name);
+      this.connectionsProvider.refresh();
+      RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar', 'profileListChanged');
+      void vscode.window.showInformationMessage('Connection group renamed.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
     }
   }
 
+  private async moveSavedConnectionToGroup(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
+    const profileId = typeof item === 'string' ? item : item?.profileId;
+
+    if (!profileId || this.connectionDrafts.isQuickConnectId(profileId) || this.connectionDrafts.isNewDraftId(profileId)) {
+      return;
+    }
+
+    const profile = await this.connectionManager.getProfile(profileId);
+
+    if (!profile) {
+      void vscode.window.showErrorMessage('The selected saved connection no longer exists.');
+      this.connectionsProvider.refresh();
+      return;
+    }
+
+    const groups = await this.connectionManager.listGroups();
+    const orderedGroups = [...groups].sort((a, b) => {
+      const nameCompare = String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+      return nameCompare || String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    type MoveGroupPickItem = vscode.QuickPickItem & { action: 'none' | 'existing' | 'new'; groupId?: string };
+    const currentGroupId = String(profile.groupId || '').trim();
+    const noGroupItem: MoveGroupPickItem = {
+      label: 'No group',
+      description: currentGroupId ? 'Remove from current group' : 'Current',
+      action: 'none'
+    };
+    const newGroupItem: MoveGroupPickItem = {
+      label: '+ New group...',
+      description: 'Create a connection group',
+      action: 'new'
+    };
+    const selected = await this.showQuickPickWithActiveItem<MoveGroupPickItem>({
+      title: 'Move Connection to Group',
+      placeHolder: `Select a group for ${profile.name}`,
+      activeItem: noGroupItem,
+      items: [
+        newGroupItem,
+        { label: '', kind: vscode.QuickPickItemKind.Separator },
+        noGroupItem,
+        ...orderedGroups.map(group => ({
+          label: group.name,
+          description: currentGroupId === group.id ? 'Current' : 'Connection group',
+          action: 'existing' as const,
+          groupId: group.id
+        }))
+      ]
+    });
+
+    if (!selected) {
+      return;
+    }
+
+    if (selected.action === 'new') {
+      const existingGroupNames = new Set(orderedGroups.map(group => group.name.trim().toLowerCase()));
+      const groupName = await vscode.window.showInputBox({
+        title: 'New Connection Group',
+        prompt: `Enter a group name for ${profile.name}.`,
+        placeHolder: 'Production',
+        validateInput: value => {
+          const trimmed = String(value || '').trim();
+
+          if (!trimmed) {
+            return 'Group name is required.';
+          }
+
+          if (existingGroupNames.has(trimmed.toLowerCase())) {
+            return `A connection group named "${trimmed}" already exists.`;
+          }
+
+          return undefined;
+        },
+        ignoreFocusOut: true
+      });
+
+      if (groupName === undefined) {
+        return;
+      }
+
+      let createdGroup: ConnectionGroup | undefined;
+
+      try {
+        createdGroup = await this.connectionManager.createGroup(groupName);
+        await this.connectionManager.moveProfileToGroup(profile.id, createdGroup.id);
+        this.connectionsProvider.refresh();
+        RemoteEditSharedState.fireProfilesChanged(profile.id, 'sidebar', 'moveToGroup');
+        void vscode.window.showInformationMessage(`Group "${createdGroup.name}" created and connection moved.`);
+      } catch (error) {
+        if (createdGroup) {
+          await this.connectionManager.deleteGroup(createdGroup.id, false).catch(() => undefined);
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(message);
+      }
+      return;
+    }
+
+    const targetGroupId = selected.action === 'existing' ? String(selected.groupId || '').trim() : '';
+
+    if (targetGroupId === currentGroupId || (!targetGroupId && !currentGroupId)) {
+      return;
+    }
+
+    try {
+      await this.connectionManager.moveProfileToGroup(profile.id, targetGroupId || undefined);
+      this.connectionsProvider.refresh();
+      RemoteEditSharedState.fireProfilesChanged(profile.id, 'sidebar', 'moveToGroup');
+
+      if (targetGroupId) {
+        const targetGroup = orderedGroups.find(group => group.id === targetGroupId);
+        void vscode.window.showInformationMessage(`Connection moved to "${targetGroup?.name || 'group'}".`);
+      } else {
+        void vscode.window.showInformationMessage('Connection removed from group.');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
+    }
+  }
+
+
+  private showQuickPickWithActiveItem<T extends vscode.QuickPickItem>(options: {
+    title: string;
+    placeHolder: string;
+    items: Array<T | vscode.QuickPickItem>;
+    activeItem: T;
+  }): Promise<T | undefined> {
+    return new Promise(resolve => {
+      const quickPick = vscode.window.createQuickPick<vscode.QuickPickItem>();
+      const disposables: vscode.Disposable[] = [];
+      let resolved = false;
+
+      const finish = (item: T | undefined): void => {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        while (disposables.length > 0) {
+          disposables.pop()?.dispose();
+        }
+        quickPick.dispose();
+        resolve(item);
+      };
+
+      quickPick.title = options.title;
+      quickPick.placeholder = options.placeHolder;
+      quickPick.ignoreFocusOut = true;
+      quickPick.items = options.items;
+      quickPick.activeItems = [options.activeItem];
+
+      disposables.push(quickPick.onDidAccept(() => {
+        const selected = quickPick.selectedItems[0] || quickPick.activeItems[0];
+
+        if (!selected || selected.kind === vscode.QuickPickItemKind.Separator) {
+          return;
+        }
+
+        finish(selected as T);
+      }));
+      disposables.push(quickPick.onDidHide(() => finish(undefined)));
+
+      quickPick.show();
+    });
+  }
+
+
+  private async deleteConnectionGroup(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
+    const groupId = typeof item === 'string' ? item : item?.groupId;
+
+    if (!groupId) {
+      return;
+    }
+
+    const groups = await this.connectionManager.listGroups();
+    const group = groups.find(candidate => candidate.id === groupId);
+
+    if (!group) {
+      void vscode.window.showErrorMessage('The selected connection group no longer exists.');
+      this.connectionsProvider.refresh();
+      return;
+    }
+
+    const profiles = await this.connectionManager.listProfiles();
+    const profilesInGroup = profiles.filter(profile => profile.groupId === group.id);
+    const connectionCount = profilesInGroup.length;
+    const deleteConnectionsLabel = 'Delete Group and Connections';
+    const removeGroupOnlyLabel = 'Remove Group Only';
+    const deleteGroupLabel = 'Delete';
+
+    const confirmed = connectionCount > 0
+      ? await vscode.window.showWarningMessage(
+          `Delete group "${group.name}"? This group contains ${connectionCount} saved connection${connectionCount === 1 ? '' : 's'}.`,
+          { modal: true },
+          removeGroupOnlyLabel,
+          deleteConnectionsLabel
+        )
+      : await vscode.window.showWarningMessage(
+          `Delete group "${group.name}"?`,
+          { modal: true },
+          deleteGroupLabel
+        );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const deleteConnections = confirmed === deleteConnectionsLabel;
+
+    try {
+      if (deleteConnections) {
+        for (const profile of profilesInGroup) {
+          if (this.sessions.hasConnection(profile.id)) {
+            await this.sessions.disconnect(profile.id);
+          }
+          this.connectionDrafts.deleteDraft(profile.id);
+        }
+      }
+
+      await this.connectionManager.deleteGroup(group.id, deleteConnections);
+      RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar', 'profileListChanged');
+      this.connectionsProvider.refresh();
+      this.openConnectionsProvider.refresh();
+      void vscode.window.showInformationMessage(deleteConnections ? 'Connection group and connections deleted.' : 'Connection group deleted.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
+    }
+  }
 
   private async renameSavedConnection(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
     const profileId = typeof item === 'string' ? item : item?.profileId;
 
-    if (!profileId || this.isQuickConnectId(profileId)) {
+    if (!profileId || this.connectionDrafts.isQuickConnectId(profileId)) {
       return;
     }
 
     const storedProfile = await this.connectionManager.getProfile(profileId);
-    const draftProfile = storedProfile ? this.mergeProfileWithDraft(storedProfile) : this.getDraftProfileById(profileId);
+    const draftProfile = storedProfile ? this.connectionDrafts.mergeProfileWithDraft(storedProfile) : this.connectionDrafts.getDraftProfileById(profileId);
 
     if (!draftProfile) {
       void vscode.window.showErrorMessage('The selected saved connection no longer exists.');
@@ -2434,7 +2338,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     const profiles = await this.connectionManager.listProfiles();
     const existingNames = new Set([
       ...profiles.filter(profile => profile.id !== profileId).map(profile => profile.name.trim().toLowerCase()),
-      ...this.getNewDraftProfiles().filter(profile => profile.id !== profileId).map(profile => profile.name.trim().toLowerCase())
+      ...this.connectionDrafts.getNewDraftProfiles().filter(profile => profile.id !== profileId).map(profile => profile.name.trim().toLowerCase())
     ]);
 
     const name = await vscode.window.showInputBox({
@@ -2462,11 +2366,11 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     try {
-      if (this.isNewDraftId(profileId)) {
-        this.updateDraftValue(profileId, { name: name.trim() });
+      if (this.connectionDrafts.isNewDraftId(profileId)) {
+        this.connectionDrafts.updateDraftValue(profileId, { name: name.trim() });
       } else {
         await this.connectionManager.renameProfile(profileId, name);
-        RemoteEditSharedState.fireProfilesChanged(profileId, 'sidebar');
+        RemoteEditSharedState.fireProfilesChanged(profileId, 'sidebar', 'saveProfile');
       }
 
       this.connectionsProvider.refresh();
@@ -2481,12 +2385,12 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   private async deleteSavedConnection(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
     const profileId = typeof item === 'string' ? item : item?.profileId;
 
-    if (!profileId || this.isQuickConnectId(profileId)) {
+    if (!profileId || this.connectionDrafts.isQuickConnectId(profileId)) {
       return;
     }
 
     const profile = await this.connectionManager.getProfile(profileId);
-    const draftProfile = profile ? this.mergeProfileWithDraft(profile) : this.getDraftProfileById(profileId);
+    const draftProfile = profile ? this.connectionDrafts.mergeProfileWithDraft(profile) : this.connectionDrafts.getDraftProfileById(profileId);
 
     if (!draftProfile) {
       void vscode.window.showErrorMessage('The selected saved connection no longer exists.');
@@ -2512,11 +2416,11 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         await this.sessions.disconnect(profileId);
       }
 
-      this.draftConnections.delete(profileId);
+      this.connectionDrafts.deleteDraft(profileId);
 
       if (profile) {
         await this.connectionManager.deleteProfile(profileId);
-        RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar');
+        RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar', 'profileListChanged');
       }
 
       this.connectionsProvider.refresh();
@@ -2532,11 +2436,17 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   private async saveConnectionChanges(item: RemoteEditSidebarItem | string | undefined): Promise<ConnectionProfile | undefined> {
     const profileId = typeof item === 'string' ? item : item?.profileId;
 
-    if (!profileId || this.isQuickConnectId(profileId)) {
+    if (!profileId || this.connectionDrafts.isQuickConnectId(profileId)) {
       return undefined;
     }
 
-    const draft = this.draftConnections.get(profileId);
+    if (this.sessions.hasConnection(profileId)) {
+      void vscode.window.showInformationMessage('Disconnect to save connection changes.');
+      this.connectionsProvider.refresh();
+      return await this.connectionManager.getProfile(profileId);
+    }
+
+    const draft = this.connectionDrafts.getDraft(profileId);
 
     if (!draft) {
       void vscode.window.showInformationMessage('No pending changes to save.');
@@ -2546,12 +2456,12 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     try {
       const savedProfile = await this.connectionManager.saveProfile({
         ...draft,
-        id: this.isNewDraftId(profileId) ? undefined : profileId
+        id: this.connectionDrafts.isNewDraftId(profileId) ? undefined : profileId
       });
-      this.draftConnections.delete(profileId);
+      this.connectionDrafts.deleteDraft(profileId);
       this.connectionsProvider.refresh();
-      RemoteEditSharedState.fireProfilesChanged(savedProfile.id, 'sidebar');
-      void vscode.window.showInformationMessage(this.isNewDraftId(profileId) ? 'Connection saved.' : 'Connection changes saved.');
+      RemoteEditSharedState.fireProfilesChanged(savedProfile.id, 'sidebar', 'saveProfile');
+      void vscode.window.showInformationMessage(this.connectionDrafts.isNewDraftId(profileId) ? 'Connection saved.' : 'Connection changes saved.');
       return savedProfile;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2564,22 +2474,22 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   private discardConnectionChanges(item: RemoteEditSidebarItem | string | undefined): void {
     const profileId = typeof item === 'string' ? item : item?.profileId;
 
-    if (!profileId || this.isQuickConnectId(profileId)) {
+    if (!profileId || this.connectionDrafts.isQuickConnectId(profileId)) {
       return;
     }
 
-    this.draftConnections.delete(profileId);
+    this.connectionDrafts.deleteDraft(profileId);
     this.connectionsProvider.refresh();
     void vscode.window.showInformationMessage('Connection changes discarded.');
   }
 
   private clearQuickConnect(): void {
-    this.quickConnectDraft = this.createDefaultQuickConnectDraft();
+    this.connectionDrafts.resetQuickConnect();
     this.connectionsProvider.refresh();
   }
 
   private async connectQuickConnect(): Promise<void> {
-    const profile = this.buildQuickConnectProfile();
+    const profile = this.connectionDrafts.buildQuickConnectProfile();
 
     if (!profile.host) {
       void vscode.window.showWarningMessage('Hostname is required for Quick Connect.');
@@ -2592,7 +2502,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     const payload = {
-      ...this.quickConnectDraft,
+      ...this.connectionDrafts.getQuickConnectDraft(),
       id: undefined,
       name: profile.host,
       host: profile.host,
@@ -2618,12 +2528,12 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    if (!this.draftConnections.has(profileId)) {
+    if (!this.connectionDrafts.hasDraft(profileId)) {
       await this.connectSavedConnection(profileId);
       return;
     }
 
-    const isNewDraft = this.isNewDraftId(profileId);
+    const isNewDraft = this.connectionDrafts.isNewDraftId(profileId);
     const choices = isNewDraft
       ? [
           { label: 'Save and Connect', action: 'saveAndConnect' },
@@ -2655,7 +2565,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    await this.connectSavedConnection(profileId, this.getDraftProfileById(profileId));
+    await this.connectSavedConnection(profileId, this.connectionDrafts.getDraftProfileById(profileId));
   }
 
   private async connectSavedConnection(profileId: string, draftProfile?: ConnectionProfile): Promise<void> {
@@ -2880,46 +2790,5 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
   private resolveConnectionId(item: RemoteEditSidebarItem | string | undefined): string | undefined {
     return typeof item === 'string' ? item : item?.connectionId || item?.profileId;
-  }
-}
-
-
-class SudoModeDecorationProvider implements vscode.FileDecorationProvider, vscode.Disposable {
-  private readonly onDidChangeFileDecorationsEmitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
-  readonly onDidChangeFileDecorations = this.onDidChangeFileDecorationsEmitter.event;
-
-  constructor(private readonly sessions: RemoteSessionManager) {}
-
-  provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
-    const connectionId = getSidebarDecorationConnectionId(uri);
-
-    if (!connectionId || !this.sessions.isSudoModeEnabled(connectionId)) {
-      return undefined;
-    }
-
-    return {
-      color: new vscode.ThemeColor('remoteedit.sudoForeground'),
-      tooltip: 'Sudo Mode is enabled for this connection.'
-    };
-  }
-
-  refresh(): void {
-    this.onDidChangeFileDecorationsEmitter.fire(undefined);
-  }
-
-  dispose(): void {
-    this.onDidChangeFileDecorationsEmitter.dispose();
-  }
-}
-
-function getSidebarDecorationConnectionId(uri: vscode.Uri): string | undefined {
-  if (!uri.query) {
-    return undefined;
-  }
-
-  try {
-    return new URLSearchParams(uri.query).get('connectionId') || undefined;
-  } catch {
-    return undefined;
   }
 }

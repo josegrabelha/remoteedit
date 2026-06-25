@@ -1,5 +1,5 @@
-import { RemoteEditIncomingMessageType, type RemoteEditWebviewMessage } from '../RemoteEditPanelMessages';
-import type { RemoteEditPanelMessageHandlers } from '../RemoteEditPanelHandlerTypes';
+import { RemoteEditIncomingMessageType, type RemoteEditWebviewMessage } from '../PanelMessages';
+import type { RemoteEditPanelMessageHandlers } from '../PanelHandlerTypes';
 
 export async function tryHandleConnectionMessage(
   message: RemoteEditWebviewMessage,
@@ -26,6 +26,15 @@ export async function tryHandleConnectionMessage(
       return true;
     case RemoteEditIncomingMessageType.ReorderConnections:
       await handlers.reorderConnections(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CreateConnectionGroup:
+      await handlers.createConnectionGroup(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RenameConnectionGroup:
+      await handlers.renameConnectionGroup(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.DeleteConnectionGroup:
+      await handlers.deleteConnectionGroup(message.payload);
       return true;
     case RemoteEditIncomingMessageType.SyncPersistentStorage:
       await handlers.syncPersistentStorage(message.payload);

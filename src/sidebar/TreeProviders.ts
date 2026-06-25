@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import { ConnectionManager, type ConnectionProfile } from '../connection/ConnectionManager';
+import { ConnectionManager, type ConnectionGroup, type ConnectionProfile } from '../connection/ConnectionManager';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
-import { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './SidebarItems';
+import { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './Items';
 import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 const COMMAND_OPEN = 'remoteedit.open';
@@ -128,6 +128,8 @@ export interface ConnectionsTreeProviderOptions {
 export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEditSidebarItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<RemoteEditSidebarItem | undefined | null | void>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+  private readonly collapsedGroupIds = new Set<string>();
+  private connectionGroupRenderVersion = 0;
   private filterText = '';
 
   constructor(
@@ -146,6 +148,19 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
         .map(field => RemoteEditSidebarItem.connectionDetail(profile, field, { quickConnect: true }));
     }
 
+    if (element?.kind === 'connectionGroup' && element.groupId) {
+      const profiles = await this.connectionManager.listProfiles();
+      const connectionGroups = await this.connectionManager.listGroups();
+      const filterText = this.normalizeFilterText(this.filterText);
+      return profiles
+        .filter(profile => profile.groupId === element.groupId)
+        .filter(profile => !filterText || this.matchesFilter(this.options.getDraftProfile(profile), filterText, connectionGroups))
+        .map(profile => RemoteEditSidebarItem.fromConnectionProfile(
+          this.options.getDraftProfile(profile),
+          { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
+        ));
+    }
+
     if (element?.kind === 'savedConnection' && element.profileId) {
       const profile = await this.connectionManager.getProfile(element.profileId);
       const draftProfile = profile
@@ -157,7 +172,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
       }
 
       return getConnectionDetailFields(draftProfile)
-        .map(field => RemoteEditSidebarItem.connectionDetail(draftProfile, field));
+        .map(field => RemoteEditSidebarItem.connectionDetail(draftProfile, field, { connected: this.options.isConnected(element.profileId!) }));
     }
 
     if (element) {
@@ -165,14 +180,19 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
     }
 
     const profiles = await this.connectionManager.listProfiles();
+    const connectionGroups = await this.connectionManager.listGroups();
     const newDraftProfiles = this.options.getNewDraftProfiles();
     const filterText = this.normalizeFilterText(this.filterText);
     const filteredNewDraftProfiles = filterText
-      ? newDraftProfiles.filter(profile => this.matchesFilter(profile, filterText))
+      ? newDraftProfiles.filter(profile => this.matchesFilter(profile, filterText, connectionGroups))
       : newDraftProfiles;
     const filteredProfiles = filterText
-      ? profiles.filter(profile => this.matchesFilter(this.options.getDraftProfile(profile), filterText))
+      ? profiles.filter(profile => this.matchesFilter(this.options.getDraftProfile(profile), filterText, connectionGroups))
       : profiles;
+    const groupedProfiles = connectionGroups.length
+      ? this.groupProfiles(filteredProfiles, connectionGroups)
+      : undefined;
+    void vscode.commands.executeCommand('setContext', 'remoteedit.connectionsHaveGroups', Boolean(groupedProfiles?.grouped.length));
     const items: RemoteEditSidebarItem[] = [];
 
     if (filterText) {
@@ -212,10 +232,21 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
       { draft: true, connected: false, connecting: this.options.isConnecting(profile.id) }
     )));
 
-    items.push(...filteredProfiles.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
-      this.options.getDraftProfile(profile),
-      { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
-    )));
+    if (groupedProfiles) {
+      for (const bucket of groupedProfiles.grouped) {
+        items.push(RemoteEditSidebarItem.connectionGroup(bucket.group, bucket.profiles.length, { expanded: !this.collapsedGroupIds.has(bucket.group.id), renderVersion: this.connectionGroupRenderVersion }));
+      }
+
+      items.push(...groupedProfiles.loose.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
+        this.options.getDraftProfile(profile),
+        { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
+      )));
+    } else {
+      items.push(...filteredProfiles.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
+        this.options.getDraftProfile(profile),
+        { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
+      )));
+    }
     return items;
   }
 
@@ -232,19 +263,75 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
     this.onDidChangeTreeDataEmitter.fire(element);
   }
 
+  markGroupExpanded(groupId: string): void {
+    this.collapsedGroupIds.delete(groupId);
+  }
+
+  markGroupCollapsed(groupId: string): void {
+    this.collapsedGroupIds.add(groupId);
+  }
+
+  expandAllGroups(): void {
+    this.collapsedGroupIds.clear();
+    this.connectionGroupRenderVersion += 1;
+    this.refresh();
+  }
+
+  async hasVisibleConnectionGroups(): Promise<boolean> {
+    const profiles = await this.connectionManager.listProfiles();
+    const connectionGroups = await this.connectionManager.listGroups();
+
+    if (!connectionGroups.length) {
+      return false;
+    }
+
+    const filterText = this.normalizeFilterText(this.filterText);
+    const filteredProfiles = filterText
+      ? profiles.filter(profile => this.matchesFilter(this.options.getDraftProfile(profile), filterText, connectionGroups))
+      : profiles;
+
+    return this.groupProfiles(filteredProfiles, connectionGroups).grouped.length > 0;
+  }
+
   private normalizeFilterText(value: string): string {
     return value.trim().toLowerCase();
   }
 
-  private matchesFilter(profile: ConnectionProfile, filterText: string): boolean {
+  private matchesFilter(profile: ConnectionProfile, filterText: string, groups: ConnectionGroup[] = []): boolean {
+    const groupName = groups.find(group => group.id === profile.groupId)?.name || '';
     const searchableText = [
       profile.name,
       profile.host,
       profile.username,
-      profile.connectionType
+      profile.connectionType,
+      groupName
     ].filter(Boolean).join(' ').toLowerCase();
 
     return searchableText.includes(filterText);
+  }
+
+  private groupProfiles(profiles: ConnectionProfile[], groups: ConnectionGroup[]): { grouped: Array<{ group: ConnectionGroup; profiles: ConnectionProfile[] }>; loose: ConnectionProfile[] } {
+    const orderedGroups = [...groups].sort((a, b) => {
+      const nameCompare = String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+      return nameCompare || String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    const grouped = orderedGroups.map(group => ({ group, profiles: [] as ConnectionProfile[] }));
+    const bucketById = new Map(grouped.map(bucket => [bucket.group.id, bucket]));
+    const loose: ConnectionProfile[] = [];
+
+    for (const profile of profiles) {
+      const bucket = bucketById.get(profile.groupId || '');
+      if (bucket) {
+        bucket.profiles.push(profile);
+      } else {
+        loose.push(profile);
+      }
+    }
+
+    return {
+      grouped: grouped.filter(bucket => bucket.profiles.length > 0),
+      loose
+    };
   }
 
   dispose(): void {

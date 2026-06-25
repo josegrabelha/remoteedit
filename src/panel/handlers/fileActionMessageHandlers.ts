@@ -1,5 +1,5 @@
-import { RemoteEditIncomingMessageType, type RemoteEditWebviewMessage } from '../RemoteEditPanelMessages';
-import type { RemoteEditPanelMessageHandlers } from '../RemoteEditPanelHandlerTypes';
+import { RemoteEditIncomingMessageType, type RemoteEditWebviewMessage } from '../PanelMessages';
+import type { RemoteEditPanelMessageHandlers } from '../PanelHandlerTypes';
 
 export async function tryHandleFileActionMessage(
   message: RemoteEditWebviewMessage,

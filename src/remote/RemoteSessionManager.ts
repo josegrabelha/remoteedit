@@ -1,3 +1,4 @@
+import type * as vscode from 'vscode';
 import type { RemoteEditProgressReporter } from '../utils/progressUtils';
 import type {
   ActiveConnection,
@@ -27,6 +28,20 @@ export type {
 
 export interface RemoteListDirectoryOptions {
   forceRefresh?: boolean;
+}
+
+export interface RemoteEntryMetadataUpdate {
+  connectionId: string;
+  path: string;
+  updates: Array<{
+    name: string;
+    path: string;
+    modifyTime: number;
+  }>;
+}
+
+export interface RemoteEntryMetadataNotifier {
+  onRemoteEntryMetadataUpdated?: vscode.Event<RemoteEntryMetadataUpdate>;
 }
 
 export interface RemoteStat {

@@ -1,12 +1,12 @@
 import { Readable, Writable } from 'stream';
 import * as vscode from 'vscode';
-import * as fs from 'fs/promises';
 import { Client as FtpClient, FileInfo, FileType } from 'basic-ftp';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
+import { assertTcpConnectionReachable, normalizeRemoteConnectError } from '../remote/ConnectionProbe';
 import { getBooleanSetting, getNumberSetting } from '../utils/settingsUtils';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { normalizeConnectionType } from '../remote/RemoteConnectionTypes';
-import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions } from '../remote/RemoteSessionManager';
+import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
 import type {
   ActiveConnection,
   ConnectOptions,
@@ -18,6 +18,8 @@ import type {
   RemoteEntry,
   RemoteEntryType
 } from '../remote/RemoteSessionTypes';
+import { FtpKeepAliveController } from './FtpKeepAliveController';
+import { appendFtpListCommandContext, basenameRemotePath, buildFtpPermissionString, buildFtpsSecureOptions, cloneRemoteEntries, createUnsupportedError, dirnameRemotePath, getFtpModifyTime, getSelfListingEntry, hasUsableFtpListItems, isListAllCommand, isMlsdListCommand, joinRemotePath, mergeFtpMetadata, mapFtpEntryType, mapFtpFileInfo, mapFtpStatType, normalizeRemotePath, sortRemoteEntries, throwIfOperationCancelled } from './SessionUtils';
 
 interface CachedReadFile {
   content: Buffer;
@@ -72,12 +74,29 @@ interface ModifiedTimeHydrationSummary {
   elapsedMs: number;
 }
 
+interface ModifiedTimeHydrationOptions {
+  maxLookups?: number;
+  onUpdates?: (updates: RemoteEntryMetadataUpdate['updates']) => void;
+}
+
 interface FtpStatProbeResult {
   stat?: RemoteStat;
   error?: unknown;
 }
 
 export class FtpSessionManager implements RemoteSessionManager {
+  private static readonly backgroundMdtmBatchSize = 100;
+  private static readonly backgroundMdtmUpdateDebounceMs = 250;
+
+  private readonly onRemoteEntryMetadataUpdatedEmitter = new vscode.EventEmitter<RemoteEntryMetadataUpdate>();
+  readonly onRemoteEntryMetadataUpdated = this.onRemoteEntryMetadataUpdatedEmitter.event;
+
+  private readonly keepAlive = new FtpKeepAliveController({
+    isClientCurrent: (connectionId, client) => this.sessions.get(connectionId) === client,
+    hasQueuedOperation: connectionId => this.operationQueues.has(connectionId),
+    onFailure: (connectionId, client) => this.closeConnectionAfterKeepAliveFailure(connectionId, client)
+  });
+
   constructor(private readonly output?: vscode.OutputChannel) {}
 
   private readonly sessions = new Map<string, FtpClient>();
@@ -90,12 +109,10 @@ export class FtpSessionManager implements RemoteSessionManager {
   private readonly modifiedTimeFailureCache = new Map<string, CachedModifiedTimeFailure>();
   private readonly modifiedTimeLookupTokens = new Map<string, number>();
   private readonly modifiedTimeClients = new Map<string, FtpClient>();
+  private readonly modifiedTimeUpdateBuffers = new Map<string, RemoteEntryMetadataUpdate['updates']>();
+  private readonly modifiedTimeUpdateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly inFlightDirectoryListings = new Map<string, InFlightDirectoryListing>();
   private readonly operationQueues = new Map<string, Promise<unknown>>();
-  private readonly keepAliveTimers = new Map<string, ReturnType<typeof setInterval>>();
-  private readonly keepAliveInFlight = new Set<string>();
-  private readonly busyConnectionCounts = new Map<string, number>();
-  private readonly lastActivityTimes = new Map<string, number>();
 
   async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
     const connectionType = normalizeConnectionType(options.connectionType);
@@ -115,13 +132,23 @@ export class FtpSessionManager implements RemoteSessionManager {
     await this.disconnect(options.connectionId);
     throwIfOperationCancelled(cancellationToken);
 
-    const client = new FtpClient(30000);
+    const connectTimeoutMs = 30000;
+    const client = new FtpClient(connectTimeoutMs);
     const cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
       this.closeClient(client);
     });
 
     try {
       const secureOptions = await buildFtpsSecureOptions(options);
+
+      await assertTcpConnectionReachable({
+        host: options.host,
+        port: options.port,
+        timeoutMs: connectTimeoutMs,
+        protocolLabel: connectionType,
+        cancellationToken
+      });
+
       await client.access({
         host: options.host,
         port: options.port,
@@ -160,7 +187,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       this.connections.set(options.connectionId, connection);
       this.connectOptions.set(options.connectionId, this.createStoredConnectOptions(options, connectionType));
       this.reconnectRequired.delete(options.connectionId);
-      this.startKeepAlive(options.connectionId, client, options.keepAlive !== false);
+      this.keepAlive.start(options.connectionId, client, options.keepAlive !== false);
       return connection;
     } catch (error) {
       cancellationSubscription?.dispose();
@@ -170,14 +197,19 @@ export class FtpSessionManager implements RemoteSessionManager {
         throw new RemoteEditOperationCancelledError('Connection cancelled.');
       }
 
-      throw error;
+      throw normalizeRemoteConnectError(error, {
+        host: options.host,
+        port: options.port,
+        timeoutMs: connectTimeoutMs,
+        protocolLabel: connectionType
+      });
     }
   }
 
   async disconnect(connectionId: string): Promise<void> {
     const client = this.sessions.get(connectionId);
 
-    this.stopKeepAlive(connectionId);
+    this.keepAlive.stop(connectionId);
 
     if (client) {
       this.closeClient(client);
@@ -190,6 +222,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.clearReadFileCache(connectionId);
     this.clearDirectoryListingCache(connectionId);
     this.clearModifiedTimeCache(connectionId);
+    this.clearModifiedTimeUpdateBuffer(connectionId);
     this.cancelModifiedTimeLookup(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
     this.operationQueues.delete(connectionId);
@@ -233,7 +266,7 @@ export class FtpSessionManager implements RemoteSessionManager {
           ? this.applyCachedModifiedTimes(connectionId, cachedEntries, cacheTtlSeconds)
           : 0;
         const mdtm = modifiedDateFallbackEnabled
-          ? await this.hydrateMissingModifiedTimes(connectionId, normalizedPath, cachedEntries, cacheTtlSeconds, lookupToken)
+          ? this.scheduleBackgroundModifiedTimeHydration(connectionId, normalizedPath, cachedEntries, cacheTtlSeconds, lookupToken, cacheKey)
           : this.createDisabledModifiedTimeHydrationSummary();
 
         this.directoryListingCache.set(cacheKey, {
@@ -302,7 +335,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         ? this.applyCachedModifiedTimes(connectionId, listed.sortedEntries, cacheTtlSeconds)
         : 0;
       const mdtm = modifiedDateFallbackEnabled
-        ? await this.hydrateMissingModifiedTimes(connectionId, normalizedPath, listed.sortedEntries, cacheTtlSeconds, lookupToken)
+        ? this.scheduleBackgroundModifiedTimeHydration(connectionId, normalizedPath, listed.sortedEntries, cacheTtlSeconds, lookupToken, cacheKey)
         : this.createDisabledModifiedTimeHydrationSummary();
 
       if (cacheEnabled) {
@@ -568,7 +601,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       }
 
       this.modifiedTimeClients.set(connectionId, client);
-      this.touchConnectionActivity(connectionId);
+      this.keepAlive.touch(connectionId);
       return client;
     } catch (error) {
       this.closeClient(client);
@@ -608,6 +641,213 @@ export class FtpSessionManager implements RemoteSessionManager {
     return applied;
   }
 
+
+  private scheduleBackgroundModifiedTimeHydration(
+    connectionId: string,
+    remotePath: string,
+    entries: RemoteEntry[],
+    cacheTtlSeconds: number,
+    token: number,
+    directoryCacheKey: string
+  ): ModifiedTimeHydrationSummary {
+    const candidates = this.getModifiedTimeLookupEntries(connectionId, entries, cacheTtlSeconds);
+
+    if (candidates.length === 0) {
+      return this.createScheduledModifiedTimeHydrationSummary(0);
+    }
+
+    void this.runBackgroundModifiedTimeHydrationBatches(
+      connectionId,
+      remotePath,
+      candidates,
+      cacheTtlSeconds,
+      token,
+      directoryCacheKey
+    ).catch(error => {
+      appendDebugLog(this.output, 'FTP', 'background MDTM modified time fallback failed', {
+        connection: connectionId,
+        path: normalizeRemotePath(remotePath),
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+
+    appendDebugLog(this.output, 'FTP', 'background MDTM modified time fallback scheduled', {
+      connection: connectionId,
+      path: normalizeRemotePath(remotePath),
+      candidates: candidates.length,
+      batchSize: FtpSessionManager.backgroundMdtmBatchSize
+    });
+
+    return this.createScheduledModifiedTimeHydrationSummary(candidates.length);
+  }
+
+  private async runBackgroundModifiedTimeHydrationBatches(
+    connectionId: string,
+    remotePath: string,
+    candidates: RemoteEntry[],
+    cacheTtlSeconds: number,
+    token: number,
+    directoryCacheKey: string
+  ): Promise<void> {
+    const normalizedPath = normalizeRemotePath(remotePath);
+    const batchSize = FtpSessionManager.backgroundMdtmBatchSize;
+    let processed = 0;
+    let batchNumber = 0;
+
+    while (processed < candidates.length) {
+      if (!this.isModifiedTimeLookupCurrent(connectionId, token) || !this.hasConnection(connectionId)) {
+        appendDebugLog(this.output, 'FTP', 'background MDTM modified time fallback stopped', {
+          connection: connectionId,
+          path: normalizedPath,
+          processed,
+          total: candidates.length,
+          reason: 'listing changed or connection closed'
+        });
+        break;
+      }
+
+      const batch = candidates.slice(processed, processed + batchSize);
+      batchNumber += 1;
+
+      const summary = await this.hydrateMissingModifiedTimes(connectionId, normalizedPath, batch, cacheTtlSeconds, token, {
+        onUpdates: updates => {
+          this.updateDirectoryListingCacheModifiedTimes(directoryCacheKey, updates, cacheTtlSeconds);
+          this.queueModifiedTimeMetadataUpdate(connectionId, normalizedPath, updates);
+        }
+      });
+
+      processed += batch.length;
+
+      appendDebugLog(this.output, 'FTP', 'background MDTM modified time fallback batch completed', {
+        connection: connectionId,
+        path: normalizedPath,
+        batch: batchNumber,
+        processed,
+        total: candidates.length,
+        lookups: summary.lookups,
+        updated: summary.updated,
+        failed: summary.failed,
+        cancelled: summary.cancelled
+      });
+
+      if (summary.cancelled || !this.isModifiedTimeLookupCurrent(connectionId, token)) {
+        break;
+      }
+    }
+  }
+
+  private createScheduledModifiedTimeHydrationSummary(scheduled: number): ModifiedTimeHydrationSummary {
+    return {
+      lookups: scheduled,
+      updated: 0,
+      failed: 0,
+      skippedCachedFailures: 0,
+      cancelled: false,
+      elapsedMs: 0
+    };
+  }
+
+  private getModifiedTimeLookupEntries(connectionId: string, entries: RemoteEntry[], cacheTtlSeconds: number): RemoteEntry[] {
+    return entries.filter(entry => {
+      const entryType = entry.effectiveType || entry.type;
+      if (entryType !== 'file' || entry.modifyTime > 0 || !entry.path) {
+        return false;
+      }
+
+      return !this.isModifiedTimeFailureCached(connectionId, entry.path, cacheTtlSeconds);
+    });
+  }
+
+  private updateDirectoryListingCacheModifiedTimes(
+    directoryCacheKey: string,
+    updates: RemoteEntryMetadataUpdate['updates'],
+    cacheTtlSeconds: number
+  ): void {
+    if (!updates.length || cacheTtlSeconds <= 0) {
+      return;
+    }
+
+    const cached = this.directoryListingCache.get(directoryCacheKey);
+    if (!cached) {
+      return;
+    }
+
+    const updatesByPath = new Map(updates.map(update => [normalizeRemotePath(update.path), update.modifyTime]));
+    let changed = false;
+
+    for (const entry of cached.entries) {
+      const entryPath = normalizeRemotePath(entry.path || '');
+      const modifyTime = updatesByPath.get(entryPath);
+      if (modifyTime && entry.modifyTime !== modifyTime) {
+        entry.modifyTime = modifyTime;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      cached.expiresAt = Date.now() + cacheTtlSeconds * 1000;
+    }
+  }
+
+  private queueModifiedTimeMetadataUpdate(
+    connectionId: string,
+    remotePath: string,
+    updates: RemoteEntryMetadataUpdate['updates']
+  ): void {
+    if (!updates.length || !this.hasConnection(connectionId)) {
+      return;
+    }
+
+    const normalizedPath = normalizeRemotePath(remotePath);
+    const bufferKey = `${connectionId}|${normalizedPath}`;
+    const existing = this.modifiedTimeUpdateBuffers.get(bufferKey) || [];
+    existing.push(...updates);
+    this.modifiedTimeUpdateBuffers.set(bufferKey, existing);
+
+    if (this.modifiedTimeUpdateTimers.has(bufferKey)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.modifiedTimeUpdateTimers.delete(bufferKey);
+      const bufferedUpdates = this.modifiedTimeUpdateBuffers.get(bufferKey) || [];
+      this.modifiedTimeUpdateBuffers.delete(bufferKey);
+
+      if (!bufferedUpdates.length || !this.hasConnection(connectionId)) {
+        return;
+      }
+
+      const deduped = new Map<string, RemoteEntryMetadataUpdate['updates'][number]>();
+      for (const update of bufferedUpdates) {
+        deduped.set(normalizeRemotePath(update.path), update);
+      }
+
+      this.onRemoteEntryMetadataUpdatedEmitter.fire({
+        connectionId,
+        path: normalizedPath,
+        updates: Array.from(deduped.values())
+      });
+    }, FtpSessionManager.backgroundMdtmUpdateDebounceMs);
+
+    this.modifiedTimeUpdateTimers.set(bufferKey, timer);
+  }
+
+  private clearModifiedTimeUpdateBuffer(connectionId: string): void {
+    const prefix = `${connectionId}|`;
+    for (const [key, timer] of Array.from(this.modifiedTimeUpdateTimers.entries())) {
+      if (key.startsWith(prefix)) {
+        clearTimeout(timer);
+        this.modifiedTimeUpdateTimers.delete(key);
+      }
+    }
+
+    for (const key of Array.from(this.modifiedTimeUpdateBuffers.keys())) {
+      if (key.startsWith(prefix)) {
+        this.modifiedTimeUpdateBuffers.delete(key);
+      }
+    }
+  }
+
   private buildModifiedTimeLookupCandidates(remotePath: string, entry: RemoteEntry, includeRelativeName: boolean): string[] {
     const candidates: string[] = [];
     const entryPath = normalizeRemotePath(entry.path || '');
@@ -639,11 +879,17 @@ export class FtpSessionManager implements RemoteSessionManager {
     remotePath: string,
     entries: RemoteEntry[],
     cacheTtlSeconds: number,
-    token: number
+    token: number,
+    options: ModifiedTimeHydrationOptions = {}
   ): Promise<ModifiedTimeHydrationSummary> {
     const timer = createPerformanceTimer();
-    const allMissingEntries = entries.filter(entry => entry.modifyTime <= 0 && Boolean(entry.path));
-    const missingEntries = allMissingEntries.filter(entry => !this.isModifiedTimeFailureCached(connectionId, entry.path || '', cacheTtlSeconds));
+    const allMissingEntries = entries.filter(entry => (entry.effectiveType || entry.type) === 'file' && entry.modifyTime <= 0 && Boolean(entry.path));
+    const lookupLimit = Number.isFinite(Number(options.maxLookups)) && Number(options.maxLookups) > 0
+      ? Number(options.maxLookups)
+      : allMissingEntries.length;
+    const missingEntries = allMissingEntries
+      .filter(entry => !this.isModifiedTimeFailureCached(connectionId, entry.path || '', cacheTtlSeconds))
+      .slice(0, lookupLimit);
     const skippedCachedFailures = allMissingEntries.length - missingEntries.length;
 
     if (missingEntries.length === 0) {
@@ -676,6 +922,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     let cancelled = false;
     let loggedFailures = 0;
     let changedToListDirectory = false;
+    let pendingUpdates: RemoteEntryMetadataUpdate['updates'] = [];
 
     try {
       try {
@@ -737,6 +984,16 @@ export class FtpSessionManager implements RemoteSessionManager {
                 this.modifiedTimeFailureCache.delete(this.buildModifiedTimeCacheKey(connectionId, entryPath));
               }
 
+              pendingUpdates.push({
+                name: entry.name,
+                path: entryPath,
+                modifyTime: Number(modifyTime)
+              });
+              if (pendingUpdates.length >= 10) {
+                options.onUpdates?.(pendingUpdates);
+                pendingUpdates = [];
+              }
+
               break;
             }
           } catch (error) {
@@ -775,6 +1032,10 @@ export class FtpSessionManager implements RemoteSessionManager {
         this.modifiedTimeClients.delete(connectionId);
       }
       this.closeClient(client);
+    }
+
+    if (pendingUpdates.length > 0) {
+      options.onUpdates?.(pendingUpdates);
     }
 
     if (lookups > 0 || updated > 0 || failed > 0 || cancelled) {
@@ -1210,7 +1471,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     const current = previous
       .catch(() => undefined)
       .then(async () => {
-        const endConnectionOperation = this.beginConnectionOperation(connectionId);
+        const endConnectionOperation = this.keepAlive.beginOperation(connectionId);
         try {
           await this.ensureClientReady(connectionId);
           return await operation();
@@ -1237,7 +1498,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       throw new Error(`Remote Edit connection '${connectionId}' is not connected.`);
     }
 
-    this.touchConnectionActivity(connectionId);
+    this.keepAlive.touch(connectionId);
     return client;
   }
 
@@ -1251,7 +1512,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     const client = this.sessions.get(connectionId);
 
     if (client && !client.closed && !this.reconnectRequired.has(connectionId)) {
-      this.touchConnectionActivity(connectionId);
+      this.keepAlive.touch(connectionId);
       return;
     }
 
@@ -1272,7 +1533,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       this.closeClient(oldClient);
     }
 
-    this.stopKeepAliveTimerOnly(connectionId);
+    this.keepAlive.stopTimerOnly(connectionId);
     this.sessions.delete(connectionId);
 
     const client = new FtpClient(30000);
@@ -1292,8 +1553,8 @@ export class FtpSessionManager implements RemoteSessionManager {
 
       this.sessions.set(connectionId, client);
       this.reconnectRequired.delete(connectionId);
-      this.startKeepAlive(connectionId, client, connection.keepAlive !== false);
-      this.touchConnectionActivity(connectionId);
+      this.keepAlive.start(connectionId, client, connection.keepAlive !== false);
+      this.keepAlive.touch(connectionId);
 
       appendDebugLog(this.output, 'FTP', `reconnected client ${connectionId}`, {
         status: 'success'
@@ -1330,7 +1591,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     this.reconnectRequired.add(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
-    this.stopKeepAliveTimerOnly(connectionId);
+    this.keepAlive.stopTimerOnly(connectionId);
 
     appendDebugLog(this.output, 'FTP', `client marked for reconnect ${connectionId}`, {
       reason
@@ -1358,113 +1619,16 @@ export class FtpSessionManager implements RemoteSessionManager {
     }
   }
 
-  private startKeepAlive(connectionId: string, client: FtpClient, enabled: boolean): void {
-    this.stopKeepAlive(connectionId);
-    this.touchConnectionActivity(connectionId);
-
-    if (!enabled) {
-      return;
-    }
-
-    const intervalMs = getNumberSetting('ftpKeepAliveInterval', 30000, 1000, 300000);
-    const timer = setInterval(() => {
-      void this.sendKeepAlive(connectionId, client, intervalMs);
-    }, intervalMs);
-
-    (timer as any).unref?.();
-    this.keepAliveTimers.set(connectionId, timer);
-  }
-
-  private stopKeepAlive(connectionId: string): void {
-    this.stopKeepAliveTimerOnly(connectionId);
-    this.keepAliveInFlight.delete(connectionId);
-    this.busyConnectionCounts.delete(connectionId);
-    this.lastActivityTimes.delete(connectionId);
-  }
-
-  private stopKeepAliveTimerOnly(connectionId: string): void {
-    const timer = this.keepAliveTimers.get(connectionId);
-
-    if (timer) {
-      clearInterval(timer);
-    }
-
-    this.keepAliveTimers.delete(connectionId);
-  }
-
-  private touchConnectionActivity(connectionId: string): void {
-    this.lastActivityTimes.set(connectionId, Date.now());
-  }
-
-  private beginConnectionOperation(connectionId: string): () => void {
-    this.touchConnectionActivity(connectionId);
-    this.busyConnectionCounts.set(connectionId, (this.busyConnectionCounts.get(connectionId) || 0) + 1);
-
-    let disposed = false;
-    return () => {
-      if (disposed) {
-        return;
-      }
-
-      disposed = true;
-      const nextCount = Math.max(0, (this.busyConnectionCounts.get(connectionId) || 1) - 1);
-
-      if (nextCount > 0) {
-        this.busyConnectionCounts.set(connectionId, nextCount);
-      } else {
-        this.busyConnectionCounts.delete(connectionId);
-      }
-
-      this.touchConnectionActivity(connectionId);
-    };
-  }
-
-  private async sendKeepAlive(connectionId: string, client: FtpClient, intervalMs: number): Promise<void> {
-    if (this.sessions.get(connectionId) !== client || client.closed) {
-      this.closeConnectionAfterKeepAliveFailure(connectionId, client);
-      return;
-    }
-
-    if ((this.busyConnectionCounts.get(connectionId) || 0) > 0 || this.keepAliveInFlight.has(connectionId) || this.operationQueues.has(connectionId)) {
-      return;
-    }
-
-    const lastActivity = this.lastActivityTimes.get(connectionId) || 0;
-
-    if (Date.now() - lastActivity < intervalMs) {
-      return;
-    }
-
-    this.keepAliveInFlight.add(connectionId);
-
-    try {
-      const rawClient = client as any;
-
-      if (typeof rawClient.sendIgnoringError === 'function') {
-        await rawClient.sendIgnoringError('NOOP');
-      } else if (typeof rawClient.send === 'function') {
-        await rawClient.send('NOOP');
-      } else {
-        await client.pwd();
-      }
-
-      this.touchConnectionActivity(connectionId);
-    } catch {
-      this.closeConnectionAfterKeepAliveFailure(connectionId, client);
-    } finally {
-      this.keepAliveInFlight.delete(connectionId);
-    }
-  }
-
   private closeConnectionAfterKeepAliveFailure(connectionId: string, client: FtpClient): void {
     this.closeClient(client);
-    this.stopKeepAlive(connectionId);
+    this.keepAlive.stop(connectionId);
     this.sessions.delete(connectionId);
     this.connections.delete(connectionId);
     this.connectOptions.delete(connectionId);
     this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearModifiedTimeCache(connectionId);
+    this.clearModifiedTimeUpdateBuffer(connectionId);
     this.cancelModifiedTimeLookup(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
     this.operationQueues.delete(connectionId);
@@ -1472,13 +1636,14 @@ export class FtpSessionManager implements RemoteSessionManager {
 
   private closeConnectionAfterCancellation(connectionId: string, client: FtpClient): void {
     this.closeClient(client);
-    this.stopKeepAlive(connectionId);
+    this.keepAlive.stop(connectionId);
     this.sessions.delete(connectionId);
     this.connections.delete(connectionId);
     this.connectOptions.delete(connectionId);
     this.reconnectRequired.delete(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearModifiedTimeCache(connectionId);
+    this.clearModifiedTimeUpdateBuffer(connectionId);
     this.cancelModifiedTimeLookup(connectionId);
     this.clearInFlightDirectoryListings(connectionId);
     this.operationQueues.delete(connectionId);
@@ -1722,279 +1887,3 @@ export class FtpSessionManager implements RemoteSessionManager {
 }
 
 
-function isMlsdListCommand(command: string): boolean {
-  return String(command || '').trim().toUpperCase().startsWith('MLSD');
-}
-
-function isListAllCommand(command: string): boolean {
-  return /^LIST\s+-A(?:\s|$)/i.test(String(command || '').trim());
-}
-
-function appendFtpListCommandContext(command: string, context: string): string {
-  const normalizedCommand = String(command || '').trim() || 'unknown';
-  return `${normalizedCommand} (${context})`;
-}
-
-function hasUsableFtpListItems(items: FileInfo[]): boolean {
-  return items.some(item => item.name !== '.' && item.name !== '..');
-}
-
-function mergeFtpMetadata(primaryItems: FileInfo[], listItems: FileInfo[]): FileInfo[] {
-  const listItemsByName = new Map<string, FileInfo>();
-
-  for (const item of listItems) {
-    if (item.name && !listItemsByName.has(item.name)) {
-      listItemsByName.set(item.name, item);
-    }
-  }
-
-  return primaryItems.map(primaryItem => {
-    const listItem = listItemsByName.get(primaryItem.name);
-
-    if (!listItem) {
-      return primaryItem;
-    }
-
-    return mergeFtpFileInfo(primaryItem, listItem);
-  });
-}
-
-function mergeFtpFileInfo(primaryItem: FileInfo, listItem: FileInfo): FileInfo {
-  if (hasListMetadata(listItem)) {
-    if (hasPositiveSize(listItem) && !hasPositiveSize(primaryItem)) {
-      primaryItem.size = listItem.size;
-    }
-
-    if (listItem.modifiedAt && !primaryItem.modifiedAt) {
-      primaryItem.modifiedAt = listItem.modifiedAt;
-    }
-
-    if (listItem.user) {
-      primaryItem.user = listItem.user;
-    }
-
-    if (listItem.group) {
-      primaryItem.group = listItem.group;
-    }
-
-    if (listItem.permissions) {
-      primaryItem.permissions = listItem.permissions;
-    }
-
-    if (listItem.link && !primaryItem.link) {
-      primaryItem.link = listItem.link;
-    }
-  }
-
-  return primaryItem;
-}
-
-function getSelfListingEntry(items: FileInfo[], normalizedPath: string): FileInfo | undefined {
-  if (items.length !== 1) {
-    return undefined;
-  }
-
-  const item = items[0];
-  const itemName = String(item.name || '').trim();
-
-  if (!itemName || itemName === '.' || itemName === '..') {
-    return undefined;
-  }
-
-  const targetName = basenameRemotePath(normalizedPath);
-
-  if (itemName === targetName) {
-    return item;
-  }
-
-  if (itemName.includes('/')) {
-    const normalizedItemPath = normalizeRemotePath(itemName);
-    if (normalizedItemPath === normalizedPath || basenameRemotePath(normalizedItemPath) === targetName) {
-      return item;
-    }
-  }
-
-  return undefined;
-}
-
-function hasListMetadata(item: FileInfo): boolean {
-  return Boolean(
-    hasPositiveSize(item) ||
-    item.modifiedAt ||
-    item.user ||
-    item.group ||
-    item.permissions ||
-    item.link
-  );
-}
-
-function hasPositiveSize(item: FileInfo): boolean {
-  return Number.isFinite(Number(item.size)) && Number(item.size) > 0;
-}
-
-function mapFtpFileInfo(item: FileInfo, parentPath: string): RemoteEntry {
-  const linkTarget = String(item.link || '').trim() || undefined;
-  const type = mapFtpEntryType(item);
-
-  return {
-    name: item.name,
-    type,
-    effectiveType: undefined,
-    linkTarget,
-    size: Number(item.size || 0),
-    modifyTime: getFtpModifyTime(item),
-    accessTime: 0,
-    owner: item.user || '',
-    group: item.group || '',
-    permissions: buildFtpPermissionString(item),
-    path: joinRemotePath(parentPath, item.name)
-  };
-}
-
-function mapFtpEntryType(item: FileInfo): RemoteEntryType {
-  if (item.type === FileType.Directory || item.isDirectory) {
-    return 'directory';
-  }
-
-  if (item.type === FileType.SymbolicLink || item.isSymbolicLink) {
-    return 'link';
-  }
-
-  if (item.type === FileType.File || item.isFile) {
-    return 'file';
-  }
-
-  return 'unknown';
-}
-
-
-function mapFtpStatType(item: FileInfo): RemoteStat['type'] {
-  const entryType = mapFtpEntryType(item);
-  return entryType === 'link' ? 'unknown' : entryType;
-}
-
-function buildFtpPermissionString(item: FileInfo): string {
-  const typePrefix = mapFtpEntryType(item) === 'directory'
-    ? 'd'
-    : mapFtpEntryType(item) === 'link'
-      ? 'l'
-      : mapFtpEntryType(item) === 'file'
-        ? '-'
-        : '?';
-
-  if (!item.permissions) {
-    return `${typePrefix}?????????`;
-  }
-
-  return typePrefix +
-    formatPermissionBits(item.permissions.user) +
-    formatPermissionBits(item.permissions.group) +
-    formatPermissionBits(item.permissions.world);
-}
-
-function formatPermissionBits(value: number): string {
-  const safeValue = Number(value || 0);
-  return `${safeValue & FileInfo.UnixPermission.Read ? 'r' : '-'}${safeValue & FileInfo.UnixPermission.Write ? 'w' : '-'}${safeValue & FileInfo.UnixPermission.Execute ? 'x' : '-'}`;
-}
-
-function getFtpModifyTime(item: FileInfo): number {
-  const modifiedAt = item.modifiedAt?.getTime();
-  return Number.isFinite(modifiedAt) ? Number(modifiedAt) : 0;
-}
-
-function cloneRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {
-  return entries.map(entry => ({ ...entry }));
-}
-
-function sortRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {
-  return entries.sort((a, b) => {
-    const aDirectory = a.type === 'directory' || a.effectiveType === 'directory';
-    const bDirectory = b.type === 'directory' || b.effectiveType === 'directory';
-
-    if (aDirectory !== bDirectory) {
-      return aDirectory ? -1 : 1;
-    }
-
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-  });
-}
-
-function normalizeRemotePath(remotePath: string): string {
-  const trimmed = (remotePath || '/').trim();
-
-  if (!trimmed || trimmed === '.') {
-    return '/';
-  }
-
-  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return withLeadingSlash.replace(/\/+/g, '/').replace(/\/\/$/, '') || '/';
-}
-
-function joinRemotePath(parent: string, child: string): string {
-  const normalizedParent = normalizeRemotePath(parent);
-
-  if (normalizedParent === '/') {
-    return `/${child}`;
-  }
-
-  return `${normalizedParent}/${child}`.replace(/\/+/g, '/');
-}
-
-function dirnameRemotePath(remotePath: string): string {
-  const normalizedPath = normalizeRemotePath(remotePath);
-
-  if (normalizedPath === '/') {
-    return '/';
-  }
-
-  const index = normalizedPath.lastIndexOf('/');
-  return index <= 0 ? '/' : normalizedPath.slice(0, index);
-}
-
-function basenameRemotePath(remotePath: string): string {
-  const normalizedPath = normalizeRemotePath(remotePath);
-
-  if (normalizedPath === '/') {
-    return '';
-  }
-
-  const index = normalizedPath.lastIndexOf('/');
-  return index === -1 ? normalizedPath : normalizedPath.slice(index + 1);
-}
-
-
-async function buildFtpsSecureOptions(options: ConnectOptions): Promise<Record<string, unknown> | undefined> {
-  if (normalizeConnectionType(options.connectionType) !== 'ftps') {
-    return undefined;
-  }
-
-  if (options.ftpsAllowSelfSignedCertificate) {
-    return { rejectUnauthorized: false };
-  }
-
-  const caCertificatePath = String(options.ftpsCaCertificatePath || '').trim();
-
-  if (!caCertificatePath) {
-    throw new Error('CA certificate path is required for FTPS unless self-signed/untrusted certificates are allowed.');
-  }
-
-  try {
-    return {
-      rejectUnauthorized: true,
-      ca: await fs.readFile(caCertificatePath)
-    };
-  } catch (error) {
-    const details = error instanceof Error ? error.message : String(error);
-    throw new Error(`Could not read FTPS CA certificate file: ${caCertificatePath}. Check the path and file permissions. Details: ${details}`);
-  }
-}
-
-function throwIfOperationCancelled(cancellationToken?: ConnectionCancellationToken): void {
-  if (cancellationToken?.isCancellationRequested) {
-    throw new RemoteEditOperationCancelledError('Operation cancelled.');
-  }
-}
-
-function createUnsupportedError(actionName: string): Error {
-  return new Error(`${actionName} is available only for SFTP connections.`);
-}

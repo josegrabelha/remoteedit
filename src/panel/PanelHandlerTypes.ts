@@ -8,6 +8,9 @@ export interface RemoteEditPanelMessageHandlers {
   deleteConnection(payload: any): Promise<void>;
   renameConnection(payload: any): Promise<void>;
   reorderConnections(payload: any): Promise<void>;
+  createConnectionGroup(payload: any): Promise<void>;
+  renameConnectionGroup(payload: any): Promise<void>;
+  deleteConnectionGroup(payload: any): Promise<void>;
   syncPersistentStorage(payload: any): Promise<void>;
   requestImportConnectionsSettings(): Promise<void>;
   exportConnectionsSettings(payload: any): Promise<void>;

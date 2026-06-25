@@ -1,5 +1,5 @@
-import { type RemoteEditWebviewMessage } from './RemoteEditPanelMessages';
-import type { RemoteEditPanelMessageHandlers } from './RemoteEditPanelHandlerTypes';
+import { type RemoteEditWebviewMessage } from './PanelMessages';
+import type { RemoteEditPanelMessageHandlers } from './PanelHandlerTypes';
 import { tryHandleBrowserMessage } from './handlers/browserMessageHandlers';
 import { tryHandleConnectionMessage } from './handlers/connectionMessageHandlers';
 import { tryHandleFileActionMessage } from './handlers/fileActionMessageHandlers';
@@ -7,7 +7,7 @@ import { tryHandleMiscMessage } from './handlers/miscMessageHandlers';
 import { tryHandlePermissionsMessage } from './handlers/permissionsMessageHandlers';
 import { tryHandleSudoMessage } from './handlers/sudoMessageHandlers';
 
-export type { RemoteEditPanelMessageHandlers } from './RemoteEditPanelHandlerTypes';
+export type { RemoteEditPanelMessageHandlers } from './PanelHandlerTypes';
 
 export async function handleRemoteEditPanelMessage(
   message: RemoteEditWebviewMessage,

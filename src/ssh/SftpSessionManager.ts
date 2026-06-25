@@ -1,14 +1,17 @@
 import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
-import { Readable, Writable } from 'stream';
 import SftpClient from 'ssh2-sftp-client';
 import type { Client } from 'ssh2';
 import { expandHomePath } from '../utils/localPathUtils';
-import { getBooleanSetting, getNumberSetting, getStringSetting } from '../utils/settingsUtils';
+import { getBooleanSetting, getNumberSetting } from '../utils/settingsUtils';
 import { buildRemoteTempPath, buildSudoErrorMessage, shellQuote } from '../utils/shellUtils';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
+import { assertTcpConnectionReachable, normalizeRemoteConnectError } from '../remote/ConnectionProbe';
 import { isSftpConnectionType, SFTP_CONNECTION_TYPE } from '../remote/RemoteConnectionTypes';
+import { buildOwnerGroupSuggestionCommand, buildPermissionString, buildPrincipalLookupCommand, cloneRemoteEntries, collectNumericIds, dirnameRemotePath, extractLinkTargetFromLongname, formatBytes, formatErrorMessage, formatMode, getGroupFromFileInfo, getOwnerFromFileInfo, getSudoTempDirectory, hasSpecialPermissionBitsChanged, inferLinkTargetType, joinRemotePath, mapEntryType, mapModeToEntryType, modeFromPermissionString, normalizeFileMode, normalizeNumericId, normalizeRemotePath, parseDfSpaceInfo, parseLongListing, parseLongListingLine, parseOwnerGroupSuggestionOutput, parsePrincipalLookupOutput, readRemoteFileToBuffer, shouldRestoreSpecialPermissionBits, sortRemoteEntries, statFlag, throwIfOperationCancelled, type RemoteSpaceInfo } from './SessionUtils';
+import { buildControlledRemoteCommandScript, buildRemoteCommandDisplayScript, createRemoteCommandDisplayCallbacks, getPotentialRemoteProcessPidMarkerSuffixLength, escapeRegExp } from './RemoteCommandDisplay';
+import { buildSftpCopyFileCommand, buildSftpCreateArchiveCommand, buildSftpMd5ChecksumAttempts, buildSftpSha256ChecksumAttempts, extractSftpChecksum, type SftpChecksumCommandAttempt } from './ArchiveChecksumUtils';
 import type { RemoteSessionManager, RemoteListDirectoryOptions, RemoteOwnerGroupSuggestions, RemotePrincipalSuggestion } from '../remote/RemoteSessionManager';
 import type {
   ActiveConnection,
@@ -24,6 +27,8 @@ import type {
   RemoteEntry,
   RemoteEntryType
 } from '../remote/RemoteSessionTypes';
+
+export { dirnameRemotePath, joinRemotePath, normalizeRemotePath } from './SessionUtils';
 
 export type {
   ActiveConnection,
@@ -42,12 +47,6 @@ export type {
 
 const SUDO_READ_IDLE_TIMEOUT_MS = 60000;
 const SUDO_SAVE_APPLY_TIMEOUT_MS = 300000;
-
-interface ChecksumCommandAttempt {
-  label: string;
-  command: (quotedPath: string) => string;
-  length: number;
-}
 
 interface RemoteExecOptions {
   input?: string;
@@ -123,12 +122,13 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error('Connection cancelled.');
     }
 
+    const readyTimeout = getNumberSetting('sshReadyTimeout', 30000, 1000, 300000);
     const client = new SftpClient(`remoteedit-${options.connectionId}`);
     const config: Record<string, unknown> = {
       host: options.host,
       port: options.port,
       username: options.username,
-      readyTimeout: getNumberSetting('sshReadyTimeout', 30000, 1000, 300000)
+      readyTimeout
     };
 
     if (options.keepAlive !== false) {
@@ -159,6 +159,14 @@ export class SftpSessionManager implements RemoteSessionManager {
     });
 
     try {
+      await assertTcpConnectionReachable({
+        host: options.host,
+        port: options.port,
+        timeoutMs: readyTimeout,
+        protocolLabel: 'ssh',
+        cancellationToken
+      });
+
       await client.connect(config as any);
 
       if (cancellationToken?.isCancellationRequested) {
@@ -173,7 +181,12 @@ export class SftpSessionManager implements RemoteSessionManager {
         throw new Error('Connection cancelled.');
       }
 
-      throw error;
+      throw normalizeRemoteConnectError(error, {
+        host: options.host,
+        port: options.port,
+        timeoutMs: readyTimeout,
+        protocolLabel: 'ssh'
+      });
     }
 
     const homePath = await this.safeCwd(client);
@@ -291,12 +304,12 @@ export class SftpSessionManager implements RemoteSessionManager {
 
     const client = this.getClient(connectionId);
     const normalizedWorkingDirectory = normalizeRemotePath(workingDirectory || '/');
-    const displayScript = this.buildRemoteCommandDisplayScript(trimmedCommand);
-    const streamingCallbacks = this.createRemoteCommandDisplayCallbacks(displayScript, callbacks);
+    const displayScript = buildRemoteCommandDisplayScript(trimmedCommand);
+    const streamingCallbacks = createRemoteCommandDisplayCallbacks(displayScript, callbacks);
     const sudoPassword = this.sudoPasswords.get(connectionId);
     const remoteProcessMarkerToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
     const remoteProcessPidMarkerPrefix = `__REMOTE_EDIT_PROCESS_PID_${remoteProcessMarkerToken}_`;
-    const controlledScript = this.buildControlledRemoteCommandScript(
+    const controlledScript = buildControlledRemoteCommandScript(
       normalizedWorkingDirectory,
       displayScript.script,
       remoteProcessPidMarkerPrefix,
@@ -320,311 +333,6 @@ export class SftpSessionManager implements RemoteSessionManager {
     }
   }
 
-  private buildControlledRemoteCommandScript(
-    workingDirectory: string,
-    commandScript: string,
-    pidMarkerPrefix: string,
-    redirectInputFromNull: boolean
-  ): string {
-    const inputRedirectLine = redirectInputFromNull ? 'exec </dev/null' : '';
-    const scriptLines = [
-      `cd ${shellQuote(workingDirectory)} || exit $?`,
-      inputRedirectLine,
-      'if command -v setsid >/dev/null 2>&1; then',
-      `  setsid sh -c ${shellQuote(commandScript)} &`,
-      'else',
-      `  sh -c ${shellQuote(commandScript)} &`,
-      'fi',
-      '__remote_edit_command_pid=$!',
-      `printf '%s%s%s\\n' ${shellQuote(pidMarkerPrefix)} "$__remote_edit_command_pid" ${shellQuote('__')}`,
-      'wait "$__remote_edit_command_pid" 2>/dev/null',
-      '__remote_edit_wait_status=$?',
-      'exit "$__remote_edit_wait_status"'
-    ];
-
-    return scriptLines.filter(line => line !== '').join('\n');
-  }
-
-
-
-  private buildRemoteCommandDisplayScript(command: string): {
-    readonly script: string;
-    flush: () => void;
-  } {
-    const logicalCommands = this.splitRemoteCommandForDisplay(command);
-    const markerToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-    const commandMarkerPrefix = `__REMOTE_EDIT_COMMAND_${markerToken}_`;
-    const statusMarkerPrefix = `__REMOTE_EDIT_COMMAND_STATUS_${markerToken}_`;
-    const markerMap = new Map<string, string>();
-
-    const scriptParts: string[] = ['__remote_edit_last_status=0'];
-
-    logicalCommands.forEach((logicalCommand, index) => {
-      const commandMarker = `${commandMarkerPrefix}${index}__`;
-      const statusMarkerPrefixForCommand = `${statusMarkerPrefix}${index}_`;
-      markerMap.set(commandMarker, logicalCommand);
-      const commandMarkerPrinter = index === 0
-        ? `printf '%s\\n' ${shellQuote(commandMarker)}`
-        : `printf '\\n%s\\n' ${shellQuote(commandMarker)}`;
-
-      scriptParts.push(commandMarkerPrinter);
-      scriptParts.push(logicalCommand);
-      scriptParts.push('__remote_edit_command_status=$?');
-      scriptParts.push('__remote_edit_last_status=$__remote_edit_command_status');
-      scriptParts.push(`printf '%s%s%s\\n' ${shellQuote(statusMarkerPrefixForCommand)} "$__remote_edit_command_status" ${shellQuote('__')}`);
-    });
-
-    scriptParts.push('exit $__remote_edit_last_status');
-    const script = scriptParts.join('\n');
-
-    const maxCommandMarkerLength = Array.from(markerMap.keys()).reduce((max, marker) => Math.max(max, marker.length), 0);
-    const maxStatusMarkerLength = statusMarkerPrefix.length + String(Math.max(0, logicalCommands.length - 1)).length + 1 + 16 + 2;
-    const displayScript = {
-      script,
-      flush: () => undefined as void
-    };
-
-    (displayScript as any).commandMarkerPrefix = commandMarkerPrefix;
-    (displayScript as any).statusMarkerPrefix = statusMarkerPrefix;
-    (displayScript as any).markerMap = markerMap;
-    (displayScript as any).maxMarkerLength = Math.max(maxCommandMarkerLength, maxStatusMarkerLength);
-
-    return displayScript;
-  }
-
-  private createRemoteCommandDisplayCallbacks(
-    displayScript: { readonly script: string; flush: () => void },
-    callbacks: RemoteCommandStreamingCallbacks
-  ): RemoteCommandStreamingCallbacks {
-    const commandMarkerPrefix = String((displayScript as any).commandMarkerPrefix || '');
-    const statusMarkerPrefix = String((displayScript as any).statusMarkerPrefix || '');
-    const markerMap = (displayScript as any).markerMap as Map<string, string> | undefined;
-    const maxMarkerLength = Number((displayScript as any).maxMarkerLength || 0);
-    const commandMarkerPattern = commandMarkerPrefix ? new RegExp(`${this.escapeRegExp(commandMarkerPrefix)}\\d+__`) : undefined;
-    const statusMarkerPattern = statusMarkerPrefix ? new RegExp(`${this.escapeRegExp(statusMarkerPrefix)}(\\d+)_(\\d+)__`) : undefined;
-    const markerPattern = commandMarkerPrefix || statusMarkerPrefix
-      ? new RegExp([
-        commandMarkerPrefix ? `${this.escapeRegExp(commandMarkerPrefix)}\\d+__` : '',
-        statusMarkerPrefix ? `${this.escapeRegExp(statusMarkerPrefix)}\\d+_\\d+__` : ''
-      ].filter(Boolean).join('|'))
-      : undefined;
-    let pendingStdout = '';
-
-    const emitStdout = (text: string) => {
-      if (text) {
-        callbacks.onStdout?.(text);
-      }
-    };
-
-    const processStdout = (chunk: string) => {
-      if (!chunk || !markerPattern || !markerMap || !maxMarkerLength) {
-        emitStdout(chunk);
-        return;
-      }
-
-      pendingStdout += chunk;
-
-      while (pendingStdout) {
-        markerPattern.lastIndex = 0;
-        const match = markerPattern.exec(pendingStdout);
-
-        if (!match) {
-          const keepLength = this.getPotentialRemoteCommandDisplayMarkerSuffixLength(
-            pendingStdout,
-            commandMarkerPrefix,
-            statusMarkerPrefix,
-            maxMarkerLength
-          );
-          if (pendingStdout.length > keepLength) {
-            const emitLength = pendingStdout.length - keepLength;
-            emitStdout(pendingStdout.slice(0, emitLength));
-            pendingStdout = pendingStdout.slice(emitLength);
-          }
-          return;
-        }
-
-        if (match.index > 0) {
-          emitStdout(pendingStdout.slice(0, match.index));
-        }
-
-        const marker = match[0];
-        if (commandMarkerPattern?.test(marker)) {
-          commandMarkerPattern.lastIndex = 0;
-          const command = markerMap.get(marker);
-          if (command) {
-            callbacks.onCommand?.(command);
-          }
-        } else if (statusMarkerPattern) {
-          statusMarkerPattern.lastIndex = 0;
-          const statusMatch = statusMarkerPattern.exec(marker);
-          if (statusMatch) {
-            callbacks.onCommandStatus?.(Number(statusMatch[1]), Number(statusMatch[2]));
-          }
-        }
-
-        pendingStdout = pendingStdout.slice(match.index + marker.length);
-        if (pendingStdout.startsWith('\r\n')) {
-          pendingStdout = pendingStdout.slice(2);
-        } else if (pendingStdout.startsWith('\n')) {
-          pendingStdout = pendingStdout.slice(1);
-        } else if (pendingStdout.startsWith('\r')) {
-          pendingStdout = pendingStdout.slice(1);
-        }
-      }
-    };
-
-    displayScript.flush = () => {
-      if (pendingStdout) {
-        emitStdout(pendingStdout);
-        pendingStdout = '';
-      }
-    };
-
-    return {
-      ...callbacks,
-      onStdout: processStdout,
-      onStderr: callbacks.onStderr
-    };
-  }
-
-  private splitRemoteCommandForDisplay(command: string): string[] {
-    const normalized = String(command || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-
-    if (!normalized) {
-      return [];
-    }
-
-    if (this.shouldKeepRemoteCommandAsSingleBlock(normalized)) {
-      return [normalized];
-    }
-
-    const logicalCommands: string[] = [];
-    const currentLines: string[] = [];
-
-    for (const line of normalized.split('\n')) {
-      if (!currentLines.length && !line.trim()) {
-        continue;
-      }
-
-      currentLines.push(line);
-
-      if (this.isShellLineContinued(line)) {
-        continue;
-      }
-
-      const logicalCommand = currentLines.join('\n').trim();
-      if (logicalCommand) {
-        logicalCommands.push(logicalCommand);
-      }
-      currentLines.length = 0;
-    }
-
-    const trailingCommand = currentLines.join('\n').trim();
-    if (trailingCommand) {
-      logicalCommands.push(trailingCommand);
-    }
-
-    return logicalCommands.length ? logicalCommands : [normalized];
-  }
-
-  private shouldKeepRemoteCommandAsSingleBlock(command: string): boolean {
-    const lines = command.split('\n').map(line => line.trim()).filter(Boolean);
-
-    if (lines.length <= 1) {
-      return false;
-    }
-
-    return lines.some(line =>
-      /<<[-]?\s*['"]?\w+['"]?/.test(line) ||
-      /^(if|for|while|until|case|select)\b/.test(line) ||
-      /\b(then|do)\s*$/.test(line) ||
-      /^(elif|else|fi|done|esac)\b/.test(line) ||
-      /^\{\s*$/.test(line) ||
-      /^\}\s*$/.test(line)
-    );
-  }
-
-  private isShellLineContinued(line: string): boolean {
-    const trimmedRight = String(line || '').replace(/[ \t]+$/g, '');
-    let trailingBackslashes = 0;
-
-    for (let index = trimmedRight.length - 1; index >= 0 && trimmedRight[index] === '\\'; index -= 1) {
-      trailingBackslashes += 1;
-    }
-
-    return trailingBackslashes > 0 && trailingBackslashes % 2 === 1;
-  }
-
-  private escapeRegExp(value: string): string {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-
-  private getPotentialRemoteCommandDisplayMarkerSuffixLength(
-    text: string,
-    commandMarkerPrefix: string,
-    statusMarkerPrefix: string,
-    maxMarkerLength: number
-  ): number {
-    return this.getPotentialMarkerSuffixLength(text, maxMarkerLength, suffix => {
-      if (commandMarkerPrefix && this.isPotentialNumberMarkerSuffix(suffix, commandMarkerPrefix)) {
-        return true;
-      }
-
-      if (!statusMarkerPrefix) {
-        return false;
-      }
-
-      if (statusMarkerPrefix.startsWith(suffix)) {
-        return true;
-      }
-
-      if (!suffix.startsWith(statusMarkerPrefix)) {
-        return false;
-      }
-
-      const rest = suffix.slice(statusMarkerPrefix.length);
-      return /^\d*(?:_\d*)?(?:_{0,2})?$/.test(rest);
-    });
-  }
-
-  private getPotentialRemoteProcessPidMarkerSuffixLength(text: string, pidMarkerPrefix: string, maxMarkerLength: number): number {
-    if (!pidMarkerPrefix) {
-      return 0;
-    }
-
-    return this.getPotentialMarkerSuffixLength(text, maxMarkerLength, suffix => this.isPotentialNumberMarkerSuffix(suffix, pidMarkerPrefix));
-  }
-
-  private getPotentialMarkerSuffixLength(text: string, maxMarkerLength: number, isPotentialMarkerSuffix: (suffix: string) => boolean): number {
-    const maxLength = Math.min(Math.max(0, maxMarkerLength - 1), text.length);
-
-    for (let length = maxLength; length > 0; length -= 1) {
-      const suffix = text.slice(text.length - length);
-      if (isPotentialMarkerSuffix(suffix)) {
-        return length;
-      }
-    }
-
-    return 0;
-  }
-
-  private isPotentialNumberMarkerSuffix(suffix: string, markerPrefix: string): boolean {
-    if (!suffix) {
-      return false;
-    }
-
-    if (markerPrefix.startsWith(suffix)) {
-      return true;
-    }
-
-    if (!suffix.startsWith(markerPrefix)) {
-      return false;
-    }
-
-    const rest = suffix.slice(markerPrefix.length);
-    return /^\d*(?:_{0,2})?$/.test(rest);
-  }
   async listDirectory(connectionId: string, remotePath: string, options: RemoteListDirectoryOptions = {}): Promise<RemoteEntry[]> {
     const client = this.getClient(connectionId);
     const normalizedPath = normalizeRemotePath(remotePath);
@@ -989,7 +697,7 @@ export class SftpSessionManager implements RemoteSessionManager {
     const client = this.getClient(connectionId);
     const normalizedSourcePath = normalizeRemotePath(sourcePath);
     const normalizedTargetPath = normalizeRemotePath(targetPath);
-    const command = this.buildCopyFileCommand(normalizedSourcePath, normalizedTargetPath, overwrite);
+    const command = buildSftpCopyFileCommand(normalizedSourcePath, normalizedTargetPath, overwrite);
 
     if (this.isSudoModeEnabled(connectionId)) {
       await this.runSudoCommandText(connectionId, command, 300000, cancellationToken);
@@ -1039,7 +747,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error('The archive name cannot be the same as one of the selected items.');
     }
 
-    const command = this.buildCreateArchiveCommand(normalizedBaseDirectory, safeEntryNames, safeArchiveName, format, overwrite);
+    const command = buildSftpCreateArchiveCommand(normalizedBaseDirectory, safeEntryNames, safeArchiveName, format, overwrite);
 
     if (this.isSudoModeEnabled(connectionId)) {
       await this.runSudoCommandText(connectionId, command, 1800000, cancellationToken);
@@ -1057,93 +765,16 @@ export class SftpSessionManager implements RemoteSessionManager {
     this.clearReadFileCache(connectionId, joinRemotePath(normalizedBaseDirectory, safeArchiveName));
   }
 
-  private buildCopyFileCommand(sourcePath: string, targetPath: string, overwrite: boolean): string {
-    const source = shellQuote(sourcePath);
-    const target = shellQuote(targetPath);
-    const targetGuard = overwrite
-      ? `if [ -d ${target} ] && [ ! -L ${target} ]; then echo 'Target is a directory.' >&2; exit 21; fi; if [ -L ${target} ]; then echo 'Target is a symbolic link.' >&2; exit 21; fi;`
-      : `if [ -e ${target} ] || [ -L ${target} ]; then echo 'Target already exists.' >&2; exit 17; fi;`;
-
-    return `if [ ! -f ${source} ]; then echo 'Source is not a regular file.' >&2; exit 22; fi; ${targetGuard} cp -p ${source} ${target}`;
-  }
-
-  private buildCreateArchiveCommand(
-    baseDirectory: string,
-    entryNames: string[],
-    archiveName: string,
-    format: RemoteArchiveFormat,
-    overwrite: boolean
-  ): string {
-    const directory = shellQuote(baseDirectory);
-    const target = shellQuote(archiveName);
-    const tempTar = shellQuote(`.remoteedit-archive-${Date.now()}-${Math.random().toString(16).slice(2)}.tar`);
-    const entries = entryNames.map(name => shellQuote(`./${name}`)).join(' ');
-    const compression = this.buildArchiveCompressionCommand(format, tempTar, target, overwrite);
-    const compressor = this.getArchiveCompressorCommand(format);
-    const targetGuard = overwrite
-      ? `if [ -d ${target} ] && [ ! -L ${target} ]; then echo 'Target archive is a directory.' >&2; exit 21; fi; rm -f ${target}`
-      : `if [ -e ${target} ] || [ -L ${target} ]; then echo 'Target archive already exists.' >&2; exit 17; fi`;
-
-    return [
-      `cd ${directory}`,
-      `if ! command -v tar >/dev/null 2>&1; then echo 'tar command not found on the remote host.' >&2; exit 127; fi`,
-      `if ! command -v ${compressor} >/dev/null 2>&1; then echo '${compressor} command not found on the remote host.' >&2; exit 127; fi`,
-      targetGuard,
-      `rm -f ${tempTar}`,
-      `tar -cf ${tempTar} ${entries}`,
-      `__remote_edit_status=$?`,
-      `if [ $__remote_edit_status -eq 0 ]; then ${compression}; __remote_edit_status=$?; fi`,
-      `rm -f ${tempTar}`,
-      `exit $__remote_edit_status`
-    ].join('; ');
-  }
-
-  private buildArchiveCompressionCommand(format: RemoteArchiveFormat, tempTar: string, target: string, overwrite: boolean): string {
-    const redirect = overwrite ? `> ${target}` : `> ${target}`;
-    const command = (() => {
-      switch (format) {
-        case 'tar.gz':
-          return `gzip -c ${tempTar} ${redirect}`;
-        case 'tar.bz2':
-          return `bzip2 -c ${tempTar} ${redirect}`;
-        case 'tar.xz':
-          return `xz -c ${tempTar} ${redirect}`;
-        case 'tar.Z':
-          return `compress -c ${tempTar} ${redirect}`;
-        default:
-          return '';
-      }
-    })();
-
-    return overwrite ? command : `(set -C; ${command})`;
-  }
-
-  private getArchiveCompressorCommand(format: RemoteArchiveFormat): string {
-    switch (format) {
-      case 'tar.gz':
-        return 'gzip';
-      case 'tar.bz2':
-        return 'bzip2';
-      case 'tar.xz':
-        return 'xz';
-      case 'tar.Z':
-        return 'compress';
-      default:
-        return 'gzip';
-    }
-  }
-
-
   async calculateChecksums(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken): Promise<RemoteChecksumSummary> {
     const normalizedPath = normalizeRemotePath(remotePath);
 
     return {
-      sha256: await this.calculateChecksum(connectionId, normalizedPath, 'SHA-256', this.buildSha256ChecksumAttempts(), cancellationToken),
-      md5: await this.calculateChecksum(connectionId, normalizedPath, 'MD5', this.buildMd5ChecksumAttempts(), cancellationToken)
+      sha256: await this.calculateChecksum(connectionId, normalizedPath, 'SHA-256', buildSftpSha256ChecksumAttempts(), cancellationToken),
+      md5: await this.calculateChecksum(connectionId, normalizedPath, 'MD5', buildSftpMd5ChecksumAttempts(), cancellationToken)
     };
   }
 
-  private buildSha256ChecksumAttempts(): ChecksumCommandAttempt[] {
+  private buildSha256ChecksumAttempts(): SftpChecksumCommandAttempt[] {
     return [
       { label: 'sha256sum', command: quotedPath => `sha256sum ${quotedPath}`, length: 64 },
       { label: 'shasum -a 256', command: quotedPath => `shasum -a 256 ${quotedPath}`, length: 64 },
@@ -1153,7 +784,7 @@ export class SftpSessionManager implements RemoteSessionManager {
     ];
   }
 
-  private buildMd5ChecksumAttempts(): ChecksumCommandAttempt[] {
+  private buildMd5ChecksumAttempts(): SftpChecksumCommandAttempt[] {
     return [
       { label: 'md5sum', command: quotedPath => `md5sum ${quotedPath}`, length: 32 },
       { label: 'md5', command: quotedPath => `md5 ${quotedPath}`, length: 32 },
@@ -1167,7 +798,7 @@ export class SftpSessionManager implements RemoteSessionManager {
     connectionId: string,
     normalizedPath: string,
     algorithm: 'SHA-256' | 'MD5',
-    attempts: ChecksumCommandAttempt[],
+    attempts: SftpChecksumCommandAttempt[],
     cancellationToken?: ConnectionCancellationToken
   ): Promise<RemoteChecksumValue> {
     const quotedPath = shellQuote(normalizedPath);
@@ -1180,7 +811,7 @@ export class SftpSessionManager implements RemoteSessionManager {
 
       try {
         const output = await this.runChecksumCommand(connectionId, attempt.command(quotedPath), cancellationToken);
-        const checksum = this.extractChecksum(output, attempt.length);
+        const checksum = extractSftpChecksum(output, attempt.length);
 
         if (checksum) {
           return { algorithm, value: checksum, command: attempt.label };
@@ -1226,13 +857,6 @@ export class SftpSessionManager implements RemoteSessionManager {
 
     return output;
   }
-
-  private extractChecksum(output: string, length: number): string | undefined {
-    const pattern = new RegExp(`\\b[0-9a-fA-F]{${length}}\\b`);
-    const match = String(output || '').match(pattern);
-    return match ? match[0].toLowerCase() : undefined;
-  }
-
 
   async changeOwnerGroup(connectionId: string, remotePath: string, options: ChangeOwnerGroupOptions): Promise<void> {
     const normalizedPath = normalizeRemotePath(remotePath);
@@ -2074,7 +1698,7 @@ ${result.stdout.toString('utf8')}`.trim();
       const maxOutputBytesBeforePause = 65536;
       const remoteProcessPidMarkerPrefix = String(options.remoteProcess?.pidMarkerPrefix || '');
       const remoteProcessPidPattern = remoteProcessPidMarkerPrefix
-        ? new RegExp(`${this.escapeRegExp(remoteProcessPidMarkerPrefix)}(\\d+)__`)
+        ? new RegExp(`${escapeRegExp(remoteProcessPidMarkerPrefix)}(\\d+)__`)
         : undefined;
       const maxRemoteProcessPidMarkerLength = remoteProcessPidMarkerPrefix.length + 32;
       let remoteProcessPid = '';
@@ -2100,7 +1724,7 @@ ${result.stdout.toString('utf8')}`.trim();
           const match = remoteProcessPidPattern.exec(pendingStdoutForRemoteProcess);
 
           if (!match) {
-            const keepLength = this.getPotentialRemoteProcessPidMarkerSuffixLength(
+            const keepLength = getPotentialRemoteProcessPidMarkerSuffixLength(
               pendingStdoutForRemoteProcess,
               remoteProcessPidMarkerPrefix,
               maxRemoteProcessPidMarkerLength
@@ -2663,687 +2287,3 @@ ${result.stdout.toString('utf8')}`.trim();
 
 
 
-function shouldRestoreSpecialPermissionBits(originalMode: number | undefined): originalMode is number {
-  return Boolean(
-    getBooleanSetting('restoreSpecialPermissionBits', true) &&
-    originalMode !== undefined &&
-    hasSpecialPermissionBits(originalMode)
-  );
-}
-
-function hasSpecialPermissionBits(mode: number): boolean {
-  return (mode & 0o7000) !== 0;
-}
-
-function hasSpecialPermissionBitsChanged(originalMode: number, currentMode: number | undefined): boolean {
-  return currentMode === undefined || (originalMode & 0o7000) !== (currentMode & 0o7000);
-}
-
-function normalizeFileMode(value: unknown): number | undefined {
-  const mode = Number(value);
-
-  if (!Number.isFinite(mode) || mode < 0) {
-    return undefined;
-  }
-
-  return mode & 0o7777;
-}
-
-function modeFromPermissionString(permissions: string): number | undefined {
-  if (!/^[bcdlps-][rwxStTs-]{9}/.test(permissions)) {
-    return undefined;
-  }
-
-  let mode = 0;
-  const chars = permissions.slice(1, 10);
-
-  if (chars[0] === 'r') { mode |= 0o400; }
-  if (chars[1] === 'w') { mode |= 0o200; }
-  if (chars[2] === 'x' || chars[2] === 's') { mode |= 0o100; }
-  if (chars[2] === 's' || chars[2] === 'S') { mode |= 0o4000; }
-
-  if (chars[3] === 'r') { mode |= 0o040; }
-  if (chars[4] === 'w') { mode |= 0o020; }
-  if (chars[5] === 'x' || chars[5] === 's') { mode |= 0o010; }
-  if (chars[5] === 's' || chars[5] === 'S') { mode |= 0o2000; }
-
-  if (chars[6] === 'r') { mode |= 0o004; }
-  if (chars[7] === 'w') { mode |= 0o002; }
-  if (chars[8] === 'x' || chars[8] === 't') { mode |= 0o001; }
-  if (chars[8] === 't' || chars[8] === 'T') { mode |= 0o1000; }
-
-  return mode;
-}
-
-function formatMode(mode: number): string {
-  return (mode & 0o7777).toString(8).padStart(4, '0');
-}
-
-function formatErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error || 'Unknown error');
-}
-
-function getSudoTempDirectory(): string {
-  return normalizeRemotePath(getStringSetting('sudoTempDirectory', '/tmp'));
-}
-
-interface RemoteSpaceInfo {
-  filesystem: string;
-  availableBytes: number;
-  mountPoint: string;
-}
-
-function parseDfSpaceInfo(output: string, remotePath: string): RemoteSpaceInfo {
-  const lines = output
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 2) {
-    throw new Error(`Could not parse free space information for ${remotePath}.`);
-  }
-
-  const dataLine = lines[lines.length - 1];
-  const columns = dataLine.split(/\s+/);
-  const percentIndex = columns.findIndex(column => /^\d+%$/.test(column));
-
-  if (percentIndex < 2) {
-    throw new Error(`Could not parse available space for ${remotePath}.`);
-  }
-
-  const availableKilobytes = Number(columns[percentIndex - 1]);
-
-  if (!Number.isFinite(availableKilobytes) || availableKilobytes < 0) {
-    throw new Error(`Could not parse available space for ${remotePath}.`);
-  }
-
-  return {
-    filesystem: columns[0] || '',
-    availableBytes: availableKilobytes * 1024,
-    mountPoint: columns.slice(percentIndex + 1).join(' ') || ''
-  };
-}
-
-function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value < 0) {
-    return 'unknown';
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = value;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function cloneRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {
-  return entries.map(entry => ({ ...entry }));
-}
-
-function sortRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {
-  return entries.sort((a, b) => {
-    if (a.type === 'directory' && b.type !== 'directory') {
-      return -1;
-    }
-    if (a.type !== 'directory' && b.type === 'directory') {
-      return 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
-}
-
-function parseLongListing(output: string, parentPath: string): RemoteEntry[] {
-  return output
-    .split(/\r?\n/)
-    .map(line => parseLongListingLine(line, parentPath))
-    .filter((entry): entry is RemoteEntry => Boolean(entry && entry.name !== '.' && entry.name !== '..'));
-}
-
-function parseLongListingLine(line: string, parentPath: string): RemoteEntry | undefined {
-  const trimmedLine = line.trim();
-
-  if (!trimmedLine || trimmedLine.startsWith('total ')) {
-    return undefined;
-  }
-
-  const match = trimmedLine.match(/^([bcdlps-][rwxStTs-]{9}[+.]?)\s+\S+\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
-
-  if (!match) {
-    return undefined;
-  }
-
-  const permissions = match[1];
-  const owner = match[2];
-  const group = match[3];
-  const size = Number(match[4] || 0);
-  const month = match[5];
-  const day = match[6];
-  const timeOrYear = match[7];
-  const rawName = match[8];
-  const linkSplitIndex = permissions.startsWith('l') ? rawName.indexOf(' -> ') : -1;
-  const name = linkSplitIndex >= 0 ? rawName.slice(0, linkSplitIndex) : rawName;
-  const linkTarget = linkSplitIndex >= 0 ? rawName.slice(linkSplitIndex + 4) : undefined;
-  const type = mapPermissionTypeToEntryType(permissions.charAt(0));
-
-  return {
-    name,
-    type,
-    effectiveType: undefined,
-    linkTarget,
-    size,
-    modifyTime: parseLongListingTimestamp(month, day, timeOrYear),
-    accessTime: 0,
-    owner,
-    group,
-    permissions,
-    path: joinRemotePath(parentPath, name)
-  };
-}
-
-function parseLongListingTimestamp(month: string, day: string, timeOrYear: string): number {
-  const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    .findIndex(value => value.toLowerCase() === month.slice(0, 3).toLowerCase());
-
-  if (monthIndex < 0) {
-    return 0;
-  }
-
-  const now = new Date();
-  const parsedDay = Number(day);
-  let parsedDate: Date;
-
-  if (/^\d{1,2}:\d{2}$/.test(timeOrYear)) {
-    const [hour, minute] = timeOrYear.split(':').map(Number);
-    parsedDate = new Date(now.getFullYear(), monthIndex, parsedDay, hour, minute, 0, 0);
-
-    if (parsedDate.getTime() - now.getTime() > 24 * 60 * 60 * 1000) {
-      parsedDate.setFullYear(parsedDate.getFullYear() - 1);
-    }
-  } else {
-    parsedDate = new Date(Number(timeOrYear), monthIndex, parsedDay, 0, 0, 0, 0);
-  }
-
-  const timestamp = parsedDate.getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function mapPermissionTypeToEntryType(typeChar: string): RemoteEntryType {
-  switch (typeChar) {
-    case 'd':
-      return 'directory';
-    case 'l':
-      return 'link';
-    case '-':
-      return 'file';
-    default:
-      return 'unknown';
-  }
-}
-
-export function normalizeRemotePath(remotePath: string): string {
-  const trimmed = (remotePath || '/').trim();
-
-  if (!trimmed || trimmed === '.') {
-    return '/';
-  }
-
-  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return withLeadingSlash.replace(/\/+/g, '/').replace(/\/\/$/, '') || '/';
-}
-
-export function joinRemotePath(parent: string, child: string): string {
-  const normalizedParent = normalizeRemotePath(parent);
-
-  if (normalizedParent === '/') {
-    return `/${child}`;
-  }
-
-  return `${normalizedParent}/${child}`.replace(/\/+/g, '/');
-}
-
-export function dirnameRemotePath(remotePath: string): string {
-  const normalizedPath = normalizeRemotePath(remotePath);
-
-  if (normalizedPath === '/') {
-    return '/';
-  }
-
-  const index = normalizedPath.lastIndexOf('/');
-  return index <= 0 ? '/' : normalizedPath.slice(0, index);
-}
-
-
-
-async function toBuffer(data: unknown, remotePath: string): Promise<Buffer> {
-  if (Buffer.isBuffer(data)) {
-    return data;
-  }
-
-  if (data instanceof Uint8Array) {
-    return Buffer.from(data);
-  }
-
-  if (data instanceof ArrayBuffer) {
-    return Buffer.from(data);
-  }
-
-  if (ArrayBuffer.isView(data)) {
-    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
-  }
-
-  if (typeof data === 'string') {
-    return Buffer.from(data);
-  }
-
-  if (data instanceof Readable || isReadableStream(data)) {
-    return await readableToBuffer(data as Readable);
-  }
-
-  if (data === undefined || data === null) {
-    return Buffer.alloc(0);
-  }
-
-  throw new Error(`Unsupported data returned while reading ${remotePath}.`);
-}
-
-function isReadableStream(value: unknown): value is Readable {
-  return Boolean(value && typeof (value as any).pipe === 'function' && typeof (value as any).on === 'function');
-}
-
-async function readableToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-
-  for await (const chunk of stream) {
-    if (Buffer.isBuffer(chunk)) {
-      chunks.push(chunk);
-    } else if (chunk instanceof Uint8Array) {
-      chunks.push(Buffer.from(chunk));
-    } else {
-      chunks.push(Buffer.from(String(chunk)));
-    }
-  }
-
-  return Buffer.concat(chunks);
-}
-
-async function readRemoteFileToBuffer(
-  client: SftpClient,
-  remotePath: string,
-  cancellationToken?: ConnectionCancellationToken,
-  progress?: RemoteEditProgressReporter,
-  totalBytes?: number
-): Promise<Buffer> {
-  throwIfOperationCancelled(cancellationToken);
-
-  const sftp = (client as any).sftp;
-
-  if (sftp && typeof sftp.createReadStream === 'function') {
-    return await readRemoteFileStreamToBuffer(sftp.createReadStream(remotePath), cancellationToken, progress, totalBytes);
-  }
-
-  const chunks: Buffer[] = [];
-  let transferredBytes = 0;
-  let sink: Writable | undefined;
-
-  const operation = new Promise<Buffer>((resolve, reject) => {
-    sink = new Writable({
-      write(chunk, _encoding, callback) {
-        if (cancellationToken?.isCancellationRequested) {
-          callback(new Error('Operation cancelled.'));
-          return;
-        }
-
-        const bufferChunk = Buffer.isBuffer(chunk)
-          ? chunk
-          : chunk instanceof Uint8Array
-            ? Buffer.from(chunk)
-            : Buffer.from(String(chunk));
-
-        chunks.push(bufferChunk);
-
-        if (progress && Number(totalBytes || 0) > 0) {
-          transferredBytes += bufferChunk.length;
-          progress.reportBytes('Opening remote file...', transferredBytes, Number(totalBytes || 0));
-        }
-
-        callback();
-      }
-    });
-
-    client.get(remotePath, sink as any)
-      .then(() => {
-        throwIfOperationCancelled(cancellationToken);
-        resolve(Buffer.concat(chunks));
-      })
-      .catch(reject);
-  });
-
-  const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
-    try {
-      sink?.destroy(new Error('Operation cancelled.'));
-    } catch {
-      // Ignore sink destroy errors while cancelling read.
-    }
-  });
-
-  try {
-    return await operation;
-  } finally {
-    cancellationDisposable?.dispose();
-  }
-}
-
-async function readRemoteFileStreamToBuffer(
-  stream: Readable,
-  cancellationToken?: ConnectionCancellationToken,
-  progress?: RemoteEditProgressReporter,
-  totalBytes?: number
-): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  let transferredBytes = 0;
-
-  const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
-    try {
-      stream.destroy(new Error('Operation cancelled.'));
-    } catch {
-      // Ignore stream destroy errors while cancelling read.
-    }
-  });
-
-  try {
-    for await (const chunk of stream) {
-      throwIfOperationCancelled(cancellationToken);
-
-      const bufferChunk = Buffer.isBuffer(chunk)
-        ? chunk
-        : chunk instanceof Uint8Array
-          ? Buffer.from(chunk)
-          : Buffer.from(String(chunk));
-
-      chunks.push(bufferChunk);
-
-      if (progress && Number(totalBytes || 0) > 0) {
-        transferredBytes += bufferChunk.length;
-        progress.reportBytes('Opening remote file...', transferredBytes, Number(totalBytes || 0));
-      }
-    }
-
-    throwIfOperationCancelled(cancellationToken);
-    return Buffer.concat(chunks);
-  } finally {
-    cancellationDisposable?.dispose();
-  }
-}
-
-function throwIfOperationCancelled(cancellationToken?: ConnectionCancellationToken): void {
-  if (cancellationToken?.isCancellationRequested) {
-    throw new RemoteEditOperationCancelledError('Operation cancelled.');
-  }
-}
-
-function getOwnerFromFileInfo(item: SftpClient.FileInfo): number | string {
-  return parseLongnameOwnerGroup(item).owner || (item as any).owner || '';
-}
-
-function getGroupFromFileInfo(item: SftpClient.FileInfo): number | string {
-  return parseLongnameOwnerGroup(item).group || (item as any).group || '';
-}
-
-function parseLongnameOwnerGroup(item: SftpClient.FileInfo): { owner: string; group: string } {
-  const longname = String((item as any).longname || '').trim();
-
-  if (!longname) {
-    return { owner: '', group: '' };
-  }
-
-  const parts = longname.split(/\s+/);
-
-  if (parts.length >= 4 && /^[dlpscb-]/.test(parts[0])) {
-    return { owner: parts[2] || '', group: parts[3] || '' };
-  }
-
-  return { owner: '', group: '' };
-}
-
-function collectNumericIds(values: Array<number | string>): string[] {
-  const ids = new Set<string>();
-
-  for (const value of values) {
-    const id = normalizeNumericId(value);
-    if (id) {
-      ids.add(id);
-    }
-  }
-
-  return Array.from(ids);
-}
-
-function normalizeNumericId(value: number | string): string | undefined {
-  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
-    return String(value);
-  }
-
-  const trimmed = String(value || '').trim();
-  return /^\d+$/.test(trimmed) ? trimmed : undefined;
-}
-
-function buildPrincipalLookupCommand(kind: 'user' | 'group', ids: string[]): string {
-  const database = kind === 'user' ? 'passwd' : 'group';
-  const filePath = kind === 'user' ? '/etc/passwd' : '/etc/group';
-  const idList = ids.filter(id => /^\d+$/.test(id)).join(' ');
-
-  return [
-    `for remoteedit_id in ${idList}; do`,
-    '  remoteedit_name=""',
-    '  if command -v getent >/dev/null 2>&1; then',
-    `    remoteedit_name="$(getent ${database} "$remoteedit_id" 2>/dev/null | awk -F: 'NR == 1 { print $1 }')"`,
-    '  fi',
-    '  if [ -z "$remoteedit_name" ]; then',
-    `    remoteedit_name="$(awk -F: -v id="$remoteedit_id" '$3 == id { print $1; exit }' ${filePath} 2>/dev/null)"`,
-    '  fi',
-    '  if [ -n "$remoteedit_name" ]; then',
-    `    printf '%s:%s\\n' "$remoteedit_id" "$remoteedit_name"`,
-    '  fi',
-    'done'
-  ].join('\n');
-}
-
-function parsePrincipalLookupOutput(output: string): Map<string, string> {
-  const names = new Map<string, string>();
-
-  for (const line of output.split(/\r?\n/)) {
-    const separatorIndex = line.indexOf(':');
-
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const id = line.slice(0, separatorIndex).trim();
-    const name = line.slice(separatorIndex + 1).trim();
-
-    if (/^\d+$/.test(id) && name) {
-      names.set(id, name);
-    }
-  }
-
-  return names;
-}
-
-function buildPermissionString(item: SftpClient.FileInfo): string {
-  const longname = String((item as any).longname || '');
-
-  if (longname.length >= 10) {
-    return longname.slice(0, 10);
-  }
-
-  const typePrefix = item.type === 'd' ? 'd' : item.type === 'l' ? 'l' : item.type === '-' ? '-' : '?';
-  const rights = (item as any).rights || {};
-
-  return typePrefix +
-    formatRights(String(rights.user || '')) +
-    formatRights(String(rights.group || '')) +
-    formatRights(String(rights.other || ''));
-}
-
-function formatRights(value: string): string {
-  return `${value.includes('r') ? 'r' : '-'}${value.includes('w') ? 'w' : '-'}${value.includes('x') ? 'x' : '-'}`;
-}
-
-function inferLinkTargetType(target: string | undefined): RemoteEntryType | undefined {
-  const targetText = String(target || '').trim();
-
-  if (!targetText) {
-    return undefined;
-  }
-
-  if (targetText.endsWith('/')) {
-    return 'directory';
-  }
-
-  return undefined;
-}
-
-function extractLinkTargetFromLongname(longname: string): string | undefined {
-  const marker = ' -> ';
-  const markerIndex = longname.indexOf(marker);
-
-  if (markerIndex === -1) {
-    return undefined;
-  }
-
-  const target = longname.slice(markerIndex + marker.length).trim();
-  return target || undefined;
-}
-
-function mapModeToEntryType(mode: number): RemoteEntryType {
-  const typeBits = mode & 0o170000;
-
-  switch (typeBits) {
-    case 0o040000:
-      return 'directory';
-    case 0o100000:
-      return 'file';
-    case 0o120000:
-      return 'link';
-    default:
-      return 'unknown';
-  }
-}
-
-function statFlag(stats: unknown, propertyName: string): boolean {
-  const value = (stats as any)?.[propertyName];
-
-  if (typeof value === 'function') {
-    return Boolean(value.call(stats));
-  }
-
-  return Boolean(value);
-}
-
-function mapEntryType(type: string): RemoteEntryType {
-  switch (type) {
-    case 'd':
-      return 'directory';
-    case '-':
-      return 'file';
-    case 'l':
-      return 'link';
-    default:
-      return 'unknown';
-  }
-}
-
-
-function buildOwnerGroupSuggestionCommand(): string {
-  return [
-    "printf '__REMOTE_EDIT_USERS__\\n'",
-    "if command -v getent >/dev/null 2>&1; then getent passwd 2>/dev/null; elif command -v lsuser >/dev/null 2>&1; then lsuser -a id ALL 2>/dev/null; elif [ -r /etc/passwd ]; then cat /etc/passwd 2>/dev/null; fi",
-    "printf '__REMOTE_EDIT_GROUPS__\\n'",
-    "if command -v getent >/dev/null 2>&1; then getent group 2>/dev/null; elif command -v lsgroup >/dev/null 2>&1; then lsgroup -a id ALL 2>/dev/null; elif [ -r /etc/group ]; then cat /etc/group 2>/dev/null; fi"
-  ].join('; ');
-}
-
-function parseOwnerGroupSuggestionOutput(output: string): RemoteOwnerGroupSuggestions {
-  const owners: RemotePrincipalSuggestion[] = [];
-  const groups: RemotePrincipalSuggestion[] = [];
-  let section: 'owners' | 'groups' | '' = '';
-
-  for (const rawLine of String(output || '').split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line === '__REMOTE_EDIT_USERS__') {
-      section = 'owners';
-      continue;
-    }
-    if (line === '__REMOTE_EDIT_GROUPS__') {
-      section = 'groups';
-      continue;
-    }
-
-    const parsed = section === 'owners'
-      ? parseOwnerGroupUserLine(line)
-      : section === 'groups'
-        ? parseOwnerGroupGroupLine(line)
-        : undefined;
-
-    if (!parsed) continue;
-    if (section === 'owners') owners.push(parsed);
-    if (section === 'groups') groups.push(parsed);
-  }
-
-  return {
-    owners: dedupeOwnerGroupSuggestions(owners).slice(0, 500),
-    groups: dedupeOwnerGroupSuggestions(groups).slice(0, 500)
-  };
-}
-
-function parseOwnerGroupUserLine(line: string): RemotePrincipalSuggestion | undefined {
-  const passwdParts = line.split(':');
-  if (passwdParts.length >= 3 && passwdParts[0]) {
-    return {
-      name: passwdParts[0],
-      id: passwdParts[2] || '',
-      detail: passwdParts[2] ? `uid ${passwdParts[2]}` : ''
-    };
-  }
-
-  const aixMatch = line.match(/^(\S+)\s+.*?\bid=(\d+)/);
-  if (aixMatch) {
-    return { name: aixMatch[1], id: aixMatch[2], detail: `uid ${aixMatch[2]}` };
-  }
-
-  return undefined;
-}
-
-function parseOwnerGroupGroupLine(line: string): RemotePrincipalSuggestion | undefined {
-  const groupParts = line.split(':');
-  if (groupParts.length >= 3 && groupParts[0]) {
-    return {
-      name: groupParts[0],
-      id: groupParts[2] || '',
-      detail: groupParts[2] ? `gid ${groupParts[2]}` : ''
-    };
-  }
-
-  const aixMatch = line.match(/^(\S+)\s+.*?\bid=(\d+)/);
-  if (aixMatch) {
-    return { name: aixMatch[1], id: aixMatch[2], detail: `gid ${aixMatch[2]}` };
-  }
-
-  return undefined;
-}
-
-function dedupeOwnerGroupSuggestions(values: RemotePrincipalSuggestion[]): RemotePrincipalSuggestion[] {
-  const seen = new Set<string>();
-  return values.filter(value => {
-    const name = String(value?.name || '').trim();
-    if (!name || seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
-}

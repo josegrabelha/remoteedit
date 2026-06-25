@@ -15,6 +15,7 @@ export interface RemoteEditFavoritesState {
 export interface RemoteEditProfilesState {
   selectedId?: string;
   source?: 'webview' | 'sidebar' | 'import';
+  reason?: string;
 }
 
 export interface RemoteEditRemoteDirectoryChangeState {
@@ -108,8 +109,8 @@ class RemoteEditSharedStateStore {
     this.favoritesChangedEmitter.fire({ connectionId, source });
   }
 
-  fireProfilesChanged(selectedId?: string, source?: RemoteEditProfilesState['source']): void {
-    this.profilesChangedEmitter.fire({ selectedId, source });
+  fireProfilesChanged(selectedId?: string, source?: RemoteEditProfilesState['source'], reason?: string): void {
+    this.profilesChangedEmitter.fire({ selectedId, source, reason });
   }
 
   fireRemoteDirectoryChanged(connectionId: string, remotePath: string, source?: RemoteEditRemoteDirectoryChangeState['source']): void {

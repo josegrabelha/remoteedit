@@ -1,4 +1,33 @@
 # Changelog
+## [1.8.3] - 2026-06-25
+
+### Added
+
+* Added connection groups for saved connections.
+* Added new Server View overview cards for Sessions, Listeners, Swap, and IO Wait.
+* Added detailed modals for Server View overview cards, including filesystem, session, listener, memory, swap, load, uptime, and IO Wait details.
+* Added zombie process detection to Server View process details when process state is available.
+
+### Improved
+
+* Improved several Webview and Server View UI and usability details.
+* Improved Sidebar new connection creation so connection details are collected before saving instead of creating an incomplete draft profile.
+* Improved Sidebar connection state visuals with an updated server icon and reused the draft icon to indicate saved connections with pending changes.
+* Improved Webview directory loading, file list rendering, filtering, and row handling performance for slow or large directory listings.
+* Improved FTP modified-date fallback so MDTM checks run selectively in the background without blocking folder navigation.
+* Improved SSH/FTP connection error messages with shorter user-facing status messages and more detailed diagnostics in the Output log.
+
+### Changed
+
+* Enabled Server View auto-refresh by default with a subtle toolbar countdown.
+* Removed the redundant Webview Open Connections header above connection tabs.
+* Made Sidebar saved connection details read-only while the connection is active.
+
+### Fixed
+
+* Fixed Server View user crontab opening while Sudo Mode is enabled so it opens the selected user crontab instead of root's crontab.
+* Fixed an intermittent issue where saving a connection profile could leave the UI stuck in a busy "Saving connection..." state even after the profile was saved.
+
 ## [1.8.2] - 2026-06-22
 
 ### Improved

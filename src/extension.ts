@@ -28,7 +28,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Remote Edit');
   void resetSessionOnlyDiagnosticsSettings(output);
   const sessions: RemoteSessionManager = new RemoteSessionRouter(output);
-  const connectionManager = new ConnectionManager(context);
+  const connectionManager = new ConnectionManager(context, output);
   const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);
   const readOnlyFileSystemProvider = new RemoteEditFileSystemProvider(sessions, output, true);
   let statusBarButton: StatusBarButtonState | undefined;

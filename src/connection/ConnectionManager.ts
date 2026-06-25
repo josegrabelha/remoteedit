@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { ConnectOptions } from '../remote/RemoteSessionManager';
+import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { DEFAULT_CONNECTION_TYPE, getDefaultPortForConnectionType, isKnownConnectionType, normalizeConnectionType, SFTP_CONNECTION_TYPE, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
 
 export type AuthType = 'password' | 'privateKey';
@@ -21,6 +22,15 @@ export interface ConnectionProfile {
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
   favoriteRemotePaths?: string[];
+  groupId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ConnectionGroup {
+  id: string;
+  name: string;
+  order: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -63,6 +73,15 @@ export interface RemoteEditBackupConnection {
   ftpsCaCertificatePath?: string;
   remotePathFavorites?: string[];
   createdAt?: number;
+  groupId?: string;
+  updatedAt?: number;
+}
+
+export interface RemoteEditBackupConnectionGroup {
+  id: string;
+  name: string;
+  order?: number;
+  createdAt?: number;
   updatedAt?: number;
 }
 
@@ -95,6 +114,7 @@ export interface RemoteEditBackupFile {
   settings?: Record<string, unknown>;
   settingsKeys?: string[];
   connections?: RemoteEditBackupConnection[];
+  connectionGroups?: RemoteEditBackupConnectionGroup[];
   encryptedCredentials?: RemoteEditEncryptedCredentials | null;
   savedCommands?: Record<string, unknown[]>;
   serverLogShortcuts?: Record<string, unknown[]>;
@@ -105,6 +125,7 @@ export interface RemoteEditBackupFile {
 export interface RemoteEditBackupSummary {
   hasSettings: boolean;
   connectionCount: number;
+  connectionGroupCount: number;
   supportedConnectionCount: number;
   unsupportedConnectionCount: number;
   remotePathFavoriteCount: number;
@@ -125,6 +146,7 @@ export interface RemoteEditBackupImportResult {
   credentialsRestored: number;
   favoritesImported: number;
   usernamesImported: number;
+  connectionGroupsImported: number;
   savedCommandsImported: number;
   serverLogShortcutsImported: number;
   portForwardsImported: number;
@@ -193,11 +215,13 @@ export interface ConnectionProfileInput {
   rememberPassword?: boolean;
   rememberPassphrase?: boolean;
   keepAlive?: boolean;
+  groupId?: string;
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
 }
 
 const CONNECTIONS_KEY = 'remoteedit.connectionProfiles';
+const CONNECTION_GROUPS_KEY = 'remoteedit.connectionGroups';
 const SAVED_REMOTE_COMMANDS_KEY = 'remoteedit.savedRemoteCommands';
 const SERVER_LOG_SHORTCUTS_KEY = 'remoteedit.serverLogShortcuts';
 const SERVER_PORT_FORWARDS_KEY = 'remoteedit.serverPortForwards';
@@ -206,9 +230,146 @@ const SECRET_PREFIX = 'remoteedit.connectionSecret';
 const FTPS_CA_CERTIFICATE_REQUIRED_MESSAGE = 'CA certificate path is required for FTPS unless self-signed/untrusted certificates are allowed.';
 
 export class ConnectionManager {
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly output?: vscode.OutputChannel
+  ) {}
+
+  async listGroups(): Promise<ConnectionGroup[]> {
+    const timer = createPerformanceTimer();
+    const storedGroups = this.context.globalState.get<ConnectionGroup[]>(CONNECTION_GROUPS_KEY, []);
+    const groups = normalizeConnectionGroups(storedGroups);
+    this.logPerformance('Loaded connection groups', timer(), { Groups: groups.length });
+    return groups;
+  }
+
+  async createGroup(name: string): Promise<ConnectionGroup> {
+    const timer = createPerformanceTimer();
+    const groups = await this.listGroups();
+    const trimmedName = normalizeGroupName(name);
+    if (!trimmedName) {
+      throw new Error('Group name is required.');
+    }
+
+    if (groups.some(group => group.name.toLowerCase() === trimmedName.toLowerCase())) {
+      throw new Error('A connection group with this name already exists.');
+    }
+
+    const now = Date.now();
+    const group: ConnectionGroup = {
+      id: buildGroupId(trimmedName),
+      name: trimmedName,
+      order: groups.length,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await this.context.globalState.update(CONNECTION_GROUPS_KEY, normalizeConnectionGroups([...groups, group]));
+    this.logDebug('Created connection group.', { Group: group.name, Groups: groups.length + 1 });
+    this.logPerformance('Created connection group', timer(), { Groups: groups.length + 1 });
+    return group;
+  }
+
+  async renameGroup(groupId: string, name: string): Promise<ConnectionGroup> {
+    const timer = createPerformanceTimer();
+    const id = String(groupId || '').trim();
+    const trimmedName = normalizeGroupName(name);
+    if (!id) {
+      throw new Error('Select a connection group to rename.');
+    }
+    if (!trimmedName) {
+      throw new Error('Group name is required.');
+    }
+
+    const groups = await this.listGroups();
+    if (groups.some(group => group.id !== id && group.name.toLowerCase() === trimmedName.toLowerCase())) {
+      throw new Error('A connection group with this name already exists.');
+    }
+
+    let updatedGroup: ConnectionGroup | undefined;
+    const nextGroups = groups.map(group => {
+      if (group.id !== id) {
+        return group;
+      }
+      updatedGroup = { ...group, name: trimmedName, updatedAt: Date.now() };
+      return updatedGroup;
+    });
+
+    if (!updatedGroup) {
+      throw new Error('The selected connection group no longer exists.');
+    }
+
+    await this.context.globalState.update(CONNECTION_GROUPS_KEY, normalizeConnectionGroups(nextGroups));
+    this.logDebug('Renamed connection group.', { GroupId: id, Name: updatedGroup.name });
+    this.logPerformance('Renamed connection group', timer(), { Groups: nextGroups.length });
+    return updatedGroup;
+  }
+
+  async deleteGroup(groupId: string, deleteConnections = false): Promise<string[]> {
+    const timer = createPerformanceTimer();
+    const id = String(groupId || '').trim();
+    if (!id) {
+      throw new Error('Select a connection group to delete.');
+    }
+
+    const groups = await this.listGroups();
+    const deletedGroup = groups.find(group => group.id === id);
+    const nextGroups = groups.filter(group => group.id !== id);
+    if (nextGroups.length === groups.length) {
+      throw new Error('The selected connection group no longer exists.');
+    }
+
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    const affectedProfileCount = storedProfiles
+      .map(storedProfile => this.normalizeStoredProfile(storedProfile))
+      .filter(profile => profile.groupId === id)
+      .length;
+    const removedProfileIds: string[] = [];
+    const nextProfiles = storedProfiles
+      .map(storedProfile => this.normalizeStoredProfile(storedProfile))
+      .filter(profile => {
+        if (profile.groupId !== id) {
+          return true;
+        }
+        if (deleteConnections) {
+          removedProfileIds.push(profile.id);
+          return false;
+        }
+        return true;
+      })
+      .map(profile => {
+        if (profile.groupId !== id) {
+          return profile;
+        }
+        const { groupId: _groupId, ...profileWithoutGroup } = profile;
+        return { ...profileWithoutGroup, updatedAt: Date.now() };
+      });
+
+    await this.context.globalState.update(CONNECTION_GROUPS_KEY, normalizeConnectionGroups(nextGroups));
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+
+    if (deleteConnections) {
+      await Promise.all(removedProfileIds.flatMap(profileId => [
+        this.context.secrets.delete(secretKey(profileId, 'password')),
+        this.context.secrets.delete(secretKey(profileId, 'passphrase'))
+      ]));
+    }
+
+    this.logDebug('Removed connection group.', {
+      Group: deletedGroup?.name || id,
+      Mode: deleteConnections ? 'deleteConnections' : 'groupOnly',
+      Connections: affectedProfileCount
+    });
+    this.logPerformance('Removed connection group', timer(), {
+      Groups: nextGroups.length,
+      Connections: affectedProfileCount,
+      ConnectionsDeleted: removedProfileIds.length
+    });
+    return removedProfileIds;
+  }
 
   async listProfiles(): Promise<ConnectionProfile[]> {
+    const timer = createPerformanceTimer();
     const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
     const profiles = await Promise.all(storedProfiles.map(async profile => {
       const normalized = this.normalizeStoredProfile(profile);
@@ -219,6 +380,7 @@ export class ConnectionManager {
       };
     }));
 
+    this.logPerformance('Loaded saved connection profiles', timer(), { Profiles: profiles.length });
     return profiles;
   }
 
@@ -229,6 +391,7 @@ export class ConnectionManager {
 
 
   async saveProfile(input: ConnectionProfileInput): Promise<ConnectionProfile> {
+    const timer = createPerformanceTimer();
     const profiles = await this.listProfiles();
     const existing = input.id ? profiles.find(profile => profile.id === input.id) : undefined;
     const now = Date.now();
@@ -244,6 +407,7 @@ export class ConnectionManager {
     const keepAlive = typeof input.keepAlive === 'boolean' ? input.keepAlive : existing?.keepAlive !== false;
     const ftpsAllowSelfSignedCertificate = Boolean(input.ftpsAllowSelfSignedCertificate ?? existing?.ftpsAllowSelfSignedCertificate ?? false);
     const ftpsCaCertificatePath = String(input.ftpsCaCertificatePath ?? existing?.ftpsCaCertificatePath ?? '').trim();
+    const groupId = await this.normalizeProfileGroupId(input.groupId ?? existing?.groupId);
 
     if (!name) {
       throw new Error('Connection name is required.');
@@ -268,6 +432,7 @@ export class ConnectionManager {
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : '',
       favoriteRemotePaths: normalizeFavoriteRemotePaths(existing?.favoriteRemotePaths || []),
+      groupId,
       createdAt: existing?.createdAt || now,
       updatedAt: now
     };
@@ -279,6 +444,16 @@ export class ConnectionManager {
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
 
     await this.applyCredentialPreferences(profile.id, authType, input);
+
+    this.logDebug(existing ? 'Updated saved connection profile.' : 'Created saved connection profile.', {
+      Profile: profile.name,
+      ConnectionType: profile.connectionType,
+      GroupId: profile.groupId || 'none'
+    });
+    this.logPerformance(existing ? 'Updated saved connection profile' : 'Created saved connection profile', timer(), {
+      Profiles: nextProfiles.length,
+      Groups: (await this.listGroups()).length
+    });
 
     return {
       ...profile,
@@ -299,6 +474,7 @@ export class ConnectionManager {
 
 
   async renameProfile(profileId: string, name: string): Promise<ConnectionProfile> {
+    const timer = createPerformanceTimer();
     const trimmedName = String(name || '').trim();
 
     if (!profileId) {
@@ -333,6 +509,8 @@ export class ConnectionManager {
     }
 
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    this.logDebug('Renamed saved connection profile.', { Profile: updatedProfile.name, ProfileId: profileId });
+    this.logPerformance('Renamed saved connection profile', timer(), { Profiles: nextProfiles.length });
 
     return {
       ...updatedProfile,
@@ -342,15 +520,70 @@ export class ConnectionManager {
   }
 
   async deleteProfile(profileId: string): Promise<void> {
+    const timer = createPerformanceTimer();
     const profiles = await this.listProfiles();
+    const deletedProfile = profiles.find(profile => profile.id === profileId);
     const nextProfiles = profiles.filter(profile => profile.id !== profileId);
 
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
     await this.context.secrets.delete(secretKey(profileId, 'password'));
     await this.context.secrets.delete(secretKey(profileId, 'passphrase'));
+    this.logDebug('Deleted saved connection profile.', { Profile: deletedProfile?.name || profileId, Profiles: nextProfiles.length });
+    this.logPerformance('Deleted saved connection profile', timer(), { Profiles: nextProfiles.length });
   }
 
-  async reorderProfiles(profileIds: string[]): Promise<ConnectionProfile[]> {
+  async moveProfileToGroup(profileId: string, groupId?: string): Promise<ConnectionProfile> {
+    const timer = createPerformanceTimer();
+    const id = String(profileId || '').trim();
+    if (!id) {
+      throw new Error('Select a saved connection to move.');
+    }
+
+    const normalizedGroupId = await this.normalizeProfileGroupId(groupId);
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    let updatedProfile: ConnectionProfile | undefined;
+    let previousGroupId: string | undefined;
+
+    const nextProfiles = storedProfiles.map(storedProfile => {
+      const profile = this.normalizeStoredProfile(storedProfile);
+
+      if (profile.id !== id) {
+        return profile;
+      }
+
+      previousGroupId = profile.groupId;
+
+      if (normalizedGroupId) {
+        updatedProfile = { ...profile, groupId: normalizedGroupId, updatedAt: Date.now() };
+        return updatedProfile;
+      }
+
+      const { groupId: _groupId, ...profileWithoutGroup } = profile;
+      updatedProfile = { ...profileWithoutGroup, updatedAt: Date.now() };
+      return updatedProfile;
+    });
+
+    if (!updatedProfile) {
+      throw new Error('The selected saved connection no longer exists.');
+    }
+
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    this.logDebug('Moved saved connection profile to group.', {
+      Profile: updatedProfile.name,
+      FromGroupId: previousGroupId || 'none',
+      ToGroupId: updatedProfile.groupId || 'none'
+    });
+    this.logPerformance('Moved saved connection profile to group', timer(), { Profiles: nextProfiles.length });
+
+    return {
+      ...updatedProfile,
+      hasSavedPassword: Boolean(await this.context.secrets.get(secretKey(updatedProfile.id, 'password'))),
+      hasSavedPassphrase: Boolean(await this.context.secrets.get(secretKey(updatedProfile.id, 'passphrase')))
+    };
+  }
+
+  async reorderProfiles(profileIds: string[], groupsByProfileId?: Record<string, string | undefined>): Promise<ConnectionProfile[]> {
+    const timer = createPerformanceTimer();
     const requestedIds = Array.isArray(profileIds)
       ? profileIds.map(id => String(id || '').trim()).filter(Boolean)
       : [];
@@ -359,6 +592,8 @@ export class ConnectionManager {
       return this.listProfiles();
     }
 
+    const validGroupIds = new Set((await this.listGroups()).map(group => group.id));
+    const normalizedGroupsByProfileId = normalizeProfileGroupAssignments(groupsByProfileId || {}, validGroupIds);
     const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
     const profiles = storedProfiles.map(profile => this.normalizeStoredProfile(profile));
     const profileById = new Map(profiles.map(profile => [profile.id, profile]));
@@ -371,25 +606,30 @@ export class ConnectionManager {
         continue;
       }
 
-      nextProfiles.push(profile);
+      nextProfiles.push(applyProfileGroupAssignment(profile, normalizedGroupsByProfileId));
       addedIds.add(profile.id);
     }
 
     for (const profile of profiles) {
       if (!addedIds.has(profile.id)) {
-        nextProfiles.push(profile);
+        nextProfiles.push(applyProfileGroupAssignment(profile, normalizedGroupsByProfileId));
       }
     }
 
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    const affectedGroups = new Set(nextProfiles.map(profile => profile.groupId || 'none')).size;
+    this.logDebug('Reordered saved connection profiles.', { Profiles: nextProfiles.length, AffectedGroups: affectedGroups });
+    this.logPerformance('Reordered saved connection profiles', timer(), { Profiles: nextProfiles.length, AffectedGroups: affectedGroups });
     return this.listProfiles();
   }
 
 
   async buildBackupFile(options: ConnectionBackupExportOptions): Promise<RemoteEditBackupFile> {
+    const timer = createPerformanceTimer();
     const includeConnections = Boolean(options.includeConnections);
     const includeCredentials = includeConnections && Boolean(options.includeCredentials);
     const profiles = includeConnections ? await this.listProfiles() : [];
+    const connectionGroups = includeConnections ? await this.listGroups() : [];
     const backupConnections = includeConnections
       ? profiles.map(profile => this.toBackupConnection(profile, options))
       : [];
@@ -403,6 +643,7 @@ export class ConnectionManager {
       settings: options.includeSettings ? this.exportSettings() : undefined,
       settingsKeys: options.includeSettings ? [...REMOTE_EDIT_SETTING_KEYS] : undefined,
       connections: includeConnections ? backupConnections : undefined,
+      connectionGroups: includeConnections ? connectionGroups.map(group => this.toBackupConnectionGroup(group)) : undefined,
       encryptedCredentials: null,
       savedCommands: persistentStorage?.savedCommands,
       serverLogShortcuts: persistentStorage?.serverLogShortcuts,
@@ -422,6 +663,16 @@ export class ConnectionManager {
       }
     }
 
+    this.logDebug('Built Remote Edit backup file.', {
+      Settings: Boolean(backup.settings),
+      Profiles: backup.connections?.length || 0,
+      Groups: backup.connectionGroups?.length || 0,
+      Credentials: Boolean(backup.encryptedCredentials)
+    });
+    this.logPerformance('Built Remote Edit backup file', timer(), {
+      Profiles: backup.connections?.length || 0,
+      Groups: backup.connectionGroups?.length || 0
+    });
     return backup;
   }
 
@@ -429,11 +680,13 @@ export class ConnectionManager {
     validateBackupVersion(backup);
 
     const connections = Array.isArray(backup.connections) ? backup.connections : [];
+    const connectionGroups = normalizeBackupConnectionGroups(backup.connectionGroups || []);
     const supportedConnections = connections.filter(connection => isSupportedBackupConnection(connection));
 
     return {
       hasSettings: Boolean(backup.settings && typeof backup.settings === 'object'),
       connectionCount: connections.length,
+      connectionGroupCount: connectionGroups.length,
       supportedConnectionCount: supportedConnections.length,
       unsupportedConnectionCount: Math.max(0, connections.length - supportedConnections.length),
       remotePathFavoriteCount: supportedConnections.reduce((count, connection) => {
@@ -450,6 +703,7 @@ export class ConnectionManager {
   }
 
   async importBackupFile(backup: RemoteEditBackupFile, options: ConnectionBackupImportOptions): Promise<RemoteEditBackupImportResult> {
+    const timer = createPerformanceTimer();
     validateBackupVersion(backup);
 
     if (!options.includeSettings && !options.includeConnections) {
@@ -465,6 +719,7 @@ export class ConnectionManager {
       credentialsRestored: 0,
       favoritesImported: 0,
       usernamesImported: 0,
+      connectionGroupsImported: 0,
       savedCommandsImported: 0,
       serverLogShortcutsImported: 0,
       portForwardsImported: 0,
@@ -480,7 +735,13 @@ export class ConnectionManager {
       return result;
     }
 
-    const importedConnections = this.normalizeBackupConnections(backup.connections || [], options);
+    const importedGroups = normalizeBackupConnectionGroups(backup.connectionGroups || []);
+    const importedGroupIds = new Set(importedGroups.map(group => group.id));
+    const normalizedBackupConnections = this.normalizeBackupConnections(backup.connections || [], options);
+    const missingGroupReferenceCount = normalizedBackupConnections.filter(profile => profile.groupId && !importedGroupIds.has(profile.groupId)).length;
+    const importedConnections = normalizedBackupConnections
+      .map(profile => sanitizeProfileGroupId(profile, importedGroupIds));
+    result.connectionGroupsImported = importedGroups.length;
     result.skippedUnsupported = Math.max(0, (backup.connections || []).length - importedConnections.length);
     result.favoritesImported = options.includeFavorites
       ? importedConnections.reduce((count, profile) => count + normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []).length, 0)
@@ -490,8 +751,10 @@ export class ConnectionManager {
       : 0;
 
     const existingProfiles = await this.listProfiles();
-    const existingById = new Map(existingProfiles.map(profile => [profile.id, profile]));
+    const existingGroups = await this.listGroups();
     const now = Date.now();
+    const nextGroups = mergeConnectionGroups(existingGroups, importedGroups, options.importMode, now);
+    const nextGroupIds = new Set(nextGroups.map(group => group.id));
     let nextProfiles: ConnectionProfile[];
 
     if (options.importMode === 'replace') {
@@ -499,11 +762,11 @@ export class ConnectionManager {
         await this.deleteStoredCredentials(profile.id);
       }
 
-      nextProfiles = importedConnections.map(profile => ({
+      nextProfiles = importedConnections.map(profile => sanitizeProfileGroupId({
         ...profile,
         createdAt: profile.createdAt || now,
         updatedAt: now
-      }));
+      }, nextGroupIds));
       result.added = nextProfiles.length;
     } else {
       const importedById = new Map(importedConnections.map(profile => [profile.id, profile]));
@@ -517,26 +780,27 @@ export class ConnectionManager {
         result.updated += 1;
         importedById.delete(existing.id);
 
-        return {
+        return sanitizeProfileGroupId({
           ...existing,
           ...imported,
           username: options.includeUsernames ? imported.username : existing.username,
           favoriteRemotePaths: options.includeFavorites ? imported.favoriteRemotePaths : existing.favoriteRemotePaths,
           createdAt: existing.createdAt || imported.createdAt || now,
           updatedAt: now
-        };
+        }, nextGroupIds);
       });
 
       for (const imported of importedById.values()) {
-        nextProfiles.push({
+        nextProfiles.push(sanitizeProfileGroupId({
           ...imported,
           createdAt: imported.createdAt || now,
           updatedAt: now
-        });
+        }, nextGroupIds));
         result.added += 1;
       }
     }
 
+    await this.context.globalState.update(CONNECTION_GROUPS_KEY, nextGroups);
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
 
     if (options.restoreCredentials) {
@@ -576,6 +840,20 @@ export class ConnectionManager {
     result.portForwardsImported = persistentResult.portForwardsImported;
     result.logViewerFavoritesImported = persistentResult.logViewerFavoritesImported;
 
+    this.logDebug('Imported Remote Edit backup file.', {
+      Mode: options.importMode,
+      Added: result.added,
+      Updated: result.updated,
+      Groups: result.connectionGroupsImported,
+      MissingGroupReferences: missingGroupReferenceCount,
+      SkippedUnsupported: result.skippedUnsupported
+    });
+    this.logPerformance('Imported Remote Edit backup file', timer(), {
+      Added: result.added,
+      Updated: result.updated,
+      Groups: result.connectionGroupsImported
+    });
+
     return result;
   }
 
@@ -592,6 +870,7 @@ export class ConnectionManager {
       keepAlive: profile.keepAlive !== false,
       ftpsAllowSelfSignedCertificate: profile.connectionType === 'ftps' ? Boolean(profile.ftpsAllowSelfSignedCertificate) : undefined,
       ftpsCaCertificatePath: profile.connectionType === 'ftps' ? String(profile.ftpsCaCertificatePath || '').trim() : undefined,
+      groupId: profile.groupId || undefined,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt
     };
@@ -605,6 +884,16 @@ export class ConnectionManager {
     }
 
     return backupConnection;
+  }
+
+  private toBackupConnectionGroup(group: ConnectionGroup): RemoteEditBackupConnectionGroup {
+    return {
+      id: group.id,
+      name: group.name,
+      order: group.order,
+      createdAt: group.createdAt,
+      updatedAt: group.updatedAt
+    };
   }
 
   private exportSettings(): Record<string, unknown> {
@@ -800,6 +1089,7 @@ export class ConnectionManager {
         ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(connection.ftpsAllowSelfSignedCertificate) : false,
         ftpsCaCertificatePath: connectionType === 'ftps' ? String(connection.ftpsCaCertificatePath || '').trim() : '',
         favoriteRemotePaths: options.includeFavorites ? normalizeFavoriteRemotePaths(connection.remotePathFavorites || []) : [],
+        groupId: String(connection.groupId || '').trim() || undefined,
         createdAt: Number(connection.createdAt || Date.now()),
         updatedAt: Number(connection.updatedAt || Date.now())
       };
@@ -986,6 +1276,16 @@ export class ConnectionManager {
     }
   }
 
+  private async normalizeProfileGroupId(value: string | undefined): Promise<string | undefined> {
+    const groupId = String(value || '').trim();
+    if (!groupId) {
+      return undefined;
+    }
+
+    const groups = await this.listGroups();
+    return groups.some(group => group.id === groupId) ? groupId : undefined;
+  }
+
   private normalizeStoredProfile(profile: ConnectionProfile): ConnectionProfile {
     return {
       ...profile,
@@ -997,10 +1297,143 @@ export class ConnectionManager {
       ftpsAllowSelfSignedCertificate: normalizeConnectionType(profile.connectionType) === 'ftps' ? Boolean(profile.ftpsAllowSelfSignedCertificate) : false,
       ftpsCaCertificatePath: normalizeConnectionType(profile.connectionType) === 'ftps' ? String(profile.ftpsCaCertificatePath || '').trim() : '',
       favoriteRemotePaths: normalizeFavoriteRemotePaths(profile.favoriteRemotePaths || []),
+      groupId: String(profile.groupId || '').trim() || undefined,
       createdAt: Number(profile.createdAt || Date.now()),
       updatedAt: Number(profile.updatedAt || Date.now())
     };
   }
+
+  private logDebug(message: string, details?: Record<string, string | number | boolean | undefined | null>): void {
+    appendDebugLog(this.output, 'Profiles', message, details);
+  }
+
+  private logPerformance(message: string, elapsedMs: number, details?: Record<string, string | number | boolean | undefined | null>): void {
+    appendPerformanceLog(this.output, 'Profiles', `${message} in ${elapsedMs}ms`, details);
+  }
+}
+
+
+function normalizeGroupName(value: string): string {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeConnectionGroups(groups: ConnectionGroup[] | RemoteEditBackupConnectionGroup[]): ConnectionGroup[] {
+  const normalizedGroups: ConnectionGroup[] = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  const now = Date.now();
+
+  for (const rawGroup of groups || []) {
+    const name = normalizeGroupName(rawGroup?.name || '');
+    if (!name) {
+      continue;
+    }
+
+    const id = String(rawGroup?.id || '').trim() || buildGroupId(name);
+    const nameKey = name.toLowerCase();
+    if (!id || seenIds.has(id) || seenNames.has(nameKey)) {
+      continue;
+    }
+
+    const orderValue = Number(rawGroup?.order);
+    normalizedGroups.push({
+      id,
+      name,
+      order: Number.isFinite(orderValue) ? orderValue : normalizedGroups.length,
+      createdAt: Number(rawGroup?.createdAt || now),
+      updatedAt: Number(rawGroup?.updatedAt || now)
+    });
+    seenIds.add(id);
+    seenNames.add(nameKey);
+  }
+
+  return normalizedGroups
+    .sort((a, b) => {
+      const nameCompare = String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+      return nameCompare || String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true, sensitivity: 'base' });
+    })
+    .map((group, index) => ({ ...group, order: index }));
+}
+
+function normalizeBackupConnectionGroups(groups: RemoteEditBackupConnectionGroup[]): ConnectionGroup[] {
+  return normalizeConnectionGroups(groups || []);
+}
+
+function mergeConnectionGroups(
+  existingGroups: ConnectionGroup[],
+  importedGroups: ConnectionGroup[],
+  importMode: RemoteEditImportMode,
+  now: number
+): ConnectionGroup[] {
+  if (importMode === 'replace') {
+    return normalizeConnectionGroups(importedGroups.map(group => ({ ...group, updatedAt: now })));
+  }
+
+  const importedById = new Map(importedGroups.map(group => [group.id, group]));
+  const nextGroups = existingGroups.map(existing => {
+    const imported = importedById.get(existing.id);
+    if (!imported) {
+      return existing;
+    }
+
+    importedById.delete(existing.id);
+    return {
+      ...existing,
+      ...imported,
+      createdAt: existing.createdAt || imported.createdAt || now,
+      updatedAt: now
+    };
+  });
+
+  for (const imported of importedById.values()) {
+    nextGroups.push({
+      ...imported,
+      createdAt: imported.createdAt || now,
+      updatedAt: now
+    });
+  }
+
+  return normalizeConnectionGroups(nextGroups);
+}
+
+function sanitizeProfileGroupId<T extends ConnectionProfile>(profile: T, validGroupIds: Set<string>): T {
+  const groupId = String(profile.groupId || '').trim();
+  if (!groupId || !validGroupIds.has(groupId)) {
+    const { groupId: _groupId, ...withoutGroup } = profile;
+    return withoutGroup as T;
+  }
+
+  return { ...profile, groupId };
+}
+
+function normalizeProfileGroupAssignments(assignments: Record<string, string | undefined>, validGroupIds: Set<string>): Record<string, string> {
+  const normalized: Record<string, string> = {};
+
+  for (const [profileId, rawGroupId] of Object.entries(assignments || {})) {
+    const id = String(profileId || '').trim();
+    if (!id) {
+      continue;
+    }
+
+    const groupId = String(rawGroupId || '').trim();
+    normalized[id] = groupId && validGroupIds.has(groupId) ? groupId : '';
+  }
+
+  return normalized;
+}
+
+function applyProfileGroupAssignment(profile: ConnectionProfile, assignments: Record<string, string>): ConnectionProfile {
+  if (!Object.prototype.hasOwnProperty.call(assignments, profile.id)) {
+    return profile;
+  }
+
+  const groupId = assignments[profile.id];
+  if (!groupId) {
+    const { groupId: _groupId, ...withoutGroup } = profile;
+    return { ...withoutGroup, updatedAt: Date.now() };
+  }
+
+  return { ...profile, groupId, updatedAt: Date.now() };
 }
 
 function validateFtpsCaCertificateRequirement(connectionType: RemoteConnectionType | string | undefined, allowSelfSignedCertificate: boolean, caCertificatePath: string | undefined): void {
@@ -1091,6 +1524,16 @@ function buildProfileId(name: string, host: string, username: string): string {
     .replace(/[^a-z0-9_.-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 72) || 'remoteedit-connection';
+
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+function buildGroupId(name: string): string {
+  const base = String(name || 'group')
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72) || 'connection-group';
 
   return `${base}-${Date.now().toString(36)}`;
 }

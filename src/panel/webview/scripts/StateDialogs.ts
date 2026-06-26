@@ -1,7 +1,69 @@
-export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boolean, openFileListItemsOnNameClick: boolean): string {
+export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boolean, openFileListItemsOnNameClick: boolean, permissionsDisplayMode: string): string {
   return `  const vscode = acquireVsCodeApi();
   let showRemotePathBreadcrumbDirectoryDetails = ${showRemotePathBreadcrumbDirectoryDetails ? 'true' : 'false'};
   let openFileListItemsOnNameClick = ${openFileListItemsOnNameClick ? 'true' : 'false'};
+  let permissionsDisplayMode = normalizePermissionsDisplayMode('${permissionsDisplayMode}');
+
+  function normalizePermissionsDisplayMode(value) {
+    const mode = String(value || '').trim();
+    return mode === 'numeric' || mode === 'both' ? mode : 'symbolic';
+  }
+
+  function permissionModeFromString(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^[0-7]{3,4}$/.test(text)) return text.padStart(4, '0');
+    return permissionModeFromSymbolic(text);
+  }
+
+  function permissionModeFromSymbolic(permissions) {
+    const text = String(permissions || '').trim();
+    if (!/^[bcdlps-][rwxStTs-]{9}/.test(text)) return '';
+
+    const chars = text.slice(1, 10);
+    let mode = 0;
+
+    if (chars[0] === 'r') mode |= 0o400;
+    if (chars[1] === 'w') mode |= 0o200;
+    if (chars[2] === 'x' || chars[2] === 's') mode |= 0o100;
+    if (chars[2] === 's' || chars[2] === 'S') mode |= 0o4000;
+
+    if (chars[3] === 'r') mode |= 0o040;
+    if (chars[4] === 'w') mode |= 0o020;
+    if (chars[5] === 'x' || chars[5] === 's') mode |= 0o010;
+    if (chars[5] === 's' || chars[5] === 'S') mode |= 0o2000;
+
+    if (chars[6] === 'r') mode |= 0o004;
+    if (chars[7] === 'w') mode |= 0o002;
+    if (chars[8] === 'x' || chars[8] === 't') mode |= 0o001;
+    if (chars[8] === 't' || chars[8] === 'T') mode |= 0o1000;
+
+    return (mode & 0o7777).toString(8).padStart(4, '0');
+  }
+
+  function formatPermissionsForDisplay(permissions, mode) {
+    const text = String(permissions || '').trim();
+    if (!text) return '';
+
+    const octal = permissionModeFromString(text);
+    if (!octal) return text;
+
+    const isNumericText = /^[0-7]{3,4}$/.test(text);
+    const displayMode = normalizePermissionsDisplayMode(mode || permissionsDisplayMode);
+    if (displayMode === 'numeric') return octal;
+    if (displayMode === 'both') return isNumericText ? octal : text + ' (' + octal + ')';
+    return text;
+  }
+
+  function formatPermissionsPropertyValue(permissions) {
+    const text = String(permissions || '').trim();
+    if (!text) return '—';
+
+    const octal = permissionModeFromString(text);
+    if (!octal) return text;
+
+    return /^[0-7]{3,4}$/.test(text) ? octal : text + ' (' + octal + ')';
+  }
 
   const mainLayout = document.getElementById('mainLayout');
   const connectionResizeHandle = document.getElementById('connectionResizeHandle');
@@ -453,8 +515,8 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const REMOTE_PATH_REFRESH_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M483.08-200q-117.25 0-198.63-81.34-81.37-81.34-81.37-198.54 0-117.2 81.37-198.66Q365.83-760 483.08-760q71.3 0 133.54 33.88 62.23 33.89 100.3 94.58V-760h40v209.23H547.69v-40h148q-31.23-59.85-87.88-94.54Q551.15-720 483.08-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h42.46Q725.08-310.15 651-255.08 576.92-200 483.08-200Z" /></svg>';
 
   const columnOrder = ['name', 'type', 'size', 'owner', 'group', 'permissions', 'modified'];
-  const columnWidths = { name: 300, type: 86, size: 92, owner: 84, group: 84, permissions: 120, modified: 170 };
-  const minColumnWidths = { name: 150, type: 62, size: 72, owner: 64, group: 64, permissions: 90, modified: 130 };
+  const columnWidths = { name: 300, type: 86, size: 92, owner: 84, group: 84, permissions: 150, modified: 170 };
+  const minColumnWidths = { name: 150, type: 62, size: 72, owner: 64, group: 64, permissions: 110, modified: 130 };
 
   let profiles = [];
   let connectionGroups = [];

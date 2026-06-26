@@ -6,6 +6,7 @@ import { renderStyles } from './webview/styles/Styles';
 export interface RemoteEditHtmlOptions {
   showRemotePathBreadcrumbDirectoryDetails: boolean;
   openFileListItemsOnNameClick: boolean;
+  permissionsDisplayMode: string;
 }
 
 export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, options: RemoteEditHtmlOptions): string {

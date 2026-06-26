@@ -346,7 +346,7 @@ export function renderOwnerGroupProperties(): string {
 
     rows.push(
       ['Modified', formatDate(entry.modifyTime) || '—'],
-      ['Permissions', formatPermissionsValue(entry.permissions)],
+      ['Permissions', formatPermissionsPropertyValue(entry.permissions)],
       ['Owner', formatMetadata(entry.owner) || '—'],
       ['Group', formatMetadata(entry.group) || '—']
     );
@@ -436,41 +436,6 @@ export function renderOwnerGroupProperties(): string {
       return 'Symbolic link' + resolvedType;
     }
     return capitalizeText(entry.type || 'unknown');
-  }
-
-  function formatPermissionsValue(permissions) {
-    const text = String(permissions || '').trim();
-    if (!text) return '—';
-    const mode = permissionModeFromSymbolic(text);
-    return mode ? text + ' (' + mode + ')' : text;
-  }
-
-  function permissionModeFromSymbolic(permissions) {
-    const text = String(permissions || '').trim();
-    if (text.length < 10) return '';
-
-    const chars = text.slice(-9);
-    let special = 0;
-    let owner = 0;
-    let group = 0;
-    let other = 0;
-
-    if (chars[0] === 'r') owner += 4;
-    if (chars[1] === 'w') owner += 2;
-    if (chars[2] === 'x' || chars[2] === 's') owner += 1;
-    if (chars[2] === 's' || chars[2] === 'S') special += 4;
-
-    if (chars[3] === 'r') group += 4;
-    if (chars[4] === 'w') group += 2;
-    if (chars[5] === 'x' || chars[5] === 's') group += 1;
-    if (chars[5] === 's' || chars[5] === 'S') special += 2;
-
-    if (chars[6] === 'r') other += 4;
-    if (chars[7] === 'w') other += 2;
-    if (chars[8] === 'x' || chars[8] === 't') other += 1;
-    if (chars[8] === 't' || chars[8] === 'T') special += 1;
-
-    return (special ? String(special) : '') + String(owner) + String(group) + String(other);
   }
 
   function capitalizeText(value) {
@@ -588,14 +553,14 @@ export function renderOwnerGroupProperties(): string {
 
     if (permissionPreviewKind === 'mixed') {
       setPermissionPreviewLines([
-        'File preview: ' + permissionSymbolicFromMode(normalized, '-'),
-        'Directory preview: ' + permissionSymbolicFromMode(normalized, 'd')
+        'File preview: ' + permissionSymbolicFromMode(normalized, '-') + ' (' + normalized + ')',
+        'Directory preview: ' + permissionSymbolicFromMode(normalized, 'd') + ' (' + normalized + ')'
       ]);
       return;
     }
 
     const typeChar = permissionPreviewKind === 'directory' ? 'd' : '-';
-    setPermissionPreviewLines(['Preview: ' + permissionSymbolicFromMode(normalized, typeChar)]);
+    setPermissionPreviewLines(['Preview: ' + permissionSymbolicFromMode(normalized, typeChar) + ' (' + normalized + ')']);
   }
 
   function setPermissionPreviewLines(lines) {

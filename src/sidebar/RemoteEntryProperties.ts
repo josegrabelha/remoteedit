@@ -1,4 +1,5 @@
 import type { RemoteEntry, RemoteEntryType, RemoteSessionManager } from '../remote/RemoteSessionManager';
+import { formatPermissionsPropertyValue, permissionModeFromString as permissionModeFromStringValue } from '../utils/permissionFormatUtils';
 import type { RemoteEditSidebarItem } from './Items';
 
 export interface SidebarRemoteEntryStat {
@@ -48,7 +49,7 @@ export function buildRemoteEntryProperties(
 
   rows.push(
     ['Modified', formatPropertyDate(entry?.modifyTime ?? stats?.modifyTime) || '—'],
-    ['Permissions', formatPermissionsValue(entry?.permissions)],
+    ['Permissions', formatPermissionsPropertyValue(entry?.permissions)],
     ['Owner', formatMetadata(entry?.owner) || '—'],
     ['Group', formatMetadata(entry?.group) || '—']
   );
@@ -91,14 +92,7 @@ export function formatBytes(size: unknown): string {
 }
 
 export function permissionModeFromString(permissions: string): string | undefined {
-  const text = String(permissions || '').trim();
-
-  if (/^[0-7]{3,4}$/.test(text)) {
-    return text.padStart(4, '0');
-  }
-
-  const mode = permissionModeFromSymbolic(text);
-  return mode ? mode.padStart(4, '0') : undefined;
+  return permissionModeFromStringValue(permissions);
 }
 
 export function formatChecksumLine(checksum: { value?: string; error?: string; command?: string }): string {
@@ -116,44 +110,6 @@ function formatPropertyType(entry: RemoteEntry | undefined, entryType: RemoteEnt
   }
 
   return capitalizeText(entry?.type || entryType || 'unknown');
-}
-
-function formatPermissionsValue(permissions: unknown): string {
-  const text = String(permissions || '').trim();
-
-  if (!text) {
-    return '—';
-  }
-
-  const mode = permissionModeFromSymbolic(text);
-  return mode ? `${text} (${mode})` : text;
-}
-
-function permissionModeFromSymbolic(permissions: string): string {
-  const text = String(permissions || '').trim();
-
-  if (text.length < 10) {
-    return '';
-  }
-
-  const chars = text.slice(-9);
-  const valueFor = (read: string, write: string, execute: string): number => {
-    let value = 0;
-    if (read === 'r') value += 4;
-    if (write === 'w') value += 2;
-    if (execute === 'x' || execute === 's' || execute === 't') value += 1;
-    return value;
-  };
-  const owner = valueFor(chars[0], chars[1], chars[2]);
-  const group = valueFor(chars[3], chars[4], chars[5]);
-  const other = valueFor(chars[6], chars[7], chars[8]);
-  let special = 0;
-
-  if (chars[2] === 's' || chars[2] === 'S') special += 4;
-  if (chars[5] === 's' || chars[5] === 'S') special += 2;
-  if (chars[8] === 't' || chars[8] === 'T') special += 1;
-
-  return `${special ? String(special) : ''}${owner}${group}${other}`;
 }
 
 function formatPropertyDate(value: unknown): string {

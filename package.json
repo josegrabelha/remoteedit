@@ -476,6 +476,22 @@
             "default": true,
             "description": "Open files and folders with a single click on the item name in the Webview file list.",
             "order": 20
+          },
+          "remoteedit.webview.fileList.permissionsDisplay": {
+            "type": "string",
+            "enum": [
+              "symbolic",
+              "numeric",
+              "both"
+            ],
+            "default": "symbolic",
+            "enumDescriptions": [
+              "Show symbolic permissions, for example -rwx------.",
+              "Show 4-digit octal permissions, for example 0700.",
+              "Show symbolic and 4-digit octal permissions, for example -rwx------ (0700)."
+            ],
+            "description": "Controls how permissions are displayed in compact Webview permission columns, including the file list and Remote Path directory picker.",
+            "order": 30
           }
         }
       },

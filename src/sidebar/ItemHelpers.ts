@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import type { AuthType, ConnectionProfile } from '../connection/ConnectionManager';
 import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
 import type { TransferQueueItemSnapshot } from '../panel/RemoteEditPanel';
+import { formatPermissionsPropertyValue } from '../utils/permissionFormatUtils';
 
 export function getConnectionDetailContextValue(field: ConnectionDetailField, isQuickConnect: boolean, isCredentials: boolean): string {
   if (field === 'ftpsCaCertificatePath') {
@@ -373,7 +374,7 @@ export function buildRemoteEntryTooltip(entry: RemoteEntry, resolvedType: Remote
   }
 
   if (entry.permissions) {
-    lines.push(formatTooltipField('Permissions', entry.permissions));
+    lines.push(formatTooltipField('Permissions', formatPermissionsPropertyValue(entry.permissions)));
   }
 
   if (entry.owner !== undefined || entry.group !== undefined) {

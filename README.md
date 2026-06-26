@@ -225,7 +225,7 @@ Sudo passwords are never stored and are only kept in memory during the active se
 
 ## Remote Path Breadcrumb Picker
 
-The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping to sibling directories. The directory picker can show owner/group and permission details in aligned columns.
+The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping to sibling directories. The directory picker can show owner/group and permission details in aligned columns. Its permission value follows the Webview permission display setting, so it can show symbolic, numeric, or combined permissions when the remote server provides compatible permission data.
 
 Use this setting to hide those details when you prefer a simpler directory list:
 
@@ -234,6 +234,20 @@ Use this setting to hide those details when you prefer a simpler directory list:
 ```
 
 Default: `true`
+
+## Permission Display
+
+The Webview file list and Remote Path directory picker can show permissions in symbolic, numeric, or combined format. Numeric permissions use 4-digit octal values so special bits are visible when present.
+
+```json
+"remoteedit.webview.fileList.permissionsDisplay": "symbolic"
+```
+
+Supported values: `symbolic`, `numeric`, `both`
+
+Default: `symbolic`
+
+File and directory Properties and Sidebar hover details always show the complete symbolic plus 4-digit octal value when symbolic permissions are available. The Remote Path directory picker follows the Webview permission display setting.
 
 ## File Operations
 
@@ -327,6 +341,7 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 - `remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails`
 - `remoteedit.webview.fileList.openOnNameClick`
+- `remoteedit.webview.fileList.permissionsDisplay`
 
 ### Sidebar
 

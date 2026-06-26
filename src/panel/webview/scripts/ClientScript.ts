@@ -17,13 +17,15 @@ import { renderTransfersStatus } from './TransfersStatus';
 export interface ClientScriptOptions {
   showRemotePathBreadcrumbDirectoryDetails: boolean;
   openFileListItemsOnNameClick: boolean;
+  permissionsDisplayMode: string;
 }
 
 export function renderClientScript(options: ClientScriptOptions): string {
   const showRemotePathBreadcrumbDirectoryDetails = options.showRemotePathBreadcrumbDirectoryDetails !== false;
   const openFileListItemsOnNameClick = options.openFileListItemsOnNameClick !== false;
+  const permissionsDisplayMode = options.permissionsDisplayMode || 'symbolic';
 
-  return renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails, openFileListItemsOnNameClick) +
+  return renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails, openFileListItemsOnNameClick, permissionsDisplayMode) +
     renderEventBindings() +
     renderTransferContextActions() +
     renderTextEditContextMenu() +

@@ -169,6 +169,7 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   statusBarButtonPriority: 1000,
   'webview.remotePathBreadcrumb.showDirectoryDetails': true,
   'webview.fileList.openOnNameClick': true,
+  'webview.fileList.permissionsDisplay': 'symbolic',
   'sidebar.showItemInfoOnHover': false,
   'sidebar.showParentPath': true,
   directoryListingCacheTtl: 30,

@@ -38,7 +38,9 @@ export function renderEventBindings(): string {
         break;
       case 'fileListSettingsChanged':
         openFileListItemsOnNameClick = payload.openOnNameClick !== false;
+        permissionsDisplayMode = normalizePermissionsDisplayMode(payload.permissionsDisplay);
         updateFileListNameClickOpenState();
+        renderEntries(getVisibleEntries());
         break;
       case 'hideExportConnectionsSettingsDialog':
         hideExportBackupDialog();

@@ -17,6 +17,7 @@ import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmatio
 import { RemoteEditOperationCancelledError, formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { appendDebugLog, appendOutputLog, appendPerformanceLog, createPerformanceTimer, type OutputLogDetails } from '../utils/outputLogger';
 import { shellQuote } from '../utils/shellUtils';
+import { normalizePermissionDisplayMode } from '../utils/permissionFormatUtils';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
 import { handleRemoteEditPanelMessage } from './PanelHandlers';
@@ -549,7 +550,11 @@ export class RemoteEditPanel {
         if (event.affectsConfiguration('remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails') || event.affectsConfiguration('remoteedit.remotePathBreadcrumb.showDirectoryDetails')) {
           this.postRemotePathBreadcrumbSettings();
         }
-        if (event.affectsConfiguration('remoteedit.webview.fileList.openOnNameClick') || event.affectsConfiguration('remoteedit.fileList.openOnNameClick')) {
+        if (
+          event.affectsConfiguration('remoteedit.webview.fileList.openOnNameClick') ||
+          event.affectsConfiguration('remoteedit.fileList.openOnNameClick') ||
+          event.affectsConfiguration('remoteedit.webview.fileList.permissionsDisplay')
+        ) {
           this.postFileListSettings();
         }
       })
@@ -4768,7 +4773,8 @@ export class RemoteEditPanel {
         'webview.fileList.openOnNameClick',
         'fileList.openOnNameClick',
         true
-      )
+      ),
+      permissionsDisplay: getPermissionsDisplayModeSetting()
     });
   }
 
@@ -4817,11 +4823,18 @@ export class RemoteEditPanel {
         'webview.fileList.openOnNameClick',
         'fileList.openOnNameClick',
         true
-      )
+      ),
+      permissionsDisplayMode: getPermissionsDisplayModeSetting()
     });
   }
 }
 
+
+
+function getPermissionsDisplayModeSetting(): string {
+  const value = vscode.workspace.getConfiguration('remoteedit').get<string>('webview.fileList.permissionsDisplay', 'symbolic');
+  return normalizePermissionDisplayMode(value);
+}
 
 function getBooleanSettingWithLegacyFallback(key: string, legacyKey: string, defaultValue: boolean): boolean {
   const config = vscode.workspace.getConfiguration('remoteedit');

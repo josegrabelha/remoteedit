@@ -418,7 +418,7 @@ export function renderRemoteCommandActions(): string {
     if (!remotePathDropdown || !remotePathBox || !anchor) return;
     const boxRect = remotePathBox.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
-    const dropdownWidth = Math.min(380, Math.max(260, window.innerWidth - 56));
+    const dropdownWidth = Math.min(540, Math.max(320, window.innerWidth - 56));
     let left = Math.round(anchorRect.left - boxRect.left);
     left = Math.max(0, Math.min(left, Math.max(0, boxRect.width - dropdownWidth)));
     remotePathDropdown.style.width = dropdownWidth + 'px';
@@ -468,6 +468,8 @@ export function renderRemoteCommandActions(): string {
       button.type = 'button';
       button.className = 'remote-path-dropdown-item';
       button.dataset.dropdownDirectoryPath = item.path || '';
+      const ownerGroupText = [item.owner, item.group].filter(Boolean).join(':');
+      const permissionsText = formatPermissionsForDisplay(item.permissions);
       button.setAttribute('data-tooltip', item.path || item.name || '');
 
       const name = document.createElement('span');
@@ -481,12 +483,12 @@ export function renderRemoteCommandActions(): string {
 
         const ownerGroup = document.createElement('span');
         ownerGroup.className = 'remote-path-dropdown-meta-owner';
-        ownerGroup.textContent = [item.owner, item.group].filter(Boolean).join(':');
+        ownerGroup.textContent = ownerGroupText;
         meta.appendChild(ownerGroup);
 
         const permissions = document.createElement('span');
         permissions.className = 'remote-path-dropdown-meta-permissions';
-        permissions.textContent = item.permissions || '';
+        permissions.textContent = permissionsText;
         meta.appendChild(permissions);
 
         button.appendChild(meta);

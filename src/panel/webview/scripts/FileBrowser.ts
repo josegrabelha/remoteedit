@@ -306,7 +306,7 @@ export function renderFileBrowser(): string {
       '<td class="size">' + (isDirectoryLike(entry) ? '' : formatSize(entry.size)) + '</td>' +
       '<td class="owner">' + escapeHtml(formatMetadata(entry.owner)) + '</td>' +
       '<td class="group">' + escapeHtml(formatMetadata(entry.group)) + '</td>' +
-      '<td class="permissions">' + escapeHtml(entry.permissions || '') + '</td>' +
+      '<td class="permissions">' + escapeHtml(formatPermissionsForDisplay(entry.permissions)) + '</td>' +
       '<td class="modified">' + formatDate(entry.modifyTime) + '</td>';
 
     return row;

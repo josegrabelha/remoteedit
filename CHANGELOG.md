@@ -1,6 +1,11 @@
 # Changelog
 ## [1.8.4] - Unreleased
 
+### Added
+
+* Added `remoteedit.webview.fileList.permissionsDisplay` to show compact Webview permission displays in symbolic, numeric, or combined format. Numeric permissions are displayed as 4-digit octal values.
+* Added 4-digit octal permissions to file and directory properties, Sidebar hover details, and Set Permissions previews when symbolic permissions are available.
+
 ### Fixed
 
 * Fixed upload refresh synchronization between the Webview and Sidebar so the affected remote directory is refreshed after uploads complete.

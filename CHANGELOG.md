@@ -1,4 +1,10 @@
 # Changelog
+## [1.8.4] - Unreleased
+
+### Fixed
+
+* Fixed upload refresh synchronization between the Webview and Sidebar so the affected remote directory is refreshed after uploads complete.
+
 ## [1.8.3] - 2026-06-25
 
 ### Added

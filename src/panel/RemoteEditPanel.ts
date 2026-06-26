@@ -2727,7 +2727,7 @@ export class RemoteEditPanel {
         throw error;
       });
     } finally {
-      await this.listDirectory(targetDirectory);
+      await this.refreshUploadTargetDirectory(connectionId, targetDirectory);
     }
 
     if (uploadCanceled) {
@@ -2745,6 +2745,21 @@ export class RemoteEditPanel {
     await this.showTransferSummary('Upload', summary);
     return completionStatus;
   }
+
+  private async refreshUploadTargetDirectory(connectionId: string, targetDirectory: string): Promise<void> {
+    const normalizedTargetDirectory = normalizeRemotePath(targetDirectory || '/');
+
+    if (this.sessions.hasConnection(connectionId)
+      && !this.isDisposed
+      && this.panel
+      && this.state.getActiveConnectionId() === connectionId
+      && normalizeRemotePath(this.getActivePath() || '/') === normalizedTargetDirectory) {
+      await this.listDirectory(normalizedTargetDirectory, { forceRefresh: true });
+    }
+
+    RemoteEditSharedState.fireRemoteDirectoryChanged(connectionId, normalizedTargetDirectory, 'webview');
+  }
+
 
   private async requestDownloadEntries(payload: any): Promise<void> {
     const connectionId = this.requireTransferConnectionId(payload);

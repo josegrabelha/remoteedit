@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ConnectionManager } from './connection/ConnectionManager';
 import { RemoteEditFileSystemProvider } from './filesystem/RemoteEditFileSystemProvider';
 import { RemoteEditPanel } from './panel/RemoteEditPanel';
@@ -6,6 +7,7 @@ import type { RemoteSessionManager } from './remote/RemoteSessionManager';
 import { RemoteSessionRouter } from './remote/RemoteSessionRouter';
 import { appendOutputLog } from './utils/outputLogger';
 import { RemoteEditSidebarController } from './sidebar/SidebarController';
+import { cleanupDroppedUploadStagingRoot } from './panel/DroppedUploadStagingService';
 
 type StatusBarButtonStyle = 'iconAndText' | 'iconOnly' | 'textOnly';
 type StatusBarButtonPosition = 'left' | 'right' | 'hidden';
@@ -27,6 +29,17 @@ const SESSION_ONLY_DIAGNOSTIC_SETTINGS = [
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Remote Edit');
   void resetSessionOnlyDiagnosticsSettings(output);
+
+  void cleanupDroppedUploadStagingRoot(path.join(context.globalStorageUri.fsPath, 'dropped-uploads'))
+    .then(removed => {
+      if (removed > 0) {
+        appendOutputLog(output, 'DEBUG', `Cleaned up stale dropped upload staging directories: ${removed}.`);
+      }
+    })
+    .catch(error => {
+      const message = error instanceof Error ? error.message : String(error);
+      appendOutputLog(output, 'WARN', `Failed to clean up stale dropped upload staging directories: ${message}`);
+    });
   const sessions: RemoteSessionManager = new RemoteSessionRouter(output);
   const connectionManager = new ConnectionManager(context, output);
   const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);

@@ -5,9 +5,19 @@
 
 * Added `remoteedit.webview.fileList.permissionsDisplay` to show compact Webview permission displays in symbolic, numeric, or combined format. Numeric permissions are displayed as 4-digit octal values.
 * Added 4-digit octal permissions to file and directory properties, Sidebar hover details, and Set Permissions previews when symbolic permissions are available.
+* Added drag-and-drop upload in the Webview file list for local files and folders dropped from the OS.
+* Added drag-and-drop upload in the Sidebar Open Connections tree for local files and folders dropped onto remote folders or connections.
+
+### Improved
+
+* Improved Webview drag-and-drop upload highlighting with subtle shadows on the file list and target directory row instead of stronger border highlights.
+* Improved Webview drag-and-drop upload navigation so hovering over a remote directory row, including `..`, opens that directory after a 1.2 second delay.
+* Improved Sidebar drag-and-drop upload safety by requiring VS Code-provided local paths and showing a warning with Upload/Webview actions when paths are unavailable.
 
 ### Fixed
 
+* Fixed cleanup for orphaned drag-and-drop upload staging directories left by an interrupted VS Code session.
+* Fixed Webview drag-and-drop upload target highlighting so it is cleared when the user drops outside the file list, cancels the drag, or leaves the Webview.
 * Fixed upload refresh synchronization between the Webview and Sidebar so the affected remote directory is refreshed after uploads complete.
 
 ## [1.8.3] - 2026-06-25

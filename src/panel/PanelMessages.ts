@@ -38,6 +38,11 @@ export const RemoteEditIncomingMessageType = {
   RequestDeleteEntry: 'requestDeleteEntry',
   RequestDeleteEntries: 'requestDeleteEntries',
   RequestUploadEntries: 'requestUploadEntries',
+  RequestDroppedUploadEntries: 'requestDroppedUploadEntries',
+  BeginDroppedUploadEntries: 'beginDroppedUploadEntries',
+  WriteDroppedUploadChunk: 'writeDroppedUploadChunk',
+  FinishDroppedUploadEntries: 'finishDroppedUploadEntries',
+  CancelDroppedUploadEntries: 'cancelDroppedUploadEntries',
   RequestDownloadEntries: 'requestDownloadEntries',
   RequestCompressArchive: 'requestCompressArchive',
   CancelTransfer: 'cancelTransfer',
@@ -125,7 +130,9 @@ export const RemoteEditOutboundMessageType = {
   PortForwardStateChanged: 'portForwardStateChanged',
   PersistentStorageSnapshot: 'persistentStorageSnapshot',
   RemotePathBreadcrumbSettingsChanged: 'remotePathBreadcrumbSettingsChanged',
-  FileListSettingsChanged: 'fileListSettingsChanged'
+  FileListSettingsChanged: 'fileListSettingsChanged',
+  DroppedUploadSessionReady: 'droppedUploadSessionReady',
+  DroppedUploadChunkWritten: 'droppedUploadChunkWritten'
 } as const;
 
 export type RemoteEditIncomingMessageType = typeof RemoteEditIncomingMessageType[keyof typeof RemoteEditIncomingMessageType];

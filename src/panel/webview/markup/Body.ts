@@ -274,7 +274,7 @@ export function renderBody(): string {
           </div>
 
           <div id="filesView" class="connection-view files-view">
-          <div id="entriesTableWrap" class="table-wrap">
+            <div id="entriesTableWrap" class="table-wrap">
             <table id="entriesTable">
               <colgroup>
                 <col data-column="name" />

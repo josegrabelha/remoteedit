@@ -40,6 +40,11 @@ export interface RemoteEditPanelMessageHandlers {
   requestDeleteEntry(payload: any): Promise<void>;
   requestDeleteEntries(payload: any): Promise<void>;
   requestUploadEntries(payload: any): Promise<void>;
+  requestDroppedUploadEntries(payload: any): Promise<void>;
+  beginDroppedUploadEntries(payload: any): Promise<void>;
+  writeDroppedUploadChunk(payload: any): Promise<void>;
+  finishDroppedUploadEntries(payload: any): Promise<void>;
+  cancelDroppedUploadEntries(payload: any): Promise<void>;
   requestDownloadEntries(payload: any): Promise<void>;
   requestCompressArchive(payload: any): Promise<void>;
   cancelTransfer(payload?: any): Promise<void>;

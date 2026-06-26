@@ -188,6 +188,9 @@ Upload and download files with built-in queue management.
 - Individual transfer cancellation
 - Progress tracking
 - Multiple simultaneous transfers
+- Drag-and-drop upload from the OS into the Webview file list or Sidebar Open Connections tree
+- In the Webview, hover over a remote folder row while dragging to open that folder before dropping, including `..` for the parent folder.
+- Sidebar drag-and-drop uses local paths exposed by VS Code. If paths are unavailable, use the Upload button or the Webview drop area.
 - FTP, FTPS, and SFTP support
 
 ```json
@@ -280,6 +283,9 @@ Transfer files and folders between your local machine and remote servers.
 - Progress tracking
 - Queue management
 - Multiple simultaneous transfers
+- Drag-and-drop upload from the OS into the Webview file list or Sidebar Open Connections tree
+- In the Webview, hover over a remote folder row while dragging to open that folder before dropping, including `..` for the parent folder.
+- Sidebar drag-and-drop uses local paths exposed by VS Code. If paths are unavailable, use the Upload button or the Webview drop area.
 
 ## Saved Connections
 

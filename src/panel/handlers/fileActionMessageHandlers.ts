@@ -30,6 +30,21 @@ export async function tryHandleFileActionMessage(
     case RemoteEditIncomingMessageType.RequestUploadEntries:
       await handlers.requestUploadEntries(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestDroppedUploadEntries:
+      await handlers.requestDroppedUploadEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.BeginDroppedUploadEntries:
+      await handlers.beginDroppedUploadEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.WriteDroppedUploadChunk:
+      await handlers.writeDroppedUploadChunk(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.FinishDroppedUploadEntries:
+      await handlers.finishDroppedUploadEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CancelDroppedUploadEntries:
+      await handlers.cancelDroppedUploadEntries(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.RequestDownloadEntries:
       await handlers.requestDownloadEntries(message.payload);
       return true;

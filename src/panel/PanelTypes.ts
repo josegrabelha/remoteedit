@@ -47,6 +47,13 @@ export interface UploadTransferItem {
   size: number;
 }
 
+export interface LocalUploadEntry {
+  kind: 'file' | 'directory';
+  localPath?: string;
+  relativePath: string;
+  size?: number;
+}
+
 export interface DownloadTransferItem {
   kind: 'file' | 'directory';
   remotePath: string;
@@ -105,6 +112,7 @@ export interface QueuedTransferJob {
   queuedAt?: string;
   startedAt?: string;
   run: (cancellationSource: vscode.CancellationTokenSource) => Promise<TransferCompletionStatus>;
+  cleanup?: () => Promise<void>;
   resultSummary?: TransferSummary;
 }
 

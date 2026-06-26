@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
+import type { LocalUploadEntry } from '../panel/PanelTypes';
 import { buildCopyFileName } from '../panel/FileNameUtils';
 import { buildArchiveBaseName, normalizeArchiveName } from '../panel/ArchiveUtils';
 import { getDefaultPortForConnectionType, normalizeConnectionType, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
@@ -19,6 +20,7 @@ import { SidebarBackupController } from './BackupController';
 import { QUICK_CONNECT_ID, SidebarConnectionDraftStore } from './ConnectionDraftStore';
 import { buildRemoteEntryProperties, formatBytes, formatChecksumLine, permissionModeFromString } from './RemoteEntryProperties';
 import { SudoModeDecorationProvider } from './SudoModeDecorationProvider';
+import { SidebarDropUploadController, type SidebarDropUploadTarget } from './SidebarDropUploadController';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 interface ConnectionChangeNotifier {
@@ -80,7 +82,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     });
     this.openConnectionsTreeView = vscode.window.createTreeView('remoteedit.openConnectionsView', {
       treeDataProvider: this.openConnectionsProvider,
-      showCollapseAll: true
+      showCollapseAll: true,
+      dragAndDropController: new SidebarDropUploadController({
+        resolveTarget: target => this.resolveSidebarDropUploadTarget(target),
+        uploadDroppedItems: (target, localEntries) => this.uploadDroppedItemsToSidebarTarget(target, localEntries),
+        openWebviewForTarget: target => this.openSidebarDropUploadTargetInWebview(target),
+        openUploadPickerForTarget: target => this.openUploadPickerForSidebarDropTarget(target),
+        output: this.output
+      })
     });
 
     const connectionChangeEvent = (sessions as RemoteSessionManager & ConnectionChangeNotifier).onDidChangeConnections;
@@ -1497,6 +1506,79 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       {
         connectionId: item.connectionId,
         targetDirectory
+      }
+    );
+  }
+
+  private resolveSidebarDropUploadTarget(item: RemoteEditSidebarItem | undefined): SidebarDropUploadTarget | undefined {
+    if (!item?.connectionId || !this.sessions.hasConnection(item.connectionId)) {
+      return undefined;
+    }
+
+    let targetDirectory = '';
+
+    if (item.kind === 'openConnection') {
+      targetDirectory = this.openConnectionsProvider.getRootPathForConnection(item.connectionId) || '/';
+    } else if (item.kind === 'filesGroup'
+      || item.kind === 'favoritePath'
+      || item.kind === 'goParentFolder'
+      || item.kind === 'remoteDirectory') {
+      targetDirectory = item.remotePath || '';
+    } else if (item.kind === 'remoteFile' || item.kind === 'remoteEntry') {
+      const itemType = this.getRemoteItemType(item);
+      targetDirectory = itemType === 'directory'
+        ? item.remotePath || ''
+        : this.dirnameRemotePath(item.remotePath || '/');
+    }
+
+    if (!targetDirectory) {
+      return undefined;
+    }
+
+    return {
+      connectionId: item.connectionId,
+      targetDirectory: normalizeRemotePath(targetDirectory)
+    };
+  }
+
+  private uploadDroppedItemsToSidebarTarget(
+    target: SidebarDropUploadTarget,
+    localEntries: readonly LocalUploadEntry[]
+  ): void {
+    RemoteEditPanel.requestDroppedUploadEntriesFromSidebar(
+      this.context,
+      this.sessions,
+      this.connectionManager,
+      this.output,
+      {
+        connectionId: target.connectionId,
+        targetDirectory: target.targetDirectory
+      },
+      localEntries
+    );
+  }
+
+
+  private openSidebarDropUploadTargetInWebview(target: SidebarDropUploadTarget): void {
+    RemoteEditPanel.openRemotePath(
+      this.context,
+      this.sessions,
+      this.connectionManager,
+      this.output,
+      target.connectionId,
+      target.targetDirectory
+    );
+  }
+
+  private openUploadPickerForSidebarDropTarget(target: SidebarDropUploadTarget): void {
+    RemoteEditPanel.requestUploadEntriesFromSidebar(
+      this.context,
+      this.sessions,
+      this.connectionManager,
+      this.output,
+      {
+        connectionId: target.connectionId,
+        targetDirectory: target.targetDirectory
       }
     );
   }

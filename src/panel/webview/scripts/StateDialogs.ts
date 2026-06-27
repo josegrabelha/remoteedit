@@ -329,6 +329,10 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const contextItemSeparator = document.getElementById('contextItemSeparator');
   const contextTransferSeparator = document.getElementById('contextTransferSeparator');
   const contextCopySeparator = document.getElementById('contextCopySeparator');
+  const contextCutRemote = document.getElementById('contextCutRemote');
+  const contextPasteRemoteHere = document.getElementById('contextPasteRemoteHere');
+  const contextPasteRemote = document.getElementById('contextPasteRemote');
+  const contextRemoteClipboardSeparator = document.getElementById('contextRemoteClipboardSeparator');
   const contextCopyPath = document.getElementById('contextCopyPath');
   const contextCopyName = document.getElementById('contextCopyName');
   const contextCompressSubmenu = document.getElementById('contextCompressSubmenu');
@@ -612,6 +616,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   let selectedEntryPath = '';
   let selectedEntryPaths = new Set();
   let selectionAnchorPath = '';
+  let remoteClipboardState = { hasItems: false, itemCount: 0, itemNames: [], sourceItems: [], sourceParentDirectories: [], canPaste: false };
   let remotePathEditing = false;
   let breadcrumbDropdownState = { open: false, path: '', requestId: '', anchorPath: '' };
   let filterText = '';

@@ -21,7 +21,11 @@ import { QUICK_CONNECT_ID, SidebarConnectionDraftStore } from './ConnectionDraft
 import { buildRemoteEntryProperties, formatBytes, formatChecksumLine, permissionModeFromString } from './RemoteEntryProperties';
 import { SudoModeDecorationProvider } from './SudoModeDecorationProvider';
 import { SidebarDropUploadController, type SidebarDropUploadTarget } from './SidebarDropUploadController';
+import { SidebarOpenConnectionsDragAndDropController } from './SidebarOpenConnectionsDragAndDropController';
+import { SidebarRemoteDragDropMoveController, type SidebarRemoteDragMoveTarget } from './SidebarRemoteDragDropMoveController';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
+import { remoteClipboardService, type RemoteClipboardItem } from '../remote/RemoteClipboardService';
+import { RemoteMoveService } from '../remote/RemoteMoveService';
 
 interface ConnectionChangeNotifier {
   onDidChangeConnections?: vscode.Event<void>;
@@ -38,6 +42,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   private readonly backupController: SidebarBackupController;
   private readonly sudoModeDecorationProvider: SudoModeDecorationProvider;
   private readonly sshTerminalService: SshTerminalService;
+  private readonly remoteMoveService: RemoteMoveService;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly connectionDrafts = new SidebarConnectionDraftStore();
   private readonly connectingProfileIds = new Set<string>();
@@ -65,6 +70,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     this.openConnectionsProvider = new OpenConnectionsTreeProvider(sessions, connectionManager, output);
     this.sudoModeDecorationProvider = new SudoModeDecorationProvider(sessions);
     this.sshTerminalService = new SshTerminalService(sessions);
+    this.remoteMoveService = new RemoteMoveService(sessions);
     this.backupController = new SidebarBackupController({
       context,
       connectionManager,
@@ -83,12 +89,19 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     this.openConnectionsTreeView = vscode.window.createTreeView('remoteedit.openConnectionsView', {
       treeDataProvider: this.openConnectionsProvider,
       showCollapseAll: true,
-      dragAndDropController: new SidebarDropUploadController({
-        resolveTarget: target => this.resolveSidebarDropUploadTarget(target),
-        uploadDroppedItems: (target, localEntries) => this.uploadDroppedItemsToSidebarTarget(target, localEntries),
-        openWebviewForTarget: target => this.openSidebarDropUploadTargetInWebview(target),
-        openUploadPickerForTarget: target => this.openUploadPickerForSidebarDropTarget(target),
-        output: this.output
+      dragAndDropController: new SidebarOpenConnectionsDragAndDropController({
+        uploadController: new SidebarDropUploadController({
+          resolveTarget: target => this.resolveSidebarDropUploadTarget(target),
+          uploadDroppedItems: (target, localEntries) => this.uploadDroppedItemsToSidebarTarget(target, localEntries),
+          openWebviewForTarget: target => this.openSidebarDropUploadTargetInWebview(target),
+          openUploadPickerForTarget: target => this.openUploadPickerForSidebarDropTarget(target),
+          output: this.output
+        }),
+        remoteMoveController: new SidebarRemoteDragDropMoveController({
+          resolveTarget: target => this.resolveSidebarRemoteMoveDropTarget(target),
+          moveDroppedItems: (target, items) => this.moveDroppedRemoteItemsInSidebar(target, items),
+          output: this.output
+        })
       })
     });
 
@@ -98,6 +111,10 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.disposables.push(connectionChangeEvent(() => {
         this.actionsProvider.refresh();
         this.connectionsProvider.refresh();
+        const clipboardState = remoteClipboardService.getState();
+        if (clipboardState && !this.sessions.hasConnection(clipboardState.connectionId)) {
+          remoteClipboardService.clear();
+        }
         this.refreshSudoModeVisualState();
 
         if (this.shouldRevealOpenConnectionsView()) {
@@ -106,6 +123,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       }));
     }
 
+    this.disposables.push(remoteClipboardService.onDidChange(() => {
+      void this.updateRemoteClipboardContext();
+      this.openConnectionsProvider.refresh();
+    }));
+    this.disposables.push(this.openConnectionsTreeView.onDidChangeSelection(() => {
+      void this.updateRemoteClipboardContext();
+    }));
+    void this.updateRemoteClipboardContext();
     this.disposables.push(RemoteEditSharedState.onActiveConnectionChanged(() => this.actionsProvider.refresh()));
     this.disposables.push(RemoteEditSharedState.onRemoteDirectoryChanged(event => {
       if (event.source === 'sidebar') {
@@ -219,6 +244,9 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.createRemoteFile', item => this.createRemoteEntry(item, 'file')),
       vscode.commands.registerCommand('remoteedit.sidebar.createRemoteDirectory', item => this.createRemoteEntry(item, 'directory')),
       vscode.commands.registerCommand('remoteedit.sidebar.renameRemoteEntry', item => this.renameRemoteEntry(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.cutRemoteEntry', item => this.cutRemoteEntry(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.pasteRemoteEntry', item => this.pasteRemoteEntry(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.pasteRemoteToParentFolder', item => this.pasteRemoteEntry(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.makeCopyRemoteFile', item => this.makeCopyRemoteFile(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.deleteRemoteEntry', item => this.deleteRemoteEntry(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.showRemoteEntryProperties', item => this.showRemoteEntryProperties(item)),
@@ -380,6 +408,26 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     return this.openConnectionsProvider.getRootPathForConnection(connectionId);
+  }
+
+
+
+  private async updateRemoteClipboardContext(): Promise<void> {
+    const state = remoteClipboardService.getState();
+    const hasItems = Boolean(state?.items.length);
+    await vscode.commands.executeCommand('setContext', 'remoteedit.remoteClipboardHasItems', hasItems);
+    await vscode.commands.executeCommand('setContext', 'remoteedit.remoteClipboardCanPasteInSelection', hasItems && this.canPasteInSelectedSidebarTarget());
+  }
+
+  private canPasteInSelectedSidebarTarget(): boolean {
+    const selectedItem = this.openConnectionsTreeView.selection[0];
+    const target = this.resolveRemotePasteTarget(selectedItem);
+
+    if (!target) {
+      return false;
+    }
+
+    return remoteClipboardService.canPaste(this.sessions.getConnection(target.connectionId));
   }
 
   private refreshSudoModeVisualState(): void {
@@ -828,22 +876,58 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     this.openConnectionsProvider.refresh();
   }
 
-  private refreshOpenConnectionDirectory(connectionId: string, remotePath: string): void {
+  private refreshOpenConnectionDirectory(connectionId: string, remotePath: string, options: { deferred?: boolean } = {}): void {
+    const targetItem = this.buildOpenConnectionDirectoryRefreshItem(connectionId, remotePath);
+
+    if (!targetItem) {
+      return;
+    }
+
+    this.openConnectionsProvider.refresh(targetItem, { forceRefresh: true });
+    this.openConnectionsProvider.refresh();
+
+    if (options.deferred) {
+      this.scheduleDeferredOpenConnectionDirectoryRefresh(targetItem);
+    }
+  }
+
+  private buildOpenConnectionDirectoryRefreshItem(connectionId: string, remotePath: string): RemoteEditSidebarItem | undefined {
     const connection = this.sessions.getConnection(connectionId);
 
     if (!connection) {
-      return;
+      return undefined;
     }
 
     const normalizedPath = normalizeRemotePath(remotePath || '/');
     const rootPath = this.openConnectionsProvider.getRootPathForConnection(connectionId) || connection.startPath || '/';
     const normalizedRootPath = normalizeRemotePath(rootPath);
-    const targetItem = normalizedPath === normalizedRootPath
+    return normalizedPath === normalizedRootPath
       ? RemoteEditSidebarItem.filesGroup(connection, normalizedRootPath)
       : RemoteEditSidebarItem.remoteDirectoryPlaceholder(connectionId, normalizedPath, normalizedRootPath);
+  }
 
-    this.openConnectionsProvider.refresh(targetItem, { forceRefresh: true });
-    this.openConnectionsProvider.refresh();
+  private scheduleDeferredOpenConnectionDirectoryRefresh(targetItem: RemoteEditSidebarItem): void {
+    const refreshAgain = () => {
+      if (!targetItem.connectionId || !targetItem.remotePath || !this.sessions.hasConnection(targetItem.connectionId)) {
+        return;
+      }
+
+      this.openConnectionsProvider.refresh(targetItem, { forceRefresh: true });
+    };
+
+    setTimeout(refreshAgain, this.openConnectionsProvider.hasPendingDirectoryList(targetItem.connectionId || '') ? 500 : 250);
+    setTimeout(refreshAgain, 1200);
+  }
+
+  private refreshSidebarRemoteMoveDirectories(connectionId: string, targetDirectory: string, sourceDirectories: readonly string[]): void {
+    const directories = new Set<string>([
+      normalizeRemotePath(targetDirectory || '/'),
+      ...sourceDirectories.map(directory => normalizeRemotePath(directory || '/'))
+    ]);
+
+    for (const directory of directories) {
+      this.refreshOpenConnectionDirectory(connectionId, directory, { deferred: true });
+    }
   }
 
   private shouldRevealOpenConnectionsView(): boolean {
@@ -911,6 +995,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   private async disconnectConnectionWithoutWebview(connectionId: string): Promise<void> {
     try {
       await this.sessions.disconnect(connectionId);
+      remoteClipboardService.clearForConnection(connectionId);
       RemoteEditSharedState.deleteNavigation(connectionId);
 
       const activeConnectionId = RemoteEditSharedState.getActiveConnectionId();
@@ -1137,6 +1222,155 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     } catch (error) {
       this.showSidebarCommandError(error);
     }
+  }
+
+
+
+  private async cutRemoteEntry(item: RemoteEditSidebarItem | undefined): Promise<void> {
+    if (!item?.connectionId || !item.remotePath) {
+      return;
+    }
+
+    if (item.kind === 'filesGroup' || item.kind === 'goParentFolder' || item.remotePath === '/') {
+      void vscode.window.showWarningMessage('Remote root and parent directory entries cannot be cut.');
+      return;
+    }
+
+    const connection = this.sessions.getConnection(item.connectionId);
+    if (!connection) {
+      void vscode.window.showErrorMessage('The selected Remote Edit connection is not connected.');
+      return;
+    }
+
+    const clipboardItem: RemoteClipboardItem = {
+      name: this.getRemoteItemName(item),
+      path: normalizeRemotePath(item.remotePath),
+      type: this.normalizeRemoteClipboardItemType(this.getRemoteItemType(item))
+    };
+
+    try {
+      const state = remoteClipboardService.setCut(connection, [clipboardItem]);
+      await this.updateRemoteClipboardContext();
+      this.openConnectionsProvider.refresh();
+      void vscode.window.showInformationMessage(`Cut ${state.items[0]?.name || 'remote item'}. Choose Paste in another folder of the same connection.`);
+      this.output.appendLine(`[Sidebar] Cut remote item: ${clipboardItem.path}`);
+    } catch (error) {
+      this.showSidebarCommandError(error);
+    }
+  }
+
+  private async pasteRemoteEntry(item: RemoteEditSidebarItem | undefined): Promise<void> {
+    const target = this.resolveRemotePasteTarget(item);
+    if (!target) {
+      return;
+    }
+
+    const connection = this.sessions.getConnection(target.connectionId);
+    if (!connection) {
+      void vscode.window.showErrorMessage('The selected Remote Edit connection is not connected.');
+      return;
+    }
+
+    let state;
+    try {
+      state = remoteClipboardService.requirePasteState(connection);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showWarningMessage(message);
+      return;
+    }
+
+    try {
+      const result = await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Window,
+        title: `Moving ${state.items.length} remote item${state.items.length === 1 ? '' : 's'}...`,
+        cancellable: false
+      }, async () => this.remoteMoveService.moveItems({
+        connectionId: target.connectionId,
+        targetDirectory: target.targetDirectory,
+        items: state.items
+      }));
+
+      remoteClipboardService.clear();
+      await this.updateRemoteClipboardContext();
+      this.output.appendLine(`[Sidebar] Moved ${result.moved} remote item(s) to ${result.targetDirectory}`);
+      void vscode.window.showInformationMessage(`Moved ${result.moved} remote item${result.moved === 1 ? '' : 's'}.`);
+      this.refreshSidebarRemoteMoveDirectories(target.connectionId, result.targetDirectory, result.sourceDirectories);
+      RemoteEditSharedState.fireRemoteDirectoryChanged(target.connectionId, result.targetDirectory, 'sidebar');
+      for (const sourceDirectory of result.sourceDirectories) {
+        RemoteEditSharedState.fireRemoteDirectoryChanged(target.connectionId, sourceDirectory, 'sidebar');
+      }
+    } catch (error) {
+      this.showSidebarCommandError(error);
+    }
+  }
+
+  private async moveDroppedRemoteItemsInSidebar(target: SidebarRemoteDragMoveTarget, items: readonly RemoteClipboardItem[]): Promise<void> {
+    if (!target.connectionId || !this.sessions.hasConnection(target.connectionId)) {
+      void vscode.window.showErrorMessage('The selected Remote Edit connection is not connected.');
+      return;
+    }
+
+    if (!items.length) {
+      return;
+    }
+
+    try {
+      const result = await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Window,
+        title: `Moving ${items.length} remote item${items.length === 1 ? '' : 's'}...`,
+        cancellable: false
+      }, async () => this.remoteMoveService.moveItems({
+        connectionId: target.connectionId,
+        targetDirectory: target.targetDirectory,
+        items
+      }));
+
+      this.output.appendLine(`[Sidebar] Drag-and-drop moved ${result.moved} remote item(s) to ${result.targetDirectory}`);
+      void vscode.window.showInformationMessage(`Moved ${result.moved} remote item${result.moved === 1 ? '' : 's'}.`);
+      this.refreshSidebarRemoteMoveDirectories(target.connectionId, result.targetDirectory, result.sourceDirectories);
+      RemoteEditSharedState.fireRemoteDirectoryChanged(target.connectionId, result.targetDirectory, 'sidebar');
+      for (const sourceDirectory of result.sourceDirectories) {
+        RemoteEditSharedState.fireRemoteDirectoryChanged(target.connectionId, sourceDirectory, 'sidebar');
+      }
+    } catch (error) {
+      this.showSidebarCommandError(error);
+    }
+  }
+
+  private resolveRemotePasteTarget(item: RemoteEditSidebarItem | undefined): { connectionId: string; targetDirectory: string } | undefined {
+    if (!item?.connectionId || !this.sessions.hasConnection(item.connectionId)) {
+      return undefined;
+    }
+
+    let targetDirectory = '';
+    if (item.kind === 'openConnection') {
+      targetDirectory = this.openConnectionsProvider.getRootPathForConnection(item.connectionId) || '/';
+    } else if (item.kind === 'filesGroup' || item.kind === 'favoritePath' || item.kind === 'goParentFolder' || item.kind === 'remoteDirectory') {
+      targetDirectory = item.remotePath || '';
+    } else if (item.kind === 'remoteFile' || item.kind === 'remoteEntry') {
+      const itemType = this.getRemoteItemType(item);
+      targetDirectory = itemType === 'directory'
+        ? item.remotePath || ''
+        : this.dirnameRemotePath(item.remotePath || '/');
+    }
+
+    if (!targetDirectory) {
+      return undefined;
+    }
+
+    return {
+      connectionId: item.connectionId,
+      targetDirectory: normalizeRemotePath(targetDirectory)
+    };
+  }
+
+  private normalizeRemoteClipboardItemType(value: string): RemoteClipboardItem['type'] {
+    const text = String(value || '').toLowerCase();
+    if (text === 'file' || text === 'directory' || text === 'link') {
+      return text;
+    }
+    return 'unknown';
   }
 
   private async makeCopyRemoteFile(item: RemoteEditSidebarItem | undefined): Promise<void> {
@@ -1508,6 +1742,34 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         targetDirectory
       }
     );
+  }
+
+  private resolveSidebarRemoteMoveDropTarget(item: RemoteEditSidebarItem | undefined): SidebarRemoteDragMoveTarget | undefined {
+    if (!item?.connectionId || !this.sessions.hasConnection(item.connectionId)) {
+      return undefined;
+    }
+
+    let targetDirectory = '';
+
+    if (item.kind === 'openConnection') {
+      targetDirectory = this.openConnectionsProvider.getRootPathForConnection(item.connectionId) || '/';
+    } else if (item.kind === 'filesGroup'
+      || item.kind === 'favoritePath'
+      || item.kind === 'goParentFolder'
+      || item.kind === 'remoteDirectory') {
+      targetDirectory = item.remotePath || '';
+    } else if (item.kind === 'remoteEntry' && this.getRemoteItemType(item) === 'directory') {
+      targetDirectory = item.remotePath || '';
+    }
+
+    if (!targetDirectory) {
+      return undefined;
+    }
+
+    return {
+      connectionId: item.connectionId,
+      targetDirectory: normalizeRemotePath(targetDirectory)
+    };
   }
 
   private resolveSidebarDropUploadTarget(item: RemoteEditSidebarItem | undefined): SidebarDropUploadTarget | undefined {

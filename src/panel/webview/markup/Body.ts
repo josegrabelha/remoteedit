@@ -1048,6 +1048,10 @@ export function renderBody(): string {
   <div id="contextOpenSeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextMakeCopy" type="button" role="menuitem">Make a Copy...</button>
   <button id="contextRename" type="button" role="menuitem">Rename...</button>
+  <div id="contextRemoteClipboardSeparator" class="context-menu-separator" role="separator"></div>
+  <button id="contextCutRemote" type="button" role="menuitem">Cut</button>
+  <button id="contextPasteRemoteHere" type="button" role="menuitem">Paste Here</button>
+  <button id="contextPasteRemote" type="button" role="menuitem">Paste</button>
   <div id="contextCopySeparator" class="context-menu-separator" role="separator"></div>
   <button id="contextCopyPath" type="button" role="menuitem">Copy Path</button>
   <button id="contextCopyName" type="button" role="menuitem">Copy Filename</button>

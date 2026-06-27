@@ -264,6 +264,8 @@ Use the Webview and Native Sidebar context menus to manage remote files and fold
 - View file and folder properties
 - Calculate checksums
 - Copy remote paths, filenames, or the current remote path
+- Cut and paste remote files or folders to move them within the same connection. In the Webview, use Paste Here from empty space, file rows, or folder rows when the current directory is a valid destination, or Paste Into This Folder from a folder row.
+- Drag selected remote files or folders onto a folder row in the Webview or Sidebar Open Connections tree to move them within the same connection.
 - Refresh listings after remote changes
 
 ## Permissions and Ownership

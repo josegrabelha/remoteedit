@@ -79,6 +79,20 @@ export function renderEventBindings(): string {
           setControls();
         }
         break;
+      case 'remoteClipboardChanged':
+        remoteClipboardState = {
+          hasItems: Boolean(payload.hasItems),
+          operation: payload.operation || '',
+          connectionId: payload.connectionId || '',
+          protocol: payload.protocol || '',
+          connectionLabel: payload.connectionLabel || '',
+          itemCount: Number(payload.itemCount || 0),
+          itemNames: Array.isArray(payload.itemNames) ? payload.itemNames : [],
+          sourceItems: Array.isArray(payload.sourceItems) ? payload.sourceItems : [],
+          sourceParentDirectories: Array.isArray(payload.sourceParentDirectories) ? payload.sourceParentDirectories : [],
+          canPaste: Boolean(payload.canPaste)
+        };
+        break;
       case 'sessionsChanged': {
         const previousSessionIds = new Set(sessions.map(session => session.id));
         const incomingSessions = payload.sessions || [];

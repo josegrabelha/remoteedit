@@ -45,6 +45,8 @@ import { buildTransferQueueItemSnapshot, buildTransferQueueStateSnapshot } from 
 import { ServerManagementController } from './server/ServerManagementController';
 import { PanelBackupController } from './PanelBackupController';
 import { DroppedUploadStagingService, normalizeDroppedUploadRelativePath } from './DroppedUploadStagingService';
+import { remoteClipboardService, type RemoteClipboardItem } from '../remote/RemoteClipboardService';
+import { RemoteMoveService } from '../remote/RemoteMoveService';
 export type { TransferQueueItemSnapshot, TransferQueueStateSnapshot } from './PanelTypes';
 
 
@@ -92,6 +94,7 @@ export class RemoteEditPanel {
   private readonly virtualDocuments = new Map<string, string>();
   private readonly backupController: PanelBackupController;
   private readonly droppedUploadStaging: DroppedUploadStagingService;
+  private readonly remoteMoveService: RemoteMoveService;
 
   static open(
     context: vscode.ExtensionContext,
@@ -469,6 +472,8 @@ export class RemoteEditPanel {
   ) {
     this.state.initializeFromSessions(this.sessions.listConnections());
     this.droppedUploadStaging = new DroppedUploadStagingService(path.join(this.context.globalStorageUri.fsPath, 'dropped-uploads'));
+    this.remoteMoveService = new RemoteMoveService(this.sessions);
+    this.disposables.push(remoteClipboardService.onDidChange(() => this.postRemoteClipboardState()));
     this.sshTerminalService = new SshTerminalService(this.sessions);
     this.portForwardManager = new PortForwardManager(this.sessions, state => this.postPortForwardState(state));
     this.portForwardController = new PortForwardController({
@@ -635,6 +640,7 @@ export class RemoteEditPanel {
           this.postLogViewerActiveSessionCount();
           this.postAllPortForwardStates();
           this.postPersistentStorageSnapshot();
+          this.postRemoteClipboardState();
         },
         saveConnection: payload => this.saveConnection(payload),
         pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
@@ -671,6 +677,9 @@ export class RemoteEditPanel {
         requestMakeCopy: payload => this.requestMakeCopy(payload),
         requestCalculateChecksums: payload => this.requestCalculateChecksums(payload),
         requestRenameEntry: payload => this.requestRenameEntry(payload),
+        requestCutRemoteEntries: payload => this.requestCutRemoteEntries(payload),
+        requestPasteRemoteEntries: payload => this.requestPasteRemoteEntries(payload),
+        requestMoveRemoteEntries: payload => this.requestMoveRemoteEntries(payload),
         requestDeleteEntry: payload => this.requestDeleteEntry(payload),
         requestDeleteEntries: payload => this.requestDeleteEntries(payload),
         requestUploadEntries: payload => this.requestUploadEntries(payload),
@@ -807,6 +816,7 @@ export class RemoteEditPanel {
 
     this.invalidateDirectoryListRequests();
     this.clearQueuedTransfersForConnection(connectionId);
+    remoteClipboardService.clearForConnection(connectionId);
     this.state.deleteConnectionPath(connectionId);
     RemoteEditSharedState.deleteNavigation(connectionId);
     this.sessions.disableSudoMode(connectionId);
@@ -996,6 +1006,7 @@ export class RemoteEditPanel {
       sessions,
       activeConnectionId: this.state.getActiveConnectionId()
     });
+    this.postRemoteClipboardState();
   }
 
   private reorderSessions(payload: any): void {
@@ -1452,6 +1463,7 @@ export class RemoteEditPanel {
     if (removedQueuedTransfers > 0) {
       this.postStatus(`${formatCount(removedQueuedTransfers, 'queued transfer')} removed for disconnected session.`, connectionId);
     }
+    remoteClipboardService.clearForConnection(connectionId);
     this.state.deleteConnectionPath(connectionId);
     RemoteEditSharedState.deleteNavigation(connectionId);
     this.sessions.disableSudoMode(connectionId);
@@ -2376,6 +2388,128 @@ export class RemoteEditPanel {
     this.logInfo('Renamed remote item.', { From: this.buildRemoteReference(remotePath), To: this.buildRemoteReference(newPath) });
     await this.listDirectory(parentPath);
     this.postBusy(false, 'Item renamed.', false, undefined, connectionId);
+  }
+
+
+
+  private buildRemoteClipboardItemsFromPayloadEntries(rawEntries: any[]): RemoteClipboardItem[] {
+    return (Array.isArray(rawEntries) ? rawEntries : [])
+      .map((entry: any) => {
+        const remotePath = normalizeRemotePath(String(entry?.path || ''));
+        const name = String(entry?.name || remotePath.split('/').filter(Boolean).pop() || '').trim();
+        const type = String(entry?.effectiveType || entry?.type || 'unknown').toLowerCase();
+        return {
+          name,
+          path: remotePath,
+          type: type === 'file' || type === 'directory' || type === 'link' ? type : 'unknown'
+        } satisfies RemoteClipboardItem;
+      })
+      .filter((entry: RemoteClipboardItem) => Boolean(entry.path) && entry.path !== '/' && entry.name && entry.name !== '..');
+  }
+
+  private async requestCutRemoteEntries(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      throw new Error('The selected Remote Edit connection is not connected.');
+    }
+
+    const items = this.buildRemoteClipboardItemsFromPayloadEntries(payload?.entries);
+    const state = remoteClipboardService.setCut(connection, items);
+    const itemText = formatCount(state.items.length, 'remote item');
+    this.postStatus(`Cut ${itemText}. Go to a folder in the same connection and choose Paste.`, connectionId);
+    this.logInfo('Cut remote item(s).', {
+      Connection: connectionId,
+      Items: state.items.map(item => item.path).join(', ')
+    });
+  }
+
+  private async requestPasteRemoteEntries(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      throw new Error('The selected Remote Edit connection is not connected.');
+    }
+
+    const state = remoteClipboardService.requirePasteState(connection);
+    const targetDirectory = normalizeRemotePath(String(payload?.targetDirectory || payload?.path || this.getActivePath()));
+    const itemText = formatCount(state.items.length, 'remote item');
+
+    this.postBusy(true, `Moving ${itemText}...`, false, undefined, connectionId);
+
+    try {
+      const result = await this.remoteMoveService.moveItems({
+        connectionId,
+        targetDirectory,
+        items: state.items
+      });
+
+      remoteClipboardService.clear();
+      this.logInfo('Moved remote item(s).', {
+        Connection: connectionId,
+        Destination: this.buildRemoteReference(result.targetDirectory),
+        Items: state.items.map(item => item.path).join(', ')
+      });
+      RemoteEditSharedState.fireRemoteDirectoryChanged(connectionId, result.targetDirectory, 'webview');
+      for (const sourceDirectory of result.sourceDirectories) {
+        RemoteEditSharedState.fireRemoteDirectoryChanged(connectionId, sourceDirectory, 'webview');
+      }
+      await this.listDirectory(result.targetDirectory, { forceRefresh: true });
+      this.postBusy(false, `Moved ${formatCount(result.moved, 'remote item')}.`, false, undefined, connectionId);
+    } catch (error) {
+      this.postBusy(false, 'Move failed.', false, undefined, connectionId);
+      throw error;
+    }
+  }
+
+  private async requestMoveRemoteEntries(payload: any): Promise<void> {
+    const connectionId = this.requireActiveConnectionId();
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      throw new Error('The selected Remote Edit connection is not connected.');
+    }
+
+    const payloadConnectionId = String(payload?.connectionId || connectionId);
+    if (payloadConnectionId !== connectionId) {
+      throw new Error('Remote drag-and-drop move is only available in the original connection.');
+    }
+
+    const items = this.buildRemoteClipboardItemsFromPayloadEntries(payload?.entries);
+    if (!items.length) {
+      throw new Error('Select one or more remote files or folders to move.');
+    }
+
+    const targetDirectory = normalizeRemotePath(String(payload?.targetDirectory || payload?.path || this.getActivePath()));
+    const currentDirectory = normalizeRemotePath(this.getActivePath());
+    const itemText = formatCount(items.length, 'remote item');
+
+    this.postBusy(true, `Moving ${itemText}...`, false, undefined, connectionId);
+
+    try {
+      const result = await this.remoteMoveService.moveItems({
+        connectionId,
+        targetDirectory,
+        items
+      });
+
+      this.logInfo('Moved remote item(s) by drag-and-drop.', {
+        Connection: connectionId,
+        Destination: this.buildRemoteReference(result.targetDirectory),
+        Items: items.map(item => item.path).join(', ')
+      });
+      RemoteEditSharedState.fireRemoteDirectoryChanged(connectionId, result.targetDirectory, 'webview');
+      for (const sourceDirectory of result.sourceDirectories) {
+        RemoteEditSharedState.fireRemoteDirectoryChanged(connectionId, sourceDirectory, 'webview');
+      }
+      await this.listDirectory(currentDirectory, { forceRefresh: true });
+      this.postBusy(false, `Moved ${formatCount(result.moved, 'remote item')}.`, false, undefined, connectionId);
+    } catch (error) {
+      this.postBusy(false, 'Move failed.', false, undefined, connectionId);
+      throw error;
+    }
   }
 
   private async requestDeleteEntry(payload: any): Promise<void> {
@@ -4398,6 +4532,14 @@ export class RemoteEditPanel {
 
   private stopAllRemoteCommands(force = false): void {
     this.remoteCommandController.stopAllRemoteCommands(force);
+  }
+
+
+
+  private postRemoteClipboardState(): void {
+    const connectionId = this.state.getActiveConnectionId();
+    const connection = connectionId ? this.sessions.getConnection(connectionId) : undefined;
+    this.postMessage(RemoteEditOutboundMessageType.RemoteClipboardChanged, remoteClipboardService.getSnapshot(connection));
   }
 
   private postLogViewerActiveSessionCount(): void {

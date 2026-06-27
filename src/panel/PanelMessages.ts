@@ -35,6 +35,9 @@ export const RemoteEditIncomingMessageType = {
   RequestMakeCopy: 'requestMakeCopy',
   RequestCalculateChecksums: 'requestCalculateChecksums',
   RequestRenameEntry: 'requestRenameEntry',
+  RequestCutRemoteEntries: 'requestCutRemoteEntries',
+  RequestPasteRemoteEntries: 'requestPasteRemoteEntries',
+  RequestMoveRemoteEntries: 'requestMoveRemoteEntries',
   RequestDeleteEntry: 'requestDeleteEntry',
   RequestDeleteEntries: 'requestDeleteEntries',
   RequestUploadEntries: 'requestUploadEntries',
@@ -132,7 +135,8 @@ export const RemoteEditOutboundMessageType = {
   RemotePathBreadcrumbSettingsChanged: 'remotePathBreadcrumbSettingsChanged',
   FileListSettingsChanged: 'fileListSettingsChanged',
   DroppedUploadSessionReady: 'droppedUploadSessionReady',
-  DroppedUploadChunkWritten: 'droppedUploadChunkWritten'
+  DroppedUploadChunkWritten: 'droppedUploadChunkWritten',
+  RemoteClipboardChanged: 'remoteClipboardChanged'
 } as const;
 
 export type RemoteEditIncomingMessageType = typeof RemoteEditIncomingMessageType[keyof typeof RemoteEditIncomingMessageType];

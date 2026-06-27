@@ -8,6 +8,7 @@ import { RemoteSessionRouter } from './remote/RemoteSessionRouter';
 import { appendOutputLog } from './utils/outputLogger';
 import { RemoteEditSidebarController } from './sidebar/SidebarController';
 import { cleanupDroppedUploadStagingRoot } from './panel/DroppedUploadStagingService';
+import { remoteClipboardService } from './remote/RemoteClipboardService';
 
 type StatusBarButtonStyle = 'iconAndText' | 'iconOnly' | 'textOnly';
 type StatusBarButtonPosition = 'left' | 'right' | 'hidden';
@@ -86,6 +87,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     output,
+    remoteClipboardService,
     sidebarController,
     fileSystemProvider,
     readOnlyFileSystemProvider,

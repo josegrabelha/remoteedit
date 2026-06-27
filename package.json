@@ -254,6 +254,24 @@
         "category": "Remote Edit"
       },
       {
+        "command": "remoteedit.sidebar.cutRemoteEntry",
+        "title": "Cut",
+        "icon": "$(scissors)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.pasteRemoteEntry",
+        "title": "Paste",
+        "icon": "$(clippy)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.pasteRemoteToParentFolder",
+        "title": "Paste to Parent Folder",
+        "icon": "$(clippy)",
+        "category": "Remote Edit"
+      },
+      {
         "command": "remoteedit.sidebar.makeCopyRemoteFile",
         "title": "Make a Copy...",
         "icon": "$(copy)",
@@ -1787,6 +1805,21 @@
           "command": "remoteedit.sidebar.openLogViewer",
           "when": "view == remoteedit.openConnectionsView && viewItem == remoteedit.openConnection.sudoOn",
           "group": "navigation@4"
+        },
+        {
+          "command": "remoteedit.sidebar.cutRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && (viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp || viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp || viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp || viewItem == remoteedit.remoteEntry)",
+          "group": "2_manage@3"
+        },
+        {
+          "command": "remoteedit.sidebar.pasteRemoteEntry",
+          "when": "view == remoteedit.openConnectionsView && remoteedit.remoteClipboardCanPasteInSelection && (viewItem == remoteedit.filesGroup || viewItem == remoteedit.filesGroup.sftp || viewItem == remoteedit.filesGroup.favorite || viewItem == remoteedit.filesGroup.favorite.sftp || viewItem == remoteedit.remoteDirectory || viewItem == remoteedit.remoteDirectory.sftp || viewItem == remoteedit.remoteDirectory.favorite || viewItem == remoteedit.remoteDirectory.favorite.sftp || viewItem == remoteedit.remoteEntry || viewItem == remoteedit.favoritePath || viewItem == remoteedit.favoritePath.sftp || viewItem == remoteedit.goParentFolder)",
+          "group": "2_manage@4"
+        },
+        {
+          "command": "remoteedit.sidebar.pasteRemoteToParentFolder",
+          "when": "view == remoteedit.openConnectionsView && remoteedit.remoteClipboardCanPasteInSelection && (viewItem == remoteedit.remoteFile || viewItem == remoteedit.remoteFile.sftp)",
+          "group": "2_manage@4"
         }
       ],
       "commandPalette": [
@@ -2016,6 +2049,18 @@
         },
         {
           "command": "remoteedit.sidebar.deleteConnectionGroup",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.cutRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.pasteRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.pasteRemoteToParentFolder",
           "when": "false"
         }
       ],

@@ -682,7 +682,7 @@ export function renderStyles(): string {
   .filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .filter-clear-button:disabled { cursor: default; }
   .table-wrap { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); flex: 1 1 0; min-height: 0; max-height: none; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; border-radius: 6px; user-select: none; -webkit-user-select: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
-  .table-wrap.drag-drop-upload-active { border-color: var(--vscode-panel-border); box-shadow: inset 0 0 14px color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent), 0 0 10px color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent); }
+  .table-wrap.drag-drop-target-active { border-color: var(--vscode-panel-border); box-shadow: inset 0 0 14px color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent), 0 0 10px color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent); }
   .table-wrap.privileged-session { border-color: color-mix(in srgb, #7a2f2f 62%, var(--vscode-panel-border)); box-shadow: 0 0 0 1px color-mix(in srgb, #7a2f2f 18%, transparent); }
   table { width: 100%; min-width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; }
   th, td { padding: 6px 10px; line-height: 1.25; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -705,6 +705,7 @@ export function renderStyles(): string {
   tr.entry-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
   tr.entry-row.selected:hover { background: var(--vscode-list-activeSelectionBackground); }
   tr.entry-row.drop-target { outline: none; background: color-mix(in srgb, var(--vscode-list-hoverBackground) 78%, transparent); box-shadow: inset 0 0 12px color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent), inset 0 0 0 9999px color-mix(in srgb, var(--vscode-focusBorder) 5%, transparent); }
+  tr.entry-row.drag-source { opacity: 0.72; }
   .entry-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .entry-icon { width: 20px; min-width: 20px; display: inline-flex; align-items: center; justify-content: center; color: var(--vscode-icon-foreground, var(--vscode-foreground)); opacity: 0.9; line-height: 0; }
   .entry-icon svg { width: 20px; height: 20px; display: block; fill: currentColor; }

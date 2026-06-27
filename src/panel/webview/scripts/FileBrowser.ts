@@ -301,6 +301,7 @@ export function renderFileBrowser(): string {
     const entryKey = entry.path || entry.name;
     row.className = 'entry-row' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
     row.dataset.entryPath = entryKey;
+    if (!isParentEntry(entry)) row.draggable = true;
     row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text" data-entry-name-action="open">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
       '<td class="type">' + escapeHtml(formatEntryType(entry)) + '</td>' +
       '<td class="size">' + (isDirectoryLike(entry) ? '' : formatSize(entry.size)) + '</td>' +
@@ -562,6 +563,16 @@ export function renderFileBrowser(): string {
     const canCompare = selectedEntries.length === 2 && allFiles;
     const canMakeCopy = isSingleFile && selectedEntries[0].type === 'file';
     const canRename = isSingleEntry;
+    const canCutRemote = hasEntryActions;
+    const canPasteRemote = Boolean(activeConnectionId)
+      && remoteClipboardState
+      && remoteClipboardState.canPaste
+      && (!remoteClipboardState.connectionId || remoteClipboardState.connectionId === activeConnectionId)
+      && (!hasEntryActions || isSingleDirectory || isSingleFile);
+    const currentContextDirectory = getCurrentContextDirectory();
+    const selectedDirectoryTarget = isSingleDirectory ? normalizeUiRemotePath(selectedEntries[0].path || currentContextDirectory) : '';
+    const canPasteHereRemote = canPasteRemote && canPasteRemoteToDirectory(currentContextDirectory);
+    const canPasteIntoFolderRemote = canPasteRemote && isSingleDirectory && canPasteRemoteToDirectory(selectedDirectoryTarget);
     const canCopy = hasEntryActions;
     const canCompress = hasEntryActions && capabilities.canCreateArchive;
     const canCalculateChecksums = canMakeCopy && capabilities.canCalculateServerChecksums;
@@ -589,12 +600,18 @@ export function renderFileBrowser(): string {
     contextOpenReadOnly.style.display = canOpenReadOnly ? '' : 'none';
     contextCompare.style.display = canCompare ? '' : 'none';
 
-    contextOpenSeparator.style.display = (canOpen || canOpenReadOnly || canCompare) && (canMakeCopy || canRename || canCopy || canCompress || canDownload || canRefresh || canDelete) ? '' : 'none';
+    contextOpenSeparator.style.display = (canOpen || canOpenReadOnly || canCompare) && (canMakeCopy || canRename || canCutRemote || canPasteHereRemote || canPasteIntoFolderRemote || canCopy || canCompress || canDownload || canRefresh || canDelete) ? '' : 'none';
 
     contextMakeCopy.style.display = canMakeCopy ? '' : 'none';
     contextRename.style.display = canRename ? '' : 'none';
 
-    contextCopySeparator.style.display = canCopy && (canMakeCopy || canRename || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
+    if (contextCutRemote) contextCutRemote.style.display = canCutRemote ? '' : 'none';
+    if (contextPasteRemoteHere) contextPasteRemoteHere.style.display = canPasteHereRemote ? '' : 'none';
+    if (contextPasteRemote) contextPasteRemote.style.display = canPasteIntoFolderRemote ? '' : 'none';
+    if (contextPasteRemote) contextPasteRemote.textContent = 'Paste Into This Folder';
+    if (contextRemoteClipboardSeparator) contextRemoteClipboardSeparator.style.display = (canCutRemote || canPasteHereRemote || canPasteIntoFolderRemote) && (canMakeCopy || canRename || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
+
+    contextCopySeparator.style.display = canCopy && (canMakeCopy || canRename || canCutRemote || canPasteHereRemote || canPasteIntoFolderRemote || canOpen || canOpenReadOnly || canCompare) ? '' : 'none';
     contextCopyPath.style.display = canCopy ? '' : 'none';
     contextCopyName.style.display = canCopy ? '' : 'none';
     contextCompressSubmenu.style.display = canCompress ? '' : 'none';
@@ -691,6 +708,32 @@ export function renderFileBrowser(): string {
     vscode.postMessage({ type: 'copyStatus', payload: { text: values.join('\\n'), message } });
   }
 
+  function setOptimisticRemoteClipboardCutState(entries) {
+    const cutEntries = (Array.isArray(entries) ? entries : [])
+      .filter(entry => entry && !isParentEntry(entry))
+      .map(entry => ({
+        path: normalizeUiRemotePath(entry.path || ''),
+        name: String(entry.name || ''),
+        type: getEffectiveEntryType(entry) || entry.type || 'unknown'
+      }))
+      .filter(entry => entry.path && entry.path !== '/' && entry.name && entry.name !== '..');
+
+    if (!cutEntries.length) return;
+
+    remoteClipboardState = {
+      hasItems: true,
+      operation: 'cut',
+      connectionId: activeConnectionId || '',
+      protocol: '',
+      connectionLabel: '',
+      itemCount: cutEntries.length,
+      itemNames: cutEntries.map(entry => entry.name),
+      sourceItems: cutEntries,
+      sourceParentDirectories: Array.from(new Set(cutEntries.map(entry => getRemoteParentPath(entry.path)))),
+      canPaste: Boolean(activeConnectionId)
+    };
+  }
+
   function hideContextMenu() {
     if (entryContextMenu) entryContextMenu.classList.remove('visible');
   }
@@ -703,9 +746,43 @@ export function renderFileBrowser(): string {
     return index <= 0 ? '/' : trimmed.slice(0, index);
   }
 
+  function isRemotePathAncestorOrSelf(ancestorPath, targetPath) {
+    const ancestor = normalizeUiRemotePath(ancestorPath || '/');
+    const target = normalizeUiRemotePath(targetPath || '/');
+    return Boolean(ancestor && ancestor !== '/' && (ancestor === target || target.startsWith(ancestor + '/')));
+  }
+
+  function canPasteRemoteToDirectory(targetDirectory) {
+    if (!remoteClipboardState || !remoteClipboardState.canPaste) return false;
+    const target = normalizeUiRemotePath(targetDirectory || '/');
+    const sourceItems = Array.isArray(remoteClipboardState.sourceItems) ? remoteClipboardState.sourceItems : [];
+    const sourceParents = new Set();
+    if (Array.isArray(remoteClipboardState.sourceParentDirectories)) {
+      remoteClipboardState.sourceParentDirectories.forEach(path => sourceParents.add(normalizeUiRemotePath(path || '/')));
+    }
+    sourceItems.forEach(item => {
+      if (!item || !item.path) return;
+      sourceParents.add(getRemoteParentPath(item.path));
+    });
+
+    if (sourceParents.has(target)) {
+      return false;
+    }
+
+    return !sourceItems.some(item => {
+      if (!item || item.type !== 'directory') return false;
+      const sourcePath = normalizeUiRemotePath(item.path || '');
+      return isRemotePathAncestorOrSelf(sourcePath, target);
+    });
+  }
+
+  function getCurrentContextDirectory() {
+    return normalizeUiRemotePath(currentPath.value || '/');
+  }
+
   function getContextWorkingDirectory() {
     const entries = getSelectedActionEntries();
-    if (entries.length !== 1) return normalizeUiRemotePath(currentPath.value || '/');
+    if (entries.length !== 1) return getCurrentContextDirectory();
 
     const entry = entries[0];
     const entryType = getEffectiveEntryType(entry);

@@ -21,6 +21,15 @@ export async function tryHandleFileActionMessage(
     case RemoteEditIncomingMessageType.RequestRenameEntry:
       await handlers.requestRenameEntry(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.RequestCutRemoteEntries:
+      await handlers.requestCutRemoteEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RequestPasteRemoteEntries:
+      await handlers.requestPasteRemoteEntries(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.RequestMoveRemoteEntries:
+      await handlers.requestMoveRemoteEntries(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.RequestDeleteEntry:
       await handlers.requestDeleteEntry(message.payload);
       return true;

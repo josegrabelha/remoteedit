@@ -504,7 +504,8 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   }
 
   private async getRemoteDirectoryItems(connectionId: string, remotePath: string, includeGoParent: boolean): Promise<RemoteEditSidebarItem[]> {
-    const requestSequence = this.nextDirectoryListSequence(connectionId);
+    const directoryListKey = this.buildRefreshKey(connectionId, remotePath);
+    const requestSequence = this.nextDirectoryListSequence(directoryListKey);
     const releaseListSlot = await this.reserveDirectoryListSlot(connectionId);
     const totalTimer = createPerformanceTimer();
     let listMs = 0;
@@ -514,7 +515,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     let forceRefresh = false;
 
     try {
-      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+      if (this.isStaleDirectoryListRequest(connectionId, directoryListKey, requestSequence)) {
         return [];
       }
 
@@ -525,7 +526,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       listMs = listTimer();
       entriesCount = entries.length;
 
-      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+      if (this.isStaleDirectoryListRequest(connectionId, directoryListKey, requestSequence)) {
         return [];
       }
 
@@ -535,7 +536,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
       favoriteMs = favoriteTimer();
 
-      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+      if (this.isStaleDirectoryListRequest(connectionId, directoryListKey, requestSequence)) {
         return [];
       }
 
@@ -577,7 +578,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
 
       return items;
     } catch (error) {
-      if (this.isStaleDirectoryListRequest(connectionId, requestSequence)) {
+      if (this.isStaleDirectoryListRequest(connectionId, directoryListKey, requestSequence)) {
         return [];
       }
 
@@ -613,15 +614,19 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     }
   }
 
-  private nextDirectoryListSequence(connectionId: string): number {
-    const nextSequence = (this.directoryListSequences.get(connectionId) || 0) + 1;
-    this.directoryListSequences.set(connectionId, nextSequence);
+  private nextDirectoryListSequence(directoryListKey: string): number {
+    const nextSequence = (this.directoryListSequences.get(directoryListKey) || 0) + 1;
+    this.directoryListSequences.set(directoryListKey, nextSequence);
     return nextSequence;
   }
 
-  private isStaleDirectoryListRequest(connectionId: string, requestSequence: number): boolean {
-    return this.directoryListSequences.get(connectionId) !== requestSequence
+  private isStaleDirectoryListRequest(connectionId: string, directoryListKey: string, requestSequence: number): boolean {
+    return this.directoryListSequences.get(directoryListKey) !== requestSequence
       || !this.sessions.hasConnection(connectionId);
+  }
+
+  hasPendingDirectoryList(connectionId: string): boolean {
+    return this.directoryListChains.has(connectionId);
   }
 
   private async reserveDirectoryListSlot(connectionId: string): Promise<() => void> {

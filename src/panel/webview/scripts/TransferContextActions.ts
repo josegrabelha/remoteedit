@@ -509,6 +509,25 @@ export function renderTransferContextActions(): string {
     copySelectedEntryText(entries, 'name');
   });
 
+  if (contextCutRemote) contextCutRemote.addEventListener('click', () => {
+    const entries = getSelectedActionEntries();
+    hideContextMenu();
+    if (entries.length) {
+      setOptimisticRemoteClipboardCutState(entries);
+      vscode.postMessage({ type: 'requestCutRemoteEntries', payload: { entries: entries.map(actionPayload) } });
+    }
+  });
+
+  if (contextPasteRemoteHere) contextPasteRemoteHere.addEventListener('click', () => {
+    hideContextMenu();
+    if (activeConnectionId) vscode.postMessage({ type: 'requestPasteRemoteEntries', payload: { targetDirectory: getCurrentContextDirectory() } });
+  });
+
+  if (contextPasteRemote) contextPasteRemote.addEventListener('click', () => {
+    hideContextMenu();
+    if (activeConnectionId) vscode.postMessage({ type: 'requestPasteRemoteEntries', payload: { targetDirectory: getContextWorkingDirectory() } });
+  });
+
   if (remoteSearchContextOpen) remoteSearchContextOpen.addEventListener('click', () => {
     const entry = getRemoteSearchContextEntry();
     hideRemoteSearchResultContextMenu();

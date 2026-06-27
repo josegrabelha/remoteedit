@@ -1,12 +1,5 @@
 export function renderDragDropUpload(): string {
   return `  const DROP_UPLOAD_CHUNK_SIZE = 512 * 1024;
-  const DROP_UPLOAD_AUTO_OPEN_DELAY_MS = 1200;
-  let dragDropUploadTargetRow = null;
-  let dragDropUploadAutoOpenTimer = 0;
-  let dragDropUploadAutoOpenPath = '';
-  let dragDropUploadAutoOpenConnectionId = '';
-  let dragDropUploadStaleCleanupTimer = 0;
-  let dragDropUploadLastActivityAt = 0;
   let dragDropUploadWaiters = [];
 
   function isLocalFileDrag(event) {
@@ -15,7 +8,7 @@ export function renderDragDropUpload(): string {
   }
 
   function canAcceptLocalFileDrop() {
-    return Boolean(activeConnectionId) && canStartTransferAction() && getActiveConnectionView() === 'files';
+    return canAcceptFileListDragTarget();
   }
 
   function getDroppedFileLocalPath(file) {
@@ -24,116 +17,6 @@ export function renderDragDropUpload(): string {
 
   function normalizeDroppedRelativePath(value) {
     return String(value || '').split(String.fromCharCode(92)).join('/').split('/').filter(Boolean).join('/');
-  }
-
-  function getDropTargetDirectory(event) {
-    const row = getEntryRowFromEvent(event);
-    const entry = row ? findCurrentEntryByPath(row.dataset.entryPath || '') : null;
-
-    if (entry && isDirectoryLike(entry) && entry.path) {
-      return { path: normalizeUiRemotePath(entry.path), row: row, entry: entry };
-    }
-
-    return { path: normalizeUiRemotePath(currentPath.value || '/'), row: null, entry: null };
-  }
-
-  function clearDragDropUploadAutoOpenTimer() {
-    if (dragDropUploadAutoOpenTimer) {
-      window.clearTimeout(dragDropUploadAutoOpenTimer);
-      dragDropUploadAutoOpenTimer = 0;
-    }
-
-    dragDropUploadAutoOpenPath = '';
-    dragDropUploadAutoOpenConnectionId = '';
-  }
-
-  function scheduleDragDropUploadAutoOpen(target) {
-    const targetPath = normalizeUiRemotePath(target && target.path || '');
-    const currentDirectory = normalizeUiRemotePath(currentPath.value || '/');
-
-    if (!target || !target.row || !targetPath || targetPath === currentDirectory || busy || !canAcceptLocalFileDrop()) {
-      clearDragDropUploadAutoOpenTimer();
-      return;
-    }
-
-    if (dragDropUploadAutoOpenTimer && dragDropUploadAutoOpenPath === targetPath && dragDropUploadAutoOpenConnectionId === activeConnectionId) {
-      return;
-    }
-
-    clearDragDropUploadAutoOpenTimer();
-    dragDropUploadAutoOpenPath = targetPath;
-    dragDropUploadAutoOpenConnectionId = activeConnectionId || '';
-    dragDropUploadAutoOpenTimer = window.setTimeout(() => {
-      dragDropUploadAutoOpenTimer = 0;
-
-      if (!dragDropUploadAutoOpenPath || dragDropUploadAutoOpenConnectionId !== activeConnectionId) {
-        clearDragDropUploadAutoOpenTimer();
-        return;
-      }
-
-      const pathToOpen = dragDropUploadAutoOpenPath;
-      clearDragDropUploadAutoOpenTimer();
-
-      if (!canAcceptLocalFileDrop() || busy || normalizeUiRemotePath(currentPath.value || '/') === pathToOpen) {
-        return;
-      }
-
-      setDragDropUploadState(false, null);
-      listDirectory(pathToOpen);
-    }, DROP_UPLOAD_AUTO_OPEN_DELAY_MS);
-  }
-
-  function setDragDropUploadState(active, targetRow) {
-    if (!entriesTableWrap) return;
-    entriesTableWrap.classList.toggle('drag-drop-upload-active', Boolean(active));
-
-    if (dragDropUploadTargetRow && dragDropUploadTargetRow !== targetRow) {
-      dragDropUploadTargetRow.classList.remove('drop-target');
-    }
-
-    dragDropUploadTargetRow = targetRow || null;
-
-    if (dragDropUploadTargetRow) {
-      dragDropUploadTargetRow.classList.add('drop-target');
-    }
-  }
-
-  function isDropInFileList(event) {
-    return Boolean(event && event.target instanceof Element && entriesTableWrap && entriesTableWrap.contains(event.target));
-  }
-
-  function clearDragDropUploadStaleCleanupTimer() {
-    if (dragDropUploadStaleCleanupTimer) {
-      window.clearTimeout(dragDropUploadStaleCleanupTimer);
-      dragDropUploadStaleCleanupTimer = 0;
-    }
-  }
-
-  function scheduleDragDropUploadStaleCleanup() {
-    if (dragDropUploadStaleCleanupTimer) return;
-
-    dragDropUploadStaleCleanupTimer = window.setTimeout(() => {
-      dragDropUploadStaleCleanupTimer = 0;
-
-      if (!dragDropUploadLastActivityAt || Date.now() - dragDropUploadLastActivityAt > 1500) {
-        clearDragDropUploadState();
-        return;
-      }
-
-      scheduleDragDropUploadStaleCleanup();
-    }, 500);
-  }
-
-  function markDragDropUploadActivity() {
-    dragDropUploadLastActivityAt = Date.now();
-    scheduleDragDropUploadStaleCleanup();
-  }
-
-  function clearDragDropUploadState() {
-    dragDropUploadLastActivityAt = 0;
-    clearDragDropUploadStaleCleanupTimer();
-    clearDragDropUploadAutoOpenTimer();
-    setDragDropUploadState(false, null);
   }
 
   function createDroppedUploadSessionId() {
@@ -375,36 +258,36 @@ export function renderDragDropUpload(): string {
     if (!isLocalFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
-    markDragDropUploadActivity();
+    markFileListDragTargetActivity();
 
-    if (!canAcceptLocalFileDrop() || !isDropInFileList(event)) {
-      clearDragDropUploadAutoOpenTimer();
-      setDragDropUploadState(false, null);
+    if (!canAcceptLocalFileDrop() || !isFileListDragTarget(event)) {
+      clearFileListDragTargetAutoOpenTimer();
+      setFileListDragTargetState(false, null);
       return;
     }
 
-    const target = getDropTargetDirectory(event);
-    setDragDropUploadState(true, target.row);
-    scheduleDragDropUploadAutoOpen(target);
+    const target = getFileListDragTargetDirectory(event);
+    setFileListDragTargetState(true, target.row);
+    scheduleFileListDragTargetAutoOpen(target, canAcceptLocalFileDrop);
   }
 
   function handleDragDropUploadDragOver(event) {
     if (!isLocalFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
-    markDragDropUploadActivity();
+    markFileListDragTargetActivity();
 
-    if (!canAcceptLocalFileDrop() || !isDropInFileList(event)) {
+    if (!canAcceptLocalFileDrop() || !isFileListDragTarget(event)) {
       event.dataTransfer.dropEffect = 'none';
-      clearDragDropUploadAutoOpenTimer();
-      setDragDropUploadState(false, null);
+      clearFileListDragTargetAutoOpenTimer();
+      setFileListDragTargetState(false, null);
       return;
     }
 
     event.dataTransfer.dropEffect = 'copy';
-    const target = getDropTargetDirectory(event);
-    setDragDropUploadState(true, target.row);
-    scheduleDragDropUploadAutoOpen(target);
+    const target = getFileListDragTargetDirectory(event);
+    setFileListDragTargetState(true, target.row);
+    scheduleFileListDragTargetAutoOpen(target, canAcceptLocalFileDrop);
   }
 
   function handleDragDropUploadDragLeave(event) {
@@ -417,7 +300,7 @@ export function renderDragDropUpload(): string {
       return;
     }
 
-    clearDragDropUploadState();
+    clearFileListDragTargetState();
   }
 
   async function handleDragDropUploadDrop(event) {
@@ -425,9 +308,9 @@ export function renderDragDropUpload(): string {
     event.preventDefault();
     event.stopPropagation();
 
-    const insideFileList = isDropInFileList(event);
-    const target = insideFileList ? getDropTargetDirectory(event) : null;
-    clearDragDropUploadState();
+    const insideFileList = isFileListDragTarget(event);
+    const target = insideFileList ? getFileListDragTargetDirectory(event) : null;
+    clearFileListDragTargetState();
 
     if (!canAcceptLocalFileDrop()) {
       setStatus('Connect to a remote folder before dropping files.', true);
@@ -483,13 +366,5 @@ export function renderDragDropUpload(): string {
     filesView.addEventListener('drop', handleDragDropUploadDrop);
   }
 
-  window.addEventListener('blur', clearDragDropUploadState);
-  window.addEventListener('dragend', clearDragDropUploadState);
-  document.addEventListener('drop', clearDragDropUploadState, true);
-  document.addEventListener('keyup', event => {
-    if (event.key === 'Escape') {
-      clearDragDropUploadState();
-    }
-  });
 `;
 }

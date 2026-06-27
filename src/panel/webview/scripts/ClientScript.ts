@@ -12,7 +12,9 @@ import { renderRemoteCommandLists } from './RemoteCommandLists';
 import { renderOwnerGroupProperties } from './OwnerGroupProperties';
 import { renderRemoteSearch } from './RemoteSearch';
 import { renderFileBrowser } from './FileBrowser';
+import { renderDragDropTargets } from './DragDropTargets';
 import { renderDragDropUpload } from './DragDropUpload';
+import { renderRemoteDragDropMove } from './RemoteDragDropMove';
 import { renderTransfersStatus } from './TransfersStatus';
 
 export interface ClientScriptOptions {
@@ -40,6 +42,8 @@ export function renderClientScript(options: ClientScriptOptions): string {
     renderOwnerGroupProperties() +
     renderRemoteSearch() +
     renderFileBrowser() +
+    renderDragDropTargets() +
     renderDragDropUpload() +
+    renderRemoteDragDropMove() +
     renderTransfersStatus();
 }

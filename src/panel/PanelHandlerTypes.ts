@@ -37,6 +37,9 @@ export interface RemoteEditPanelMessageHandlers {
   requestMakeCopy(payload: any): Promise<void>;
   requestCalculateChecksums(payload: any): Promise<void>;
   requestRenameEntry(payload: any): Promise<void>;
+  requestCutRemoteEntries(payload: any): Promise<void>;
+  requestPasteRemoteEntries(payload: any): Promise<void>;
+  requestMoveRemoteEntries(payload: any): Promise<void>;
   requestDeleteEntry(payload: any): Promise<void>;
   requestDeleteEntries(payload: any): Promise<void>;
   requestUploadEntries(payload: any): Promise<void>;

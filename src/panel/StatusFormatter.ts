@@ -62,6 +62,9 @@ function getStatusErrorPrefix(messageType: string): string {
       return 'Checksum calculation failed';
     case RemoteEditIncomingMessageType.RequestRenameEntry:
       return 'Rename failed';
+    case RemoteEditIncomingMessageType.RequestPasteRemoteEntries:
+    case RemoteEditIncomingMessageType.RequestMoveRemoteEntries:
+      return 'Move failed';
     case RemoteEditIncomingMessageType.RequestDeleteEntry:
     case RemoteEditIncomingMessageType.RequestDeleteEntries:
       return 'Delete failed';

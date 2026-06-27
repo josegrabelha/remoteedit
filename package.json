@@ -1844,6 +1844,10 @@
           "when": "false"
         },
         {
+          "command": "remoteedit.sidebar.expandConnectionGroups",
+          "when": "false"
+        },
+        {
           "command": "remoteedit.sidebar.filterConnections",
           "when": "false"
         },
@@ -1860,7 +1864,19 @@
           "when": "false"
         },
         {
+          "command": "remoteedit.sidebar.moveConnectionToGroup",
+          "when": "false"
+        },
+        {
           "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.renameConnectionGroup",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteConnectionGroup",
           "when": "false"
         },
         {
@@ -1889,6 +1905,10 @@
         },
         {
           "command": "remoteedit.sidebar.openSshTerminal",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.openLogViewer",
           "when": "false"
         },
         {
@@ -1941,6 +1961,18 @@
         },
         {
           "command": "remoteedit.sidebar.renameRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.cutRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.pasteRemoteEntry",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.pasteRemoteToParentFolder",
           "when": "false"
         },
         {
@@ -2012,6 +2044,10 @@
           "when": "false"
         },
         {
+          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "when": "false"
+        },
+        {
           "command": "remoteedit.sidebar.manageConnectionCredentials",
           "when": "false"
         },
@@ -2036,31 +2072,23 @@
           "when": "false"
         },
         {
-          "command": "remoteedit.sidebar.selectCaCertificatePath",
+          "command": "workbench.view.extension.remoteedit",
           "when": "false"
         },
         {
-          "command": "remoteedit.sidebar.openLogViewer",
+          "command": "remoteedit.actionsView.focus",
           "when": "false"
         },
         {
-          "command": "remoteedit.sidebar.renameConnectionGroup",
+          "command": "remoteedit.connectionsView.focus",
           "when": "false"
         },
         {
-          "command": "remoteedit.sidebar.deleteConnectionGroup",
+          "command": "remoteedit.openConnectionsView.focus",
           "when": "false"
         },
         {
-          "command": "remoteedit.sidebar.cutRemoteEntry",
-          "when": "false"
-        },
-        {
-          "command": "remoteedit.sidebar.pasteRemoteEntry",
-          "when": "false"
-        },
-        {
-          "command": "remoteedit.sidebar.pasteRemoteToParentFolder",
+          "command": "remoteedit.transfersView.focus",
           "when": "false"
         }
       ],

@@ -8,6 +8,10 @@
 * Added drag-and-drop upload for local files and folders from the OS into remote folders using the Webview file list or Sidebar Open Connections tree.
 * Added remote file and folder moving within the same Remote Edit connection using Cut/Paste and drag-and-drop in both the Webview and Sidebar.
 
+### Changed
+
+* Limited Remote Edit Command Palette entries to Open and Settings, keeping sidebar and context-only actions out of the palette.
+
 ### Fixed
 
 * Fixed upload refresh synchronization between the Webview and Sidebar so the affected remote directory is refreshed after uploads complete.

@@ -571,7 +571,7 @@ export function renderTransfersStatus(): string {
     const showServerRefreshControls = activeView === 'server' && hasActiveSession && isServerViewSupported(activeSession);
     const showRunRemoteCommand = capabilities.canRunCommand;
     const showSshTerminal = capabilities.canOpenSshTerminal;
-    const showLogViewer = showSshTerminal;
+    const showLogViewer = capabilities.canFollowLogFiles;
     const showSudoMode = capabilities.canUseSudo;
     const showConnectionViewSwitch = !activeSession || isSessionConnected(activeSession) && isServerViewSupported(activeSession);
     const nextToolbarCapabilityState = (showServerRefreshControls ? '1' : '0') + ':' + (showRunRemoteCommand ? '1' : '0') + ':' + (showSshTerminal ? '1' : '0') + ':' + (showSudoMode ? '1' : '0') + ':' + (showConnectionViewSwitch ? '1' : '0');
@@ -645,9 +645,9 @@ export function renderTransfersStatus(): string {
     updateRemotePathBreadcrumb();
     filterInput.disabled = busy || !hasActiveSession;
     if (runRemoteCommandButton) runRemoteCommandButton.disabled = busy || !hasActiveSession || !capabilities.canRunCommand;
-    if (openLogViewerButton) openLogViewerButton.disabled = busy || !hasActiveSession || !capabilities.canOpenSshTerminal;
+    if (openLogViewerButton) openLogViewerButton.disabled = busy || !hasActiveSession || !capabilities.canFollowLogFiles;
     if (openSshTerminalButton) openSshTerminalButton.disabled = busy || !hasActiveSession || !capabilities.canOpenSshTerminal;
-    if (remoteSearchButton) remoteSearchButton.disabled = !hasActiveSession;
+    if (remoteSearchButton) remoteSearchButton.disabled = !hasActiveSession || !capabilities.canRunCommand;
     updateFilterClearButton();
     updateTransferButtons();
     renderTransferQueueButton();

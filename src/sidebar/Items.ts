@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import type { AuthType, ConnectionGroup, ConnectionProfile } from '../connection/ConnectionManager';
 import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
 import type { TransferQueueItemSnapshot } from '../panel/RemoteEditPanel';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 import { buildConnectionDetail, buildGoParentTooltipOrEmpty, buildMarkdownTooltip, buildRemoteBrowseTooltipOrEmpty, buildRemoteEntryDescription, buildRemoteEntryTooltipOrEmpty, buildRemotePathTooltipOrEmpty, buildSidebarPathDisplay, buildTransferItemTooltipContent, formatCredentialStatus, formatOpenConnectionLabel, formatTooltipPlainText, formatTransferItemDescription, formatTransferItemLabel, getConnectionDetailContextValue, getParentRemotePath, getRemoteEntryIcon, getRemoteEntryResourceUri, getRemotePathBasename, getSavedConnectionIcon, getSidebarDecorationResourceUri, isPathAncestorOrSelf, isSftpConnection, normalizeRemotePath, normalizeRemoteRootStartPath, resolveRemoteEntryType, type ConnectionDetailField } from './ItemHelpers';
 export { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, sortRemoteEntries, type ConnectionDetailField } from './ItemHelpers';
 
@@ -24,6 +25,24 @@ export type RemoteEditSidebarItemKind =
   | 'remoteEntry'
   | 'transferGroup'
   | 'transferItem';
+
+
+interface SidebarSftpContextOptions {
+  readonly isFavorite?: boolean;
+  readonly isSftp?: boolean;
+  readonly isWindowsSftp?: boolean;
+}
+
+function getSftpAwareContext(base: string, options?: SidebarSftpContextOptions): string {
+  const favoriteSuffix = options?.isFavorite ? '.favorite' : '';
+  if (options?.isWindowsSftp) {
+    return `${base}${favoriteSuffix}.sftp.windows`;
+  }
+  if (options?.isSftp) {
+    return `${base}${favoriteSuffix}.sftp`;
+  }
+  return `${base}${favoriteSuffix}`;
+}
 
 export class RemoteEditSidebarItem extends vscode.TreeItem {
   readonly kind: RemoteEditSidebarItemKind;
@@ -288,7 +307,8 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
   static fromActiveConnection(connection: ActiveConnection, options?: { sudoModeEnabled?: boolean }): RemoteEditSidebarItem {
     const protocol = String(connection.connectionType || 'sftp').toUpperCase();
     const isSftp = String(connection.connectionType || 'sftp').toLowerCase() === 'sftp';
-    const sudoModeEnabled = Boolean(isSftp && options?.sudoModeEnabled);
+    const isWindowsSftp = isSftp && isWindowsRemotePlatform(connection.remotePlatform);
+    const sudoModeEnabled = Boolean(isSftp && !isWindowsSftp && options?.sudoModeEnabled);
     const tooltipLines = [
       `Protocol: ${protocol}`,
       `Host: ${connection.host}:${connection.port}`,
@@ -296,16 +316,22 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       `Start path: ${connection.startPath || '/'}`
     ];
 
+    if (connection.remotePlatform === 'windows') {
+      tooltipLines.push('Platform: Windows');
+    }
+
     if (sudoModeEnabled) {
       tooltipLines.push('Sudo Mode: On');
     }
 
     const tooltip = buildMarkdownTooltip(connection.name, tooltipLines);
-    const contextValue = isSftp
-      ? sudoModeEnabled
-        ? 'remoteedit.openConnection.sudoOn'
-        : 'remoteedit.openConnection.sudoOff'
-      : 'remoteedit.openConnection';
+    const contextValue = isWindowsSftp
+      ? 'remoteedit.openConnection.sftp.windows'
+      : isSftp
+        ? sudoModeEnabled
+          ? 'remoteedit.openConnection.sudoOn'
+          : 'remoteedit.openConnection.sudoOff'
+        : 'remoteedit.openConnection';
 
     return new RemoteEditSidebarItem({
       label: formatOpenConnectionLabel(connection),
@@ -340,7 +366,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
-  static favoritePath(connectionId: string, remotePath: string, options?: { isSftp?: boolean }): RemoteEditSidebarItem {
+  static favoritePath(connectionId: string, remotePath: string, options?: { isSftp?: boolean; isWindowsSftp?: boolean }): RemoteEditSidebarItem {
     const pathDisplay = buildSidebarPathDisplay(remotePath);
 
     return new RemoteEditSidebarItem({
@@ -357,7 +383,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
         title: 'Open Favorite Path',
         arguments: [connectionId, remotePath]
       },
-      contextValue: options?.isSftp ? 'remoteedit.favoritePath.sftp' : 'remoteedit.favoritePath'
+      contextValue: options?.isWindowsSftp ? 'remoteedit.favoritePath.sftp.windows' : options?.isSftp ? 'remoteedit.favoritePath.sftp' : 'remoteedit.favoritePath'
     });
   }
 
@@ -378,9 +404,11 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       connectionId: connection.id,
       host: connection.host,
       remotePath: normalizedRoot,
-      contextValue: options?.isFavorite
-        ? isSftpConnection(connection.connectionType) ? 'remoteedit.filesGroup.favorite.sftp' : 'remoteedit.filesGroup.favorite'
-        : isSftpConnection(connection.connectionType) ? 'remoteedit.filesGroup.sftp' : 'remoteedit.filesGroup'
+      contextValue: getSftpAwareContext('remoteedit.filesGroup', {
+        isFavorite: options?.isFavorite,
+        isSftp: isSftpConnection(connection.connectionType) && !isWindowsRemotePlatform(connection.remotePlatform),
+        isWindowsSftp: isSftpConnection(connection.connectionType) && isWindowsRemotePlatform(connection.remotePlatform)
+      })
     });
   }
 
@@ -408,7 +436,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
-  static remoteDirectoryPlaceholder(connectionId: string, remotePath: string, startPath?: string, options?: { isFavorite?: boolean; isSftp?: boolean }): RemoteEditSidebarItem {
+  static remoteDirectoryPlaceholder(connectionId: string, remotePath: string, startPath?: string, options?: { isFavorite?: boolean; isSftp?: boolean; isWindowsSftp?: boolean }): RemoteEditSidebarItem {
     const normalizedPath = normalizeRemotePath(remotePath);
     const name = normalizedPath === '/' ? '/' : normalizedPath.split('/').filter(Boolean).pop() || normalizedPath;
     const normalizedStartPath = normalizeRemoteRootStartPath(startPath);
@@ -430,13 +458,11 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
         title: 'Open as Root Directory',
         arguments: [connectionId, normalizedPath]
       },
-      contextValue: options?.isFavorite
-        ? options?.isSftp ? 'remoteedit.remoteDirectory.favorite.sftp' : 'remoteedit.remoteDirectory.favorite'
-        : options?.isSftp ? 'remoteedit.remoteDirectory.sftp' : 'remoteedit.remoteDirectory'
+      contextValue: getSftpAwareContext('remoteedit.remoteDirectory', options)
     });
   }
 
-  static fromRemoteEntry(connectionId: string, entry: RemoteEntry, startPath?: string, options?: { isFavorite?: boolean; isSftp?: boolean }): RemoteEditSidebarItem {
+  static fromRemoteEntry(connectionId: string, entry: RemoteEntry, startPath?: string, options?: { isFavorite?: boolean; isSftp?: boolean; isWindowsSftp?: boolean }): RemoteEditSidebarItem {
     const resolvedType = resolveRemoteEntryType(entry);
     const isDirectory = resolvedType === 'directory';
     const isFile = resolvedType === 'file';
@@ -444,7 +470,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     const remotePath = normalizeRemotePath(entry.path || entry.name || '/');
     const normalizedStartPath = normalizeRemoteRootStartPath(startPath);
     const shouldExpand = isDirectory && isPathAncestorOrSelf(remotePath, normalizedStartPath);
-    const tooltip = buildRemoteEntryTooltipOrEmpty(entry, resolvedType);
+    const tooltip = buildRemoteEntryTooltipOrEmpty(entry, resolvedType, { showPosixMetadata: !options?.isWindowsSftp });
     const resourceUri = getRemoteEntryResourceUri(entry, resolvedType, remotePath, connectionId);
     const description = buildRemoteEntryDescription(entry, resolvedType);
 
@@ -479,11 +505,9 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
             }
           : undefined,
       contextValue: isDirectory
-        ? options?.isFavorite
-          ? options?.isSftp ? 'remoteedit.remoteDirectory.favorite.sftp' : 'remoteedit.remoteDirectory.favorite'
-          : options?.isSftp ? 'remoteedit.remoteDirectory.sftp' : 'remoteedit.remoteDirectory'
+        ? getSftpAwareContext('remoteedit.remoteDirectory', options)
         : isFile
-          ? options?.isSftp ? 'remoteedit.remoteFile.sftp' : 'remoteedit.remoteFile'
+          ? options?.isWindowsSftp ? 'remoteedit.remoteFile.sftp.windows' : options?.isSftp ? 'remoteedit.remoteFile.sftp' : 'remoteedit.remoteFile'
           : 'remoteedit.remoteEntry'
     });
   }

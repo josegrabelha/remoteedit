@@ -6,6 +6,7 @@ import { normalizeRemotePath } from '../ssh/SftpSessionManager';
 import { RemoteEditOutboundMessageType } from './PanelMessages';
 import type { ActiveRemoteCommandState } from './PanelTypes';
 import type { InputDialogOptions } from './DialogManager';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 
 interface RemoteCommandControllerOptions {
   sessions: RemoteSessionManager;
@@ -49,9 +50,10 @@ export class RemoteCommandController {
 
     const connection = this.options.sessions.getConnection(connectionId);
     const username = String(connection?.username || '').trim();
-    const isRootConnection = username.toLowerCase() === 'root';
-    const requestedSudo = Boolean(payload?.useSudo) && !isRootConnection;
-    let sudoModeEnabled = this.options.sessions.isSudoModeEnabled(connectionId);
+    const canUseSudo = Boolean(connection?.connectionType === 'sftp' && !isWindowsRemotePlatform(connection?.remotePlatform));
+    const isRootConnection = canUseSudo && username.toLowerCase() === 'root';
+    const requestedSudo = Boolean(payload?.useSudo) && canUseSudo && !isRootConnection;
+    let sudoModeEnabled = canUseSudo && this.options.sessions.isSudoModeEnabled(connectionId);
 
     if (requestedSudo && !sudoModeEnabled) {
       if (connection?.connectionType !== 'sftp') {
@@ -102,7 +104,7 @@ export class RemoteCommandController {
 
     const cancellationSource = new vscode.CancellationTokenSource();
     this.options.activeRemoteCommands.set(connectionId, { id: commandId, connectionId, cancellationSource });
-    const useSudo = (sudoModeEnabled || requestedSudo) && !isRootConnection;
+    const useSudo = canUseSudo && (sudoModeEnabled || requestedSudo) && !isRootConnection;
 
     this.options.postMessage(RemoteEditOutboundMessageType.RemoteCommandStarted, {
       commandId,

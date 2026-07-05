@@ -1,5 +1,6 @@
 import type { RemoteEntry, RemoteEntryType, RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { formatPermissionsPropertyValue, permissionModeFromString as permissionModeFromStringValue } from '../utils/permissionFormatUtils';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 import type { RemoteEditSidebarItem } from './Items';
 
 export interface SidebarRemoteEntryStat {
@@ -36,6 +37,7 @@ export function buildRemoteEntryProperties(
         : 'Remote Path';
   const name = entry?.name || itemName || '—';
   const remotePath = entry?.path || item.remotePath || '—';
+  const isWindows = isWindowsRemotePlatform(connection?.remotePlatform);
 
   const rows: Array<[string, string]> = [
     ['Name', name],
@@ -47,12 +49,20 @@ export function buildRemoteEntryProperties(
     rows.push(['Size', formatBytes(entry?.size ?? stats?.size)]);
   }
 
-  rows.push(
-    ['Modified', formatPropertyDate(entry?.modifyTime ?? stats?.modifyTime) || '—'],
-    ['Permissions', formatPermissionsPropertyValue(entry?.permissions)],
-    ['Owner', formatMetadata(entry?.owner) || '—'],
-    ['Group', formatMetadata(entry?.group) || '—']
-  );
+  rows.push(['Modified', formatPropertyDate(entry?.modifyTime ?? stats?.modifyTime) || '—']);
+
+  const accessed = formatPropertyDate(entry?.accessTime ?? stats?.accessTime);
+  if (accessed) {
+    rows.push(['Accessed', accessed]);
+  }
+
+  if (!isWindows) {
+    rows.push(
+      ['Permissions', formatPermissionsPropertyValue(entry?.permissions)],
+      ['Owner', formatMetadata(entry?.owner) || '—'],
+      ['Group', formatMetadata(entry?.group) || '—']
+    );
+  }
 
   if (isLink && entry?.linkTarget) {
     rows.push(['Symlink target', entry.linkTarget]);

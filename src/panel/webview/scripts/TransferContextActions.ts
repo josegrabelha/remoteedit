@@ -257,7 +257,7 @@ export function renderTransferContextActions(): string {
     if (event.key === 'Enter') {
       event.preventDefault();
       const path = currentPath.value;
-      exitRemotePathEditMode({ reset: false });
+      exitRemotePathEditMode({ reset: true });
       openPath(path);
     } else if (event.key === 'Escape') {
       event.preventDefault();
@@ -593,7 +593,7 @@ export function renderTransferContextActions(): string {
     const capabilities = getActiveRemoteCapabilities();
     const workingDirectory = getContextWorkingDirectory();
     hideContextMenu();
-    if (!activeConnectionId || !capabilities.canOpenSshTerminal || !capabilities.canRunCommand) return;
+    if (!activeConnectionId || !capabilities.canOpenSshTerminal) return;
 
     vscode.postMessage({
       type: 'requestOpenSshTerminal',
@@ -606,7 +606,7 @@ export function renderTransferContextActions(): string {
 
   if (openLogViewerButton) openLogViewerButton.addEventListener('click', () => {
     const capabilities = getActiveRemoteCapabilities();
-    if (!activeConnectionId || openLogViewerButton.disabled || !capabilities.canOpenSshTerminal) return;
+    if (!activeConnectionId || openLogViewerButton.disabled || !capabilities.canFollowLogFiles) return;
     vscode.postMessage({
       type: 'requestOpenLogViewer',
       payload: { connectionId: activeConnectionId }

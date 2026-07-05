@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
+import { isWindowsRemotePlatform } from '../../remote/RemotePlatform';
 import type { RemoteSessionManager } from '../../remote/RemoteSessionManager';
 import { shellQuote } from '../../utils/shellUtils';
 import type { OutputLogDetails } from '../../utils/outputLogger';
 import { RemoteEditOutboundMessageType } from '../PanelMessages';
 import type { ConfirmDialogOptions } from '../PanelTypes';
 import { buildFallbackServerSystemInfo, buildServerDashboardSnapshot, buildServerDashboardSnapshotCommand, createUnavailableServerOverview, parseServerDashboardSnapshotOutput } from './ServerDashboardModel';
+import { buildWindowsServerDashboardSnapshotCommand } from './WindowsServerDashboardSnapshotCommand';
 import type { ServerDashboardProcessItem } from './ServerDashboardTypes';
-import { buildServerProcessActionSnapshot, buildServerProcessKillCommand, buildServerServiceActionCommand, buildServerServiceDetailsCommand, formatServerServiceActionLabel, normalizeServerCommandOutput, parseServerProcessKillOutput } from './ServerDashboardCommandUtils';
+import { buildServerProcessActionSnapshot, buildServerProcessKillCommand, buildServerServiceActionCommand, buildServerServiceDetailsCommand, buildWindowsScheduledTaskDetailsCommand, formatServerServiceActionLabel, normalizeServerCommandOutput, parseServerProcessKillOutput } from './ServerDashboardCommandUtils';
 
 interface ServerManagementControllerOptions {
   sessions: RemoteSessionManager;
@@ -212,7 +214,7 @@ export class ServerManagementController {
         `User: ${processSnapshot.user}`,
         `Command: ${processSnapshot.command}`,
         '',
-        'This will send SIGTERM to the process.'
+        processSnapshot.adapter === 'windows-process' ? 'This will stop the process on Windows.' : 'This will send SIGTERM to the process.'
       ].join('\n'),
       confirmLabel: 'Kill',
       cancelLabel: 'Cancel',
@@ -226,7 +228,7 @@ export class ServerManagementController {
     this.postServerProcessActionState(connectionId, pid, 'killing', processSnapshot);
 
     try {
-      const termResult = await this.runServerManagementCommand(connectionId, buildServerProcessKillCommand(pid, false));
+      const termResult = await this.runServerManagementCommand(connectionId, buildServerProcessKillCommand(pid, false, processSnapshot.adapter));
       const termOutput = parseServerProcessKillOutput(termResult.stdout, termResult.stderr);
 
       if (!termOutput.stillRunning) {
@@ -256,7 +258,7 @@ export class ServerManagementController {
           `User: ${processSnapshot.user}`,
           `Command: ${processSnapshot.command}`,
           '',
-          'This will send SIGKILL (kill -9). The process cannot clean up before exiting.'
+          processSnapshot.adapter === 'windows-process' ? 'This will force stop the process on Windows.' : 'This will send SIGKILL (kill -9). The process cannot clean up before exiting.'
         ].join('\n'),
         confirmLabel: 'Force Kill',
         cancelLabel: 'Cancel',
@@ -270,7 +272,7 @@ export class ServerManagementController {
       }
 
       this.postServerProcessActionState(connectionId, pid, 'killing', processSnapshot);
-      const forceResult = await this.runServerManagementCommand(connectionId, buildServerProcessKillCommand(pid, true));
+      const forceResult = await this.runServerManagementCommand(connectionId, buildServerProcessKillCommand(pid, true, processSnapshot.adapter));
       const forceOutput = parseServerProcessKillOutput(forceResult.stdout, forceResult.stderr);
 
       if (!forceOutput.stillRunning) {
@@ -307,9 +309,10 @@ export class ServerManagementController {
     const action = String(payload?.action || 'open').trim().toLowerCase();
     const sourceType = String(payload?.sourceType || '').trim();
     const name = String(payload?.name || '').trim();
+    const source = String(payload?.source || '').trim();
     const path = String(payload?.path || '').trim();
     const user = String(payload?.user || '').trim();
-    const copyValue = String(payload?.copyValue || path || name || user || '').trim();
+    const copyValue = String(payload?.copyValue || path || source || name || user || '').trim();
 
     if (!connectionId) {
       return;
@@ -320,6 +323,11 @@ export class ServerManagementController {
         return;
       }
       await vscode.env.clipboard.writeText(copyValue);
+      return;
+    }
+
+    if (sourceType === 'windows-task') {
+      await this.openWindowsScheduledTaskReadOnly(connectionId, name, source, path || copyValue);
       return;
     }
 
@@ -361,6 +369,83 @@ export class ServerManagementController {
       await this.options.openEntries({ entries: [entry] });
     } else {
       await this.options.openEntriesReadOnly({ entries: [entry] });
+    }
+  }
+
+  private async openWindowsScheduledTaskReadOnly(connectionId: string, taskName: string, taskPath: string, fullPath: string): Promise<void> {
+    let finalName = String(taskName || '').trim();
+    let normalizedTaskPath = String(taskPath || '').trim();
+    const normalizedFullPath = String(fullPath || '').trim();
+
+    if (!finalName && normalizedFullPath) {
+      const lastSlash = Math.max(normalizedFullPath.lastIndexOf('\\'), normalizedFullPath.lastIndexOf('/'));
+      if (lastSlash >= 0) {
+        normalizedTaskPath = normalizedFullPath.slice(0, lastSlash + 1).replace(/\//g, '\\');
+        finalName = normalizedFullPath.slice(lastSlash + 1).trim();
+      }
+    }
+
+    if (!finalName) {
+      await this.options.showConfirmDialog({
+        title: 'Scheduled task unavailable',
+        message: 'This scheduled task cannot be opened.',
+        details: normalizedFullPath || 'No scheduled task name is available for this item.',
+        confirmLabel: 'OK',
+        hideCancel: true,
+        copyable: true
+      });
+      return;
+    }
+
+    if (!normalizedTaskPath) {
+      normalizedTaskPath = '\\';
+    }
+    normalizedTaskPath = normalizedTaskPath.replace(/\//g, '\\');
+    if (!normalizedTaskPath.startsWith('\\')) {
+      normalizedTaskPath = `\\${normalizedTaskPath}`;
+    }
+    if (!normalizedTaskPath.endsWith('\\')) {
+      normalizedTaskPath += '\\';
+    }
+
+    const connection = this.options.sessions.getConnection(connectionId);
+    if (!connection || String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp' || !isWindowsRemotePlatform(connection.remotePlatform)) {
+      await this.options.showConfirmDialog({
+        title: 'Scheduled task unavailable',
+        message: 'Scheduled task details require an active Windows SSH/SFTP connection.',
+        details: normalizedFullPath || `${normalizedTaskPath}${finalName}`,
+        confirmLabel: 'OK',
+        hideCancel: true,
+        copyable: true
+      });
+      return;
+    }
+
+    try {
+      const command = buildWindowsScheduledTaskDetailsCommand(finalName, normalizedTaskPath);
+      const result = await this.runServerManagementCommand(connectionId, command);
+      const output = normalizeServerCommandOutput(result.stdout, result.stderr, result.code);
+      const content = `${output || 'No scheduled task details returned.'}\n`;
+      const safeName = `${normalizedTaskPath}${finalName}`.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 96) || 'scheduled-task';
+      const uri = vscode.Uri.from({
+        scheme: 'remoteedit-virtual',
+        authority: 'scheduled-tasks',
+        path: `/${safeName}.txt`,
+        query: `connectionId=${encodeURIComponent(connectionId)}&task=${encodeURIComponent(`${normalizedTaskPath}${finalName}`)}&ts=${Date.now()}`
+      });
+
+      this.options.virtualDocuments.set(uri.toString(), content);
+      await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.options.showConfirmDialog({
+        title: 'Scheduled task unavailable',
+        message: 'This scheduled task cannot be opened.',
+        details: message || normalizedFullPath || `${normalizedTaskPath}${finalName}`,
+        confirmLabel: 'OK',
+        hideCancel: true,
+        copyable: true
+      });
     }
   }
 
@@ -514,13 +599,17 @@ ${result.stderr}` : ''}`.trimEnd();
       return;
     }
 
-    const sudoEnabled = this.options.sessions.isSudoModeEnabled(connectionId);
+    const isWindows = isWindowsRemotePlatform(connection.remotePlatform);
+    const sudoEnabled = !isWindows && this.options.sessions.isSudoModeEnabled(connectionId);
     let output = '';
     try {
+      const snapshotCommand = isWindows
+        ? buildWindowsServerDashboardSnapshotCommand()
+        : buildServerDashboardSnapshotCommand();
       await this.options.sessions.runRemoteCommandStreaming(
         connectionId,
         '/',
-        buildServerDashboardSnapshotCommand(),
+        snapshotCommand,
         {
           onStdout: chunk => { output += chunk || ''; },
           onStderr: () => undefined

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionManager, type ConnectionGroup, type ConnectionProfile } from '../connection/ConnectionManager';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './Items';
 import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
@@ -384,7 +385,10 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const rootPath = this.getRootPath(connection);
       return parentPath === rootPath || parentPath === '/'
         ? RemoteEditSidebarItem.filesGroup(connection, rootPath)
-        : RemoteEditSidebarItem.remoteDirectoryPlaceholder(element.connectionId, parentPath, rootPath, { isSftp: isSftpConnection(connection.connectionType) });
+        : RemoteEditSidebarItem.remoteDirectoryPlaceholder(element.connectionId, parentPath, rootPath, {
+          isSftp: isSftpConnection(connection.connectionType) && !isWindowsRemotePlatform(connection.remotePlatform),
+          isWindowsSftp: isSftpConnection(connection.connectionType) && isWindowsRemotePlatform(connection.remotePlatform)
+        });
     }
 
     return undefined;
@@ -485,6 +489,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
 
   private async getFavoritePathItems(connectionId: string): Promise<RemoteEditSidebarItem[]> {
     const profile = await this.connectionManager.getProfile(connectionId);
+    const connection = this.sessions.getConnection(connectionId);
     const favoriteRemotePaths = profile?.favoriteRemotePaths || [];
 
     if (favoriteRemotePaths.length === 0) {
@@ -500,7 +505,10 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       ];
     }
 
-    return favoriteRemotePaths.map(remotePath => RemoteEditSidebarItem.favoritePath(connectionId, remotePath, { isSftp: isSftpConnection(profile?.connectionType) }));
+    return favoriteRemotePaths.map(remotePath => RemoteEditSidebarItem.favoritePath(connectionId, remotePath, {
+      isSftp: isSftpConnection(profile?.connectionType) && !isWindowsRemotePlatform(connection?.remotePlatform),
+      isWindowsSftp: isSftpConnection(profile?.connectionType) && isWindowsRemotePlatform(connection?.remotePlatform)
+    }));
   }
 
   private async getRemoteDirectoryItems(connectionId: string, remotePath: string, includeGoParent: boolean): Promise<RemoteEditSidebarItem[]> {
@@ -544,7 +552,8 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const items = sortRemoteEntries(entries).map(entry =>
         RemoteEditSidebarItem.fromRemoteEntry(connectionId, entry, startPath, {
           isFavorite: isFavoriteRemotePath(entry.path || entry.name || '/', favoriteRemotePaths),
-          isSftp: isSftpConnection(connection?.connectionType)
+          isSftp: isSftpConnection(connection?.connectionType) && !isWindowsRemotePlatform(connection?.remotePlatform),
+          isWindowsSftp: isSftpConnection(connection?.connectionType) && isWindowsRemotePlatform(connection?.remotePlatform)
         })
       );
       const normalizedRemotePath = normalizeRemotePath(remotePath);

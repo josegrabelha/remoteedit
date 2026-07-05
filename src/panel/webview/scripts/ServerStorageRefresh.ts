@@ -4,7 +4,7 @@ export function renderServerStorageRefresh(): string {
   }
 
   function isServerViewSupported(session) {
-    return Boolean(session && normalizeConnectionTypeValue(session.connectionType) === 'sftp' && getActiveRemoteCapabilities().canRunCommand);
+    return Boolean(session && normalizeConnectionTypeValue(session.connectionType) === 'sftp' && getRemoteCapabilitiesForSession(session).canUseServerView);
   }
 
   function getActiveConnectionView() {
@@ -110,18 +110,44 @@ export function renderServerStorageRefresh(): string {
     return String((item && item.value) || '').trim();
   }
 
-  function getDefaultServerLogShortcuts(session) {
+  function isWindowsServerSession(session) {
+    if (session && String(session.remotePlatform || '').toLowerCase() === 'windows') return true;
+    const osName = getServerInfoValue('OS').toLowerCase();
+    const adapter = getServerInfoValue('Adapter').toLowerCase();
+    return osName === 'windows' || adapter === 'windows' || adapter.indexOf('windows') !== -1;
+  }
+
+  function getServerLogDefaultGroupForSession(session) {
     const protocol = normalizeConnectionTypeValue(session && session.connectionType);
-    if (protocol !== 'sftp') return [];
+    if (protocol !== 'sftp') return 'none';
+    if (isWindowsServerSession(session)) return 'windows';
 
     const osName = getServerInfoValue('OS').toLowerCase();
     const adapter = getServerInfoValue('Adapter').toLowerCase();
-    if (osName === 'aix' || adapter.indexOf('aix') !== -1 || adapter === 'generic-unix') {
+    if (osName === 'aix' || adapter.indexOf('aix') !== -1 || adapter === 'generic-unix') return 'aix';
+    return 'posix';
+  }
+
+  function getDefaultServerLogShortcuts(session) {
+    const group = getServerLogDefaultGroupForSession(session);
+
+    if (group === 'windows') {
+      return [
+        createServerLogShortcut('CBS log', '/C:/Windows/Logs/CBS/CBS.log'),
+        createServerLogShortcut('DISM log', '/C:/Windows/Logs/DISM/dism.log'),
+        createServerLogShortcut('SetupAPI device log', '/C:/Windows/INF/setupapi.dev.log'),
+        createServerLogShortcut('OpenSSH log', '/C:/ProgramData/ssh/logs/sshd.log')
+      ];
+    }
+
+    if (group === 'aix') {
       return [
         createServerLogShortcut('AIX messages', '/var/adm/messages'),
         createServerLogShortcut('Messages', '/var/log/messages')
       ];
     }
+
+    if (group !== 'posix') return [];
 
     return [
       createServerLogShortcut('System log', '/var/log/syslog'),
@@ -131,6 +157,60 @@ export function renderServerStorageRefresh(): string {
       createServerLogShortcut('Apache error', '/var/log/httpd/error_log'),
       createServerLogShortcut('Apache2 error', '/var/log/apache2/error.log')
     ];
+  }
+
+  function normalizeServerLogShortcutPathSet(items) {
+    return (Array.isArray(items) ? items : [])
+      .map(item => normalizeUiRemotePath(item && item.path ? item.path : ''))
+      .filter(path => path && path !== '/')
+      .sort();
+  }
+
+  function serverLogShortcutPathSetsEqual(left, right) {
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+    return true;
+  }
+
+  function getServerLogShortcutDefaultGroupForItems(items) {
+    const paths = normalizeServerLogShortcutPathSet(items);
+    if (!paths.length) return '';
+
+    const groups = ['windows', 'aix', 'posix'];
+    for (const group of groups) {
+      const defaultItems = group === 'windows'
+        ? [
+            { path: '/C:/Windows/Logs/CBS/CBS.log' },
+            { path: '/C:/Windows/Logs/DISM/dism.log' },
+            { path: '/C:/Windows/INF/setupapi.dev.log' },
+            { path: '/C:/ProgramData/ssh/logs/sshd.log' }
+          ]
+        : group === 'aix'
+          ? [
+              { path: '/var/adm/messages' },
+              { path: '/var/log/messages' }
+            ]
+          : [
+              { path: '/var/log/syslog' },
+              { path: '/var/log/messages' },
+              { path: '/var/log/nginx/error.log' },
+              { path: '/var/log/nginx/access.log' },
+              { path: '/var/log/httpd/error_log' },
+              { path: '/var/log/apache2/error.log' }
+            ];
+      if (serverLogShortcutPathSetsEqual(paths, normalizeServerLogShortcutPathSet(defaultItems))) return group;
+    }
+
+    return '';
+  }
+
+  function shouldReplaceStoredServerLogShortcuts(session, shortcuts) {
+    const currentGroup = getServerLogShortcutDefaultGroupForItems(shortcuts);
+    if (!currentGroup) return false;
+    const desiredGroup = getServerLogDefaultGroupForSession(session);
+    return Boolean(desiredGroup && desiredGroup !== 'none' && currentGroup !== desiredGroup);
   }
 
   function sanitizeServerLogShortcut(item) {
@@ -182,7 +262,12 @@ export function renderServerStorageRefresh(): string {
     if (isServerLogShortcutsPersistent(session)) {
       const storage = readServerLogShortcutsStorage();
       if (Array.isArray(storage[connectionId])) {
-        return storage[connectionId].map(sanitizeServerLogShortcut).filter(Boolean);
+        const stored = storage[connectionId].map(sanitizeServerLogShortcut).filter(Boolean);
+        if (!shouldReplaceStoredServerLogShortcuts(session, stored)) return stored;
+        const defaults = getDefaultServerLogShortcuts(session);
+        storage[connectionId] = defaults;
+        writeServerLogShortcutsStorage(storage);
+        return defaults;
       }
       if (!hasServerDashboardDataForLogDefaults()) {
         return [];
@@ -194,7 +279,11 @@ export function renderServerStorageRefresh(): string {
     }
 
     if (serverLogShortcutsSessionByConnectionId.has(connectionId)) {
-      return (serverLogShortcutsSessionByConnectionId.get(connectionId) || []).map(sanitizeServerLogShortcut).filter(Boolean);
+      const stored = (serverLogShortcutsSessionByConnectionId.get(connectionId) || []).map(sanitizeServerLogShortcut).filter(Boolean);
+      if (!shouldReplaceStoredServerLogShortcuts(session, stored)) return stored;
+      const defaults = getDefaultServerLogShortcuts(session);
+      serverLogShortcutsSessionByConnectionId.set(connectionId, defaults);
+      return defaults;
     }
 
     if (!hasServerDashboardDataForLogDefaults()) {
@@ -239,6 +328,10 @@ export function renderServerStorageRefresh(): string {
     const typedPath = normalizeUiRemotePath(serverLogShortcutPathInput && serverLogShortcutPathInput.value ? serverLogShortcutPathInput.value : '');
     if (typedPath && typedPath !== '/') {
       return getRemotePathDirname(typedPath);
+    }
+    const active = getActiveSession();
+    if (isWindowsServerSession(active)) {
+      return '/C:/';
     }
     const state = getActiveServerDashboardState();
     const info = state && state.data && Array.isArray(state.data.systemInfo) ? state.data.systemInfo : [];
@@ -413,6 +506,8 @@ export function renderServerStorageRefresh(): string {
     }
     serverLogShortcutNameInput.value = shortcut ? shortcut.name : '';
     serverLogShortcutPathInput.value = shortcut ? shortcut.path : '';
+    serverLogShortcutPathInput.placeholder = isWindowsServerSession(active) ? '/C:/Windows/Logs/CBS/CBS.log' : '/var/log/nginx/error.log';
+    if (serverLogShortcutPathPickerPath) serverLogShortcutPathPickerPath.textContent = isWindowsServerSession(active) ? '/C:/' : '/var/log';
     serverLogShortcutFeedback.textContent = '';
     serverLogShortcutNameInput.classList.remove('server-log-shortcut-input-invalid');
     serverLogShortcutPathInput.classList.remove('server-log-shortcut-input-invalid');

@@ -44,6 +44,9 @@ export function renderServerJobsPortsActions(): string {
     const data = state && state.data ? state.data : null;
     const items = data && Array.isArray(data.scheduledJobs) ? data.scheduledJobs : [];
     const adapter = data && data.scheduledJobsAdapter ? String(data.scheduledJobsAdapter) : (state && state.loading ? 'loading' : 'not loaded');
+    const isWindowsScheduledTasks = String(adapter || '').toLowerCase().indexOf('windows') >= 0;
+    const scheduledTitle = isWindowsScheduledTasks ? 'Scheduled Tasks' : 'Cron Jobs';
+    const scheduledFilterLabel = isWindowsScheduledTasks ? 'scheduled tasks' : 'cron jobs';
     const filterText = getServerScheduledJobFilterText();
     const filteredItems = items.filter(item => matchesServerScheduledJobFilter(item, filterText));
     const visibleItems = sortServerItems('cron', filteredItems, (item, key) => {
@@ -53,25 +56,25 @@ export function renderServerJobsPortsActions(): string {
     });
     const filterHasValue = Boolean(String(filterText || '').trim());
     const countDetail = formatServerListCount(items.length, filteredItems.length, filterHasValue, Boolean(!data && state && state.loading));
-    const filterBox = '<div class="server-scheduled-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverScheduledFilterInput" class="server-scheduled-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter cron jobs" value="' + escapeHtml(filterText) + '" aria-label="Filter cron jobs jobs"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Cron Jobs Filter" data-tooltip="Clear Filter" data-server-scheduled-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div>';
-    const header = '<div class="server-section-title-row server-scheduled-title-row"><div class="server-section-title-wrap"><div class="server-section-title">Cron Jobs</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right">' + filterBox + '</div></div>';
+    const filterBox = '<div class="server-scheduled-filter-box' + (filterHasValue ? ' has-value' : '') + '"><input id="serverScheduledFilterInput" class="server-scheduled-filter" type="text" spellcheck="false" autocomplete="off" placeholder="Filter ' + scheduledFilterLabel + '" value="' + escapeHtml(filterText) + '" aria-label="Filter ' + scheduledFilterLabel + '"><button class="filter-clear-button tooltip-above" type="button" aria-label="Clear Scheduled Items Filter" data-tooltip="Clear Filter" data-server-scheduled-filter-clear="true"' + (filterHasValue ? '' : ' disabled') + '><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div>';
+    const header = '<div class="server-section-title-row server-scheduled-title-row"><div class="server-section-title-wrap"><div class="server-section-title">' + escapeHtml(scheduledTitle) + '</div><span class="server-section-count">' + escapeHtml(countDetail) + '</span></div><div class="server-section-title-right">' + filterBox + '</div></div>';
 
     if (!data && state && state.loading) {
-      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">Loading cron jobs...</div></section>';
+      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">Loading ' + escapeHtml(scheduledFilterLabel) + '...</div></section>';
     }
 
     if (!items.length) {
-      const message = data ? 'No cron jobs found.' : 'Cron jobs are not loaded yet.';
+      const message = data ? 'No ' + escapeHtml(scheduledFilterLabel) + ' found.' : '' + escapeHtml(scheduledTitle) + ' are not loaded yet.';
       return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">' + escapeHtml(message) + '</div></section>';
     }
 
     if (!filteredItems.length) {
-      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">No cron jobs match the current filter.</div></section>';
+      return '<section class="server-section-card server-scheduled-card">' + header + '<div class="server-placeholder">No ' + escapeHtml(scheduledFilterLabel) + ' match the current filter.</div></section>';
     }
 
     const columns = renderServerColumnHeader('cron', 'server-scheduled-main', [
       { key: 'name', label: 'Name' },
-      { key: 'entries', label: 'Entries' },
+      { key: 'entries', label: isWindowsScheduledTasks ? 'State' : 'Entries' },
       { key: 'type', label: 'Type' }
     ], '<div class="server-list-column-header-trailing"><span class="server-list-column-header-actions-space server-scheduled-actions-space" aria-hidden="true"></span></div>');
     return '<section class="server-section-card server-scheduled-card">' + header + columns + '<div class="server-list server-scheduled-list">'
@@ -84,16 +87,18 @@ export function renderServerJobsPortsActions(): string {
         const user = String(item.user || '');
         const path = String(item.path || '');
         const copyValue = String(item.copyValue || path || source || name);
-        const canOpen = item.canOpen !== false;
+        const isWindowsTask = sourceType === 'windows-task';
+        const canOpen = isWindowsTask || item.canOpen !== false;
         const dataset = ' data-server-scheduled-id="' + escapeHtml(item.id || '') + '" data-server-scheduled-name="' + escapeHtml(name) + '" data-server-scheduled-count="' + escapeHtml(countLabel) + '" data-server-scheduled-type-label="' + escapeHtml(typeLabel) + '" data-server-scheduled-source="' + escapeHtml(source) + '" data-server-scheduled-source-type="' + escapeHtml(sourceType) + '" data-server-scheduled-user="' + escapeHtml(user) + '" data-server-scheduled-path="' + escapeHtml(path) + '" data-server-scheduled-copy="' + escapeHtml(copyValue) + '"';
-        const openTooltip = canOpen ? 'Open Read-Only' : 'Open unavailable';
+        const openTooltip = isWindowsTask ? 'View Scheduled Task Details' : (canOpen ? 'Open Read-Only' : 'Open unavailable');
+        const openLabel = isWindowsTask ? 'Details' : 'View';
         return '<div class="server-list-row server-scheduled-row"' + dataset + '>'
           + '<div class="server-list-main server-scheduled-main">'
           + '<span class="server-scheduled-name tooltip-above" data-tooltip="' + escapeHtml(source || name) + '">' + escapeHtml(name) + '</span>'
           + '<span class="server-scheduled-count tooltip-above" data-tooltip="' + escapeHtml(countLabel) + '">' + escapeHtml(countLabel) + '</span>'
           + '<span class="server-scheduled-type tooltip-above" data-tooltip="' + escapeHtml(typeLabel) + '">' + escapeHtml(typeLabel) + '</span>'
           + '</div><div class="server-scheduled-actions">'
-          + '<span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(openTooltip) + '"><button class="secondary server-scheduled-action-button" type="button" data-server-scheduled-action="open"' + dataset + (canOpen ? '' : ' disabled') + '>View</button></span>'
+          + '<span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(openTooltip) + '"><button class="secondary server-scheduled-action-button" type="button" data-server-scheduled-action="open"' + dataset + (canOpen ? '' : ' disabled') + '>' + escapeHtml(openLabel) + '</button></span>'
           + '<span class="tooltip-anchor tooltip-above" data-tooltip="Copy Source"><button class="secondary server-scheduled-action-button" type="button" data-server-scheduled-action="copy"' + dataset + '>Copy</button></span>'
           + '</div></div>';
       }).join('')

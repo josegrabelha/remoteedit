@@ -237,6 +237,7 @@ export function renderRemoteCommandActions(): string {
       updateRemotePathBreadcrumb();
       updateRemotePathActionButton();
       updateSudoToggle();
+      updateFileListPlatformColumns();
       return;
     }
 
@@ -247,6 +248,7 @@ export function renderRemoteCommandActions(): string {
     updateRemotePathBreadcrumb();
     updateRemotePathActionButton();
     updateSudoToggle();
+    updateFileListPlatformColumns();
   }
 
   function updateActiveSessionPath(path) {
@@ -477,7 +479,7 @@ export function renderRemoteCommandActions(): string {
       name.textContent = item.name || item.path || '';
       button.appendChild(name);
 
-      if (showRemotePathBreadcrumbDirectoryDetails) {
+      if (showRemotePathBreadcrumbDirectoryDetails && shouldShowPosixMetadataColumns()) {
         const meta = document.createElement('span');
         meta.className = 'remote-path-dropdown-meta';
 
@@ -586,7 +588,7 @@ export function renderRemoteCommandActions(): string {
     clearFilterText();
     currentSort = { key: '', direction: '' };
     entriesRenderGeneration += 1;
-    entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connecting...</div></td></tr>';
+    renderEntriesEmptyMessage('Connecting...');
     currentPath.value = session.currentPath || '/';
     setBusy(true, 'Connecting to ' + (session.name || session.host) + '...', 'connection', 'Cancel', id);
     renderSessionTabs();
@@ -624,7 +626,7 @@ export function renderRemoteCommandActions(): string {
       } else {
         currentEntries = [];
         entriesRenderGeneration += 1;
-        entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
+        renderEntriesEmptyMessage('Connect to a host to list remote files.');
         currentPath.value = '';
         setStatus('No active connection.');
       }
@@ -842,18 +844,77 @@ export function renderRemoteCommandActions(): string {
     return normalizeConnectionTypeValue(active ? active.connectionType : connectionType.value);
   }
 
-  function getActiveRemoteCapabilities() {
-    const isSftp = getBrowserConnectionType() === 'sftp';
+  function getRemoteCapabilitiesForSession(session) {
+    if (session && session.capabilities) {
+      return Object.assign({
+        canUseSudo: false,
+        canRunCommand: false,
+        canOpenSshTerminal: false,
+        canUseServerView: false,
+        canFollowLogFiles: false,
+        canChangeOwnerGroup: false,
+        canChangePermissions: false,
+        canChangePermissionsRecursively: false,
+        canCalculateServerChecksums: false,
+        canCreateArchive: false,
+        canShowPosixOwnership: false,
+        canShowPosixPermissions: false,
+        canShowWindowsFileAttributes: false
+      }, session.capabilities || {});
+    }
+
+    const isSftp = normalizeConnectionTypeValue(session ? session.connectionType : getBrowserConnectionType()) === 'sftp';
+    const isWindows = session && String(session.remotePlatform || '').toLowerCase() === 'windows';
     return {
-      canUseSudo: isSftp,
+      canUseSudo: isSftp && !isWindows,
       canRunCommand: isSftp,
       canOpenSshTerminal: isSftp,
-      canChangeOwnerGroup: isSftp,
-      canChangePermissions: isSftp,
-      canChangePermissionsRecursively: isSftp,
+      canUseServerView: isSftp,
+      canFollowLogFiles: isSftp,
+      canChangeOwnerGroup: isSftp && !isWindows,
+      canChangePermissions: isSftp && !isWindows,
+      canChangePermissionsRecursively: isSftp && !isWindows,
       canCalculateServerChecksums: isSftp,
-      canCreateArchive: isSftp
+      canCreateArchive: isSftp && !isWindows,
+      canShowPosixOwnership: isSftp && !isWindows,
+      canShowPosixPermissions: isSftp && !isWindows,
+      canShowWindowsFileAttributes: isSftp && isWindows
     };
+  }
+
+  function getActiveRemoteCapabilities() {
+    return getRemoteCapabilitiesForSession(getActiveSession());
+  }
+
+  function shouldShowPosixOwnership() {
+    return Boolean(getActiveRemoteCapabilities().canShowPosixOwnership);
+  }
+
+  function shouldShowPosixPermissions() {
+    return Boolean(getActiveRemoteCapabilities().canShowPosixPermissions);
+  }
+
+  function shouldShowPosixMetadataColumns() {
+    return shouldShowPosixOwnership() || shouldShowPosixPermissions();
+  }
+
+  function getVisibleEntryColumnCount() {
+    return shouldShowPosixMetadataColumns() ? 7 : 4;
+  }
+
+  function renderEntriesEmptyMessage(message) {
+    entriesBody.innerHTML = '<tr><td colspan="' + getVisibleEntryColumnCount() + '"><div class="empty-state">' + escapeHtml(message || '') + '</div></td></tr>';
+  }
+
+  function updateFileListPlatformColumns() {
+    if (!entriesTable) return;
+    const showPosixMetadata = shouldShowPosixMetadataColumns();
+    entriesTable.classList.toggle('hide-posix-metadata', !showPosixMetadata);
+    if (!showPosixMetadata && (currentSort.key === 'owner' || currentSort.key === 'group' || currentSort.key === 'permissions')) {
+      currentSort = { key: '', direction: '' };
+      updateSortIndicators();
+    }
+    applyColumnWidths();
   }
 
   function updateConnectionTypeDropdown() {

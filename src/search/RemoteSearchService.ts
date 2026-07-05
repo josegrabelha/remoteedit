@@ -3,6 +3,9 @@ import type { RemoteSessionManager, RemoteEntry, RemoteCommandStreamingControl }
 import { normalizeRemotePath } from '../ssh/SftpSessionManager';
 import { createPerformanceTimer, appendDebugLog, appendPerformanceLog } from '../utils/outputLogger';
 import { shellQuote } from '../utils/shellUtils';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
+import { normalizeRemotePathForPlatform, toRemoteCommandPath } from '../remote/RemotePathUtils';
+import { buildWindowsSearchContentCommand, buildWindowsSearchFileCommand } from '../ssh/WindowsPowerShellUtils';
 
 export type RemoteSearchStatus = 'idle' | 'running' | 'completed' | 'cancelled' | 'failed';
 export type RemoteSearchProtocol = 'sftp' | 'ftp' | 'ftps' | string;
@@ -241,6 +244,12 @@ export class RemoteSearchService {
   }
 
   private async runSftpSearch(options: RemoteSearchOptions, token: vscode.CancellationToken): Promise<void> {
+    const connection = this.sessions.getConnection(options.connectionId);
+    if (isWindowsRemotePlatform(connection?.remotePlatform)) {
+      await this.runWindowsSftpSearch(options, token);
+      return;
+    }
+
     const command = options.searchInsideFiles
       ? this.buildSftpContentSearchCommand(options)
       : this.buildSftpFileSearchCommand(options);
@@ -292,6 +301,69 @@ export class RemoteSearchService {
 
     if (!token.isCancellationRequested && this.getMutableSnapshot(options.connectionId, options.connectionType).status === 'running' && result.code !== 0 && result.code !== 1) {
       throw new Error(`Search command failed with exit code ${result.code}.`);
+    }
+  }
+
+  private async runWindowsSftpSearch(options: RemoteSearchOptions, token: vscode.CancellationToken): Promise<void> {
+    const commandOptions = {
+      scopePath: toRemoteCommandPath(options.scopePath, 'windows'),
+      patterns: this.splitPatterns(options.fileName || '*'),
+      includeSubdirectories: options.includeSubdirectories,
+      includeHiddenFiles: options.includeHiddenFiles,
+      caseSensitive: options.caseSensitive,
+      textToFind: options.textToFind
+    };
+    const command = options.searchInsideFiles
+      ? buildWindowsSearchContentCommand(commandOptions)
+      : buildWindowsSearchFileCommand(commandOptions);
+
+    let stdoutBuffer = '';
+    const flushStdoutLines = (final = false) => {
+      const parts = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = final ? '' : (parts.pop() || '');
+      const lines = final ? parts.filter(line => line.length > 0) : parts;
+      for (const line of lines) {
+        if (token.isCancellationRequested || this.getMutableSnapshot(options.connectionId, options.connectionType).status !== 'running') break;
+        this.consumeWindowsSftpLine(options.connectionId, line, options.searchInsideFiles);
+      }
+    };
+
+    const result = await this.sessions.runRemoteCommandStreaming(
+      options.connectionId,
+      options.scopePath,
+      command,
+      {
+        onControl: control => {
+          const activeRun = this.activeRuns.get(options.connectionId);
+          if (activeRun) {
+            activeRun.control = control;
+          }
+        },
+        onStdout: chunk => {
+          if (token.isCancellationRequested || this.getMutableSnapshot(options.connectionId, options.connectionType).status !== 'running') return;
+          stdoutBuffer += chunk;
+          flushStdoutLines(false);
+        },
+        onStderr: chunk => {
+          const text = String(chunk || '').trim();
+          if (text) {
+            appendDebugLog(this.output, SOURCE, 'Windows search stderr.', {
+              searchId: this.getMutableSnapshot(options.connectionId, options.connectionType).id,
+              connectionId: options.connectionId,
+              text: text.slice(0, 500)
+            });
+          }
+        }
+      },
+      token
+    );
+
+    if (!token.isCancellationRequested && this.getMutableSnapshot(options.connectionId, options.connectionType).status === 'running') {
+      flushStdoutLines(true);
+    }
+
+    if (!token.isCancellationRequested && this.getMutableSnapshot(options.connectionId, options.connectionType).status === 'running' && result.code !== 0 && result.code !== 1) {
+      throw new Error(`Windows search command failed with exit code ${result.code}.`);
     }
   }
 
@@ -397,6 +469,37 @@ export class RemoteSearchService {
     });
   }
 
+  private consumeWindowsSftpLine(connectionId: string, line: string, contentSearch: boolean): void {
+    if (!line) {
+      return;
+    }
+
+    if (!contentSearch) {
+      const typedMatch = line.match(/^([FD])\t(.*)$/);
+      if (!typedMatch) {
+        return;
+      }
+
+      this.addResult(connectionId, {
+        path: normalizeRemotePathForPlatform(typedMatch[2], 'windows'),
+        type: typedMatch[1] === 'D' ? 'directory' : 'file'
+      });
+      return;
+    }
+
+    const parts = line.split('\t');
+    if (parts.length < 3) {
+      return;
+    }
+
+    this.addResult(connectionId, {
+      path: normalizeRemotePathForPlatform(parts[0], 'windows'),
+      type: 'file',
+      line: Number(parts[1]),
+      text: parts.slice(2).join('\t')
+    });
+  }
+
   private async runFtpSearch(options: RemoteSearchOptions, token: vscode.CancellationToken): Promise<void> {
     const patterns = this.splitPatterns(options.fileName || '*');
     await this.walkFtpDirectory(options.connectionId, options.scopePath, options.includeSubdirectories, options.includeHiddenFiles, patterns, options.caseSensitive, token);
@@ -485,17 +588,19 @@ export class RemoteSearchService {
   }
 
   private normalizeOptions(options: RemoteSearchOptions): RemoteSearchOptions {
+    const connectionId = String(options.connectionId || '').trim();
+    const connection = connectionId ? this.sessions.getConnection(connectionId) : undefined;
     return {
-      connectionId: String(options.connectionId || '').trim(),
+      connectionId,
       connectionType: String(options.connectionType || 'sftp').toLowerCase(),
-      scopePath: normalizeRemotePath(options.scopePath || '/'),
+      scopePath: normalizeRemotePathForPlatform(options.scopePath || '/', connection?.remotePlatform || 'posix'),
       includeSubdirectories: Boolean(options.includeSubdirectories),
       includeHiddenFiles: Boolean(options.includeHiddenFiles),
       caseSensitive: Boolean(options.caseSensitive),
       fileName: String(options.fileName || '').trim() || '*',
       searchInsideFiles: Boolean(options.searchInsideFiles),
       textToFind: String(options.textToFind || ''),
-      useSudo: Boolean(options.useSudo)
+      useSudo: Boolean(options.useSudo) && !isWindowsRemotePlatform(connection?.remotePlatform)
     };
   }
 

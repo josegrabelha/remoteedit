@@ -18,6 +18,7 @@ export function renderOwnerGroupProperties(): string {
   }
 
   function showOwnerGroupDialog(entries) {
+    if (!getActiveRemoteCapabilities().canChangeOwnerGroup) return;
     const selectedEntries = Array.isArray(entries) ? entries.filter(entry => entry && !isParentEntry(entry)) : [];
     if (!selectedEntries.length) return;
 
@@ -344,12 +345,22 @@ export function renderOwnerGroupProperties(): string {
       rows.push(['Size', formatSize(entry.size)]);
     }
 
-    rows.push(
-      ['Modified', formatDate(entry.modifyTime) || '—'],
-      ['Permissions', formatPermissionsPropertyValue(entry.permissions)],
-      ['Owner', formatMetadata(entry.owner) || '—'],
-      ['Group', formatMetadata(entry.group) || '—']
-    );
+    rows.push(['Modified', formatDate(entry.modifyTime) || '—']);
+
+    if (entry.accessTime) {
+      rows.push(['Accessed', formatDate(entry.accessTime) || '—']);
+    }
+
+    if (shouldShowPosixPermissions()) {
+      rows.push(['Permissions', formatPermissionsPropertyValue(entry.permissions)]);
+    }
+
+    if (shouldShowPosixOwnership()) {
+      rows.push(
+        ['Owner', formatMetadata(entry.owner) || '—'],
+        ['Group', formatMetadata(entry.group) || '—']
+      );
+    }
 
     if (isLink && entry.linkTarget) {
       rows.push(['Symlink target', entry.linkTarget]);

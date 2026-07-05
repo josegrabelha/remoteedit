@@ -1,4 +1,6 @@
 import type { RemoteConnectionType } from './RemoteConnectionTypes';
+import type { RemoteCapabilities } from './RemoteCapabilities';
+import type { RemotePlatform, RemoteShell } from './RemotePlatform';
 
 export type AuthType = 'password' | 'privateKey';
 
@@ -69,6 +71,9 @@ export interface ActiveConnection {
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
   isQuickConnect?: boolean;
+  remotePlatform?: RemotePlatform;
+  remoteShell?: RemoteShell;
+  capabilities?: RemoteCapabilities;
 }
 
 export interface RemoteCommandStreamingControl {

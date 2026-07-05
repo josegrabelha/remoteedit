@@ -1541,11 +1541,15 @@ export function renderRemoteCommandOutput(): string {
 
     const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
     const active = sessions.find(item => item.id === connectionId) || getActiveSession();
+    const capabilities = getRemoteCapabilitiesForSession(active);
+    const canUseSudo = Boolean(capabilities.canUseSudo);
     const username = active ? String(active.username || '').trim() : '';
-    const isRootConnection = username.toLowerCase() === 'root';
-    const connectionSudoEnabled = Boolean(active && active.sudoModeEnabled && !isRootConnection);
+    const isRootConnection = canUseSudo && username.toLowerCase() === 'root';
+    const connectionSudoEnabled = Boolean(canUseSudo && active && active.sudoModeEnabled && !isRootConnection);
     const state = getRemoteCommandSession(connectionId);
-    const useSudo = connectionSudoEnabled || Boolean(state.useSudo && !isRootConnection);
+    const useSudo = Boolean(canUseSudo && (connectionSudoEnabled || (state.useSudo && !isRootConnection)));
+
+    if (!canUseSudo) state.useSudo = false;
 
     remoteCommandRunAs.textContent = useSudo
       ? 'root via sudo'
@@ -1554,12 +1558,15 @@ export function renderRemoteCommandOutput(): string {
         : (username || 'SSH user');
     remoteCommandRunAs.classList.toggle('sudo', useSudo);
 
+    if (remoteCommandSudoRow) {
+      remoteCommandSudoRow.classList.toggle('hidden', !canUseSudo);
+    }
     if (remoteCommandUseSudo) {
       remoteCommandUseSudo.checked = useSudo;
-      remoteCommandUseSudo.disabled = connectionSudoEnabled || state.status === 'running';
+      remoteCommandUseSudo.disabled = !canUseSudo || connectionSudoEnabled || state.status === 'running';
     }
     if (remoteCommandSudoNote) {
-      remoteCommandSudoNote.textContent = connectionSudoEnabled ? 'Enabled by connection Sudo Mode' : '';
+      remoteCommandSudoNote.textContent = canUseSudo && connectionSudoEnabled ? 'Enabled by connection Sudo Mode' : '';
     }
   }
 
@@ -1627,6 +1634,8 @@ export function renderRemoteCommandOutput(): string {
   function collectRemoteCommandUseSudo() {
     const connectionId = remoteCommandDialogConnectionId || activeConnectionId;
     const active = sessions.find(item => item.id === connectionId) || getActiveSession();
+    const capabilities = getRemoteCapabilitiesForSession(active);
+    if (!capabilities.canUseSudo) return false;
     const username = active ? String(active.username || '').trim() : '';
     const isRootConnection = username.toLowerCase() === 'root';
     if (isRootConnection) return false;

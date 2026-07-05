@@ -1,4 +1,16 @@
 # Changelog
+
+## [1.8.5] - 2026-07-04
+
+### Added
+
+* Added Windows SSH/SFTP support with PowerShell-backed commands and Windows Server View.
+
+### Fixed
+
+* Fixed SSH/SFTP disconnect cleanup so sessions no longer stay in Disconnecting when the SSH client close does not complete.
+* Fixed Webview Remote Path file opening so entering a file path opens the file without leaving the filename in the Remote Path field.
+
 ## [1.8.4] - 2026-06-27
 
 ### Added
@@ -8,12 +20,24 @@
 * Added drag-and-drop upload for local files and folders from the OS into remote folders using the Webview file list or Sidebar Open Connections tree.
 * Added remote file and folder moving within the same Remote Edit connection using Cut/Paste and drag-and-drop in both the Webview and Sidebar.
 
+### Improved
+
+* Improved Sidebar context menus for Windows SSH/SFTP sessions so supported actions remain available while Unix-only actions such as archive creation and permission changes stay hidden.
+* Improved Server View routing so Windows SSH/SFTP sessions use a dedicated PowerShell snapshot while Linux/Unix/AIX sessions keep the existing POSIX/AIX dashboard path.
+* Improved Server View service and process actions with Windows-specific PowerShell commands for Windows services and processes.
+* Improved Remote Search scope browsing to normalize Windows SSH/SFTP paths consistently.
+
 ### Changed
 
 * Limited Remote Edit Command Palette entries to Open and Settings, keeping sidebar and context-only actions out of the palette.
 
 ### Fixed
 
+* Fixed Windows Server View structured snapshot output so services, processes, scheduled tasks, listeners, memory, and disk details keep their field delimiters and render correctly.
+* Fixed Run Remote Command and Remote Search modals so the Use Sudo Mode option is hidden and ignored for Windows SSH/SFTP sessions.
+* Fixed Windows SSH/SFTP PowerShell output handling so CLIXML progress records are suppressed in Run Remote Command, Log Viewer follow, Remote Search, and checksum output.
+* Fixed Windows SSH/SFTP command execution to avoid wrapping already encoded PowerShell commands a second time.
+* Fixed Sidebar command guards so unsupported session actions are rejected before prompting for Unix-only inputs.
 * Fixed upload refresh synchronization between the Webview and Sidebar so the affected remote directory is refreshed after uploads complete.
 
 ## [1.8.3] - 2026-06-25

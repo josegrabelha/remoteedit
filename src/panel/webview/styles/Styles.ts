@@ -691,6 +691,7 @@ export function renderStyles(): string {
   th.sortable:hover { background: var(--vscode-list-hoverBackground); }
   th.size, td.size { text-align: right; }
   th.permissions, td.permissions { font-family: var(--vscode-editor-font-family); }
+  table.hide-posix-metadata col[data-column="owner"], table.hide-posix-metadata col[data-column="group"], table.hide-posix-metadata col[data-column="permissions"], table.hide-posix-metadata th.owner, table.hide-posix-metadata th.group, table.hide-posix-metadata th.permissions, table.hide-posix-metadata td.owner, table.hide-posix-metadata td.group, table.hide-posix-metadata td.permissions { display: none; }
   .header-content { display: flex; align-items: center; min-width: 0; overflow: hidden; }
   .header-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sort-indicator { margin-left: 5px; width: 10px; flex: 0 0 10px; color: var(--vscode-descriptionForeground); }

@@ -1434,7 +1434,7 @@ export function renderLayoutSessions(): string {
     currentPath.value = session.currentPath || session.startPath || '/';
     const message = isSessionFailed(session) ? (session.error || 'Connection failed.') : 'Connecting...';
     entriesRenderGeneration += 1;
-    entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">' + escapeHtml(message) + '</div></td></tr>';
+    renderEntriesEmptyMessage(message);
   }
 
   function getSessionCloseDisplayName(session) {

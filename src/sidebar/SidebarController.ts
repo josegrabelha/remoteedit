@@ -6,6 +6,7 @@ import type { LocalUploadEntry } from '../panel/PanelTypes';
 import { buildCopyFileName } from '../panel/FileNameUtils';
 import { buildArchiveBaseName, normalizeArchiveName } from '../panel/ArchiveUtils';
 import { getDefaultPortForConnectionType, normalizeConnectionType, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
+import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
 import type { RemoteArchiveFormat, RemoteEntry, RemoteEntryType, RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { SshTerminalService } from '../ssh/SshTerminalService';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
@@ -901,9 +902,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     const normalizedPath = normalizeRemotePath(remotePath || '/');
     const rootPath = this.openConnectionsProvider.getRootPathForConnection(connectionId) || connection.startPath || '/';
     const normalizedRootPath = normalizeRemotePath(rootPath);
+    const isSftp = normalizeConnectionType(connection.connectionType) === 'sftp';
+    const isWindowsSftp = isSftp && connection.remotePlatform === 'windows';
     return normalizedPath === normalizedRootPath
       ? RemoteEditSidebarItem.filesGroup(connection, normalizedRootPath)
-      : RemoteEditSidebarItem.remoteDirectoryPlaceholder(connectionId, normalizedPath, normalizedRootPath);
+      : RemoteEditSidebarItem.remoteDirectoryPlaceholder(connectionId, normalizedPath, normalizedRootPath, {
+          isSftp: isSftp && !isWindowsSftp,
+          isWindowsSftp
+        });
   }
 
   private scheduleDeferredOpenConnectionDirectoryRefresh(targetItem: RemoteEditSidebarItem): void {
@@ -1618,6 +1624,10 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
+    if (!this.ensureSidebarCapability(item.connectionId, 'canCreateArchive', 'Archive creation')) {
+      return;
+    }
+
     const formatPick = await vscode.window.showQuickPick([
       { label: 'tar.gz', value: 'tar.gz' as RemoteArchiveFormat },
       { label: 'tar.bz2', value: 'tar.bz2' as RemoteArchiveFormat },
@@ -1883,8 +1893,26 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     return `${baseName}-${Date.now()}${extension}`;
   }
 
+  private getRemoteCapabilitiesForConnection(connectionId: string) {
+    const connection = this.sessions.getConnection(connectionId);
+    return getRemoteCapabilities(connection?.connectionType, connection?.remotePlatform);
+  }
+
+  private ensureSidebarCapability(connectionId: string, capability: 'canChangePermissions' | 'canCreateArchive', label: string): boolean {
+    const capabilities = this.getRemoteCapabilitiesForConnection(connectionId);
+    if (capabilities[capability]) {
+      return true;
+    }
+    void vscode.window.showWarningMessage(`${label} is not available for this remote session.`);
+    return false;
+  }
+
   private async setRemotePermissions(item: RemoteEditSidebarItem | undefined): Promise<void> {
     if (!item?.connectionId || !item.remotePath) {
+      return;
+    }
+
+    if (!this.ensureSidebarCapability(item.connectionId, 'canChangePermissions', 'Permission changes')) {
       return;
     }
 

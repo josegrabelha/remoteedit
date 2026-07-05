@@ -7,6 +7,7 @@ import { ConnectionManager, type RemoteEditPersistentWebviewStorage } from '../c
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import type { ActiveConnection, ConnectOptions, RemoteSessionManager, RemoteEntryMetadataNotifier, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
 import { getRemoteConnectOriginalMessage, getRemoteConnectStatusMessage } from '../remote/ConnectionProbe';
+import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
 import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, type RemoteEntry, type RemoteChecksumSummary } from '../ssh/SftpSessionManager';
 import { SshTerminalService } from '../ssh/SshTerminalService';
 import { PortForwardManager, type SavedPortForwardConfig, type PortForwardRuntimeState } from '../ssh/PortForwardManager';
@@ -17,6 +18,8 @@ import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmatio
 import { RemoteEditOperationCancelledError, formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { appendDebugLog, appendOutputLog, appendPerformanceLog, createPerformanceTimer, type OutputLogDetails } from '../utils/outputLogger';
 import { shellQuote } from '../utils/shellUtils';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
+import { dirnameRemotePathForPlatform, normalizeRemotePathForPlatform } from '../remote/RemotePathUtils';
 import { normalizePermissionDisplayMode } from '../utils/permissionFormatUtils';
 import { getNonce } from '../utils/webviewUtils';
 import { renderRemoteEditHtml } from './RemoteEditHtml';
@@ -967,6 +970,7 @@ export class RemoteEditPanel {
       ftpsAllowSelfSignedCertificate: attempt.ftpsAllowSelfSignedCertificate,
       ftpsCaCertificatePath: attempt.ftpsCaCertificatePath,
       isQuickConnect: Boolean(attempt.isQuickConnect),
+      capabilities: getRemoteCapabilities(attempt.connectionType || 'sftp'),
       sudoModeEnabled: false,
       connectionState: 'connecting'
     };
@@ -997,7 +1001,8 @@ export class RemoteEditPanel {
         ...connection,
         connectionState: 'connected' as const,
         currentPath: this.state.getCurrentPath(connection.id, connection.startPath || '/'),
-        sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id)
+        sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id),
+        capabilities: connection.capabilities || getRemoteCapabilities(connection.connectionType, connection.remotePlatform)
       })),
       ...pendingConnections
     ].sort((first, second) => (orderIndex.get(first.id) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(second.id) ?? Number.MAX_SAFE_INTEGER));
@@ -2273,7 +2278,8 @@ export class RemoteEditPanel {
 
   private async requestCalculateChecksums(payload: any): Promise<void> {
     const connectionId = this.requireActiveConnectionId();
-    const remotePath = normalizeRemotePath(String(payload?.path || ''));
+    const connection = this.sessions.getConnection(connectionId);
+    const remotePath = normalizeRemotePathForPlatform(String(payload?.path || ''), connection?.remotePlatform || 'posix');
     const entryType = String(payload?.type || 'item');
     const entryName = String(payload?.name || remotePath.split('/').filter(Boolean).pop() || '').trim();
 
@@ -4489,7 +4495,7 @@ export class RemoteEditPanel {
     }
 
     if (remotePath) {
-      const normalizedPath = normalizeRemotePath(remotePath);
+      const normalizedPath = normalizeRemotePathForPlatform(remotePath, connection.remotePlatform || 'posix');
       try {
         const stat = await this.sessions.stat(connectionId, normalizedPath);
         if (stat.type !== 'file') {
@@ -4602,7 +4608,7 @@ export class RemoteEditPanel {
         throw new Error('Connect to a host before searching.');
       }
 
-      const useSudo = Boolean(payload?.useSudo) && connection.connectionType === 'sftp';
+      const useSudo = Boolean(payload?.useSudo) && connection.connectionType === 'sftp' && !isWindowsRemotePlatform(connection.remotePlatform);
 
       if (useSudo && !this.sessions.isSudoModeEnabled(connectionId)) {
         const password = String(payload?.sudoPassword || '') || await this.showWebviewInputBox({
@@ -4664,8 +4670,9 @@ export class RemoteEditPanel {
 
   private async browseRemoteSearchScope(payload: any): Promise<void> {
     const connectionId = this.requireActiveConnectionId();
-    const requestedPath = normalizeRemotePath(String(payload?.scopePath || this.getActivePath() || '/'));
-    const parentPath = dirnameRemotePath(requestedPath);
+    const connection = this.sessions.getConnection(connectionId);
+    const requestedPath = normalizeRemotePathForPlatform(String(payload?.scopePath || this.getActivePath() || '/'), connection?.remotePlatform || 'posix');
+    const parentPath = dirnameRemotePathForPlatform(requestedPath, connection?.remotePlatform || 'posix');
     const includeFiles = Boolean(payload?.includeFiles);
     const purpose = String(payload?.purpose || '');
     const requestId = String(payload?.requestId || '');
@@ -4686,7 +4693,7 @@ export class RemoteEditPanel {
           const effectiveType = (entry.effectiveType || entry.type) === 'directory' ? 'directory' : 'file';
           return {
             name: String(entry.name || ''),
-            path: normalizeRemotePath(entry.path),
+            path: normalizeRemotePathForPlatform(entry.path, connection?.remotePlatform || 'posix'),
             type: effectiveType
           };
         })

@@ -341,9 +341,9 @@ export function buildEmptyHoverTooltip(): vscode.MarkdownString {
   return tooltip;
 }
 
-export function buildRemoteEntryTooltipOrEmpty(entry: RemoteEntry, resolvedType: RemoteEntryType): vscode.MarkdownString {
+export function buildRemoteEntryTooltipOrEmpty(entry: RemoteEntry, resolvedType: RemoteEntryType, options?: { showPosixMetadata?: boolean }): vscode.MarkdownString {
   return shouldShowItemInfoOnHover()
-    ? buildRemoteEntryTooltip(entry, resolvedType)
+    ? buildRemoteEntryTooltip(entry, resolvedType, options)
     : buildEmptyHoverTooltip();
 }
 
@@ -359,7 +359,7 @@ export function buildGoParentTooltipOrEmpty(parentPath: string): string | vscode
   return shouldShowItemInfoOnHover() ? `Go to ${parentPath}.` : buildEmptyHoverTooltip();
 }
 
-export function buildRemoteEntryTooltip(entry: RemoteEntry, resolvedType: RemoteEntryType): vscode.MarkdownString {
+export function buildRemoteEntryTooltip(entry: RemoteEntry, resolvedType: RemoteEntryType, options?: { showPosixMetadata?: boolean }): vscode.MarkdownString {
   const lines = [
     formatTooltipField('Path', entry.path),
     formatTooltipField('Type', resolvedType)
@@ -373,11 +373,11 @@ export function buildRemoteEntryTooltip(entry: RemoteEntry, resolvedType: Remote
     lines.push(formatTooltipField('Size', `${formatBytes(entry.size)} (${entry.size} bytes)`));
   }
 
-  if (entry.permissions) {
+  if (options?.showPosixMetadata !== false && entry.permissions) {
     lines.push(formatTooltipField('Permissions', formatPermissionsPropertyValue(entry.permissions)));
   }
 
-  if (entry.owner !== undefined || entry.group !== undefined) {
+  if (options?.showPosixMetadata !== false && (entry.owner !== undefined || entry.group !== undefined)) {
     lines.push(formatTooltipField('Owner/Group', `${String(entry.owner ?? '')}:${String(entry.group ?? '')}`));
   }
 

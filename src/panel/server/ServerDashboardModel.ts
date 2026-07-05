@@ -26,7 +26,10 @@ export function buildServerDashboardSnapshot(connectionId: string, requestId: st
   const refreshedAt = Date.now();
   const capabilities = parseServerCapabilities(fields.CAPABILITIES);
   const adapter = detectServerAdapter(fields, capabilities);
-  const identity = parseServerIdentity(fields.ID, String(connection?.username || fields.USER || '').trim());
+  const isWindows = String(fields.OS || '').trim().toLowerCase() === 'windows';
+  const identity = isWindows
+    ? { user: normalizeServerInfoValue(fields.USER || fields.ID || connection?.username), group: '—' }
+    : parseServerIdentity(fields.ID, String(connection?.username || fields.USER || '').trim());
   const services = parseServerDashboardServices(fields, adapter);
   const processes = parseServerDashboardProcesses(fields);
   const scheduledJobs = parseServerDashboardScheduledJobs(fields);
@@ -63,11 +66,11 @@ export function buildServerDashboardSnapshot(connectionId: string, requestId: st
       { label: 'Last refresh', value: formatServerRefreshTime(refreshedAt) }
     ],
     services,
-    serviceAdapter: services[0]?.adapter || adapter,
+    serviceAdapter: services[0]?.adapter || (isWindows ? 'windows-service' : adapter),
     processes,
-    processAdapter: processes[0]?.adapter || (capabilities.includes('ps') ? 'ps' : 'unknown'),
+    processAdapter: processes[0]?.adapter || (isWindows ? 'windows-process' : (capabilities.includes('ps') ? 'ps' : 'unknown')),
     scheduledJobs,
-    scheduledJobsAdapter: scheduledJobs.length ? 'cron' : (capabilities.includes('crontab') ? 'cron' : 'unknown'),
+    scheduledJobsAdapter: isWindows ? 'windows-scheduled-task' : (scheduledJobs.length ? 'cron' : (capabilities.includes('crontab') ? 'cron' : 'unknown')),
     capabilities
   };
 }
@@ -299,7 +302,10 @@ export function formatServerProcessMetric(value: unknown): string {
   if (!text) {
     return '—';
   }
-  return text.endsWith('%') ? text : `${text}%`;
+  if (text === '—' || text.endsWith('%') || /(?:bytes?|[KMGT]B|ms|s)$/i.test(text)) {
+    return text;
+  }
+  return `${text}%`;
 }
 
 export function createServerProcessId(adapter: string, pid: string, index: number): string {
@@ -324,6 +330,11 @@ export function normalizeServerServiceStatus(adapter: string, rawStatus: string)
     return 'unknown';
   }
 
+  if (normalizedAdapter === 'windows-service') {
+    if (/^(?:4|true|started|running)$/i.test(text) || /\brunning\b|\bstart(?:ed| pending)\b|\bcontinue pending\b/.test(text)) return 'running';
+    if (/^(?:1|false|stopped)$/i.test(text) || /\bstopped\b|\bstop pending\b|\bpaused\b|\bpause pending\b/.test(text)) return 'stopped';
+  }
+
   if (/\bfailed\b|\berror\b/.test(text)) return 'failed';
   if (/\bactive\b|\brunning\b/.test(text)) return 'running';
   if (/\binactive\b|\bstopped\b|\bdead\b|\bexited\b/.test(text)) return 'stopped';
@@ -343,6 +354,10 @@ export function detectServerAdapter(fields: Record<string, string>, capabilities
   const osName = String(fields.OS || '').trim().toLowerCase();
   const capabilitySet = new Set(capabilities.map(item => item.toLowerCase()));
 
+  if (osName === 'windows') {
+    return 'windows';
+  }
+
   if (osName === 'linux') {
     if (fields.HAS_SYSTEMD === 'yes' || capabilitySet.has('systemctl')) {
       return 'linux-systemd';
@@ -361,6 +376,10 @@ export function detectServerAdapter(fields: Record<string, string>, capabilities
 }
 
 export function formatServerSudoStatus(connection: any, sudoEnabled: boolean): string {
+  if (String(connection?.remotePlatform || '').trim().toLowerCase() === 'windows') {
+    return 'Unavailable on Windows';
+  }
+
   const username = String(connection?.username || '').trim();
   if (username.toLowerCase() === 'root') {
     return 'Root user';
@@ -404,7 +423,10 @@ export function formatServerCapabilities(capabilities: string[]): string {
   const capabilitySet = new Set((capabilities || []).map(item => String(item || '').trim().toLowerCase()).filter(Boolean));
   const features: string[] = [];
 
-  if (capabilitySet.has('systemctl') || capabilitySet.has('service') || capabilitySet.has('lssrc')) {
+  if (capabilitySet.has('powershell')) {
+    features.push('PowerShell');
+  }
+  if (capabilitySet.has('systemctl') || capabilitySet.has('service') || capabilitySet.has('lssrc') || capabilitySet.has('services')) {
     features.push('Services');
   }
   if (capabilitySet.has('journalctl')) {
@@ -412,6 +434,9 @@ export function formatServerCapabilities(capabilities: string[]): string {
   }
   if (capabilitySet.has('crontab')) {
     features.push('Cron');
+  }
+  if (capabilitySet.has('scheduledtasks')) {
+    features.push('Scheduled Tasks');
   }
   if (capabilitySet.has('ps')) {
     features.push('Processes');

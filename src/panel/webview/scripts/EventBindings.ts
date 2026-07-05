@@ -232,7 +232,7 @@ export function renderEventBindings(): string {
         updateSortIndicators();
         if (profileDropdownOpen) renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
         entriesRenderGeneration += 1;
-        entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr>';
+        renderEntriesEmptyMessage('Connect to a host to list remote files.');
         currentPath.value = '';
         exitRemotePathEditMode({ reset: false, keepFocus: true });
         setControls();

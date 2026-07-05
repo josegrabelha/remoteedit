@@ -4,8 +4,11 @@ import type { ActiveConnection, RemoteCommandStreamingControl } from '../remote/
 import { isSftpConnectionType } from '../remote/RemoteConnectionTypes';
 import { appendDebugLog, appendPerformanceLog, appendOutputLog, createPerformanceTimer } from '../utils/outputLogger';
 import { getNonce } from '../utils/webviewUtils';
-import { dirnameRemotePath, normalizeRemotePath } from '../ssh/SftpSessionManager';
+import { normalizeRemotePath } from '../ssh/SftpSessionManager';
 import { shellQuote } from '../utils/shellUtils';
+import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
+import { dirnameRemotePathForPlatform, normalizeRemotePathForPlatform, toRemoteCommandPath } from '../remote/RemotePathUtils';
+import { buildWindowsLogFollowCommand, buildWindowsPowerShellCommand, quotePowerShellLiteral } from '../ssh/WindowsPowerShellUtils';
 
 interface ConnectionChangeNotifier {
   onDidChangeConnections?: vscode.Event<void>;
@@ -249,8 +252,8 @@ export class LogViewerPanel implements vscode.Disposable {
   }
 
   private async openFile(connectionId: string, remotePath: string): Promise<void> {
-    this.assertSftpConnection(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath || '/');
+    const connection = this.assertSftpConnection(connectionId);
+    const normalizedPath = this.normalizePathForConnection(connection, remotePath || '/');
     this.post('connections', this.buildConnectionsPayload(connectionId));
     await this.startFollowing({ connectionId, path: normalizedPath, follow: true });
   }
@@ -411,15 +414,15 @@ export class LogViewerPanel implements vscode.Disposable {
   }
 
   private async readLogFileSample(connection: ActiveConnection, remotePath: string): Promise<Buffer | undefined> {
-    const normalizedPath = normalizeRemotePath(remotePath || '/');
-    const command = this.buildBinarySampleCommand(normalizedPath);
+    const normalizedPath = this.normalizePathForConnection(connection, remotePath || '/');
+    const command = this.buildBinarySampleCommand(connection, normalizedPath);
     const stdoutChunks: string[] = [];
     const timer = createPerformanceTimer();
 
     try {
       const result = await this.sessions.runRemoteCommandStreaming(
         connection.id,
-        dirnameRemotePath(normalizedPath),
+        this.dirnamePathForConnection(connection, normalizedPath),
         command,
         {
           onStdout: chunk => stdoutChunks.push(String(chunk || ''))
@@ -450,7 +453,25 @@ export class LogViewerPanel implements vscode.Disposable {
     }
   }
 
-  private buildBinarySampleCommand(remotePath: string): string {
+  private buildBinarySampleCommand(connection: ActiveConnection, remotePath: string): string {
+    if (isWindowsRemotePlatform(connection.remotePlatform)) {
+      const commandPath = toRemoteCommandPath(remotePath, 'windows');
+      return buildWindowsPowerShellCommand([
+        `$path = ${quotePowerShellLiteral(commandPath)}`,
+        `$sampleBytes = ${LOG_VIEWER_BINARY_SAMPLE_BYTES}`,
+        '$fs = $null',
+        'try {',
+        '  if (-not [System.IO.File]::Exists($path)) { exit 0 }',
+        '  $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)',
+        '  $buffer = New-Object byte[] $sampleBytes',
+        '  $count = $fs.Read($buffer, 0, $buffer.Length)',
+        "  if ($count -gt 0) { Write-Output (($buffer[0..($count - 1)]) -join ' ') }",
+        '} finally {',
+        '  if ($fs) { $fs.Dispose() }',
+        '}'
+      ].join('\r\n'));
+    }
+
     const quotedPath = shellQuote(normalizeRemotePath(remotePath));
     return [
       `__remote_edit_log_path=${quotedPath}`,
@@ -544,7 +565,7 @@ export class LogViewerPanel implements vscode.Disposable {
 
   private async startFollowing(options: LogViewerOpenOptions): Promise<void> {
     const connection = this.assertSftpConnection(options.connectionId);
-    const remotePath = normalizeRemotePath(options.path || '/');
+    const remotePath = this.normalizePathForConnection(connection, options.path || '/');
     if (!remotePath || remotePath === '/') {
       throw new Error('Enter a remote log path');
     }
@@ -622,13 +643,13 @@ export class LogViewerPanel implements vscode.Disposable {
       draftTabId: options.draftTabId || ''
     });
 
-    const command = this.buildTailCommand(remotePath, INITIAL_TAIL_LINES);
+    const command = this.buildTailCommand(connection, remotePath, INITIAL_TAIL_LINES);
     appendDebugLog(this.output, 'Log Viewer', 'Starting session.', { Connection: connection.name, Path: remotePath, Sudo: session.useSudo });
     const timer = createPerformanceTimer();
 
     void this.sessions.runRemoteCommandStreaming(
       connection.id,
-      dirnameRemotePath(remotePath),
+      this.dirnamePathForConnection(connection, remotePath),
       command,
       {
         onStdout: chunk => this.handleStdout(session.id, chunk),
@@ -1085,7 +1106,7 @@ export class LogViewerPanel implements vscode.Disposable {
 
   private async listLogDirectory(connectionId: string, remotePath: string, requestId: string): Promise<void> {
     const connection = this.assertSftpConnection(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath || connection.startPath || '/');
+    const normalizedPath = this.normalizePathForConnection(connection, remotePath || connection.startPath || '/');
     const timer = createPerformanceTimer();
     appendDebugLog(this.output, 'Log Viewer', 'Listing log directory.', { Connection: connection.name, Path: normalizedPath });
 
@@ -1097,7 +1118,7 @@ export class LogViewerPanel implements vscode.Disposable {
           const effectiveType = entry.effectiveType || entry.type;
           return {
             name: entry.name,
-            path: entry.path || normalizeRemotePath(`${normalizedPath}/${entry.name}`),
+            path: entry.path || this.normalizePathForConnection(connection, `${normalizedPath}/${entry.name}`),
             type: effectiveType === 'directory' ? 'directory' : 'file',
             size: entry.size || 0,
             modified: entry.modifyTime || 0
@@ -1115,7 +1136,7 @@ export class LogViewerPanel implements vscode.Disposable {
         requestId,
         connectionId: connection.id,
         path: normalizedPath,
-        parentPath: normalizedPath === '/' ? '' : dirnameRemotePath(normalizedPath),
+        parentPath: normalizedPath === '/' ? '' : this.dirnamePathForConnection(connection, normalizedPath),
         entries: visibleEntries
       });
       appendPerformanceLog(this.output, 'Log Viewer', `Listed log directory in ${timer()}ms.`, {
@@ -1128,7 +1149,7 @@ export class LogViewerPanel implements vscode.Disposable {
         requestId,
         connectionId: connection.id,
         path: normalizedPath,
-        parentPath: normalizedPath === '/' ? '' : dirnameRemotePath(normalizedPath),
+        parentPath: normalizedPath === '/' ? '' : this.dirnamePathForConnection(connection, normalizedPath),
         entries: [],
         error: this.formatError(error)
       });
@@ -1158,7 +1179,7 @@ export class LogViewerPanel implements vscode.Disposable {
     const paths = Array.isArray(allFavorites[connectionId]) ? allFavorites[connectionId] : [];
     const normalized: string[] = [];
     for (const path of paths) {
-      const normalizedPath = normalizeRemotePath(String(path || ''));
+      const normalizedPath = this.normalizePathForConnection(this.sessions.getConnection(connectionId), String(path || ''));
       if (normalizedPath && normalizedPath !== '/' && !normalized.includes(normalizedPath)) {
         normalized.push(normalizedPath);
       }
@@ -1172,7 +1193,7 @@ export class LogViewerPanel implements vscode.Disposable {
     }
     const allFavorites = this.getAllLogFavorites();
     const normalized = favorites
-      .map(path => normalizeRemotePath(String(path || '')))
+      .map(path => this.normalizePathForConnection(this.sessions.getConnection(connectionId), String(path || '')))
       .filter(path => path && path !== '/');
     allFavorites[connectionId] = Array.from(new Set(normalized));
     await this.context.globalState.update(LOG_VIEWER_FAVORITES_KEY, allFavorites);
@@ -1182,12 +1203,12 @@ export class LogViewerPanel implements vscode.Disposable {
 
   private async toggleLogFavorite(connectionId: string, remotePath: string): Promise<void> {
     this.assertSftpConnection(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath || '');
+    const normalizedPath = this.normalizePathForConnection(this.sessions.getConnection(connectionId), remotePath || '');
     if (!normalizedPath || normalizedPath === '/') {
       throw new Error('Enter a remote file before adding it to Log Viewer favorites');
     }
     const favorites = this.getLogFavorites(connectionId);
-    const existingIndex = favorites.findIndex(item => normalizeRemotePath(item) === normalizedPath);
+    const existingIndex = favorites.findIndex(item => this.normalizePathForConnection(this.sessions.getConnection(connectionId), item) === normalizedPath);
     if (existingIndex >= 0) {
       favorites.splice(existingIndex, 1);
       appendDebugLog(this.output, 'Log Viewer', 'Removed log favorite.', { Connection: connectionId, Path: normalizedPath });
@@ -1200,8 +1221,8 @@ export class LogViewerPanel implements vscode.Disposable {
 
   private async removeLogFavorite(connectionId: string, remotePath: string): Promise<void> {
     this.assertSftpConnection(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath || '');
-    const favorites = this.getLogFavorites(connectionId).filter(item => normalizeRemotePath(item) !== normalizedPath);
+    const normalizedPath = this.normalizePathForConnection(this.sessions.getConnection(connectionId), remotePath || '');
+    const favorites = this.getLogFavorites(connectionId).filter(item => this.normalizePathForConnection(this.sessions.getConnection(connectionId), item) !== normalizedPath);
     await this.saveLogFavorites(connectionId, favorites);
     appendDebugLog(this.output, 'Log Viewer', 'Removed log favorite.', { Connection: connectionId, Path: normalizedPath });
   }
@@ -1228,16 +1249,30 @@ export class LogViewerPanel implements vscode.Disposable {
   }
 
   private buildTabId(connectionId: string, remotePath: string): string {
-    return `${connectionId}:${normalizeRemotePath(remotePath)}`;
+    const connection = this.sessions.getConnection(connectionId);
+    return `${connectionId}:${this.normalizePathForConnection(connection, remotePath)}`;
+  }
+
+  private normalizePathForConnection(connection: ActiveConnection | undefined, remotePath: string): string {
+    return normalizeRemotePathForPlatform(remotePath || '/', connection?.remotePlatform || 'posix');
+  }
+
+  private dirnamePathForConnection(connection: ActiveConnection | undefined, remotePath: string): string {
+    return dirnameRemotePathForPlatform(remotePath || '/', connection?.remotePlatform || 'posix');
   }
 
   private buildDraftTabId(connectionId: string): string {
     return `${connectionId}:draft:${Date.now()}`;
   }
 
-  private buildTailCommand(remotePath: string, initialLines: number): string {
-    const quotedPath = shellQuote(normalizeRemotePath(remotePath));
+  private buildTailCommand(connection: ActiveConnection, remotePath: string, initialLines: number): string {
     const safeLines = Math.max(1, Math.min(5000, Math.floor(initialLines || INITIAL_TAIL_LINES)));
+
+    if (isWindowsRemotePlatform(connection.remotePlatform)) {
+      return buildWindowsLogFollowCommand(toRemoteCommandPath(remotePath, 'windows'), safeLines);
+    }
+
+    const quotedPath = shellQuote(normalizeRemotePath(remotePath));
     return [
       `__remote_edit_log_path=${quotedPath}`,
       `__remote_edit_tail_lines=${safeLines}`,

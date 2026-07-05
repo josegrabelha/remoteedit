@@ -728,7 +728,7 @@ export function renderBody(): string {
     <section class="file-properties-dialog remote-search-dialog">
       <div class="file-properties-header">
         <h2 id="remoteSearchTitle" class="file-properties-title">Remote Search</h2>
-        <div class="file-properties-path">Search remote files by name. SSH/SFTP connections can also search inside files and use Sudo Mode.</div>
+        <div class="file-properties-path">Search remote files by name. SSH/SFTP connections can also search inside files when supported.</div>
       </div>
       <div class="file-properties-body">
         <section class="remote-search-section">

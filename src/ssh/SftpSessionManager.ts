@@ -9,9 +9,14 @@ import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '..
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { assertTcpConnectionReachable, normalizeRemoteConnectError } from '../remote/ConnectionProbe';
 import { isSftpConnectionType, SFTP_CONNECTION_TYPE } from '../remote/RemoteConnectionTypes';
+import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
+import { isWindowsRemotePlatform, type RemotePlatform, type RemoteShell } from '../remote/RemotePlatform';
+import { getWindowsSftpPathCandidates, inferWindowsSftpPathStyle, joinRemotePathForPlatform, normalizeRemotePathForPlatform, toRemoteCommandPath, toWindowsSftpPath, type WindowsSftpPathStyle } from '../remote/RemotePathUtils';
+import { detectRemotePlatform } from './RemotePlatformProbe';
 import { buildOwnerGroupSuggestionCommand, buildPermissionString, buildPrincipalLookupCommand, cloneRemoteEntries, collectNumericIds, dirnameRemotePath, extractLinkTargetFromLongname, formatBytes, formatErrorMessage, formatMode, getGroupFromFileInfo, getOwnerFromFileInfo, getSudoTempDirectory, hasSpecialPermissionBitsChanged, inferLinkTargetType, joinRemotePath, mapEntryType, mapModeToEntryType, modeFromPermissionString, normalizeFileMode, normalizeNumericId, normalizeRemotePath, parseDfSpaceInfo, parseLongListing, parseLongListingLine, parseOwnerGroupSuggestionOutput, parsePrincipalLookupOutput, readRemoteFileToBuffer, shouldRestoreSpecialPermissionBits, sortRemoteEntries, statFlag, throwIfOperationCancelled, type RemoteSpaceInfo } from './SessionUtils';
 import { buildControlledRemoteCommandScript, buildRemoteCommandDisplayScript, createRemoteCommandDisplayCallbacks, getPotentialRemoteProcessPidMarkerSuffixLength, escapeRegExp } from './RemoteCommandDisplay';
 import { buildSftpCopyFileCommand, buildSftpCreateArchiveCommand, buildSftpMd5ChecksumAttempts, buildSftpSha256ChecksumAttempts, extractSftpChecksum, type SftpChecksumCommandAttempt } from './ArchiveChecksumUtils';
+import { buildWindowsChecksumCommand, buildWindowsPowerShellCommand, buildWindowsSetLocationScript, createPowerShellCliXmlStreamSanitizer, isWindowsPowerShellCommand, quotePowerShellLiteral, sanitizePowerShellCliXml } from './WindowsPowerShellUtils';
 import type { RemoteSessionManager, RemoteListDirectoryOptions, RemoteOwnerGroupSuggestions, RemotePrincipalSuggestion } from '../remote/RemoteSessionManager';
 import type {
   ActiveConnection,
@@ -47,12 +52,14 @@ export type {
 
 const SUDO_READ_IDLE_TIMEOUT_MS = 60000;
 const SUDO_SAVE_APPLY_TIMEOUT_MS = 300000;
+const SSH_DISCONNECT_TIMEOUT_MS = 5000;
 
 interface RemoteExecOptions {
   input?: string;
   timeoutMs?: number;
   idleTimeoutMs?: number;
   cancellationToken?: ConnectionCancellationToken;
+  sanitizePowerShellCliXml?: boolean;
   stdoutProgress?: {
     label: string;
     progress?: RemoteEditProgressReporter;
@@ -69,6 +76,7 @@ interface RemoteExecResult {
 
 interface RemoteCommandStreamingOptions {
   input?: string;
+  sanitizePowerShellCliXml?: boolean;
   remoteProcess?: {
     pidMarkerPrefix: string;
   };
@@ -110,6 +118,9 @@ export class SftpSessionManager implements RemoteSessionManager {
   private readonly sudoPasswords = new Map<string, string>();
   private readonly readFileCache = new Map<string, CachedReadFile>();
   private readonly directoryListingCache = new Map<string, CachedDirectoryListing>();
+  private readonly remotePlatforms = new Map<string, RemotePlatform>();
+  private readonly remoteShells = new Map<string, RemoteShell>();
+  private readonly windowsSftpPathStyles = new Map<string, WindowsSftpPathStyle>();
 
   async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
     if (!isSftpConnectionType(options.connectionType)) {
@@ -189,7 +200,13 @@ export class SftpSessionManager implements RemoteSessionManager {
       });
     }
 
-    const homePath = await this.safeCwd(client);
+    const platformProbe = await detectRemotePlatform(client, this.output);
+    const remotePlatform = platformProbe.platform;
+    const remoteShell = platformProbe.shell;
+    this.remotePlatforms.set(options.connectionId, remotePlatform);
+    this.remoteShells.set(options.connectionId, remoteShell);
+
+    const homePath = await this.safeCwd(client, remotePlatform);
 
     if (cancellationToken?.isCancellationRequested) {
       cancellationSubscription?.dispose();
@@ -197,8 +214,8 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error('Connection cancelled.');
     }
 
-    const requestedStartPath = normalizeRemotePath(options.startPath || homePath || '/');
-    const startPath = await this.resolveStartPath(client, requestedStartPath, homePath);
+    const requestedStartPath = normalizeRemotePathForPlatform(options.startPath || homePath || '/', remotePlatform);
+    const startPath = await this.resolveStartPath(client, options.connectionId, requestedStartPath, homePath, remotePlatform);
 
     if (cancellationToken?.isCancellationRequested) {
       cancellationSubscription?.dispose();
@@ -220,7 +237,10 @@ export class SftpSessionManager implements RemoteSessionManager {
       privateKeyPath: options.privateKeyPath,
       startPath,
       keepAlive: options.keepAlive !== false,
-      isQuickConnect: Boolean(options.isQuickConnect)
+      isQuickConnect: Boolean(options.isQuickConnect),
+      remotePlatform,
+      remoteShell,
+      capabilities: getRemoteCapabilities(SFTP_CONNECTION_TYPE, remotePlatform)
     };
 
     this.connections.set(options.connectionId, connection);
@@ -244,11 +264,7 @@ export class SftpSessionManager implements RemoteSessionManager {
     const client = this.sessions.get(connectionId);
 
     if (client) {
-      try {
-        await client.end();
-      } catch {
-        // Ignore disconnect errors during cleanup.
-      }
+      await this.closeClientForDisconnect(client, connectionId);
     }
 
     this.sessions.delete(connectionId);
@@ -257,8 +273,44 @@ export class SftpSessionManager implements RemoteSessionManager {
     this.groupNameCaches.delete(connectionId);
     this.ownerGroupSuggestionCaches.delete(connectionId);
     this.sudoPasswords.delete(connectionId);
+    this.remotePlatforms.delete(connectionId);
+    this.remoteShells.delete(connectionId);
+    this.windowsSftpPathStyles.delete(connectionId);
     this.clearReadFileCache(connectionId);
     this.clearDirectoryListingCache(connectionId);
+  }
+
+  private async closeClientForDisconnect(client: SftpClient, connectionId: string): Promise<void> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+
+    const endPromise = Promise.resolve(client.end()).catch(() => undefined);
+    const timeoutPromise = new Promise<void>(resolve => {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        try {
+          (client as any).client?.destroy?.();
+        } catch {
+          // Ignore forced cleanup errors.
+        }
+        resolve();
+      }, SSH_DISCONNECT_TIMEOUT_MS);
+    });
+
+    try {
+      await Promise.race([endPromise, timeoutPromise]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (timedOut) {
+      appendDebugLog(this.output, 'SSH/SFTP', 'Disconnect timed out; destroyed SSH client.', {
+        Connection: connectionId,
+        TimeoutMs: SSH_DISCONNECT_TIMEOUT_MS
+      });
+    }
   }
 
   async disconnectAll(): Promise<void> {
@@ -302,8 +354,12 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error('Enter a command to run.');
     }
 
+    if (this.isWindowsConnection(connectionId)) {
+      return await this.runWindowsRemoteCommandStreaming(connectionId, workingDirectory, trimmedCommand, callbacks, cancellationToken);
+    }
+
     const client = this.getClient(connectionId);
-    const normalizedWorkingDirectory = normalizeRemotePath(workingDirectory || '/');
+    const normalizedWorkingDirectory = this.normalizeRemotePathForConnection(connectionId, workingDirectory || '/');
     const displayScript = buildRemoteCommandDisplayScript(trimmedCommand);
     const streamingCallbacks = createRemoteCommandDisplayCallbacks(displayScript, callbacks);
     const sudoPassword = this.sudoPasswords.get(connectionId);
@@ -333,9 +389,41 @@ export class SftpSessionManager implements RemoteSessionManager {
     }
   }
 
+  private async runWindowsRemoteCommandStreaming(
+    connectionId: string,
+    workingDirectory: string,
+    command: string,
+    callbacks: RemoteCommandStreamingCallbacks = {},
+    cancellationToken?: ConnectionCancellationToken
+  ): Promise<RemoteCommandStreamingResult> {
+    const client = this.getClient(connectionId);
+    const normalizedWorkingDirectory = this.normalizeRemotePathForConnection(connectionId, workingDirectory || '/');
+    const commandWorkingDirectory = toRemoteCommandPath(normalizedWorkingDirectory, 'windows');
+    const setLocationScript = buildWindowsSetLocationScript(commandWorkingDirectory);
+    const script = [setLocationScript, command].filter(Boolean).join('\r\n');
+    const commandToExecute = isWindowsPowerShellCommand(command)
+      ? command
+      : buildWindowsPowerShellCommand(script);
+
+    callbacks.onCommand?.(command);
+    const result = await this.executeRemoteCommandStreaming(
+      client,
+      commandToExecute,
+      {
+        ...callbacks,
+        onCommand: undefined,
+        onCommandStatus: undefined
+      },
+      cancellationToken,
+      { sanitizePowerShellCliXml: true }
+    );
+    callbacks.onCommandStatus?.(0, result.code);
+    return result;
+  }
+
   async listDirectory(connectionId: string, remotePath: string, options: RemoteListDirectoryOptions = {}): Promise<RemoteEntry[]> {
     const client = this.getClient(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
     const totalTimer = createPerformanceTimer();
     const cacheTtlSeconds = getNumberSetting('directoryListingCacheTtl', 30, 0, 300);
     const cacheEnabled = cacheTtlSeconds > 0 && !this.isSudoModeEnabled(connectionId);
@@ -362,7 +450,7 @@ export class SftpSessionManager implements RemoteSessionManager {
 
     try {
       const listTimer = createPerformanceTimer();
-      const items = await client.list(normalizedPath);
+      const items = await this.runSftpPathOperation(connectionId, normalizedPath, actualPath => client.list(actualPath));
       listMs = listTimer();
 
       const mapTimer = createPerformanceTimer();
@@ -377,7 +465,7 @@ export class SftpSessionManager implements RemoteSessionManager {
           owner: getOwnerFromFileInfo(item),
           group: getGroupFromFileInfo(item),
           permissions: buildPermissionString(item),
-          path: joinRemotePath(normalizedPath, item.name),
+          path: this.joinRemotePathForConnection(connectionId, normalizedPath, item.name),
           // Keep symlink listing lightweight. Do not resolve or infer target type here.
           // The target is resolved lazily only when the user opens the link.
           linkTarget: extractLinkTargetFromLongname(String((item as any).longname || '')),
@@ -456,7 +544,7 @@ export class SftpSessionManager implements RemoteSessionManager {
   }
 
   async prepareFileForOpen(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<void> {
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
     const content = await this.readRemoteFile(connectionId, normalizedPath, cancellationToken, progress);
     this.readFileCache.set(this.buildReadFileCacheKey(connectionId, normalizedPath), {
       content,
@@ -465,7 +553,7 @@ export class SftpSessionManager implements RemoteSessionManager {
   }
 
   async readFile(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<Buffer> {
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
     const cacheKey = this.buildReadFileCacheKey(connectionId, normalizedPath);
     const cached = this.readFileCache.get(cacheKey);
 
@@ -487,8 +575,13 @@ export class SftpSessionManager implements RemoteSessionManager {
       return await this.runSudoCommandBuffer(connectionId, `cat ${shellQuote(normalizedPath)}`, SUDO_READ_IDLE_TIMEOUT_MS, cancellationToken, progress, metadata?.size, true);
     }
 
+    let actualPath = this.toSftpPathForConnection(connectionId, normalizedPath);
     try {
-      const stats = await client.stat(normalizedPath);
+      const stats = await this.runSftpPathOperation(connectionId, normalizedPath, async candidatePath => {
+        const candidateStats = await client.stat(candidatePath);
+        actualPath = candidatePath;
+        return candidateStats;
+      });
       if (Number((stats as any).size || 0) === 0) {
         return Buffer.alloc(0);
       }
@@ -496,24 +589,122 @@ export class SftpSessionManager implements RemoteSessionManager {
       // Ignore stat errors here. The actual read will report permission or missing-file errors.
     }
 
-    const stats = await client.stat(normalizedPath).catch(() => undefined as any);
+    const stats = await this.runSftpPathOperation(connectionId, normalizedPath, async candidatePath => {
+      const candidateStats = await client.stat(candidatePath);
+      actualPath = candidatePath;
+      return candidateStats;
+    }).catch(() => undefined as any);
     const totalBytes = Number((stats as any)?.size || 0);
-    return await readRemoteFileToBuffer(client, normalizedPath, cancellationToken, progress, totalBytes);
+
+    try {
+      return await readRemoteFileToBuffer(client, actualPath, cancellationToken, progress, totalBytes);
+    } catch (error) {
+      throw await this.enrichWindowsReadFileError(connectionId, normalizedPath, error, cancellationToken);
+    }
+  }
+
+  private async enrichWindowsReadFileError(connectionId: string, normalizedPath: string, error: unknown, cancellationToken?: ConnectionCancellationToken): Promise<Error> {
+    const originalError = error instanceof Error ? error : new Error(String(error || 'Unknown error'));
+
+    if (!this.isWindowsConnection(connectionId) || !this.isGenericSftpFailure(originalError)) {
+      return originalError;
+    }
+
+    const windowsReason = await this.tryGetWindowsReadFileFailureReason(connectionId, normalizedPath, cancellationToken);
+    if (!windowsReason) {
+      return originalError;
+    }
+
+    return new Error(windowsReason);
+  }
+
+  private async tryGetWindowsReadFileFailureReason(connectionId: string, normalizedPath: string, cancellationToken?: ConnectionCancellationToken): Promise<string | undefined> {
+    if (cancellationToken?.isCancellationRequested) {
+      return undefined;
+    }
+
+    try {
+      const commandPath = toRemoteCommandPath(normalizedPath, 'windows');
+      const command = buildWindowsPowerShellCommand([
+        `$path = ${quotePowerShellLiteral(commandPath)}`,
+        'try {',
+        '  $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop',
+        '  $stream = [System.IO.File]::Open($item.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)',
+        '  try { } finally { $stream.Dispose() }',
+        '  Write-Output "OK"',
+        '  exit 0',
+        '} catch {',
+        '  $message = $_.Exception.Message',
+        '  if (-not $message -and $_.Exception.InnerException) { $message = $_.Exception.InnerException.Message }',
+        '  [Console]::Error.WriteLine($message)',
+        '  exit 1',
+        '}'
+      ].join('\r\n'));
+      const result = await this.executeRemoteCommand(this.getClient(connectionId), command, {
+        timeoutMs: 10000,
+        cancellationToken,
+        sanitizePowerShellCliXml: true
+      });
+
+      if (result.code === 0) {
+        return undefined;
+      }
+
+      const output = `${result.stderr}\n${result.stdout.toString('utf8')}`
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !/^OK$/i.test(line))[0];
+
+      return output || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private isGenericSftpFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const code = Number((error as any)?.code);
+
+    const trimmed = message.trim().replace(/^Error:\s*/i, '');
+
+    return /^Failure$/i.test(trimmed) || (code === 4 && trimmed.length === 0);
   }
 
   async writeFile(connectionId: string, remotePath: string, content: Uint8Array, progress?: RemoteEditProgressReporter, cancellationToken?: ConnectionCancellationToken): Promise<void> {
     const client = this.getClient(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
     const buffer = Buffer.from(content);
 
     if (!this.isSudoModeEnabled(connectionId)) {
+      if (this.isWindowsConnection(connectionId)) {
+        const actualPath = this.toSftpPathForConnection(connectionId, normalizedPath);
+        try {
+          await this.writeExistingRemoteFileInPlace(client, actualPath, buffer, progress, cancellationToken);
+        } catch (error) {
+          if (!this.isMissingFileError(error)) {
+            throw error;
+          }
+
+          await this.createRemoteFileWithServerDefaults(client, actualPath);
+
+          if (buffer.length > 0) {
+            await this.writeExistingRemoteFileInPlace(client, actualPath, buffer, progress, cancellationToken);
+          }
+        }
+
+        this.clearReadFileCache(connectionId, normalizedPath);
+        return;
+      }
+
       try {
-        const originalMode = await this.getRemoteFileMode(client, normalizedPath);
+        const originalMode = await this.getRemoteFileMode(client, connectionId, normalizedPath);
 
         // Existing files must be updated in-place so owner, group,
         // permissions, ACLs, and inode are not replaced during save.
         await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress, cancellationToken);
-        await this.restoreOriginalSpecialPermissionBitsIfNeeded(client, normalizedPath, originalMode);
+        await this.restoreOriginalSpecialPermissionBitsIfNeeded(client, connectionId, normalizedPath, originalMode);
       } catch (error) {
         if (!this.isMissingFileError(error)) {
           throw error;
@@ -521,7 +712,7 @@ export class SftpSessionManager implements RemoteSessionManager {
 
         // New files must be created by the remote server without an explicit mode
         // so the connected user's default permissions and umask are respected.
-        await this.createRemoteFileWithServerDefaults(client, normalizedPath);
+        await this.createRemoteFileWithServerDefaults(client, this.toSftpPathForConnection(connectionId, normalizedPath));
 
         if (buffer.length > 0) {
           await this.writeExistingRemoteFileInPlace(client, normalizedPath, buffer, progress, cancellationToken);
@@ -579,11 +770,11 @@ export class SftpSessionManager implements RemoteSessionManager {
     accessTime: number;
   }> {
     const client = this.getClient(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
 
     try {
-      const stats = await client.stat(normalizedPath);
-      const resolvedType = await this.resolvePathType(client, normalizedPath, stats);
+      const stats = await this.runSftpPathOperation(connectionId, normalizedPath, actualPath => client.stat(actualPath));
+      const resolvedType = await this.resolvePathType(client, connectionId, normalizedPath, stats);
 
       return {
         type: resolvedType === 'link' ? 'unknown' : resolvedType,
@@ -618,7 +809,7 @@ export class SftpSessionManager implements RemoteSessionManager {
 
   async createFile(connectionId: string, remotePath: string): Promise<void> {
     const client = this.getClient(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
 
     if (this.isSudoModeEnabled(connectionId)) {
       // Create the file through the remote sudo shell without chmod/mode.
@@ -628,13 +819,13 @@ export class SftpSessionManager implements RemoteSessionManager {
       return;
     }
 
-    await this.createRemoteFileWithServerDefaults(client, normalizedPath);
+    await this.createRemoteFileWithServerDefaults(client, this.toSftpPathForConnection(connectionId, normalizedPath));
     this.clearReadFileCache(connectionId, normalizedPath);
   }
 
   async createDirectory(connectionId: string, remotePath: string): Promise<void> {
     const client = this.getClient(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
 
     if (this.isSudoModeEnabled(connectionId)) {
       await this.runSudoCommandText(connectionId, `mkdir -p ${shellQuote(normalizedPath)}`, 30000);
@@ -642,13 +833,13 @@ export class SftpSessionManager implements RemoteSessionManager {
       return;
     }
 
-    await client.mkdir(normalizedPath, true);
+    await client.mkdir(this.toSftpPathForConnection(connectionId, normalizedPath), true);
     this.clearReadFileCache(connectionId, normalizedPath);
   }
 
   async delete(connectionId: string, remotePath: string): Promise<void> {
     const client = this.getClient(connectionId);
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
 
     if (this.isSudoModeEnabled(connectionId)) {
       const quotedPath = shellQuote(normalizedPath);
@@ -661,12 +852,12 @@ export class SftpSessionManager implements RemoteSessionManager {
       return;
     }
 
-    const entryType = await this.resolveEntryTypeWithoutFollowingLinks(client, normalizedPath);
+    const entryType = await this.resolveEntryTypeWithoutFollowingLinks(client, connectionId, normalizedPath);
 
     if (entryType === 'directory') {
-      await client.rmdir(normalizedPath, true);
+      await client.rmdir(this.toSftpPathForConnection(connectionId, normalizedPath), true);
     } else {
-      await client.delete(normalizedPath);
+      await client.delete(this.toSftpPathForConnection(connectionId, normalizedPath));
     }
 
     this.clearReadFileCache(connectionId, normalizedPath);
@@ -674,8 +865,8 @@ export class SftpSessionManager implements RemoteSessionManager {
 
   async rename(connectionId: string, oldPath: string, newPath: string): Promise<void> {
     const client = this.getClient(connectionId);
-    const normalizedOldPath = normalizeRemotePath(oldPath);
-    const normalizedNewPath = normalizeRemotePath(newPath);
+    const normalizedOldPath = this.normalizeRemotePathForConnection(connectionId, oldPath);
+    const normalizedNewPath = this.normalizeRemotePathForConnection(connectionId, newPath);
 
     if (this.isSudoModeEnabled(connectionId)) {
       await this.runSudoCommandText(
@@ -688,15 +879,33 @@ export class SftpSessionManager implements RemoteSessionManager {
       return;
     }
 
-    await client.rename(normalizedOldPath, normalizedNewPath);
+    await client.rename(this.toSftpPathForConnection(connectionId, normalizedOldPath), this.toSftpPathForConnection(connectionId, normalizedNewPath));
     this.clearReadFileCache(connectionId, normalizedOldPath);
     this.clearReadFileCache(connectionId, normalizedNewPath);
   }
 
   async copyFile(connectionId: string, sourcePath: string, targetPath: string, overwrite = false, cancellationToken?: ConnectionCancellationToken): Promise<void> {
     const client = this.getClient(connectionId);
-    const normalizedSourcePath = normalizeRemotePath(sourcePath);
-    const normalizedTargetPath = normalizeRemotePath(targetPath);
+    const normalizedSourcePath = this.normalizeRemotePathForConnection(connectionId, sourcePath);
+    const normalizedTargetPath = this.normalizeRemotePathForConnection(connectionId, targetPath);
+    if (this.isWindowsConnection(connectionId)) {
+      if (!overwrite) {
+        try {
+          await this.runSftpPathOperation(connectionId, normalizedTargetPath, actualPath => client.stat(actualPath));
+          throw new Error(`Remote path already exists: ${normalizedTargetPath}`);
+        } catch (error) {
+          if (!this.isMissingFileError(error)) {
+            throw error;
+          }
+        }
+      }
+
+      const content = await this.readRemoteFile(connectionId, normalizedSourcePath, cancellationToken);
+      await this.writeFile(connectionId, normalizedTargetPath, content, undefined, cancellationToken);
+      this.clearReadFileCache(connectionId, normalizedTargetPath);
+      return;
+    }
+
     const command = buildSftpCopyFileCommand(normalizedSourcePath, normalizedTargetPath, overwrite);
 
     if (this.isSudoModeEnabled(connectionId)) {
@@ -724,8 +933,9 @@ export class SftpSessionManager implements RemoteSessionManager {
     overwrite = false,
     cancellationToken?: ConnectionCancellationToken
   ): Promise<void> {
+    this.assertPosixOnlyAction(connectionId, 'Archive creation');
     const client = this.getClient(connectionId);
-    const normalizedBaseDirectory = normalizeRemotePath(baseDirectory);
+    const normalizedBaseDirectory = this.normalizeRemotePathForConnection(connectionId, baseDirectory);
     const safeEntryNames = entryNames.map(name => String(name || '').trim()).filter(Boolean);
     const safeArchiveName = String(archiveName || '').trim();
 
@@ -766,12 +976,58 @@ export class SftpSessionManager implements RemoteSessionManager {
   }
 
   async calculateChecksums(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken): Promise<RemoteChecksumSummary> {
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
+
+    if (this.isWindowsConnection(connectionId)) {
+      return {
+        sha256: await this.calculateWindowsChecksum(connectionId, normalizedPath, 'SHA-256', 'SHA256', cancellationToken),
+        md5: await this.calculateWindowsChecksum(connectionId, normalizedPath, 'MD5', 'MD5', cancellationToken)
+      };
+    }
 
     return {
       sha256: await this.calculateChecksum(connectionId, normalizedPath, 'SHA-256', buildSftpSha256ChecksumAttempts(), cancellationToken),
       md5: await this.calculateChecksum(connectionId, normalizedPath, 'MD5', buildSftpMd5ChecksumAttempts(), cancellationToken)
     };
+  }
+
+  private async calculateWindowsChecksum(
+    connectionId: string,
+    normalizedPath: string,
+    algorithm: 'SHA-256' | 'MD5',
+    windowsAlgorithm: 'SHA256' | 'MD5',
+    cancellationToken?: ConnectionCancellationToken
+  ): Promise<RemoteChecksumValue> {
+    if (cancellationToken?.isCancellationRequested) {
+      throw new RemoteEditOperationCancelledError('Checksum calculation cancelled.');
+    }
+
+    try {
+      const commandPath = toRemoteCommandPath(normalizedPath, 'windows');
+      const command = buildWindowsChecksumCommand(commandPath, windowsAlgorithm);
+      const result = await this.executeRemoteCommand(this.getClient(connectionId), command, { timeoutMs: 300000, cancellationToken, sanitizePowerShellCliXml: true });
+      const output = `${result.stdout.toString('utf8')}\n${result.stderr}`.trim();
+
+      if (result.code !== 0) {
+        throw new Error(output || `Remote checksum command failed with exit code ${result.code}.`);
+      }
+
+      const checksum = extractSftpChecksum(output, windowsAlgorithm === 'SHA256' ? 64 : 32);
+      if (checksum) {
+        return { algorithm, value: checksum, command: `Get-FileHash -Algorithm ${windowsAlgorithm}` };
+      }
+
+      return { algorithm, error: 'Not available. Get-FileHash did not return a checksum.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes('cancelled')) {
+        throw new RemoteEditOperationCancelledError('Checksum calculation cancelled.');
+      }
+      return {
+        algorithm,
+        error: /access denied|permission denied/i.test(message) ? 'Permission denied.' : (message.trim() || 'Checksum calculation failed.')
+      };
+    }
   }
 
   private buildSha256ChecksumAttempts(): SftpChecksumCommandAttempt[] {
@@ -859,7 +1115,8 @@ export class SftpSessionManager implements RemoteSessionManager {
   }
 
   async changeOwnerGroup(connectionId: string, remotePath: string, options: ChangeOwnerGroupOptions): Promise<void> {
-    const normalizedPath = normalizeRemotePath(remotePath);
+    this.assertPosixOnlyAction(connectionId, 'Owner/group changes');
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
     const owner = String(options?.owner || '').trim();
     const group = String(options?.group || '').trim();
 
@@ -891,6 +1148,7 @@ export class SftpSessionManager implements RemoteSessionManager {
 
 
   async listOwnerGroupSuggestions(connectionId: string): Promise<RemoteOwnerGroupSuggestions> {
+    this.assertPosixOnlyAction(connectionId, 'Owner/group suggestions');
     const now = Date.now();
     const cached = this.ownerGroupSuggestionCaches.get(connectionId);
     if (cached && cached.expiresAt > now) {
@@ -908,6 +1166,7 @@ export class SftpSessionManager implements RemoteSessionManager {
   }
 
   async chmod(connectionId: string, remotePath: string, mode: string | number, options: ChmodOptions = {}): Promise<void> {
+    this.assertPosixOnlyAction(connectionId, 'Permission changes');
     const client = this.getClient(connectionId);
     const modeText = typeof mode === 'number' ? mode.toString(8) : String(mode).trim();
 
@@ -915,7 +1174,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error(`Invalid permission mode '${modeText}'.`);
     }
 
-    const normalizedPath = normalizeRemotePath(remotePath);
+    const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
 
     if (this.isSudoModeEnabled(connectionId) || options.recursive) {
       const recursiveFlag = options.recursive ? ' -R' : '';
@@ -950,6 +1209,7 @@ ${result.stdout.toString('utf8')}`.trim();
   }
 
   async enableSudoMode(connectionId: string, password: string): Promise<void> {
+    this.assertPosixOnlyAction(connectionId, 'Sudo Mode');
     this.getClient(connectionId);
 
     const sudoPassword = String(password || '');
@@ -1045,36 +1305,114 @@ ${result.stdout.toString('utf8')}`.trim();
     return client;
   }
 
-  private async safeCwd(client: SftpClient): Promise<string> {
+  private getRemotePlatform(connectionId: string): RemotePlatform {
+    return this.remotePlatforms.get(connectionId)
+      || this.connections.get(connectionId)?.remotePlatform
+      || 'posix';
+  }
+
+  private isWindowsConnection(connectionId: string): boolean {
+    return isWindowsRemotePlatform(this.getRemotePlatform(connectionId));
+  }
+
+  private normalizeRemotePathForConnection(connectionId: string, remotePath: string | undefined): string {
+    return normalizeRemotePathForPlatform(remotePath, this.getRemotePlatform(connectionId));
+  }
+
+  private joinRemotePathForConnection(connectionId: string, parent: string, child: string): string {
+    return joinRemotePathForPlatform(parent, child, this.getRemotePlatform(connectionId));
+  }
+
+  private toSftpPathForConnection(connectionId: string, normalizedPath: string): string {
+    if (!this.isWindowsConnection(connectionId)) {
+      return normalizedPath;
+    }
+
+    return toWindowsSftpPath(normalizedPath, this.windowsSftpPathStyles.get(connectionId) || 'slashDrive');
+  }
+
+  private getSftpPathCandidatesForConnection(connectionId: string, normalizedPath: string): string[] {
+    if (!this.isWindowsConnection(connectionId)) {
+      return [normalizedPath];
+    }
+
+    return getWindowsSftpPathCandidates(normalizedPath, this.windowsSftpPathStyles.get(connectionId));
+  }
+
+  private rememberSuccessfulSftpPath(connectionId: string, actualPath: string): void {
+    if (this.isWindowsConnection(connectionId)) {
+      this.windowsSftpPathStyles.set(connectionId, inferWindowsSftpPathStyle(actualPath));
+    }
+  }
+
+  private async runSftpPathOperation<T>(
+    connectionId: string,
+    normalizedPath: string,
+    operation: (actualPath: string) => Promise<T>
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (const actualPath of this.getSftpPathCandidatesForConnection(connectionId, normalizedPath)) {
+      try {
+        const result = await operation(actualPath);
+        this.rememberSuccessfulSftpPath(connectionId, actualPath);
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (!this.isWindowsConnection(connectionId)) {
+          break;
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  private assertPosixOnlyAction(connectionId: string, actionLabel: string): void {
+    if (this.isWindowsConnection(connectionId)) {
+      throw new Error(`${actionLabel} is not available for Windows SSH/SFTP sessions.`);
+    }
+  }
+
+  private async safeCwd(client: SftpClient, remotePlatform: RemotePlatform): Promise<string> {
     try {
       const cwd = await client.cwd();
-      return normalizeRemotePath(cwd || '/');
+      return normalizeRemotePathForPlatform(cwd || '/', remotePlatform);
     } catch {
       return '/';
     }
   }
 
-  private async resolveStartPath(client: SftpClient, requestedStartPath: string, homePath: string): Promise<string> {
+  private async resolveStartPath(
+    client: SftpClient,
+    connectionId: string,
+    requestedStartPath: string,
+    homePath: string,
+    remotePlatform: RemotePlatform
+  ): Promise<string> {
     const candidates = Array.from(new Set([
       requestedStartPath,
       homePath || '/',
       '/'
-    ].map(normalizeRemotePath)));
+    ].map(path => normalizeRemotePathForPlatform(path, remotePlatform))));
 
     for (const candidate of candidates) {
-      try {
-        await client.list(candidate);
-        return candidate;
-      } catch {
-        // Try the next fallback path.
+      for (const actualPath of this.getSftpPathCandidatesForConnection(connectionId, candidate)) {
+        try {
+          await client.list(actualPath);
+          this.rememberSuccessfulSftpPath(connectionId, actualPath);
+          return candidate;
+        } catch {
+          // Try the next path candidate.
+        }
       }
     }
 
-    return '/';
+    return candidates[0] || '/';
   }
 
 
-  private async resolvePathType(client: SftpClient, remotePath: string, stats: unknown): Promise<RemoteEntryType> {
+  private async resolvePathType(client: SftpClient, connectionId: string, remotePath: string, stats: unknown): Promise<RemoteEntryType> {
     if (statFlag(stats, 'isDirectory')) {
       return 'directory';
     }
@@ -1093,7 +1431,7 @@ ${result.stdout.toString('utf8')}`.trim();
     // For opening/navigating, check if the path can be listed as a directory.
     if (modeType === 'link' || statFlag(stats, 'isSymbolicLink')) {
       try {
-        await client.list(normalizeRemotePath(remotePath));
+        await this.runSftpPathOperation(connectionId, remotePath, actualPath => client.list(actualPath));
         return 'directory';
       } catch {
         // A symlink that is not listable is treated as file-like so VS Code can try to open it.
@@ -1102,7 +1440,7 @@ ${result.stdout.toString('utf8')}`.trim();
     }
 
     try {
-      await client.list(normalizeRemotePath(remotePath));
+      await this.runSftpPathOperation(connectionId, remotePath, actualPath => client.list(actualPath));
       return 'directory';
     } catch {
       // Not a listable directory. If stat() succeeded, treat it as file-like.
@@ -1111,12 +1449,12 @@ ${result.stdout.toString('utf8')}`.trim();
     return 'file';
   }
 
-  private async resolveEntryTypeWithoutFollowingLinks(client: SftpClient, remotePath: string): Promise<RemoteEntryType> {
+  private async resolveEntryTypeWithoutFollowingLinks(client: SftpClient, connectionId: string, remotePath: string): Promise<RemoteEntryType> {
     const dynamicClient = client as any;
 
     if (typeof dynamicClient.lstat === 'function') {
       try {
-        const stats = await dynamicClient.lstat(normalizeRemotePath(remotePath));
+        const stats = await dynamicClient.lstat(this.toSftpPathForConnection(connectionId, remotePath));
         const modeType = mapModeToEntryType(Number((stats as any)?.mode || 0));
 
         if (modeType !== 'unknown') {
@@ -1142,7 +1480,7 @@ ${result.stdout.toString('utf8')}`.trim();
     try {
       const parentPath = dirnameRemotePath(remotePath);
       const name = remotePath.split('/').filter(Boolean).pop() || '';
-      const entries = await client.list(parentPath);
+      const entries = await this.runSftpPathOperation(connectionId, parentPath, actualPath => client.list(actualPath));
       const entry = entries.find(item => item.name === name);
       if (entry) {
         return mapEntryType(entry.type);
@@ -1152,8 +1490,8 @@ ${result.stdout.toString('utf8')}`.trim();
     }
 
     try {
-      const stats = await client.stat(normalizeRemotePath(remotePath));
-      return await this.resolvePathType(client, remotePath, stats);
+      const stats = await this.runSftpPathOperation(connectionId, remotePath, actualPath => client.stat(actualPath));
+      return await this.resolvePathType(client, connectionId, remotePath, stats);
     } catch {
       return 'unknown';
     }
@@ -1229,22 +1567,22 @@ ${result.stdout.toString('utf8')}`.trim();
     return cache;
   }
 
-  private async getRemoteFileMode(client: SftpClient, remotePath: string): Promise<number | undefined> {
-    const stats = await client.stat(remotePath);
+  private async getRemoteFileMode(client: SftpClient, connectionId: string, remotePath: string): Promise<number | undefined> {
+    const stats = await this.runSftpPathOperation(connectionId, remotePath, actualPath => client.stat(actualPath));
     const mode = normalizeFileMode((stats as any)?.mode);
 
     if (mode !== undefined) {
       return mode;
     }
 
-    return await this.getRemoteFileModeFromDirectoryListing(client, remotePath);
+    return await this.getRemoteFileModeFromDirectoryListing(client, connectionId, remotePath);
   }
 
-  private async getRemoteFileModeFromDirectoryListing(client: SftpClient, remotePath: string): Promise<number | undefined> {
+  private async getRemoteFileModeFromDirectoryListing(client: SftpClient, connectionId: string, remotePath: string): Promise<number | undefined> {
     try {
       const parentPath = dirnameRemotePath(remotePath);
       const name = remotePath.split('/').filter(Boolean).pop() || '';
-      const entries = await client.list(parentPath);
+      const entries = await this.runSftpPathOperation(connectionId, parentPath, actualPath => client.list(actualPath));
       const entry = entries.find(item => item.name === name);
       const permissions = buildPermissionString(entry as SftpClient.FileInfo);
 
@@ -1256,6 +1594,7 @@ ${result.stdout.toString('utf8')}`.trim();
 
   private async restoreOriginalSpecialPermissionBitsIfNeeded(
     client: SftpClient,
+    connectionId: string,
     remotePath: string,
     originalMode: number | undefined
   ): Promise<void> {
@@ -1263,7 +1602,7 @@ ${result.stdout.toString('utf8')}`.trim();
       return;
     }
 
-    const currentMode = await this.getRemoteFileMode(client, remotePath);
+    const currentMode = await this.getRemoteFileMode(client, connectionId, remotePath);
 
     if (currentMode === originalMode) {
       return;
@@ -1875,6 +2214,31 @@ ${result.stdout.toString('utf8')}`.trim();
         skippingWrapperTerminationStderrBlock = false;
       };
 
+      const stdoutCliXmlSanitizer = options.sanitizePowerShellCliXml
+        ? createPowerShellCliXmlStreamSanitizer(processStdoutForRemoteProcess)
+        : undefined;
+      const stderrCliXmlSanitizer = options.sanitizePowerShellCliXml
+        ? createPowerShellCliXmlStreamSanitizer(processStderrForWrapperFilter)
+        : undefined;
+      const processStdoutChunk = (text: string) => {
+        if (stdoutCliXmlSanitizer) {
+          stdoutCliXmlSanitizer.write(text);
+        } else {
+          processStdoutForRemoteProcess(text);
+        }
+      };
+      const processStderrChunk = (text: string) => {
+        if (stderrCliXmlSanitizer) {
+          stderrCliXmlSanitizer.write(text);
+        } else {
+          processStderrForWrapperFilter(text);
+        }
+      };
+      const flushOutputSanitizers = () => {
+        stdoutCliXmlSanitizer?.flush();
+        stderrCliXmlSanitizer?.flush();
+      };
+
       const runRemoteProcessKill = (force: boolean): boolean => {
         if (!remoteProcessPid || !/^\d+$/.test(remoteProcessPid)) {
           return false;
@@ -1934,6 +2298,7 @@ ${result.stdout.toString('utf8')}`.trim();
           clearTimeout(forceCloseTimer);
           forceCloseTimer = undefined;
         }
+        flushOutputSanitizers();
         flushStdoutForRemoteProcess();
         flushStderrForWrapperFilter();
         callback();
@@ -2050,7 +2415,7 @@ ${result.stdout.toString('utf8')}`.trim();
           stream.on('data', (data: Buffer | string) => {
             const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
             if (text) {
-              processStdoutForRemoteProcess(text);
+              processStdoutChunk(text);
               throttleOutputIfNeeded(Buffer.isBuffer(data) ? data.length : Buffer.byteLength(text, 'utf8'));
             }
           });
@@ -2058,7 +2423,7 @@ ${result.stdout.toString('utf8')}`.trim();
           stream.stderr?.on?.('data', (data: Buffer | string) => {
             const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
             if (text) {
-              processStderrForWrapperFilter(text);
+              processStderrChunk(text);
               throttleOutputIfNeeded(Buffer.isBuffer(data) ? data.length : Buffer.byteLength(text, 'utf8'));
             }
           });
@@ -2202,9 +2567,13 @@ ${result.stdout.toString('utf8')}`.trim();
           });
 
           stream.on('close', (code: number | undefined, signal: string | undefined) => {
+            const stdoutText = Buffer.concat(stdoutChunks).toString('utf8');
+            const stderrText = Buffer.concat(stderrChunks).toString('utf8');
+            const cleanStdoutText = options.sanitizePowerShellCliXml ? sanitizePowerShellCliXml(stdoutText) : stdoutText;
+            const cleanStderrText = options.sanitizePowerShellCliXml ? sanitizePowerShellCliXml(stderrText) : stderrText;
             settle(() => resolve({
-              stdout: Buffer.concat(stdoutChunks),
-              stderr: Buffer.concat(stderrChunks).toString('utf8'),
+              stdout: Buffer.from(cleanStdoutText, 'utf8'),
+              stderr: cleanStderrText,
               code: typeof code === 'number' ? code : 0,
               signal
             }));

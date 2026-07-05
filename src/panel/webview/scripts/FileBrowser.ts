@@ -239,13 +239,14 @@ export function renderFileBrowser(): string {
   }
 
   function renderEntries(entries) {
+    updateFileListPlatformColumns();
     const renderGeneration = ++entriesRenderGeneration;
     const renderStart = performance.now();
     entriesBody.innerHTML = '';
 
     if (!entries.length) {
       const message = filterText ? 'No items match the current filter.' : 'This folder is empty.';
-      entriesBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">' + message + '</div></td></tr>';
+      renderEntriesEmptyMessage(message);
       postRenderPerformance(entries.length, performance.now() - renderStart);
       return;
     }
@@ -302,12 +303,22 @@ export function renderFileBrowser(): string {
     row.className = 'entry-row' + (selectedEntryPaths.has(entryKey) ? ' selected' : '');
     row.dataset.entryPath = entryKey;
     if (!isParentEntry(entry)) row.draggable = true;
+    const showOwnership = shouldShowPosixOwnership();
+    const showPermissions = shouldShowPosixPermissions();
+    const posixCells = showOwnership || showPermissions
+      ? (showOwnership
+          ? '<td class="owner">' + escapeHtml(formatMetadata(entry.owner)) + '</td>' +
+            '<td class="group">' + escapeHtml(formatMetadata(entry.group)) + '</td>'
+          : '<td class="owner"></td><td class="group"></td>') +
+        (showPermissions
+          ? '<td class="permissions">' + escapeHtml(formatPermissionsForDisplay(entry.permissions)) + '</td>'
+          : '<td class="permissions"></td>')
+      : '';
+
     row.innerHTML = '<td><div class="entry-name"><span class="entry-icon">' + iconFor(entry) + '</span><span class="entry-text" data-entry-name-action="open">' + escapeHtml(formatEntryName(entry)) + '</span></div></td>' +
       '<td class="type">' + escapeHtml(formatEntryType(entry)) + '</td>' +
       '<td class="size">' + (isDirectoryLike(entry) ? '' : formatSize(entry.size)) + '</td>' +
-      '<td class="owner">' + escapeHtml(formatMetadata(entry.owner)) + '</td>' +
-      '<td class="group">' + escapeHtml(formatMetadata(entry.group)) + '</td>' +
-      '<td class="permissions">' + escapeHtml(formatPermissionsForDisplay(entry.permissions)) + '</td>' +
+      posixCells +
       '<td class="modified">' + formatDate(entry.modifyTime) + '</td>';
 
     return row;
@@ -583,8 +594,8 @@ export function renderFileBrowser(): string {
     const canCreateInContext = hasCurrentDirectoryActions || isSingleDirectory;
     const canRefresh = Boolean(activeConnectionId);
     const canRunRemoteCommand = Boolean(activeConnectionId) && capabilities.canRunCommand;
-    const canOpenSshTerminal = canRunRemoteCommand && capabilities.canOpenSshTerminal;
-    const canOpenLogViewer = Boolean(activeConnectionId) && capabilities.canRunCommand && (!hasEntryActions || isSingleFile);
+    const canOpenSshTerminal = Boolean(activeConnectionId) && capabilities.canOpenSshTerminal;
+    const canOpenLogViewer = Boolean(activeConnectionId) && capabilities.canFollowLogFiles && (!hasEntryActions || isSingleFile);
     const canUpload = Boolean(activeConnectionId) && !hasEntryActions;
     const canCopyCurrentPath = Boolean(activeConnectionId) && !hasEntryActions;
     const canDownload = hasEntryActions;

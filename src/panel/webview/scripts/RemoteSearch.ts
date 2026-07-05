@@ -40,7 +40,7 @@ export function renderRemoteSearch(): string {
     if (goButton.disabled || !activeConnectionId || busy) return;
     const path = normalizeUiRemotePath(currentPath.value || '/');
     if (isRemotePathEdited()) {
-      exitRemotePathEditMode({ reset: false });
+      exitRemotePathEditMode({ reset: true });
       openPath(path);
       return;
     }
@@ -627,17 +627,19 @@ export function renderRemoteSearch(): string {
   function getRemoteSearchSudoContext(connectionId) {
     const key = connectionId || activeConnectionId;
     const active = (key ? sessions.find(item => item.id === key) : null) || getActiveSession();
+    const capabilities = getRemoteCapabilitiesForSession(active);
+    const canUseSudo = Boolean(capabilities.canUseSudo);
     const username = active ? String(active.username || '').trim() : '';
     const connectionType = String((active && active.connectionType) || getActiveConnectionType() || 'sftp').toLowerCase();
-    const isRootConnection = username.toLowerCase() === 'root';
+    const isRootConnection = canUseSudo && username.toLowerCase() === 'root';
     const isSftp = connectionType === 'sftp';
-    const connectionSudoEnabled = Boolean(active && active.sudoModeEnabled && !isRootConnection && isSftp);
-    return { active, username, isRootConnection, isSftp, connectionSudoEnabled };
+    const connectionSudoEnabled = Boolean(canUseSudo && active && active.sudoModeEnabled && !isRootConnection && isSftp);
+    return { active, username, isRootConnection, isSftp, canUseSudo, connectionSudoEnabled };
   }
 
   function collectRemoteSearchEffectiveUseSudo(connectionId) {
     const context = getRemoteSearchSudoContext(connectionId);
-    if (!context.isSftp || context.isRootConnection) return false;
+    if (!context.canUseSudo || !context.isSftp || context.isRootConnection) return false;
     if (context.connectionSudoEnabled) return true;
     return Boolean(remoteSearchUseSudo && remoteSearchUseSudo.checked);
   }
@@ -645,7 +647,7 @@ export function renderRemoteSearch(): string {
   function collectRemoteSearchFormUseSudo(connectionId) {
     const key = String(connectionId || activeConnectionId || '');
     const context = getRemoteSearchSudoContext(key);
-    if (!context.isSftp || context.isRootConnection) return false;
+    if (!context.canUseSudo || !context.isSftp || context.isRootConnection) return false;
     if (context.connectionSudoEnabled) {
       const saved = key ? remoteSearchFormsByConnectionId.get(key) : null;
       return Boolean(saved && saved.useSudo);
@@ -682,10 +684,13 @@ export function renderRemoteSearch(): string {
 
   function updateRemoteSearchProtocolFields() {
     const isSftp = isRemoteSearchSftp();
-    if (remoteSearchSudoRow) remoteSearchSudoRow.classList.toggle('hidden', !isSftp);
+    const canUseSudo = Boolean(getActiveRemoteCapabilities().canUseSudo);
+    if (remoteSearchSudoRow) remoteSearchSudoRow.classList.toggle('hidden', !canUseSudo);
     if (remoteSearchInsideRow) remoteSearchInsideRow.classList.toggle('hidden', !isSftp);
-    if (!isSftp) {
+    if (!canUseSudo) {
       if (remoteSearchUseSudo) remoteSearchUseSudo.checked = false;
+    }
+    if (!isSftp) {
       if (remoteSearchInsideFiles) remoteSearchInsideFiles.checked = false;
     }
     updateRemoteSearchTextField();
@@ -766,7 +771,7 @@ export function renderRemoteSearch(): string {
     const key = String(connectionId || activeConnectionId || '');
     const normalized = Object.assign(getDefaultRemoteSearchFormForConnection(key), form || {});
     const context = getRemoteSearchSudoContext(key);
-    if (!context.isSftp || context.isRootConnection) {
+    if (!context.canUseSudo || !context.isSftp || context.isRootConnection) {
       normalized.useSudo = false;
     } else if (context.connectionSudoEnabled) {
       const existing = key ? remoteSearchFormsByConnectionId.get(key) : null;
@@ -803,7 +808,7 @@ export function renderRemoteSearch(): string {
   }
 
   function showRemoteSearchDialog() {
-    if (!activeConnectionId) return;
+    if (!activeConnectionId || !getActiveRemoteCapabilities().canRunCommand) return;
     remoteSearchDialogOpen = true;
     remoteSearchState = getRemoteSearchStateForActiveConnection();
     if (remoteSearchState.status !== 'running') {

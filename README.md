@@ -1,6 +1,8 @@
 # Remote Edit
 
-**Remote Edit** is a VS Code extension for working with remote files and server tools over SSH/SFTP, FTP, and FTPS.
+**Remote Edit** is a VS Code extension for browsing, editing, transferring, and searching remote files over SSH/SFTP, FTP, and FTPS, with SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
+
+It supports Linux, Unix, AIX, and Windows OpenSSH targets, with protocol-specific features available depending on the remote server.
 
 Connect to remote servers, browse and edit files, transfer content, run commands, inspect server status, view logs, manage SSH port forwards, and choose the workflow that fits you best.
 
@@ -94,7 +96,8 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 
 | Protocol | Browse | Upload | Download | Edit | File Search | Content Search | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| SSH/SFTP | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - |
 | FTP | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - | - |
 | FTPS | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - | - |
 
@@ -108,13 +111,13 @@ Switch an active SSH/SFTP connection from **Files** to **Server** to inspect and
 - Inspect services and run supported start, stop, and restart actions
 - Review running processes and kill selected processes when needed
 - Open, follow, edit, or copy saved server log shortcuts
-- Review scheduled jobs from user crontab and system cron locations
+- Review scheduled jobs from user crontab and system cron locations on Linux/Unix/AIX, or Scheduled Tasks on Windows OpenSSH sessions
 - Manage SSH port forwarding definitions from the Port Forwarding card
 - Run saved commands as Quick Tasks from the Server View
 - Use manual refresh or optional auto refresh intervals while the Server View is open
 - Refresh automatically when Sudo Mode is enabled or disabled while the Server View is active
 
-Server View is available for SSH/SFTP connections. FTP/FTPS connections can browse and transfer files, but they cannot run remote shell commands required by Server View.
+Server View is available for Linux/Unix/AIX SSH/SFTP connections and Windows OpenSSH sessions. Windows Server View uses PowerShell to collect system information, memory, disks, services, processes, Scheduled Tasks, listeners, and session details. Sudo Mode remains unavailable on Windows; Windows Server View uses the permissions of the connected SSH user.
 
 ## Remote Search
 
@@ -127,7 +130,7 @@ Use Remote Search from the Webview toolbar to find remote files without leaving 
 - Include or exclude subdirectories
 - Include or exclude hidden files
 - Use case-sensitive matching when needed
-- Search inside files on SSH/SFTP connections
+- Search inside files on SSH/SFTP connections, including Windows OpenSSH sessions
 - Use sudo for protected SSH/SFTP paths when Sudo Mode is available
 - View live results while the search is running
 - Keep searches running after closing the modal and track active searches with the toolbar badge
@@ -135,11 +138,11 @@ Use Remote Search from the Webview toolbar to find remote files without leaving 
 - Copy all results, selected paths, or selected filenames
 - Open result files in edit or read-only mode
 
-FTP and FTPS connections support file name search. Content search and sudo search require SSH/SFTP.
+FTP and FTPS connections support file name search. Content search requires SSH/SFTP. Sudo search is available only on SSH/SFTP sessions that support Sudo Mode.
 
 ## Run Remote Command
 
-Run non-interactive commands on active SSH/SFTP connections without leaving the Webview.
+Run non-interactive commands on active SSH/SFTP connections without leaving the Webview. Windows OpenSSH sessions run command features through PowerShell.
 
 ![Run Remote Command](images/remoteedit-run-remote-command.png)
 
@@ -165,7 +168,7 @@ Use Log Viewer from an active SSH/SFTP connection to monitor remote logs without
 
 - Open logs from the Webview toolbar, file context menu, or Primary Sidebar context menu
 - Tail and follow remote log files in real time
-- Use Linux/Unix/AIX-friendly `tail` fallbacks
+- Use Linux/Unix/AIX-friendly `tail` fallbacks and Windows PowerShell `Get-Content -Wait` for Windows OpenSSH sessions
 - Keep multiple logs open in tabs
 - Pause and resume displayed updates with bounded buffering
 - Search loaded log content, jump between matches, or show matching lines only
@@ -176,7 +179,7 @@ Use Log Viewer from an active SSH/SFTP connection to monitor remote logs without
 - Optional line wrap and line numbers
 - Uses Sudo Mode when the active SSH/SFTP connection has sudo enabled
 
-Log Viewer is intentionally limited to SSH/SFTP connections because FTP/FTPS cannot run remote `tail -f` commands. The viewer shows continuity markers when output is limited, portable tail mode is used, or older buffered lines are discarded.
+Log Viewer is intentionally limited to SSH/SFTP connections because FTP/FTPS cannot run remote follow commands. The viewer shows continuity markers when output is limited, portable tail mode is used, or older buffered lines are discarded.
 
 ## Transfer Queue
 
@@ -228,7 +231,7 @@ Sudo passwords are never stored and are only kept in memory during the active se
 
 ## Remote Path Breadcrumb Picker
 
-The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping to sibling directories. The directory picker can show owner/group and permission details in aligned columns. Its permission value follows the Webview permission display setting, so it can show symbolic, numeric, or combined permissions when the remote server provides compatible permission data.
+The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping to sibling directories. The directory picker can show owner/group and permission details in aligned columns for POSIX-compatible SSH/SFTP sessions. Its permission value follows the Webview permission display setting, so it can show symbolic, numeric, or combined permissions when the remote server provides compatible permission data. Windows OpenSSH sessions hide POSIX owner/group/permission metadata because NTFS ACLs do not map reliably to SFTP POSIX fields.
 
 Use this setting to hide those details when you prefer a simpler directory list:
 
@@ -240,7 +243,7 @@ Default: `true`
 
 ## Permission Display
 
-The Webview file list and Remote Path directory picker can show permissions in symbolic, numeric, or combined format. Numeric permissions use 4-digit octal values so special bits are visible when present.
+The Webview file list and Remote Path directory picker can show POSIX permissions in symbolic, numeric, or combined format. Numeric permissions use 4-digit octal values so special bits are visible when present. Windows OpenSSH sessions hide POSIX permission columns and ignore this display setting.
 
 ```json
 "remoteedit.webview.fileList.permissionsDisplay": "symbolic"
@@ -250,7 +253,7 @@ Supported values: `symbolic`, `numeric`, `both`
 
 Default: `symbolic`
 
-File and directory Properties and Sidebar hover details always show the complete symbolic plus 4-digit octal value when symbolic permissions are available. The Remote Path directory picker follows the Webview permission display setting.
+File and directory Properties and Sidebar hover details show the complete symbolic plus 4-digit octal value when symbolic permissions are available on POSIX-compatible sessions. Windows OpenSSH sessions hide POSIX owner/group/permission metadata in file lists, properties, breadcrumbs, and Sidebar details.
 
 ## File Operations
 
@@ -330,7 +333,7 @@ Open Remote Edit from:
 
 The Primary Sidebar provides quick access to the main Remote Edit Webview, Log Viewer, saved connections, Quick Connect, open remote sessions, favorites, transfers, and import/export backups.
 
-The Log Viewer item appears below `Remote Edit (Advanced View)` and is enabled only when there is an active SSH/SFTP connection.
+The Log Viewer item appears below `Remote Edit (Advanced View)` and is enabled when there is an active SSH/SFTP connection, including Windows OpenSSH sessions.
 
 ## Multiple Active Connections
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.6] - 2026-07-05
+
+### Fixed
+
+* Fixed VS Code Runtime Status warnings for internal Sidebar focus commands.
+
 ## [1.8.5] - 2026-07-04
 
 ### Added

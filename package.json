@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, transfer, and search remote files over SSH/SFTP, FTP, and FTPS, with SSH server tools.",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -419,6 +419,31 @@
         "command": "remoteedit.sidebar.discardConnectionChanges",
         "title": "Discard Connection Changes",
         "icon": "$(discard)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "workbench.view.extension.remoteedit",
+        "title": "Focus Remote Edit View",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.actionsView.focus",
+        "title": "Focus Actions View",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.connectionsView.focus",
+        "title": "Focus Connections View",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.openConnectionsView.focus",
+        "title": "Focus Open Connections View",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.transfersView.focus",
+        "title": "Focus Transfers View",
         "category": "Remote Edit"
       }
     ],

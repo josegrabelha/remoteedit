@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.7] - 2026-07-07
+
+### Fixed
+
+* Fixed Webview drag-and-drop upload so multi-selected local files from the OS are all collected when VS Code provides incomplete drag item metadata.
+* Fixed Webview drag-and-drop list highlighting while Sudo Mode is enabled, keeping the privileged-session red border while showing the blue drop shadow.
+
 ## [1.8.6] - 2026-07-05
 
 ### Fixed

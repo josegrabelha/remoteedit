@@ -88,11 +88,58 @@ export function renderDragDropUpload(): string {
     });
   }
 
+  function areSameDroppedUploadItems(left, right) {
+    if (!left || !right) return false;
+    if (left.kind !== right.kind) return false;
+
+    const leftRelativePath = normalizeDroppedRelativePath(left.relativePath);
+    const rightRelativePath = normalizeDroppedRelativePath(right.relativePath);
+
+    if (leftRelativePath !== rightRelativePath) return false;
+
+    const leftLocalPath = String(left.localPath || '').trim();
+    const rightLocalPath = String(right.localPath || '').trim();
+
+    if (leftLocalPath && rightLocalPath) {
+      return leftLocalPath === rightLocalPath;
+    }
+
+    return Number(left.size || 0) === Number(right.size || 0);
+  }
+
+  function addDroppedUploadItem(result, item) {
+    if (!item || !item.relativePath) return;
+
+    if (result.items.some(existing => areSameDroppedUploadItems(existing, item))) {
+      return;
+    }
+
+    result.items.push(item);
+  }
+
+  function addDroppedUploadFile(result, file) {
+    const localPath = getDroppedFileLocalPath(file);
+    const localPathName = localPath.split(String.fromCharCode(92)).join('/').split('/').pop();
+    const relativePath = normalizeDroppedRelativePath(file && (file.webkitRelativePath || file.name) || localPathName);
+
+    if (!relativePath) {
+      return;
+    }
+
+    addDroppedUploadItem(result, {
+      kind: 'file',
+      file: file,
+      localPath: localPath || '',
+      relativePath: relativePath,
+      size: Number(file && file.size || 0)
+    });
+  }
+
   async function collectDroppedEntry(entry, relativeRoot, result) {
     const relativePath = normalizeDroppedRelativePath(relativeRoot ? relativeRoot + '/' + entry.name : entry.name);
 
     if (entry.isDirectory) {
-      result.items.push({ kind: 'directory', relativePath: relativePath });
+      addDroppedUploadItem(result, { kind: 'directory', relativePath: relativePath, size: 0 });
       const children = await readDroppedDirectoryEntries(entry);
 
       for (const child of children) {
@@ -109,7 +156,7 @@ export function renderDragDropUpload(): string {
     const file = await readDroppedFileEntry(entry);
     const localPath = getDroppedFileLocalPath(file);
 
-    result.items.push({
+    addDroppedUploadItem(result, {
       kind: 'file',
       file: file,
       localPath: localPath || '',
@@ -121,6 +168,7 @@ export function renderDragDropUpload(): string {
   async function collectDroppedFiles(dataTransfer) {
     const result = { items: [] };
     const transferItems = Array.from(dataTransfer && dataTransfer.items || []);
+    const transferFiles = Array.from(dataTransfer && dataTransfer.files || []);
     const supportsEntries = transferItems.some(item => typeof item.webkitGetAsEntry === 'function');
 
     if (supportsEntries) {
@@ -131,23 +179,10 @@ export function renderDragDropUpload(): string {
           await collectDroppedEntry(entry, '', result);
         }
       }
-      return result;
     }
 
-    for (const file of Array.from(dataTransfer && dataTransfer.files || [])) {
-      const localPath = getDroppedFileLocalPath(file);
-      const localPathName = localPath.split(String.fromCharCode(92)).join('/').split('/').pop();
-      const relativePath = normalizeDroppedRelativePath(file.webkitRelativePath || file.name || localPathName);
-
-      if (relativePath) {
-        result.items.push({
-          kind: 'file',
-          file: file,
-          localPath: localPath || '',
-          relativePath: relativePath,
-          size: Number(file.size || 0)
-        });
-      }
+    for (const file of transferFiles) {
+      addDroppedUploadFile(result, file);
     }
 
     return result;

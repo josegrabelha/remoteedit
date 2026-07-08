@@ -36,6 +36,8 @@ export function renderFileBrowser(): string {
 
   function listDirectory(path, options = {}) {
     if (!activeConnectionId || busy) return;
+    saveActiveFileListSnapshot();
+    if (options.forceRefresh) markFileListSnapshotStale(activeConnectionId);
     setBusy(true, 'Loading ' + path + '...');
     vscode.postMessage({ type: 'listDirectory', payload: { path, forceRefresh: Boolean(options.forceRefresh) } });
   }
@@ -236,6 +238,124 @@ export function renderFileBrowser(): string {
   function scrollEntriesToTop() {
     entriesTableWrap.scrollTop = 0;
     entriesTableWrap.scrollLeft = 0;
+  }
+
+  function cloneFileListEntries(entries) {
+    return Array.isArray(entries) ? entries.map(entry => Object.assign({}, entry || {})) : [];
+  }
+
+  function getFileListSnapshot(connectionId) {
+    const id = String(connectionId || '').trim();
+    return id ? fileListSnapshotsByConnectionId.get(id) : undefined;
+  }
+
+  function saveFileListSnapshot(connectionId, options = {}) {
+    const id = String(connectionId || activeConnectionId || '').trim();
+    if (!id) return;
+    const path = normalizeUiRemotePath((currentPath && currentPath.value) || '/');
+    const existing = fileListSnapshotsByConnectionId.get(id) || {};
+    fileListSnapshotsByConnectionId.set(id, {
+      path,
+      entries: cloneFileListEntries(currentEntries),
+      filterText,
+      filterInputValue: filterInput ? String(filterInput.value || '') : filterText,
+      currentSort: Object.assign({}, currentSort || { key: '', direction: '' }),
+      selectedEntryPath,
+      selectedEntryPaths: Array.from(selectedEntryPaths || []),
+      selectionAnchorPath,
+      scrollTop: entriesTableWrap ? Number(entriesTableWrap.scrollTop || 0) : 0,
+      scrollLeft: entriesTableWrap ? Number(entriesTableWrap.scrollLeft || 0) : 0,
+      stale: Object.prototype.hasOwnProperty.call(options, 'stale') ? Boolean(options.stale) : Boolean(existing.stale),
+      loaded: Object.prototype.hasOwnProperty.call(options, 'loaded') ? Boolean(options.loaded) : Boolean(existing.loaded),
+      updatedAt: Date.now()
+    });
+  }
+
+  function saveDirectoryPayloadSnapshot(connectionId, path, entries, options = {}) {
+    const id = String(connectionId || '').trim();
+    if (!id) return;
+    const existing = fileListSnapshotsByConnectionId.get(id) || {};
+    fileListSnapshotsByConnectionId.set(id, {
+      path: normalizeUiRemotePath(path || '/'),
+      entries: cloneFileListEntries(entries),
+      filterText: String(existing.filterText || ''),
+      filterInputValue: String(existing.filterInputValue || existing.filterText || ''),
+      currentSort: Object.assign({ key: '', direction: '' }, existing.currentSort || {}),
+      selectedEntryPath: '',
+      selectedEntryPaths: [],
+      selectionAnchorPath: '',
+      scrollTop: 0,
+      scrollLeft: 0,
+      stale: Object.prototype.hasOwnProperty.call(options, 'stale') ? Boolean(options.stale) : false,
+      loaded: true,
+      updatedAt: Date.now()
+    });
+  }
+
+  function saveActiveFileListSnapshot(options = {}) {
+    saveFileListSnapshot(activeConnectionId, options);
+  }
+
+  function markFileListSnapshotStale(connectionId) {
+    const id = String(connectionId || activeConnectionId || '').trim();
+    if (!id) return;
+    const existing = fileListSnapshotsByConnectionId.get(id);
+    if (existing) {
+      existing.stale = true;
+      existing.updatedAt = Date.now();
+      fileListSnapshotsByConnectionId.set(id, existing);
+      return;
+    }
+    saveFileListSnapshot(id, { stale: true });
+  }
+
+  function invalidateFileListSnapshot(connectionId) {
+    const id = String(connectionId || '').trim();
+    if (id) fileListSnapshotsByConnectionId.delete(id);
+  }
+
+  function pruneFileListSnapshotsForSessions() {
+    const activeIds = new Set(sessions.map(session => session.id).filter(Boolean));
+    for (const id of Array.from(fileListSnapshotsByConnectionId.keys())) {
+      if (!activeIds.has(id)) fileListSnapshotsByConnectionId.delete(id);
+    }
+  }
+
+  function restoreFileListSnapshotForConnection(connectionId, options = {}) {
+    const id = String(connectionId || '').trim();
+    const snapshot = getFileListSnapshot(id);
+    if (!snapshot || !snapshot.loaded || !Array.isArray(snapshot.entries)) return false;
+
+    currentEntries = cloneFileListEntries(snapshot.entries);
+    currentPath.value = normalizeUiRemotePath(snapshot.path || '/');
+    filterText = String(snapshot.filterText || '');
+    if (filterInput) filterInput.value = String(snapshot.filterInputValue || snapshot.filterText || '');
+    updateFilterClearButton();
+    currentSort = Object.assign({ key: '', direction: '' }, snapshot.currentSort || {});
+    selectedEntryPath = String(snapshot.selectedEntryPath || '');
+    selectedEntryPaths = new Set(Array.isArray(snapshot.selectedEntryPaths) ? snapshot.selectedEntryPaths : []);
+    selectionAnchorPath = String(snapshot.selectionAnchorPath || '');
+    hideContextMenu();
+    renderEntries(getVisibleEntries());
+    if (entriesTableWrap) {
+      const scrollTop = Number(snapshot.scrollTop || 0);
+      const scrollLeft = Number(snapshot.scrollLeft || 0);
+      window.requestAnimationFrame(() => {
+        entriesTableWrap.scrollTop = scrollTop;
+        entriesTableWrap.scrollLeft = scrollLeft;
+      });
+    }
+    updateActiveSessionPath(currentPath.value || '/');
+    updateConnectionViewUi();
+    updatePathFavoriteControls();
+    if (pathFavoritesOpen) renderPathFavoritesPopover();
+    setFilesLoadedStatusForConnection(id, currentEntries);
+    if (options.updateStatus !== false) restoreFilesStatusForActiveConnection();
+    return !snapshot.stale;
+  }
+
+  function invalidateActiveFileListSnapshotForMutation() {
+    markFileListSnapshotStale(activeConnectionId);
   }
 
   function renderEntries(entries) {

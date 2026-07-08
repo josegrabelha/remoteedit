@@ -271,6 +271,7 @@ export function renderOwnerGroupProperties(): string {
 
     const entries = ownerGroupEntries.slice();
     hideOwnerGroupDialog();
+    invalidateActiveFileListSnapshotForMutation();
     vscode.postMessage({
       type: 'requestChangeOwnerGroup',
       payload: {

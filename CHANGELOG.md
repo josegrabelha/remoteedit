@@ -2,10 +2,18 @@
 
 ## [1.8.7] - 2026-07-07
 
+### Improved
+
+* Improved Webview connection switching so already loaded file lists are restored immediately per connection, including directory listings completed while the connection tab is not focused.
+* Improved SFTP directory listing cache handling so Sudo Mode uses a separate cache scope instead of disabling directory caching entirely.
+
 ### Fixed
 
 * Fixed Webview drag-and-drop upload so multi-selected local files from the OS are all collected when VS Code provides incomplete drag item metadata.
 * Fixed Webview drag-and-drop list highlighting while Sudo Mode is enabled, keeping the privileged-session red border while showing the blue drop shadow.
+* Fixed stale or provisional directory listing states so empty snapshots and out-of-focus listing responses are not incorrectly discarded or treated as valid loaded results.
+* Fixed directory listing cache invalidation so normal and sudo directory caches are cleared together after remote write operations.
+
 
 ## [1.8.6] - 2026-07-05
 

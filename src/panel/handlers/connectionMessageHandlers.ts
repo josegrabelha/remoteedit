@@ -58,7 +58,7 @@ export async function tryHandleConnectionMessage(
       await handlers.disconnect(String(message.payload?.connectionId || handlers.getActiveConnectionId() || ''));
       return true;
     case RemoteEditIncomingMessageType.SwitchSession:
-      await handlers.switchSession(String(message.payload?.connectionId || ''));
+      await handlers.switchSession(String(message.payload?.connectionId || ''), { skipDirectoryReload: Boolean(message.payload?.skipDirectoryReload) });
       return true;
     case RemoteEditIncomingMessageType.ReorderSessions:
       handlers.reorderSessions(message.payload);

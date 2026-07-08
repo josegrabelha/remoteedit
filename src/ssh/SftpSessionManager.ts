@@ -426,8 +426,9 @@ export class SftpSessionManager implements RemoteSessionManager {
     const normalizedPath = this.normalizeRemotePathForConnection(connectionId, remotePath);
     const totalTimer = createPerformanceTimer();
     const cacheTtlSeconds = getNumberSetting('directoryListingCacheTtl', 30, 0, 300);
-    const cacheEnabled = cacheTtlSeconds > 0 && !this.isSudoModeEnabled(connectionId);
-    const cacheKey = this.buildDirectoryListingCacheKey(connectionId, normalizedPath);
+    const cacheEnabled = cacheTtlSeconds > 0;
+    const cacheScope = this.getDirectoryListingCacheScope(connectionId);
+    const cacheKey = this.buildDirectoryListingCacheKey(connectionId, normalizedPath, cacheScope);
     let listMs = 0;
     let ownerGroupMs = 0;
     let mapMs = 0;
@@ -439,6 +440,7 @@ export class SftpSessionManager implements RemoteSessionManager {
         const cachedEntries = cloneRemoteEntries(cached.entries);
         appendPerformanceLog(this.output, 'SFTP', `listDirectory ${normalizedPath}`, {
           cache: 'hit',
+          privilege: cacheScope,
           items: cachedEntries.length,
           total: `${totalTimer()}ms`
         });
@@ -492,6 +494,7 @@ export class SftpSessionManager implements RemoteSessionManager {
 
       appendPerformanceLog(this.output, 'SFTP', `listDirectory ${normalizedPath}`, {
         cache: cacheState,
+        privilege: cacheScope,
         items: sortedEntries.length,
         list: `${listMs}ms`,
         ownerGroup: `${ownerGroupMs}ms`,
@@ -505,6 +508,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       if (!this.isSudoModeEnabled(connectionId)) {
         appendPerformanceLog(this.output, 'SFTP', `listDirectory failed ${normalizedPath}`, {
           cache: cacheState,
+          privilege: cacheScope,
           list: `${listMs}ms`,
           ownerGroup: `${ownerGroupMs}ms`,
           map: `${mapMs}ms`,
@@ -531,8 +535,16 @@ export class SftpSessionManager implements RemoteSessionManager {
     const sortedSudoEntries = sortRemoteEntries(sudoEntries);
     sortMs = sudoSortTimer();
 
+    if (cacheEnabled) {
+      this.directoryListingCache.set(cacheKey, {
+        entries: cloneRemoteEntries(sortedSudoEntries),
+        expiresAt: Date.now() + cacheTtlSeconds * 1000
+      });
+    }
+
     appendPerformanceLog(this.output, 'SFTP', `sudoListDirectory ${normalizedPath}`, {
-      cache: 'disabled',
+      cache: cacheEnabled ? (options.forceRefresh ? 'refresh' : 'miss') : 'disabled',
+      privilege: cacheScope,
       items: sortedSudoEntries.length,
       list: `${sudoListMs}ms`,
       map: `${mapMs}ms`,
@@ -540,7 +552,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       total: `${totalTimer()}ms`
     });
 
-    return sortedSudoEntries;
+    return cloneRemoteEntries(sortedSudoEntries);
   }
 
   async prepareFileForOpen(connectionId: string, remotePath: string, cancellationToken?: ConnectionCancellationToken, progress?: RemoteEditProgressReporter): Promise<void> {
@@ -1228,25 +1240,34 @@ ${result.stdout.toString('utf8')}`.trim();
 
   disableSudoMode(connectionId: string): void {
     this.sudoPasswords.delete(connectionId);
-    this.clearReadFileCache(connectionId);
+    this.clearReadFileContentCache(connectionId);
   }
 
   isSudoModeEnabled(connectionId: string): boolean {
     return this.sudoPasswords.has(connectionId);
   }
 
-  private buildDirectoryListingCacheKey(connectionId: string, remotePath: string): string {
-    return `${connectionId}:${normalizeRemotePath(remotePath)}`;
+  private getDirectoryListingCacheScope(connectionId: string): 'normal' | 'sudo' {
+    return this.isSudoModeEnabled(connectionId) ? 'sudo' : 'normal';
+  }
+
+  private buildDirectoryListingCacheKey(connectionId: string, remotePath: string, scope: 'normal' | 'sudo' = 'normal'): string {
+    return `${connectionId}:${scope}:${normalizeRemotePath(remotePath)}`;
   }
 
   private clearDirectoryListingCache(connectionId: string, remotePath?: string): void {
     if (remotePath) {
-      const key = this.buildDirectoryListingCacheKey(connectionId, remotePath);
-      const deleted = this.directoryListingCache.delete(key);
-      if (deleted) {
+      const normalizedPath = normalizeRemotePath(remotePath);
+      let deletedCount = 0;
+      for (const scope of ['normal', 'sudo'] as const) {
+        const key = this.buildDirectoryListingCacheKey(connectionId, normalizedPath, scope);
+        if (this.directoryListingCache.delete(key)) deletedCount += 1;
+      }
+      if (deletedCount > 0) {
         appendDebugLog(this.output, 'Cache', 'invalidated directory listing', {
           connection: connectionId,
-          path: normalizeRemotePath(remotePath)
+          path: normalizedPath,
+          entries: deletedCount
         });
       }
       return;
@@ -1279,10 +1300,9 @@ ${result.stdout.toString('utf8')}`.trim();
     return `${connectionId}:${normalizeRemotePath(remotePath)}`;
   }
 
-  private clearReadFileCache(connectionId: string, remotePath?: string): void {
+  private clearReadFileContentCache(connectionId: string, remotePath?: string): void {
     if (remotePath) {
       this.readFileCache.delete(this.buildReadFileCacheKey(connectionId, remotePath));
-      this.invalidateDirectoryListingForPath(connectionId, remotePath);
       return;
     }
 
@@ -1291,6 +1311,14 @@ ${result.stdout.toString('utf8')}`.trim();
       if (key.startsWith(prefix)) {
         this.readFileCache.delete(key);
       }
+    }
+  }
+
+  private clearReadFileCache(connectionId: string, remotePath?: string): void {
+    this.clearReadFileContentCache(connectionId, remotePath);
+    if (remotePath) {
+      this.invalidateDirectoryListingForPath(connectionId, remotePath);
+      return;
     }
     this.clearDirectoryListingCache(connectionId);
   }

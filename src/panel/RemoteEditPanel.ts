@@ -90,7 +90,7 @@ export class RemoteEditPanel {
   private readonly activeConnectionCancellationSources = new Map<string, vscode.CancellationTokenSource>();
   private readonly pendingConnectionOptions = new Map<string, ConnectOptions>();
   private readonly disconnectingConnectionIds = new Set<string>();
-  private directoryListRequestSequence = 0;
+  private readonly directoryListRequestSequences = new Map<string, number>();
   private readonly activeRemoteCommands = new Map<string, ActiveRemoteCommandState>();
   private pendingPermissionsDialogResolve: ((result?: SetPermissionsDialogResult) => void) | undefined;
   private readonly dialogManager: RemoteEditDialogManager;
@@ -661,7 +661,7 @@ export class RemoteEditPanel {
         connect: payload => this.connect(payload),
         cancelConnection: () => this.cancelConnection(),
         disconnect: connectionId => this.disconnect(connectionId),
-        switchSession: connectionId => this.switchSession(connectionId),
+        switchSession: (connectionId, options) => this.switchSession(connectionId, options),
         reorderSessions: payload => this.reorderSessions(payload),
         enableSudoMode: () => this.enableSudoMode(),
         disableSudoMode: connectionId => this.disableSudoMode(connectionId),
@@ -817,7 +817,7 @@ export class RemoteEditPanel {
 
     this.cancelActiveTransfersForConnection(connectionId);
 
-    this.invalidateDirectoryListRequests();
+    this.invalidateDirectoryListRequests(connectionId);
     this.clearQueuedTransfersForConnection(connectionId);
     remoteClipboardService.clearForConnection(connectionId);
     this.state.deleteConnectionPath(connectionId);
@@ -1411,10 +1411,11 @@ export class RemoteEditPanel {
       this.setActiveConnection(connection.id);
       this.updatePanelTitle();
       this.sendSessions();
-      await this.listDirectory(connection.startPath);
+      await this.listDirectoryForConnection(connection.id, connection.startPath);
     } else {
       this.updatePanelTitle();
       this.sendSessions();
+      await this.listDirectoryForConnection(connection.id, connection.startPath);
     }
 
     this.logInfo('Connected to remote host.', { Connection: connection.id, Target: target, StartPath: connection.startPath });
@@ -1455,7 +1456,7 @@ export class RemoteEditPanel {
 
     this.cancelActiveTransfersForConnection(connectionId);
 
-    this.invalidateDirectoryListRequests();
+    this.invalidateDirectoryListRequests(connectionId);
     this.postBusy(true, 'Disconnecting...', false, undefined, connectionId);
     this.disconnectingConnectionIds.add(connectionId);
     try {
@@ -1491,7 +1492,7 @@ export class RemoteEditPanel {
     this.logInfo('Disconnected from remote host.', { Connection: connectionId });
   }
 
-  private async switchSession(connectionId: string): Promise<void> {
+  private async switchSession(connectionId: string, options: { skipDirectoryReload?: boolean } = {}): Promise<void> {
     if (!connectionId || !this.sessions.hasConnection(connectionId)) {
       throw new Error('The selected Remote Edit connection is not connected.');
     }
@@ -1500,7 +1501,9 @@ export class RemoteEditPanel {
     this.updatePanelTitle();
     this.sendSessions();
     this.postRemoteSearchState(connectionId);
-    await this.listDirectory(this.getActivePath());
+    if (!options.skipDirectoryReload) {
+      await this.listDirectory(this.getActivePath());
+    }
   }
 
   private async revealConnection(connectionId: string): Promise<void> {
@@ -1698,9 +1701,16 @@ export class RemoteEditPanel {
   }
 
   private async listDirectory(remotePath: string, options: { forceRefresh?: boolean } = {}): Promise<void> {
-    const connectionId = this.requireActiveConnectionId();
+    await this.listDirectoryForConnection(this.requireActiveConnectionId(), remotePath, options);
+  }
+
+  private async listDirectoryForConnection(connectionId: string, remotePath: string, options: { forceRefresh?: boolean } = {}): Promise<void> {
+    if (!connectionId || !this.sessions.hasConnection(connectionId)) {
+      throw new Error('The selected Remote Edit connection is not connected.');
+    }
+
     const normalizedPath = normalizeRemotePath(remotePath);
-    const requestSequence = ++this.directoryListRequestSequence;
+    const requestSequence = this.nextDirectoryListRequestSequence(connectionId);
 
     this.postBusy(true, `Loading ${normalizedPath}...`, false, undefined, connectionId);
 
@@ -1782,13 +1792,27 @@ export class RemoteEditPanel {
     });
   }
 
-  private invalidateDirectoryListRequests(): void {
-    this.directoryListRequestSequence += 1;
+  private nextDirectoryListRequestSequence(connectionId: string): number {
+    const normalizedConnectionId = String(connectionId || '').trim();
+    const nextSequence = (this.directoryListRequestSequences.get(normalizedConnectionId) || 0) + 1;
+    this.directoryListRequestSequences.set(normalizedConnectionId, nextSequence);
+    return nextSequence;
+  }
+
+  private invalidateDirectoryListRequests(connectionId?: string): void {
+    const normalizedConnectionId = String(connectionId || '').trim();
+    if (normalizedConnectionId) {
+      this.nextDirectoryListRequestSequence(normalizedConnectionId);
+      return;
+    }
+
+    for (const connection of this.sessions.listConnections()) {
+      this.nextDirectoryListRequestSequence(connection.id);
+    }
   }
 
   private isStaleDirectoryListRequest(requestSequence: number, connectionId: string): boolean {
-    return requestSequence !== this.directoryListRequestSequence
-      || this.state.getActiveConnectionId() !== connectionId
+    return requestSequence !== (this.directoryListRequestSequences.get(connectionId) || 0)
       || !this.sessions.hasConnection(connectionId);
   }
 

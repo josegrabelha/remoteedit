@@ -130,6 +130,8 @@ export function renderEventBindings(): string {
         pruneConnectionViewState();
         pruneNavigationHistoryForSessions();
         const previousActiveConnectionId = activeConnectionId;
+        if (previousActiveConnectionId && activeSessionIds.has(previousActiveConnectionId)) saveActiveFileListSnapshot();
+        pruneFileListSnapshotsForSessions();
         if (previousActiveConnectionId && remoteSearchDialogOpen) saveRemoteSearchFormForConnection(previousActiveConnectionId);
         activeConnectionId = payload.activeConnectionId || '';
         connectionButtonState = '';
@@ -138,6 +140,18 @@ export function renderEventBindings(): string {
         updateActiveSessionUi();
         if (activeConnectionId !== previousActiveConnectionId) restoreFilesStatusForActiveConnection();
         updateConnectionViewUi();
+        if (activeConnectionId && activeConnectionId !== previousActiveConnectionId) {
+          const restoredFileList = restoreFileListSnapshotForConnection(activeConnectionId, { updateStatus: false });
+          if (!restoredFileList) {
+            currentEntries = [];
+            selectedEntryPath = '';
+            selectedEntryPaths.clear();
+            selectionAnchorPath = '';
+            hideContextMenu();
+            entriesRenderGeneration += 1;
+            renderEntriesEmptyMessage(isSessionConnected(getActiveSession()) ? 'Loading remote files...' : 'Connecting...');
+          }
+        }
         initializeNavigationHistoryForActiveSession();
         const keepProfileDropdownOpenAfterSessionChange = profileDropdownOpen;
         if (activeConnectionId && activeConnectionId !== previousActiveConnectionId) {
@@ -172,6 +186,7 @@ export function renderEventBindings(): string {
         if (session) {
           session.sudoModeEnabled = Boolean(payload.enabled);
         }
+        markFileListSnapshotStale(targetConnectionId);
         updateSudoToggle();
         updateConnectionViewUi();
         if (remoteCommandDialogOpen) renderRemoteCommandSession();
@@ -206,6 +221,7 @@ export function renderEventBindings(): string {
         activeConnectionId = '';
         connectionButtonState = '';
         lastSyncedActiveConnectionId = '';
+        fileListSnapshotsByConnectionId.clear();
         currentEntries = [];
         selectedEntryPath = '';
         clearFilterText();
@@ -240,16 +256,24 @@ export function renderEventBindings(): string {
         break;
       }
       case 'directoryListed': {
-        if (payload.connectionId && payload.connectionId !== activeConnectionId) return;
+        const listedConnectionId = String(payload.connectionId || activeConnectionId || '').trim();
+        const listedEntries = Array.isArray(payload.entries) ? payload.entries : [];
+        const nextPath = normalizeUiRemotePath(payload.path || '/');
+
+        if (listedConnectionId && listedConnectionId !== activeConnectionId) {
+          saveDirectoryPayloadSnapshot(listedConnectionId, nextPath, listedEntries, { stale: false });
+          setFilesLoadedStatusForConnection(listedConnectionId, listedEntries);
+          break;
+        }
+
         const activeSession = getActiveSession();
         const previousPath = normalizeUiRemotePath((activeSession && activeSession.currentPath) || currentPath.value || '/');
-        const nextPath = normalizeUiRemotePath(payload.path || '/');
         const directoryChanged = previousPath !== nextPath;
 
         currentPath.value = nextPath;
         exitRemotePathEditMode({ reset: false, keepFocus: true });
         hideRemotePathDropdown();
-        currentEntries = payload.entries || [];
+        currentEntries = listedEntries;
         selectedEntryPath = '';
         selectedEntryPaths.clear();
         selectionAnchorPath = '';
@@ -257,17 +281,19 @@ export function renderEventBindings(): string {
         hideContextMenu();
         renderEntries(getVisibleEntries());
         if (directoryChanged) scrollEntriesToTop();
-        setFilesLoadedStatusForConnection(payload.connectionId || activeConnectionId, currentEntries);
+        setFilesLoadedStatusForConnection(listedConnectionId || activeConnectionId, currentEntries);
         updateActiveSessionPath(nextPath);
         updateConnectionViewUi();
         recordNavigationHistory(nextPath, pendingNavigationHistoryMode);
         pendingNavigationHistoryMode = '';
         updatePathFavoriteControls();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
+        saveFileListSnapshot(listedConnectionId || activeConnectionId, { stale: false, loaded: true });
         break;
       }
       case 'directoryMetadataUpdated':
         handleDirectoryMetadataUpdated(payload);
+        saveActiveFileListSnapshot({ stale: false });
         break;
       case 'breadcrumbDirectoriesListed':
         handleBreadcrumbDirectoriesListed(payload);
@@ -1032,7 +1058,7 @@ export function renderEventBindings(): string {
     }
     showRemoteSearchResultContextMenu(path, kind, event.clientX, event.clientY);
   });
-  uploadButton.addEventListener('click', () => { if (activeConnectionId && canStartTransferAction()) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } }); });
+  uploadButton.addEventListener('click', () => { if (activeConnectionId && canStartTransferAction()) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestUploadEntries', payload: { path: currentPath.value || '/' } }); } });
   downloadButton.addEventListener('click', () => { const entries = getSelectedActionEntries(); if (entries.length && canStartTransferAction()) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } }); });
   transferQueueButton.addEventListener('click', showTransferQueueModal);
   transferQueueFooterCloseButton.addEventListener('click', hideTransferQueueModal);

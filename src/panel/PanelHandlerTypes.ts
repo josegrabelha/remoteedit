@@ -18,7 +18,7 @@ export interface RemoteEditPanelMessageHandlers {
   connect(payload: any): Promise<void>;
   cancelConnection(payload?: any): Promise<void>;
   disconnect(connectionId: string): Promise<void>;
-  switchSession(connectionId: string): Promise<void>;
+  switchSession(connectionId: string, options?: { skipDirectoryReload?: boolean }): Promise<void>;
   reorderSessions(payload: any): void;
   enableSudoMode(): Promise<void>;
   disableSudoMode(connectionId: string): void;

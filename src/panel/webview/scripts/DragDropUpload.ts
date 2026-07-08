@@ -281,6 +281,7 @@ export function renderDragDropUpload(): string {
         await sendDroppedUploadFileChunks(sessionId, fileItems[index], index + 1, fileItems.length);
       }
 
+      invalidateActiveFileListSnapshotForMutation();
       vscode.postMessage({ type: 'finishDroppedUploadEntries', payload: { sessionId: sessionId } });
       setStatus('Dropped upload added to the transfer queue.');
     } catch (error) {
@@ -374,6 +375,7 @@ export function renderDragDropUpload(): string {
 
     try {
       if (canUseDroppedUploadLocalPaths(dropped.items)) {
+        invalidateActiveFileListSnapshotForMutation();
         vscode.postMessage({
           type: 'requestDroppedUploadEntries',
           payload: {

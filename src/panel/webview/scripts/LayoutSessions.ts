@@ -1417,6 +1417,10 @@ export function renderLayoutSessions(): string {
     const session = sessions.find(item => item.id === sessionId);
     if (!session) return;
 
+    if (activeConnectionId && activeConnectionId !== sessionId) {
+      saveActiveFileListSnapshot();
+    }
+
     activeConnectionId = sessionId;
     renderSessionTabs();
     updateActiveSessionUi();
@@ -1425,8 +1429,13 @@ export function renderLayoutSessions(): string {
     setControls();
 
     if (isSessionConnected(session)) {
-      setBusy(true, 'Switching to ' + session.name + '...', '', 'Cancel', session.id);
-      vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id } });
+      const canUseSnapshot = restoreFileListSnapshotForConnection(session.id);
+      if (canUseSnapshot) {
+        setBusy(false, '', '', 'Cancel', session.id);
+      } else {
+        setBusy(true, 'Switching to ' + session.name + '...', '', 'Cancel', session.id);
+      }
+      vscode.postMessage({ type: 'switchSession', payload: { connectionId: session.id, skipDirectoryReload: canUseSnapshot } });
       return;
     }
 

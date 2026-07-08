@@ -470,17 +470,17 @@ export function renderTransferContextActions(): string {
 
   contextCreateFile.addEventListener('click', () => {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateFile', payload: { path: getContextWorkingDirectory() } });
+    if (activeConnectionId) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestCreateFile', payload: { path: getContextWorkingDirectory() } }); }
   });
 
   contextCreateDirectory.addEventListener('click', () => {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestCreateDirectory', payload: { path: getContextWorkingDirectory() } });
+    if (activeConnectionId) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestCreateDirectory', payload: { path: getContextWorkingDirectory() } }); }
   });
 
   function requestContextUpload() {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestUploadEntries', payload: { path: getContextWorkingDirectory() } });
+    if (activeConnectionId) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestUploadEntries', payload: { path: getContextWorkingDirectory() } }); }
   }
 
   contextUpload.addEventListener('click', requestContextUpload);
@@ -520,12 +520,12 @@ export function renderTransferContextActions(): string {
 
   if (contextPasteRemoteHere) contextPasteRemoteHere.addEventListener('click', () => {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestPasteRemoteEntries', payload: { targetDirectory: getCurrentContextDirectory() } });
+    if (activeConnectionId) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestPasteRemoteEntries', payload: { targetDirectory: getCurrentContextDirectory() } }); }
   });
 
   if (contextPasteRemote) contextPasteRemote.addEventListener('click', () => {
     hideContextMenu();
-    if (activeConnectionId) vscode.postMessage({ type: 'requestPasteRemoteEntries', payload: { targetDirectory: getContextWorkingDirectory() } });
+    if (activeConnectionId) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestPasteRemoteEntries', payload: { targetDirectory: getContextWorkingDirectory() } }); }
   });
 
   if (remoteSearchContextOpen) remoteSearchContextOpen.addEventListener('click', () => {
@@ -562,7 +562,7 @@ export function renderTransferContextActions(): string {
       const entries = getSelectedActionEntries();
       const format = button.dataset.archiveFormat || '';
       hideContextMenu();
-      if (entries.length && format && getActiveRemoteCapabilities().canCreateArchive) vscode.postMessage({ type: 'requestCompressArchive', payload: { format, entries: entries.map(actionPayload) } });
+      if (entries.length && format && getActiveRemoteCapabilities().canCreateArchive) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestCompressArchive', payload: { format, entries: entries.map(actionPayload) } }); }
     });
   }
 
@@ -777,7 +777,7 @@ export function renderTransferContextActions(): string {
   contextSetPermissions.addEventListener('click', () => {
     const entries = getSelectedActionEntries();
     hideContextMenu();
-    if (entries.length && getActiveRemoteCapabilities().canChangePermissions) vscode.postMessage({ type: 'requestSetPermissions', payload: { entries: entries.map(actionPayload) } });
+    if (entries.length && getActiveRemoteCapabilities().canChangePermissions) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestSetPermissions', payload: { entries: entries.map(actionPayload) } }); }
   });
 
   contextChangeOwnerGroup.addEventListener('click', () => {
@@ -975,19 +975,19 @@ export function renderTransferContextActions(): string {
   contextMakeCopy.addEventListener('click', () => {
     const entry = getSelectedActionEntry();
     hideContextMenu();
-    if (entry) vscode.postMessage({ type: 'requestMakeCopy', payload: actionPayload(entry) });
+    if (entry) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestMakeCopy', payload: actionPayload(entry) }); }
   });
 
   contextRename.addEventListener('click', () => {
     const entry = getSelectedActionEntry();
     hideContextMenu();
-    if (entry) vscode.postMessage({ type: 'requestRenameEntry', payload: actionPayload(entry) });
+    if (entry) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestRenameEntry', payload: actionPayload(entry) }); }
   });
 
   contextDelete.addEventListener('click', () => {
     const entries = getSelectedActionEntries();
     hideContextMenu();
-    if (entries.length) vscode.postMessage({ type: 'requestDeleteEntries', payload: { entries: entries.map(actionPayload) } });
+    if (entries.length) { invalidateActiveFileListSnapshotForMutation(); vscode.postMessage({ type: 'requestDeleteEntries', payload: { entries: entries.map(actionPayload) } }); }
   });
 
 

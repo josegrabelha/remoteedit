@@ -168,6 +168,7 @@ export function renderRemoteDragDropMove(): string {
       return;
     }
 
+    invalidateActiveFileListSnapshotForMutation();
     vscode.postMessage({
       type: 'requestMoveRemoteEntries',
       payload: {

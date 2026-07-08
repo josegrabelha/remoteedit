@@ -608,6 +608,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const activeConnectionViewsByConnectionId = new Map();
   let logViewerActiveSessionCount = 0;
   let currentEntries = [];
+  const fileListSnapshotsByConnectionId = new Map();
   let entriesRenderGeneration = 0;
   const ENTRY_RENDER_DIRECT_THRESHOLD = 500;
   const ENTRY_RENDER_CHUNK_SIZE = 300;

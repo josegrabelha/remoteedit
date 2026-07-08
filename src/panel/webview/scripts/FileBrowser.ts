@@ -711,7 +711,7 @@ export function renderFileBrowser(): string {
     const canChangePermissions = hasEntryActions && capabilities.canChangePermissions;
     const canChangeOwnerGroup = hasEntryActions && capabilities.canChangeOwnerGroup;
     const hasCurrentDirectoryActions = Boolean(activeConnectionId) && !hasEntryActions;
-    const canCreateInContext = hasCurrentDirectoryActions || isSingleDirectory;
+    const canCreateInContext = hasCurrentDirectoryActions || isSingleDirectory || isSingleFile;
     const canRefresh = Boolean(activeConnectionId);
     const canRunRemoteCommand = Boolean(activeConnectionId) && capabilities.canRunCommand;
     const canOpenSshTerminal = Boolean(activeConnectionId) && capabilities.canOpenSshTerminal;

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.8.7] - 2026-07-07
+## [1.8.7] - 2026-07-08
 
 ### Improved
 
@@ -9,6 +9,7 @@
 
 ### Fixed
 
+* Fixed Webview file-list context menu so Create New File and Create New Directory are also available from file rows, creating items in the file's parent directory when the list has no empty area.
 * Fixed Webview drag-and-drop upload so multi-selected local files from the OS are all collected when VS Code provides incomplete drag item metadata.
 * Fixed Webview drag-and-drop list highlighting while Sudo Mode is enabled, keeping the privileged-session red border while showing the blue drop shadow.
 * Fixed stale or provisional directory listing states so empty snapshots and out-of-focus listing responses are not incorrectly discarded or treated as valid loaded results.

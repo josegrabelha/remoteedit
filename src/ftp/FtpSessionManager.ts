@@ -157,6 +157,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         secure: connectionType === 'ftps',
         secureOptions
       });
+      await this.setBinaryTransferMode(client);
 
       throwIfOperationCancelled(cancellationToken);
 
@@ -203,6 +204,14 @@ export class FtpSessionManager implements RemoteSessionManager {
         timeoutMs: connectTimeoutMs,
         protocolLabel: connectionType
       });
+    }
+  }
+
+  private async setBinaryTransferMode(client: FtpClient): Promise<void> {
+    try {
+      await client.send('TYPE I');
+    } catch (error) {
+      throw new Error(`FTP/FTPS server did not accept binary transfer mode. Transfer aborted to avoid changing file content. ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -594,6 +603,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         secure: options.connectionType === 'ftps',
         secureOptions
       });
+      await this.setBinaryTransferMode(client);
 
       if (!this.isModifiedTimeLookupCurrent(connectionId, token)) {
         this.closeClient(client);
@@ -1109,7 +1119,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       });
 
       try {
-        await client.uploadFrom(Readable.from(buffer), normalizedPath);
+        await client.uploadFrom(Readable.from([buffer]), normalizedPath);
         throwIfOperationCancelled(cancellationToken);
         progress?.reportBytes('Saving remote file...', buffer.length, buffer.length);
         this.clearReadFileCache(connectionId, normalizedPath);
@@ -1345,7 +1355,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         throw new Error(`Remote path already exists: ${normalizedPath}`);
       }
 
-      await client.uploadFrom(Readable.from(Buffer.alloc(0)), normalizedPath);
+      await client.uploadFrom(Readable.from([Buffer.alloc(0)]), normalizedPath);
       this.clearReadFileCache(connectionId, normalizedPath);
     });
   }
@@ -1550,6 +1560,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         secure: options.connectionType === 'ftps',
         secureOptions
       });
+      await this.setBinaryTransferMode(client);
 
       this.sessions.set(connectionId, client);
       this.reconnectRequired.delete(connectionId);

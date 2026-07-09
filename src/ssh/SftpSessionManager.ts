@@ -2595,13 +2595,18 @@ ${result.stdout.toString('utf8')}`.trim();
           });
 
           stream.on('close', (code: number | undefined, signal: string | undefined) => {
-            const stdoutText = Buffer.concat(stdoutChunks).toString('utf8');
-            const stderrText = Buffer.concat(stderrChunks).toString('utf8');
-            const cleanStdoutText = options.sanitizePowerShellCliXml ? sanitizePowerShellCliXml(stdoutText) : stdoutText;
-            const cleanStderrText = options.sanitizePowerShellCliXml ? sanitizePowerShellCliXml(stderrText) : stderrText;
+            const stdoutBuffer = Buffer.concat(stdoutChunks);
+            const stderrBuffer = Buffer.concat(stderrChunks);
+            const stdout = options.sanitizePowerShellCliXml
+              ? Buffer.from(sanitizePowerShellCliXml(stdoutBuffer.toString('utf8')), 'utf8')
+              : stdoutBuffer;
+            const stderr = options.sanitizePowerShellCliXml
+              ? sanitizePowerShellCliXml(stderrBuffer.toString('utf8'))
+              : stderrBuffer.toString('utf8');
+
             settle(() => resolve({
-              stdout: Buffer.from(cleanStdoutText, 'utf8'),
-              stderr: cleanStderrText,
+              stdout,
+              stderr,
               code: typeof code === 'number' ? code : 0,
               signal
             }));

@@ -100,12 +100,14 @@ export class RemoteEditFileSystemProvider implements vscode.FileSystemProvider, 
   async writeFile(uri: vscode.Uri, content: Uint8Array, _options: { readonly create: boolean; readonly overwrite: boolean }): Promise<void> {
     this.assertWritable();
     const { connectionId, remotePath } = parseRemoteEditUri(uri);
+    const buffer = Buffer.from(content);
+
     await withRemoteEditProgress(
       'Saving remote file...',
-      async (_token, progress) => await this.sessions.writeFile(connectionId, remotePath, content, progress),
+      async (_token, progress) => await this.sessions.writeFile(connectionId, remotePath, buffer, progress),
       { cancellable: false }
     );
-    this.logInfo('Remote file saved.', { Connection: connectionId, Path: remotePath, Bytes: content.byteLength });
+    this.logInfo('Remote file saved.', { Connection: connectionId, Path: remotePath, Bytes: buffer.byteLength });
     this.fireChanged(uri, vscode.FileChangeType.Changed);
   }
 
@@ -345,3 +347,4 @@ function toVsCodeFileType(type: 'file' | 'directory' | 'link' | 'unknown'): vsco
       return vscode.FileType.Unknown;
   }
 }
+

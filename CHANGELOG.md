@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.8] - 2026-07-09
+
+### Fixed
+
+* Fixed SSH/SFTP Sudo Mode file reads to preserve binary output as raw bytes instead of decoding and re-encoding it as UTF-8, preventing files with embedded or mixed binary content from being altered.
+* Fixed FTP/FTPS transfers to explicitly use binary mode after connect and reconnect, avoiding automatic text/ASCII transformations.
+* Fixed FTP/FTPS uploads to stream explicit Buffer chunks for binary-safe file writes.
+* Preserved Remote Edit transfer and remote write paths as raw bytes without post-transfer text decoding or re-read verification overhead.
+
 ## [1.8.7] - 2026-07-08
 
 ### Improved
@@ -14,7 +23,6 @@
 * Fixed Webview drag-and-drop list highlighting while Sudo Mode is enabled, keeping the privileged-session red border while showing the blue drop shadow.
 * Fixed stale or provisional directory listing states so empty snapshots and out-of-focus listing responses are not incorrectly discarded or treated as valid loaded results.
 * Fixed directory listing cache invalidation so normal and sudo directory caches are cleared together after remote write operations.
-
 
 ## [1.8.6] - 2026-07-05
 

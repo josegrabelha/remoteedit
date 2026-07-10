@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, transfer, and search remote files over SSH/SFTP, FTP, and FTPS, with SSH server tools.",
-  "version": "1.8.8",
+  "version": "1.8.9",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -547,11 +547,25 @@
             "description": "Show detailed item information automatically when hovering files and folders in the Primary Sidebar.",
             "order": 10
           },
+          "remoteedit.sidebar.openConnections.pathView": {
+            "type": "string",
+            "default": "fullPathTree",
+            "enum": [
+              "compact",
+              "fullPathTree"
+            ],
+            "enumDescriptions": [
+              "Shows the current folder using the previous compact layout.",
+              "Shows the current remote path as a navigable folder tree from the root to the current directory."
+            ],
+            "description": "Controls how the current remote folder path is displayed in the Open Connections Sidebar.",
+            "order": 20
+          },
           "remoteedit.sidebar.showParentPath": {
             "type": "boolean",
             "default": true,
-            "description": "Show the parent path as secondary text for current root and favorite paths in the Primary Sidebar.",
-            "order": 20
+            "description": "Shows the parent path detail in the Sidebar compact path view. This setting does not apply when the Open Connections path view is set to Full Path Tree.",
+            "order": 30
           }
         }
       },

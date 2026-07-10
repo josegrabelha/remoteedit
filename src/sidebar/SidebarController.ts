@@ -152,7 +152,13 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       }
     }));
     this.disposables.push(vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('remoteedit.sidebar.showItemInfoOnHover')) {
+      if (event.affectsConfiguration('remoteedit.sidebar.openConnections.pathView')) {
+        this.refreshOpenConnectionsAndRevealStartPaths();
+        return;
+      }
+
+      if (event.affectsConfiguration('remoteedit.sidebar.showItemInfoOnHover')
+        || event.affectsConfiguration('remoteedit.sidebar.showParentPath')) {
         this.openConnectionsProvider.refresh();
       }
     }));
@@ -404,7 +410,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return getParentRemotePath(item.remotePath);
     }
 
-    if ((item.kind === 'favoritePath' || item.kind === 'filesGroup' || item.kind === 'remoteDirectory') && item.remotePath) {
+    if ((item.kind === 'favoritePath' || item.kind === 'filesGroup' || item.kind === 'pathSegment' || item.kind === 'remoteDirectory') && item.remotePath) {
       return normalizeRemotePath(item.remotePath);
     }
 
@@ -1352,7 +1358,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     let targetDirectory = '';
     if (item.kind === 'openConnection') {
       targetDirectory = this.openConnectionsProvider.getRootPathForConnection(item.connectionId) || '/';
-    } else if (item.kind === 'filesGroup' || item.kind === 'favoritePath' || item.kind === 'goParentFolder' || item.kind === 'remoteDirectory') {
+    } else if (item.kind === 'filesGroup' || item.kind === 'favoritePath' || item.kind === 'goParentFolder' || item.kind === 'pathSegment' || item.kind === 'remoteDirectory') {
       targetDirectory = item.remotePath || '';
     } else if (item.kind === 'remoteFile' || item.kind === 'remoteEntry') {
       const itemType = this.getRemoteItemType(item);
@@ -1766,6 +1772,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     } else if (item.kind === 'filesGroup'
       || item.kind === 'favoritePath'
       || item.kind === 'goParentFolder'
+      || item.kind === 'pathSegment'
       || item.kind === 'remoteDirectory') {
       targetDirectory = item.remotePath || '';
     } else if (item.kind === 'remoteEntry' && this.getRemoteItemType(item) === 'directory') {
@@ -1794,6 +1801,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     } else if (item.kind === 'filesGroup'
       || item.kind === 'favoritePath'
       || item.kind === 'goParentFolder'
+      || item.kind === 'pathSegment'
       || item.kind === 'remoteDirectory') {
       targetDirectory = item.remotePath || '';
     } else if (item.kind === 'remoteFile' || item.kind === 'remoteEntry') {
@@ -2077,7 +2085,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private getRemoteItemType(item: RemoteEditSidebarItem): string {
-    if (item.kind === 'remoteDirectory' || item.kind === 'filesGroup') {
+    if (item.kind === 'remoteDirectory' || item.kind === 'filesGroup' || item.kind === 'pathSegment') {
       return 'directory';
     }
 

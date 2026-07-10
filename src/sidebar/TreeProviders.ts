@@ -3,8 +3,8 @@ import { ConnectionManager, type ConnectionGroup, type ConnectionProfile } from 
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
-import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
-import { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './Items';
+import type { RemoteEntry, RemoteSessionManager } from '../remote/RemoteSessionManager';
+import { getConnectionDetailFields, getParentRemotePath, getSidebarOpenConnectionsPathView, isPathAncestorOrSelf, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './Items';
 import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 const COMMAND_OPEN = 'remoteedit.open';
@@ -347,6 +347,8 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   private readonly directoryListSequences = new Map<string, number>();
   private readonly directoryListChains = new Map<string, Promise<void>>();
   private readonly forceRefreshPaths = new Set<string>();
+  private readonly fullPathTreeTrailPaths = new Map<string, string>();
+  private readonly fullPathTreeDirectoryEntrySnapshots = new Map<string, RemoteEntry[]>();
 
   constructor(
     private readonly sessions: RemoteSessionManager,
@@ -359,9 +361,39 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   }
 
   getParent(element: RemoteEditSidebarItem): vscode.ProviderResult<RemoteEditSidebarItem> {
-    if (element.kind === 'favoritesGroup' || element.kind === 'filesGroup') {
+    if (element.kind === 'favoritesGroup') {
       const connection = element.connectionId ? this.sessions.getConnection(element.connectionId) : undefined;
       return connection ? RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) }) : undefined;
+    }
+
+    if (element.kind === 'filesGroup') {
+      const connection = element.connectionId ? this.sessions.getConnection(element.connectionId) : undefined;
+
+      if (!connection) {
+        return undefined;
+      }
+
+      const rootPath = this.getRootPath(connection);
+      const normalizedRootPath = normalizeRemotePath(rootPath);
+
+      if (this.isFullPathTreeView() && normalizedRootPath !== '/') {
+        return RemoteEditSidebarItem.pathSegment(connection, getParentRemotePath(normalizedRootPath));
+      }
+
+      return RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) });
+    }
+
+    if (element.kind === 'pathSegment' && element.connectionId && element.remotePath) {
+      const connection = this.sessions.getConnection(element.connectionId);
+
+      if (!connection) {
+        return undefined;
+      }
+
+      const normalizedPath = normalizeRemotePath(element.remotePath);
+      return normalizedPath === '/'
+        ? RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) })
+        : RemoteEditSidebarItem.pathSegment(connection, getParentRemotePath(normalizedPath));
     }
 
     if (element.kind === 'goParentFolder' && element.connectionId) {
@@ -409,14 +441,22 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const rootPath = this.getRootPath(connection);
       const favoriteRemotePaths = await this.getFavoriteRemotePaths(element.connectionId);
 
+      const pathItems = this.isFullPathTreeView()
+        ? this.getFullPathTreeRootItems(connection, rootPath, favoriteRemotePaths)
+        : [RemoteEditSidebarItem.filesGroup(connection, rootPath, { isFavorite: isFavoriteRemotePath(rootPath, favoriteRemotePaths) })];
+
       return [
         RemoteEditSidebarItem.favoritesGroup(connection),
-        RemoteEditSidebarItem.filesGroup(connection, rootPath, { isFavorite: isFavoriteRemotePath(rootPath, favoriteRemotePaths) })
+        ...pathItems
       ];
     }
 
     if (element.kind === 'favoritesGroup' && element.connectionId) {
       return this.getFavoritePathItems(element.connectionId);
+    }
+
+    if (element.kind === 'pathSegment' && element.connectionId && element.remotePath) {
+      return this.getFullPathTreeSegmentChildren(element.connectionId, element.remotePath);
     }
 
     if ((element.kind === 'filesGroup' || element.kind === 'remoteDirectory') && element.connectionId && element.remotePath) {
@@ -442,6 +482,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   setRootPath(connectionId: string, remotePath: string, source: 'sidebar' | 'webview' | 'session' = 'sidebar'): void {
     const normalizedPath = normalizeRemotePath(remotePath);
     this.rootPaths.set(connectionId, normalizedPath);
+    this.updateFullPathTreeTrailPath(connectionId, normalizedPath);
     RemoteEditSharedState.setNavigation(connectionId, normalizedPath, normalizedPath, source);
     this.refresh();
   }
@@ -485,6 +526,223 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     }
 
     return connections.map(connection => RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) }));
+  }
+
+  private isFullPathTreeView(): boolean {
+    return getSidebarOpenConnectionsPathView() === 'fullPathTree';
+  }
+
+  private getFullPathTreeRootItems(connection: { id: string; startPath?: string }, rootPath: string, favoriteRemotePaths: string[]): RemoteEditSidebarItem[] {
+    const activeConnection = this.sessions.getConnection(connection.id);
+
+    if (!activeConnection) {
+      return [];
+    }
+
+    const normalizedRootPath = normalizeRemotePath(rootPath);
+
+    if (normalizedRootPath === '/') {
+      return [RemoteEditSidebarItem.filesGroup(activeConnection, normalizedRootPath, { isFavorite: isFavoriteRemotePath(normalizedRootPath, favoriteRemotePaths) })];
+    }
+
+    return [RemoteEditSidebarItem.pathSegment(activeConnection, '/', { isFavorite: isFavoriteRemotePath('/', favoriteRemotePaths) })];
+  }
+
+  private async getFullPathTreeSegmentChildren(connectionId: string, segmentPath: string): Promise<RemoteEditSidebarItem[]> {
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      return [];
+    }
+
+    const currentPath = normalizeRemotePath(this.getRootPath(connection));
+    const trailPath = this.getFullPathTreeTrailPath(connectionId, currentPath);
+    const normalizedSegmentPath = normalizeRemotePath(segmentPath);
+
+    if (normalizedSegmentPath === currentPath) {
+      return this.getRemoteDirectoryItems(connectionId, currentPath, true);
+    }
+
+    const cachedItems = await this.getCachedFullPathTreeDirectoryItems(connectionId, normalizedSegmentPath);
+
+    if (cachedItems) {
+      return cachedItems;
+    }
+
+    const nextSegmentPath = this.getNextFullPathTreeSegmentPath(normalizedSegmentPath, trailPath);
+
+    if (!nextSegmentPath) {
+      return [];
+    }
+
+    if (nextSegmentPath === currentPath) {
+      const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+      return [RemoteEditSidebarItem.filesGroup(connection, currentPath, { isFavorite: isFavoriteRemotePath(currentPath, favoriteRemotePaths) })];
+    }
+
+    const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+    return [RemoteEditSidebarItem.pathSegment(connection, nextSegmentPath, { isFavorite: isFavoriteRemotePath(nextSegmentPath, favoriteRemotePaths) })];
+  }
+
+  private updateFullPathTreeTrailPath(connectionId: string, remotePath: string): void {
+    const nextPath = normalizeRemotePath(remotePath || '/');
+    const currentTrailPath = this.fullPathTreeTrailPaths.get(connectionId);
+
+    if (!currentTrailPath) {
+      this.fullPathTreeTrailPaths.set(connectionId, nextPath);
+      return;
+    }
+
+    const normalizedTrailPath = normalizeRemotePath(currentTrailPath);
+
+    if (isPathAncestorOrSelf(nextPath, normalizedTrailPath)) {
+      return;
+    }
+
+    if (isPathAncestorOrSelf(normalizedTrailPath, nextPath)) {
+      this.fullPathTreeTrailPaths.set(connectionId, nextPath);
+      return;
+    }
+
+    this.fullPathTreeTrailPaths.set(connectionId, nextPath);
+  }
+
+  private getFullPathTreeTrailPath(connectionId: string, currentPath: string): string {
+    const normalizedCurrentPath = normalizeRemotePath(currentPath || '/');
+    const storedTrailPath = this.fullPathTreeTrailPaths.get(connectionId);
+
+    if (!storedTrailPath) {
+      this.fullPathTreeTrailPaths.set(connectionId, normalizedCurrentPath);
+      return normalizedCurrentPath;
+    }
+
+    const normalizedTrailPath = normalizeRemotePath(storedTrailPath);
+
+    if (isPathAncestorOrSelf(normalizedCurrentPath, normalizedTrailPath) || isPathAncestorOrSelf(normalizedTrailPath, normalizedCurrentPath)) {
+      return normalizedTrailPath;
+    }
+
+    this.fullPathTreeTrailPaths.set(connectionId, normalizedCurrentPath);
+    return normalizedCurrentPath;
+  }
+
+  private getNextFullPathTreeSegmentPath(segmentPath: string, trailPath: string): string | undefined {
+    const normalizedSegmentPath = normalizeRemotePath(segmentPath);
+    const normalizedTrailPath = normalizeRemotePath(trailPath);
+
+    if (normalizedSegmentPath === normalizedTrailPath) {
+      return undefined;
+    }
+
+    if (normalizedSegmentPath !== '/' && !isPathAncestorOrSelf(normalizedSegmentPath, normalizedTrailPath)) {
+      return undefined;
+    }
+
+    const remainingPath = normalizedSegmentPath === '/'
+      ? normalizedTrailPath.slice(1)
+      : normalizedTrailPath.slice(normalizedSegmentPath.length + 1);
+    const nextSegmentName = remainingPath.split('/').filter(Boolean)[0];
+
+    if (!nextSegmentName) {
+      return undefined;
+    }
+
+    return normalizedSegmentPath === '/'
+      ? normalizeRemotePath(`/${nextSegmentName}`)
+      : normalizeRemotePath(`${normalizedSegmentPath}/${nextSegmentName}`);
+  }
+
+  private async getCachedFullPathTreeDirectoryItems(connectionId: string, remotePath: string): Promise<RemoteEditSidebarItem[] | undefined> {
+    if (!this.isFullPathTreeView()) {
+      return undefined;
+    }
+
+    const connection = this.sessions.getConnection(connectionId);
+
+    if (!connection) {
+      return undefined;
+    }
+
+    const normalizedRemotePath = normalizeRemotePath(remotePath);
+    const directoryListKey = this.buildRefreshKey(connectionId, normalizedRemotePath);
+    const cachedEntries = this.fullPathTreeDirectoryEntrySnapshots.get(directoryListKey);
+
+    if (!cachedEntries) {
+      return undefined;
+    }
+
+    const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+    let items = this.buildRemoteDirectoryItems(connectionId, connection, normalizedRemotePath, cachedEntries, favoriteRemotePaths);
+    items = this.mergeFullPathTreeTrailChild(items, connection, connectionId, normalizedRemotePath, favoriteRemotePaths);
+    return items;
+  }
+
+  private buildRemoteDirectoryItems(
+    connectionId: string,
+    connection: NonNullable<ReturnType<RemoteSessionManager['getConnection']>>,
+    remotePath: string,
+    entries: RemoteEntry[],
+    favoriteRemotePaths: string[]
+  ): RemoteEditSidebarItem[] {
+    const startPath = connection.startPath || '/';
+
+    return sortRemoteEntries(entries).map(entry =>
+      RemoteEditSidebarItem.fromRemoteEntry(connectionId, entry, startPath, {
+        isFavorite: isFavoriteRemotePath(entry.path || entry.name || '/', favoriteRemotePaths),
+        isSftp: isSftpConnection(connection.connectionType) && !isWindowsRemotePlatform(connection.remotePlatform),
+        isWindowsSftp: isSftpConnection(connection.connectionType) && isWindowsRemotePlatform(connection.remotePlatform)
+      })
+    );
+  }
+
+  private mergeFullPathTreeTrailChild(
+    items: RemoteEditSidebarItem[],
+    connection: NonNullable<ReturnType<RemoteSessionManager['getConnection']>>,
+    connectionId: string,
+    currentPath: string,
+    favoriteRemotePaths: string[]
+  ): RemoteEditSidebarItem[] {
+    if (!this.isFullPathTreeView()) {
+      return items;
+    }
+
+    const normalizedCurrentPath = normalizeRemotePath(currentPath);
+    const trailPath = this.getFullPathTreeTrailPath(connectionId, normalizedCurrentPath);
+    const nextSegmentPath = this.getNextFullPathTreeSegmentPath(normalizedCurrentPath, trailPath);
+
+    if (!nextSegmentPath) {
+      return items;
+    }
+
+    const pathSegmentItem = RemoteEditSidebarItem.pathSegment(connection, nextSegmentPath, { isFavorite: isFavoriteRemotePath(nextSegmentPath, favoriteRemotePaths) });
+    const existingIndex = items.findIndex(item => item.remotePath && normalizeRemotePath(item.remotePath) === nextSegmentPath);
+
+    if (existingIndex >= 0) {
+      const nextItems = [...items];
+      nextItems[existingIndex] = pathSegmentItem;
+      return nextItems;
+    }
+
+    const nextItems = [...items];
+    const insertIndex = this.findFullPathTreeTrailInsertIndex(nextItems, String(pathSegmentItem.label || ''));
+    nextItems.splice(insertIndex, 0, pathSegmentItem);
+    return nextItems;
+  }
+
+  private findFullPathTreeTrailInsertIndex(items: RemoteEditSidebarItem[], label: string): number {
+    const normalizedLabel = label.toLocaleLowerCase();
+    const firstNonParentIndex = items.findIndex(item => item.kind !== 'goParentFolder');
+    const startIndex = firstNonParentIndex >= 0 ? firstNonParentIndex : items.length;
+
+    for (let index = startIndex; index < items.length; index += 1) {
+      const itemLabel = String(items[index].label || '').toLocaleLowerCase();
+
+      if (normalizedLabel.localeCompare(itemLabel, undefined, { numeric: true, sensitivity: 'base' }) < 0) {
+        return index;
+      }
+    }
+
+    return items.length;
   }
 
   private async getFavoritePathItems(connectionId: string): Promise<RemoteEditSidebarItem[]> {
@@ -539,7 +797,6 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       }
 
       const connection = this.sessions.getConnection(connectionId);
-      const startPath = connection?.startPath || '/';
       const favoriteTimer = createPerformanceTimer();
       const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
       favoriteMs = favoriteTimer();
@@ -549,16 +806,20 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       }
 
       const buildItemsTimer = createPerformanceTimer();
-      const items = sortRemoteEntries(entries).map(entry =>
-        RemoteEditSidebarItem.fromRemoteEntry(connectionId, entry, startPath, {
-          isFavorite: isFavoriteRemotePath(entry.path || entry.name || '/', favoriteRemotePaths),
-          isSftp: isSftpConnection(connection?.connectionType) && !isWindowsRemotePlatform(connection?.remotePlatform),
-          isWindowsSftp: isSftpConnection(connection?.connectionType) && isWindowsRemotePlatform(connection?.remotePlatform)
-        })
-      );
       const normalizedRemotePath = normalizeRemotePath(remotePath);
+      if (connection && this.isFullPathTreeView()) {
+        this.fullPathTreeDirectoryEntrySnapshots.set(directoryListKey, [...entries]);
+      }
 
-      if (includeGoParent && normalizedRemotePath !== '/') {
+      let items = connection
+        ? this.buildRemoteDirectoryItems(connectionId, connection, normalizedRemotePath, entries, favoriteRemotePaths)
+        : [];
+
+      if (connection) {
+        items = this.mergeFullPathTreeTrailChild(items, connection, connectionId, normalizedRemotePath, favoriteRemotePaths);
+      }
+
+      if (includeGoParent && normalizedRemotePath !== '/' && !this.isFullPathTreeView()) {
         items.unshift(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
       }
       buildItemsMs = buildItemsTimer();
@@ -604,7 +865,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const normalizedRemotePath = normalizeRemotePath(remotePath);
       const items: RemoteEditSidebarItem[] = [];
 
-      if (includeGoParent && normalizedRemotePath !== '/') {
+      if (includeGoParent && normalizedRemotePath !== '/' && !this.isFullPathTreeView()) {
         items.push(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
       }
 

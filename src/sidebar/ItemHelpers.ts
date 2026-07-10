@@ -211,6 +211,13 @@ export function normalizeRemoteRootStartPath(startPath: string | undefined): str
 
 const SIDEBAR_PARENT_PATH_SEGMENTS = 3;
 
+export type SidebarOpenConnectionsPathView = 'compact' | 'fullPathTree';
+
+export function getSidebarOpenConnectionsPathView(): SidebarOpenConnectionsPathView {
+  const value = vscode.workspace.getConfiguration('remoteedit.sidebar.openConnections').get<string>('pathView', 'fullPathTree');
+  return value === 'fullPathTree' ? 'fullPathTree' : 'compact';
+}
+
 export function buildSidebarPathDisplay(remotePath: string): { label: string; description?: string } {
   const normalizedPath = normalizeRemotePath(remotePath);
 
@@ -223,6 +230,14 @@ export function buildSidebarPathDisplay(remotePath: string): { label: string; de
   return {
     label: `…/${getRemotePathBasename(normalizedPath)}`,
     description: showParentPath ? `parent: ${formatSidebarParentPath(getParentRemotePath(normalizedPath))}` : undefined
+  };
+}
+
+export function buildSidebarFullPathTreeNodeDisplay(remotePath: string): { label: string; description?: string } {
+  const normalizedPath = normalizeRemotePath(remotePath);
+
+  return {
+    label: normalizedPath === '/' ? '/' : getRemotePathBasename(normalizedPath)
   };
 }
 

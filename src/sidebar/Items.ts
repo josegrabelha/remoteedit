@@ -4,8 +4,8 @@ import type { AuthType, ConnectionGroup, ConnectionProfile } from '../connection
 import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
 import type { TransferQueueItemSnapshot } from '../panel/RemoteEditPanel';
 import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
-import { buildConnectionDetail, buildGoParentTooltipOrEmpty, buildMarkdownTooltip, buildRemoteBrowseTooltipOrEmpty, buildRemoteEntryDescription, buildRemoteEntryTooltipOrEmpty, buildRemotePathTooltipOrEmpty, buildSidebarPathDisplay, buildTransferItemTooltipContent, formatCredentialStatus, formatOpenConnectionLabel, formatTooltipPlainText, formatTransferItemDescription, formatTransferItemLabel, getConnectionDetailContextValue, getParentRemotePath, getRemoteEntryIcon, getRemoteEntryResourceUri, getRemotePathBasename, getSavedConnectionIcon, getSidebarDecorationResourceUri, isPathAncestorOrSelf, isSftpConnection, normalizeRemotePath, normalizeRemoteRootStartPath, resolveRemoteEntryType, type ConnectionDetailField } from './ItemHelpers';
-export { getConnectionDetailFields, getParentRemotePath, normalizeRemotePath, sortRemoteEntries, type ConnectionDetailField } from './ItemHelpers';
+import { buildConnectionDetail, buildGoParentTooltipOrEmpty, buildMarkdownTooltip, buildRemoteBrowseTooltipOrEmpty, buildRemoteEntryDescription, buildRemoteEntryTooltipOrEmpty, buildRemotePathTooltipOrEmpty, buildSidebarFullPathTreeNodeDisplay, buildSidebarPathDisplay, buildTransferItemTooltipContent, formatCredentialStatus, formatOpenConnectionLabel, formatTooltipPlainText, formatTransferItemDescription, formatTransferItemLabel, getConnectionDetailContextValue, getParentRemotePath, getRemoteEntryIcon, getRemoteEntryResourceUri, getSavedConnectionIcon, getSidebarOpenConnectionsPathView, getSidebarDecorationResourceUri, isPathAncestorOrSelf, isSftpConnection, normalizeRemotePath, normalizeRemoteRootStartPath, resolveRemoteEntryType, type ConnectionDetailField } from './ItemHelpers';
+export { getConnectionDetailFields, getParentRemotePath, getSidebarOpenConnectionsPathView, isPathAncestorOrSelf, normalizeRemotePath, sortRemoteEntries, type ConnectionDetailField, type SidebarOpenConnectionsPathView } from './ItemHelpers';
 
 export type RemoteEditSidebarItemKind =
   | 'action'
@@ -19,6 +19,7 @@ export type RemoteEditSidebarItemKind =
   | 'favoritesGroup'
   | 'favoritePath'
   | 'filesGroup'
+  | 'pathSegment'
   | 'goParentFolder'
   | 'remoteDirectory'
   | 'remoteFile'
@@ -387,9 +388,43 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
+  static pathSegment(connection: ActiveConnection, remotePath: string, options?: { isFavorite?: boolean }): RemoteEditSidebarItem {
+    const normalizedPath = normalizeRemotePath(remotePath);
+    const pathDisplay = buildSidebarFullPathTreeNodeDisplay(normalizedPath);
+    const contextBase = normalizedPath === '/' ? 'remoteedit.filesGroup' : 'remoteedit.remoteDirectory';
+
+    return new RemoteEditSidebarItem({
+      label: pathDisplay.label,
+      kind: 'pathSegment',
+      id: `pathSegment:${connection.id}:${normalizedPath}`,
+      collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
+      icon: normalizedPath === '/'
+        ? new vscode.ThemeIcon('root-folder', new vscode.ThemeColor('icon.foreground'))
+        : new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground')),
+      tooltip: buildRemoteBrowseTooltipOrEmpty(normalizedPath),
+      resourceUri: getSidebarDecorationResourceUri(connection.id, normalizedPath, 'path'),
+      profileId: connection.id,
+      connectionId: connection.id,
+      host: connection.host,
+      remotePath: normalizedPath,
+      command: {
+        command: 'remoteedit.primary.openDirectoryAsRootDirectory',
+        title: 'Open as Root Directory',
+        arguments: [connection.id, normalizedPath]
+      },
+      contextValue: getSftpAwareContext(contextBase, {
+        isFavorite: options?.isFavorite,
+        isSftp: isSftpConnection(connection.connectionType) && !isWindowsRemotePlatform(connection.remotePlatform),
+        isWindowsSftp: isSftpConnection(connection.connectionType) && isWindowsRemotePlatform(connection.remotePlatform)
+      })
+    });
+  }
+
   static filesGroup(connection: ActiveConnection, rootPath?: string, options?: { isFavorite?: boolean }): RemoteEditSidebarItem {
     const normalizedRoot = normalizeRemotePath(rootPath || connection.startPath || '/');
-    const pathDisplay = buildSidebarPathDisplay(normalizedRoot);
+    const pathDisplay = getSidebarOpenConnectionsPathView() === 'fullPathTree'
+      ? buildSidebarFullPathTreeNodeDisplay(normalizedRoot)
+      : buildSidebarPathDisplay(normalizedRoot);
 
     return new RemoteEditSidebarItem({
       label: pathDisplay.label,

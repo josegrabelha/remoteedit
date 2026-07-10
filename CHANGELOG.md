@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.9] - 2026-07-10
+
+### Added
+
+* Added `remoteedit.sidebar.openConnections.pathView` to choose between the new full path tree Sidebar layout and the compact path layout for Open Connections.
+
 ## [1.8.8] - 2026-07-09
 
 ### Fixed

@@ -2,10 +2,16 @@
 
 ## [1.8.10] - Unreleased
 
+### Added
+
+* Added a breadcrumb path tree layout for Open Connections, showing clickable parent folder nodes while keeping the current directory focused.
+
 ### Improved
 
+* Changed the default Open Connections path layout to the new breadcrumb view for a better balance between the compact layout and the full path tree.
 * Updated Remote Edit licensing language for clearer proprietary use and distribution terms.
 * Added Open VSX Registry installation information and marketplace badges to the README.
+
 
 ## [1.8.9] - 2026-07-10
 

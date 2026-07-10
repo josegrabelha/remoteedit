@@ -171,7 +171,7 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   'webview.fileList.openOnNameClick': true,
   'webview.fileList.permissionsDisplay': 'symbolic',
   'sidebar.showItemInfoOnHover': false,
-  'sidebar.openConnections.pathView': 'fullPathTree',
+  'sidebar.openConnections.pathView': 'breadcrumb',
   'sidebar.showParentPath': true,
   directoryListingCacheTtl: 30,
   sshReadyTimeout: 30000,

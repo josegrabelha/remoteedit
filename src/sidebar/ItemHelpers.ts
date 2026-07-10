@@ -211,11 +211,16 @@ export function normalizeRemoteRootStartPath(startPath: string | undefined): str
 
 const SIDEBAR_PARENT_PATH_SEGMENTS = 3;
 
-export type SidebarOpenConnectionsPathView = 'compact' | 'fullPathTree';
+export type SidebarOpenConnectionsPathView = 'compact' | 'breadcrumb' | 'fullPathTree';
 
 export function getSidebarOpenConnectionsPathView(): SidebarOpenConnectionsPathView {
-  const value = vscode.workspace.getConfiguration('remoteedit.sidebar.openConnections').get<string>('pathView', 'fullPathTree');
-  return value === 'fullPathTree' ? 'fullPathTree' : 'compact';
+  const value = vscode.workspace.getConfiguration('remoteedit.sidebar.openConnections').get<string>('pathView', 'breadcrumb');
+
+  if (value === 'compact' || value === 'fullPathTree') {
+    return value;
+  }
+
+  return 'breadcrumb';
 }
 
 export function buildSidebarPathDisplay(remotePath: string): { label: string; description?: string } {
@@ -291,9 +296,12 @@ export function resolveRemoteEntryType(entry: RemoteEntry): RemoteEntryType {
   return entry.effectiveType || entry.type || 'unknown';
 }
 
-export function getRemoteEntryIcon(entry: RemoteEntry, _resolvedType: RemoteEntryType): vscode.ThemeIcon | undefined {
-  // Keep directories aligned with the native TreeView rendering. File icons are
-  // driven by resourceUri so the active VS Code file icon theme can decide.
+export function getRemoteEntryIcon(entry: RemoteEntry, resolvedType: RemoteEntryType): vscode.ThemeIcon | undefined {
+  if (resolvedType === 'directory') {
+    return new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground'));
+  }
+
+  // File icons are driven by resourceUri so the active VS Code file icon theme can decide.
   if (entry.type === 'link') {
     return undefined;
   }
@@ -312,8 +320,13 @@ export function getRemoteEntryResourceUri(entry: RemoteEntry, resolvedType: Remo
     return withSidebarDecorationQuery(vscode.Uri.file(entry.name || remotePath), connectionId, 'file', remotePath);
   }
 
+  if (resolvedType === 'directory') {
+    return undefined;
+  }
+
   return getSidebarDecorationResourceUri(connectionId, remotePath, resolvedType);
 }
+
 
 export function getSidebarDecorationResourceUri(connectionId: string, value: string, kind: string): vscode.Uri {
   const safePath = `/${encodeURIComponent(kind)}/${encodeURIComponent(value || connectionId)}`;

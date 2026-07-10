@@ -347,7 +347,7 @@ The Primary Sidebar provides quick access to the main Remote Edit Webview, Log V
 
 The Log Viewer item appears below `Remote Edit (Advanced View)` and is enabled when there is an active SSH/SFTP connection, including Windows OpenSSH sessions.
 
-Open Connections uses a full path tree by default. The current remote path is displayed as clickable folder nodes, making it easier to navigate deep directory structures without relying on truncated parent path labels. Users who prefer a shorter view can set `remoteedit.sidebar.openConnections.pathView` to `compact`.
+Open Connections uses a breadcrumb path tree by default. The parent folder chain is displayed as clickable folder nodes above the current directory, keeping the current folder focused while still making parent navigation easy without the redundant Go Parent Folder item. When navigating back to a parent folder, previously focused child folders are shown collapsed so the breadcrumb layout stays focused on the current directory. Users who prefer the shorter layout can set `remoteedit.sidebar.openConnections.pathView` to `compact`, and users who prefer the expanded path tree can set it to `fullPathTree`.
 
 ## Multiple Active Connections
 

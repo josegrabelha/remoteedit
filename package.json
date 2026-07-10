@@ -549,13 +549,15 @@
           },
           "remoteedit.sidebar.openConnections.pathView": {
             "type": "string",
-            "default": "fullPathTree",
+            "default": "breadcrumb",
             "enum": [
               "compact",
+              "breadcrumb",
               "fullPathTree"
             ],
             "enumDescriptions": [
-              "Shows the current folder using the previous compact layout.",
+              "Shows the current folder using the shorter compact layout.",
+              "Shows the parent folder chain as clickable breadcrumb nodes while keeping the current folder focused.",
               "Shows the current remote path as a navigable folder tree from the root to the current directory."
             ],
             "description": "Controls how the current remote folder path is displayed in the Open Connections Sidebar.",
@@ -564,7 +566,7 @@
           "remoteedit.sidebar.showParentPath": {
             "type": "boolean",
             "default": true,
-            "description": "Shows the parent path detail in the Sidebar compact path view. This setting does not apply when the Open Connections path view is set to Full Path Tree.",
+            "description": "Shows the parent path detail in the Sidebar compact path view. This setting only applies when Open Connections path view is set to Compact.",
             "order": 30
           }
         }

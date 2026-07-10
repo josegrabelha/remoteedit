@@ -166,7 +166,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       kind: 'connectionGroup',
       id: `connectionGroup:${group.id}:${renderVersion}`,
       collapsibleState: options?.expanded === false ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded,
-      icon: new vscode.ThemeIcon('folder'),
+      icon: new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground')),
       description: count > 0 ? String(count) : undefined,
       tooltip: `${group.name || 'Connections'}: ${count} saved connection${count === 1 ? '' : 's'}`,
       groupId: group.id,
@@ -374,6 +374,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       label: pathDisplay.label,
       kind: 'favoritePath',
       id: `favorite:${connectionId}:${remotePath}`,
+      icon: new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground')),
       description: pathDisplay.description,
       tooltip: remotePath,
       profileId: connectionId,
@@ -398,11 +399,8 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       kind: 'pathSegment',
       id: `pathSegment:${connection.id}:${normalizedPath}`,
       collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
-      icon: normalizedPath === '/'
-        ? new vscode.ThemeIcon('root-folder', new vscode.ThemeColor('icon.foreground'))
-        : new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground')),
+      icon: new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground')),
       tooltip: buildRemoteBrowseTooltipOrEmpty(normalizedPath),
-      resourceUri: getSidebarDecorationResourceUri(connection.id, normalizedPath, 'path'),
       profileId: connection.id,
       connectionId: connection.id,
       host: connection.host,
@@ -422,9 +420,9 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
 
   static filesGroup(connection: ActiveConnection, rootPath?: string, options?: { isFavorite?: boolean }): RemoteEditSidebarItem {
     const normalizedRoot = normalizeRemotePath(rootPath || connection.startPath || '/');
-    const pathDisplay = getSidebarOpenConnectionsPathView() === 'fullPathTree'
-      ? buildSidebarFullPathTreeNodeDisplay(normalizedRoot)
-      : buildSidebarPathDisplay(normalizedRoot);
+    const pathDisplay = getSidebarOpenConnectionsPathView() === 'compact'
+      ? buildSidebarPathDisplay(normalizedRoot)
+      : buildSidebarFullPathTreeNodeDisplay(normalizedRoot);
 
     return new RemoteEditSidebarItem({
       label: pathDisplay.label,
@@ -483,8 +481,8 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
       collapsibleState: isPathAncestorOrSelf(normalizedPath, normalizedStartPath)
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.Collapsed,
+      icon: new vscode.ThemeIcon('folder', new vscode.ThemeColor('icon.foreground')),
       tooltip: buildRemotePathTooltipOrEmpty(normalizedPath),
-      resourceUri: getSidebarDecorationResourceUri(connectionId, normalizedPath, 'directory'),
       profileId: connectionId,
       connectionId,
       remotePath: normalizedPath,
@@ -497,14 +495,14 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
-  static fromRemoteEntry(connectionId: string, entry: RemoteEntry, startPath?: string, options?: { isFavorite?: boolean; isSftp?: boolean; isWindowsSftp?: boolean }): RemoteEditSidebarItem {
+  static fromRemoteEntry(connectionId: string, entry: RemoteEntry, startPath?: string, options?: { isFavorite?: boolean; isSftp?: boolean; isWindowsSftp?: boolean; forceCollapsed?: boolean; identityScope?: string }): RemoteEditSidebarItem {
     const resolvedType = resolveRemoteEntryType(entry);
     const isDirectory = resolvedType === 'directory';
     const isFile = resolvedType === 'file';
     const itemKind: RemoteEditSidebarItemKind = isDirectory ? 'remoteDirectory' : isFile ? 'remoteFile' : 'remoteEntry';
     const remotePath = normalizeRemotePath(entry.path || entry.name || '/');
     const normalizedStartPath = normalizeRemoteRootStartPath(startPath);
-    const shouldExpand = isDirectory && isPathAncestorOrSelf(remotePath, normalizedStartPath);
+    const shouldExpand = isDirectory && !options?.forceCollapsed && isPathAncestorOrSelf(remotePath, normalizedStartPath);
     const tooltip = buildRemoteEntryTooltipOrEmpty(entry, resolvedType, { showPosixMetadata: !options?.isWindowsSftp });
     const resourceUri = getRemoteEntryResourceUri(entry, resolvedType, remotePath, connectionId);
     const description = buildRemoteEntryDescription(entry, resolvedType);
@@ -512,7 +510,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     return new RemoteEditSidebarItem({
       label: entry.name || remotePath,
       kind: itemKind,
-      id: `remote:${connectionId}:${remotePath}`,
+      id: options?.identityScope ? `remote:${connectionId}:${options.identityScope}:${remotePath}` : `remote:${connectionId}:${remotePath}`,
       collapsibleState: isDirectory
         ? shouldExpand
           ? vscode.TreeItemCollapsibleState.Expanded

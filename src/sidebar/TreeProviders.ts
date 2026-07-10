@@ -349,6 +349,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
   private readonly forceRefreshPaths = new Set<string>();
   private readonly fullPathTreeTrailPaths = new Map<string, string>();
   private readonly fullPathTreeDirectoryEntrySnapshots = new Map<string, RemoteEntry[]>();
+  private readonly breadcrumbCollapseVersions = new Map<string, number>();
 
   constructor(
     private readonly sessions: RemoteSessionManager,
@@ -376,7 +377,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const rootPath = this.getRootPath(connection);
       const normalizedRootPath = normalizeRemotePath(rootPath);
 
-      if (this.isFullPathTreeView() && normalizedRootPath !== '/') {
+      if (this.isPathTreeView() && normalizedRootPath !== '/') {
         return RemoteEditSidebarItem.pathSegment(connection, getParentRemotePath(normalizedRootPath));
       }
 
@@ -441,8 +442,8 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const rootPath = this.getRootPath(connection);
       const favoriteRemotePaths = await this.getFavoriteRemotePaths(element.connectionId);
 
-      const pathItems = this.isFullPathTreeView()
-        ? this.getFullPathTreeRootItems(connection, rootPath, favoriteRemotePaths)
+      const pathItems = this.isPathTreeView()
+        ? this.getPathTreeRootItems(connection, rootPath, favoriteRemotePaths)
         : [RemoteEditSidebarItem.filesGroup(connection, rootPath, { isFavorite: isFavoriteRemotePath(rootPath, favoriteRemotePaths) })];
 
       return [
@@ -456,7 +457,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     }
 
     if (element.kind === 'pathSegment' && element.connectionId && element.remotePath) {
-      return this.getFullPathTreeSegmentChildren(element.connectionId, element.remotePath);
+      return this.getPathSegmentChildren(element.connectionId, element.remotePath);
     }
 
     if ((element.kind === 'filesGroup' || element.kind === 'remoteDirectory') && element.connectionId && element.remotePath) {
@@ -481,6 +482,12 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
 
   setRootPath(connectionId: string, remotePath: string, source: 'sidebar' | 'webview' | 'session' = 'sidebar'): void {
     const normalizedPath = normalizeRemotePath(remotePath);
+    const previousPath = this.rootPaths.get(connectionId) || RemoteEditSharedState.getNavigation(connectionId)?.rootPath;
+
+    if (previousPath && normalizeRemotePath(previousPath) !== normalizedPath) {
+      this.bumpBreadcrumbCollapseVersion(connectionId);
+    }
+
     this.rootPaths.set(connectionId, normalizedPath);
     this.updateFullPathTreeTrailPath(connectionId, normalizedPath);
     RemoteEditSharedState.setNavigation(connectionId, normalizedPath, normalizedPath, source);
@@ -518,6 +525,19 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     return profile?.favoriteRemotePaths || [];
   }
 
+  private bumpBreadcrumbCollapseVersion(connectionId: string): void {
+    this.breadcrumbCollapseVersions.set(connectionId, (this.breadcrumbCollapseVersions.get(connectionId) || 0) + 1);
+  }
+
+  private getBreadcrumbDirectoryIdentityScope(connectionId: string, remotePath: string): string | undefined {
+    if (!this.isBreadcrumbPathView()) {
+      return undefined;
+    }
+
+    const version = this.breadcrumbCollapseVersions.get(connectionId) || 0;
+    return `breadcrumb:${version}:${normalizeRemotePath(remotePath)}`;
+  }
+
   private getOpenConnectionItems(): RemoteEditSidebarItem[] {
     const connections = this.sessions.listConnections();
 
@@ -528,11 +548,23 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     return connections.map(connection => RemoteEditSidebarItem.fromActiveConnection(connection, { sudoModeEnabled: this.sessions.isSudoModeEnabled(connection.id) }));
   }
 
-  private isFullPathTreeView(): boolean {
-    return getSidebarOpenConnectionsPathView() === 'fullPathTree';
+  private getPathView(): ReturnType<typeof getSidebarOpenConnectionsPathView> {
+    return getSidebarOpenConnectionsPathView();
   }
 
-  private getFullPathTreeRootItems(connection: { id: string; startPath?: string }, rootPath: string, favoriteRemotePaths: string[]): RemoteEditSidebarItem[] {
+  private isFullPathTreeView(): boolean {
+    return this.getPathView() === 'fullPathTree';
+  }
+
+  private isBreadcrumbPathView(): boolean {
+    return this.getPathView() === 'breadcrumb';
+  }
+
+  private isPathTreeView(): boolean {
+    return this.isBreadcrumbPathView() || this.isFullPathTreeView();
+  }
+
+  private getPathTreeRootItems(connection: { id: string; startPath?: string }, rootPath: string, favoriteRemotePaths: string[]): RemoteEditSidebarItem[] {
     const activeConnection = this.sessions.getConnection(connection.id);
 
     if (!activeConnection) {
@@ -548,7 +580,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     return [RemoteEditSidebarItem.pathSegment(activeConnection, '/', { isFavorite: isFavoriteRemotePath('/', favoriteRemotePaths) })];
   }
 
-  private async getFullPathTreeSegmentChildren(connectionId: string, segmentPath: string): Promise<RemoteEditSidebarItem[]> {
+  private async getPathSegmentChildren(connectionId: string, segmentPath: string): Promise<RemoteEditSidebarItem[]> {
     const connection = this.sessions.getConnection(connectionId);
 
     if (!connection) {
@@ -561,6 +593,10 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
 
     if (normalizedSegmentPath === currentPath) {
       return this.getRemoteDirectoryItems(connectionId, currentPath, true);
+    }
+
+    if (this.isBreadcrumbPathView()) {
+      return this.getBreadcrumbPathSegmentChildren(connectionId, connection, normalizedSegmentPath, currentPath, trailPath);
     }
 
     const cachedItems = await this.getCachedFullPathTreeDirectoryItems(connectionId, normalizedSegmentPath);
@@ -581,6 +617,28 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     }
 
     const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+    return [RemoteEditSidebarItem.pathSegment(connection, nextSegmentPath, { isFavorite: isFavoriteRemotePath(nextSegmentPath, favoriteRemotePaths) })];
+  }
+
+  private async getBreadcrumbPathSegmentChildren(
+    connectionId: string,
+    connection: NonNullable<ReturnType<RemoteSessionManager['getConnection']>>,
+    segmentPath: string,
+    currentPath: string,
+    trailPath: string
+  ): Promise<RemoteEditSidebarItem[]> {
+    const nextSegmentPath = this.getNextFullPathTreeSegmentPath(segmentPath, trailPath);
+
+    if (!nextSegmentPath) {
+      return [];
+    }
+
+    const favoriteRemotePaths = await this.getFavoriteRemotePaths(connectionId);
+
+    if (nextSegmentPath === currentPath) {
+      return [RemoteEditSidebarItem.filesGroup(connection, currentPath, { isFavorite: isFavoriteRemotePath(currentPath, favoriteRemotePaths) })];
+    }
+
     return [RemoteEditSidebarItem.pathSegment(connection, nextSegmentPath, { isFavorite: isFavoriteRemotePath(nextSegmentPath, favoriteRemotePaths) })];
   }
 
@@ -685,12 +743,15 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
     favoriteRemotePaths: string[]
   ): RemoteEditSidebarItem[] {
     const startPath = connection.startPath || '/';
+    const breadcrumbIdentityScope = this.getBreadcrumbDirectoryIdentityScope(connectionId, remotePath);
 
     return sortRemoteEntries(entries).map(entry =>
       RemoteEditSidebarItem.fromRemoteEntry(connectionId, entry, startPath, {
         isFavorite: isFavoriteRemotePath(entry.path || entry.name || '/', favoriteRemotePaths),
         isSftp: isSftpConnection(connection.connectionType) && !isWindowsRemotePlatform(connection.remotePlatform),
-        isWindowsSftp: isSftpConnection(connection.connectionType) && isWindowsRemotePlatform(connection.remotePlatform)
+        isWindowsSftp: isSftpConnection(connection.connectionType) && isWindowsRemotePlatform(connection.remotePlatform),
+        forceCollapsed: Boolean(breadcrumbIdentityScope),
+        identityScope: breadcrumbIdentityScope
       })
     );
   }
@@ -819,7 +880,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
         items = this.mergeFullPathTreeTrailChild(items, connection, connectionId, normalizedRemotePath, favoriteRemotePaths);
       }
 
-      if (includeGoParent && normalizedRemotePath !== '/' && !this.isFullPathTreeView()) {
+      if (includeGoParent && normalizedRemotePath !== '/' && !this.isPathTreeView()) {
         items.unshift(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
       }
       buildItemsMs = buildItemsTimer();
@@ -865,7 +926,7 @@ export class OpenConnectionsTreeProvider implements vscode.TreeDataProvider<Remo
       const normalizedRemotePath = normalizeRemotePath(remotePath);
       const items: RemoteEditSidebarItem[] = [];
 
-      if (includeGoParent && normalizedRemotePath !== '/' && !this.isFullPathTreeView()) {
+      if (includeGoParent && normalizedRemotePath !== '/' && !this.isPathTreeView()) {
         items.push(RemoteEditSidebarItem.goParentFolder(connectionId, normalizedRemotePath));
       }
 

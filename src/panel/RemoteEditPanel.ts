@@ -893,6 +893,10 @@ export class RemoteEditPanel {
     this.setActiveConnection(nextActiveId);
     this.updatePanelTitle();
     this.sendSessions();
+
+    for (const connection of connectedSessions) {
+      this.serverManagementController.warmUpServerDashboard(connection.id);
+    }
   }
 
   private async restoreActiveSession(): Promise<void> {
@@ -932,6 +936,10 @@ export class RemoteEditPanel {
     this.sendSessions();
     this.postRemoteSearchState(nextActiveId);
     await this.listDirectory(this.getActivePath());
+
+    for (const connection of connectedSessions) {
+      this.serverManagementController.warmUpServerDashboard(connection.id);
+    }
   }
 
   private async sendProfiles(selectedId?: string): Promise<void> {
@@ -1063,6 +1071,7 @@ export class RemoteEditPanel {
 
     try {
       await this.sessions.enableSudoMode(connectionId, password);
+      this.serverManagementController.clearServerDashboardWarmupState(connectionId);
       this.postMessage(RemoteEditOutboundMessageType.SudoModeChanged, { connectionId, enabled: true });
       this.postBusy(false, 'Sudo Mode enabled for this session.');
       this.logInfo('Sudo Mode enabled.', { Connection: connectionId });
@@ -1083,6 +1092,7 @@ export class RemoteEditPanel {
     }
 
     this.sessions.disableSudoMode(connectionId);
+    this.serverManagementController.clearServerDashboardWarmupState(connectionId);
     this.postMessage(RemoteEditOutboundMessageType.SudoModeChanged, { connectionId, enabled: false });
     this.postBusy(false, 'Sudo Mode disabled.');
     this.logInfo('Sudo Mode disabled.', { Connection: connectionId });
@@ -1344,6 +1354,7 @@ export class RemoteEditPanel {
 
     const connectionId = options.connectionId;
     const target = `${options.username}@${options.host}:${options.port}`;
+    this.serverManagementController.clearServerDashboardWarmupState(connectionId);
 
     if (this.activeConnectionCancellationSources.has(connectionId)) {
       this.postStatus('A connection attempt is already in progress for this tab.', connectionId);
@@ -1418,6 +1429,8 @@ export class RemoteEditPanel {
       await this.listDirectoryForConnection(connection.id, connection.startPath);
     }
 
+    this.serverManagementController.warmUpServerDashboard(connection.id);
+
     this.logInfo('Connected to remote host.', { Connection: connection.id, Target: target, StartPath: connection.startPath });
     this.postBusy(false, 'Connected.', false, undefined, connection.id);
   }
@@ -1457,6 +1470,7 @@ export class RemoteEditPanel {
     this.cancelActiveTransfersForConnection(connectionId);
 
     this.invalidateDirectoryListRequests(connectionId);
+    this.serverManagementController.clearServerDashboardWarmupState(connectionId);
     this.postBusy(true, 'Disconnecting...', false, undefined, connectionId);
     this.disconnectingConnectionIds.add(connectionId);
     try {

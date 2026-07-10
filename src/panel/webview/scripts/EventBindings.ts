@@ -187,6 +187,8 @@ export function renderEventBindings(): string {
           session.sudoModeEnabled = Boolean(payload.enabled);
         }
         markFileListSnapshotStale(targetConnectionId);
+        serverDashboardStatesByConnectionId.delete(targetConnectionId);
+        serverProcessActionStatesByConnectionId.delete(targetConnectionId);
         updateSudoToggle();
         updateConnectionViewUi();
         if (remoteCommandDialogOpen) renderRemoteCommandSession();

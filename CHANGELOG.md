@@ -6,6 +6,11 @@
 
 * Added `remoteedit.sidebar.openConnections.pathView` to choose between the new full path tree Sidebar layout and the compact path layout for Open Connections.
 
+### Improved
+
+* Improved Server View startup by preloading the first dashboard snapshot in background after SSH/SFTP connections are established, while keeping automatic refreshes limited to the focused Server view.
+* Improved Server View Sudo Mode handling so dashboard data is refreshed correctly when privilege state changes.
+
 ## [1.8.8] - 2026-07-09
 
 ### Fixed

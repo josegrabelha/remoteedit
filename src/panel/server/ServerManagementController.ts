@@ -24,7 +24,83 @@ interface ServerManagementControllerOptions {
 }
 
 export class ServerManagementController {
+  private readonly serverDashboardWarmupInFlight = new Set<string>();
+  private readonly serverDashboardWarmedConnections = new Set<string>();
+
   constructor(private readonly options: ServerManagementControllerOptions) {}
+
+  warmUpServerDashboard(connectionId: string): void {
+    const normalizedConnectionId = String(connectionId || '').trim();
+    if (!normalizedConnectionId) {
+      return;
+    }
+
+    if (this.serverDashboardWarmupInFlight.has(normalizedConnectionId)) {
+      this.options.logDebug('Server dashboard warm-up skipped.', {
+        Connection: normalizedConnectionId,
+        Reason: 'already in progress'
+      });
+      return;
+    }
+
+    if (this.serverDashboardWarmedConnections.has(normalizedConnectionId)) {
+      this.options.logDebug('Server dashboard warm-up skipped.', {
+        Connection: normalizedConnectionId,
+        Reason: 'already loaded'
+      });
+      return;
+    }
+
+    const connection = this.options.sessions.getConnection(normalizedConnectionId);
+    if (!connection) {
+      this.options.logDebug('Server dashboard warm-up skipped.', {
+        Connection: normalizedConnectionId,
+        Reason: 'connection is not active'
+      });
+      return;
+    }
+
+    if (String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      this.options.logDebug('Server dashboard warm-up skipped.', {
+        Connection: normalizedConnectionId,
+        Reason: 'Server View requires SSH/SFTP'
+      });
+      return;
+    }
+
+    const requestId = `warmup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    this.serverDashboardWarmupInFlight.add(normalizedConnectionId);
+    this.options.logDebug('Server dashboard warm-up started.', { Connection: normalizedConnectionId });
+
+    void this.requestServerDashboard({
+      connectionId: normalizedConnectionId,
+      requestId,
+      warmup: true
+    }).then(() => {
+      if (this.options.sessions.getConnection(normalizedConnectionId) !== connection) {
+        return;
+      }
+      this.serverDashboardWarmedConnections.add(normalizedConnectionId);
+      this.options.logDebug('Server dashboard warm-up completed.', { Connection: normalizedConnectionId });
+    }).catch(error => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.options.logWarn('Server dashboard warm-up failed.', {
+        Connection: normalizedConnectionId,
+        Details: message
+      });
+    }).finally(() => {
+      this.serverDashboardWarmupInFlight.delete(normalizedConnectionId);
+    });
+  }
+
+  clearServerDashboardWarmupState(connectionId: string): void {
+    const normalizedConnectionId = String(connectionId || '').trim();
+    if (!normalizedConnectionId) {
+      return;
+    }
+    this.serverDashboardWarmupInFlight.delete(normalizedConnectionId);
+    this.serverDashboardWarmedConnections.delete(normalizedConnectionId);
+  }
 
   async requestServerServiceDetails(payload: any): Promise<void> {
     const connectionId = String(payload?.connectionId || this.options.getActiveConnectionId() || '').trim();
@@ -541,8 +617,12 @@ ${result.stderr}` : ''}`.trimEnd();
     const requestedConnectionId = String(payload?.connectionId || '').trim();
     const connectionId = requestedConnectionId || this.options.getActiveConnectionId() || '';
     const requestId = String(payload?.requestId || '').trim();
+    const isWarmup = Boolean(payload?.warmup);
 
     if (!connectionId) {
+      if (isWarmup) {
+        return;
+      }
       this.options.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
         connectionId,
         requestId,
@@ -564,6 +644,9 @@ ${result.stderr}` : ''}`.trimEnd();
 
     const connection = this.options.sessions.getConnection(connectionId);
     if (!connection) {
+      if (isWarmup) {
+        return;
+      }
       this.options.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
         connectionId,
         requestId,
@@ -582,6 +665,9 @@ ${result.stderr}` : ''}`.trimEnd();
     }
 
     if (String(connection.connectionType || 'sftp').toLowerCase() !== 'sftp') {
+      if (isWarmup) {
+        return;
+      }
       this.options.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
         connectionId,
         requestId,
@@ -616,10 +702,17 @@ ${result.stderr}` : ''}`.trimEnd();
         }
       );
 
+      if (isWarmup && this.options.sessions.getConnection(connectionId) !== connection) {
+        return;
+      }
+
       const fields = parseServerDashboardSnapshotOutput(output);
       this.options.postMessage(RemoteEditOutboundMessageType.ServerDashboard, buildServerDashboardSnapshot(connectionId, requestId, connection, fields, sudoEnabled));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (isWarmup) {
+        throw error;
+      }
       this.options.postMessage(RemoteEditOutboundMessageType.ServerDashboard, {
         connectionId,
         requestId,

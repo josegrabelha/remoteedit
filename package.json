@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, transfer, and search remote files over SSH/SFTP, FTP, and FTPS, with SSH server tools.",
-  "version": "1.8.9",
+  "version": "1.8.10",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

@@ -2,6 +2,7 @@
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=josegrabelha.remoteedit"><img src="https://img.shields.io/badge/Marketplace-Remote%20Edit-007ACC?logo=visualstudiocode&logoColor=white" alt="Marketplace"></a>
+  <a href="https://open-vsx.org/extension/josegrabelha/remoteedit"><img src="https://img.shields.io/open-vsx/v/josegrabelha/remoteedit?label=Open%20VSX" alt="Open VSX"></a>
   <img src="https://img.shields.io/badge/VS%20Code-1.90.0%2B-5C2D91?logo=visualstudiocode&logoColor=white" alt="VS Code 1.90.0+">
   <img src="https://img.shields.io/badge/Protocols-SSH%20%7C%20SFTP%20%7C%20FTP%20%7C%20FTPS-2EA44F" alt="Protocols">
   <img src="https://img.shields.io/badge/Remote%20Targets-Linux%20%7C%20Unix%20%7C%20AIX%20%7C%20Windows-6E7681" alt="Remote Targets">
@@ -14,6 +15,10 @@ It supports Linux, Unix, AIX, and Windows OpenSSH targets, with protocol-specifi
 Connect to remote servers, browse and edit files, transfer content, run commands, inspect server status, view logs, manage SSH port forwards, and choose the workflow that fits you best.
 
 ![Remote Edit Webview](images/remoteedit-hero.png)
+
+## Installation
+
+Remote Edit is available on the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=josegrabelha.remoteedit) and the [Open VSX Registry](https://open-vsx.org/extension/josegrabelha/remoteedit).
 
 ## Two Ways to Work
 
@@ -423,6 +428,5 @@ Enable debug and performance logs only while troubleshooting directory browsing,
 
 ## License
 
-Remote Edit is free to use for personal and professional use through the official Visual Studio Code Marketplace distribution.
+Remote Edit is free to use for personal and professional use. See the [LICENSE](LICENSE) file for details.
 
-The source code is publicly available for transparency and review only. Copying, modifying, redistributing, sublicensing, selling, or creating derivative works from this source code requires prior written permission from the copyright holder.

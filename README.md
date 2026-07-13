@@ -2,7 +2,6 @@
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=josegrabelha.remoteedit"><img src="https://img.shields.io/badge/Marketplace-Remote%20Edit-007ACC?logo=visualstudiocode&logoColor=white" alt="Marketplace"></a>
-  <a href="https://open-vsx.org/extension/josegrabelha/remoteedit"><img src="https://img.shields.io/open-vsx/v/josegrabelha/remoteedit?label=Open%20VSX" alt="Open VSX"></a>
   <img src="https://img.shields.io/badge/VS%20Code-1.90.0%2B-5C2D91?logo=visualstudiocode&logoColor=white" alt="VS Code 1.90.0+">
   <img src="https://img.shields.io/badge/Protocols-SSH%20%7C%20SFTP%20%7C%20FTP%20%7C%20FTPS-2EA44F" alt="Protocols">
   <img src="https://img.shields.io/badge/Remote%20Targets-Linux%20%7C%20Unix%20%7C%20AIX%20%7C%20Windows-6E7681" alt="Remote Targets">

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.8.10] - Unreleased
+## [1.8.10] - 2026-07-13
 
 ### Added
 
@@ -10,8 +10,6 @@
 
 * Changed the default Open Connections path layout to the new breadcrumb view for a better balance between the compact layout and the full path tree.
 * Updated Remote Edit licensing language for clearer proprietary use and distribution terms.
-* Added Open VSX Registry installation information and marketplace badges to the README.
-
 
 ## [1.8.9] - 2026-07-10
 

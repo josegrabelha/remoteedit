@@ -5,6 +5,7 @@
 ### Improved
 
 * Added sortable column headers to the Disk, Sessions, and Listeners detail tables in Server View, using the existing ascending, descending, and original-order cycle.
+* Renamed the Server View sections to `Log Shortcuts` and `Saved Commands` for consistent feature naming.
 
 ### Fixed
 

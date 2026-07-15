@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.11] - 2026-07-15
+
+### Fixed
+
+* Fixed Webview Files view snapshots being invalidated when Sudo Mode is toggled, keeping file-list refresh behavior consistent between Sudo Mode on and off.
+
 ## [1.8.10] - 2026-07-13
 
 ### Added

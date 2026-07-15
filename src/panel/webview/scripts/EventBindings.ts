@@ -186,7 +186,6 @@ export function renderEventBindings(): string {
         if (session) {
           session.sudoModeEnabled = Boolean(payload.enabled);
         }
-        markFileListSnapshotStale(targetConnectionId);
         serverDashboardStatesByConnectionId.delete(targetConnectionId);
         serverProcessActionStatesByConnectionId.delete(targetConnectionId);
         updateSudoToggle();

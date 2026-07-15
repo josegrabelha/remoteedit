@@ -2,6 +2,10 @@
 
 ## [1.8.11] - 2026-07-15
 
+### Improved
+
+* Added sortable column headers to the Disk, Sessions, and Listeners detail tables in Server View, using the existing ascending, descending, and original-order cycle.
+
 ### Fixed
 
 * Fixed Webview Files view snapshots being invalidated when Sudo Mode is toggled, keeping file-list refresh behavior consistent between Sudo Mode on and off.

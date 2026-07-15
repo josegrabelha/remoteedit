@@ -638,6 +638,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const serverPortForwardPendingActions = new Map();
   const profileDisconnectingIds = new Set();
   let serverOverviewDetailsDialogOpen = false;
+  let serverOverviewDetailsItemIndex = -1;
   let filePropertiesDialogOpen = false;
   let filePropertiesRemotePath = '';
   let checksumsDialogOpen = false;

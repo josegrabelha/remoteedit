@@ -1063,6 +1063,13 @@ export function renderEventBindings(): string {
   downloadButton.addEventListener('click', () => { const entries = getSelectedActionEntries(); if (entries.length && canStartTransferAction()) vscode.postMessage({ type: 'requestDownloadEntries', payload: { entries: entries.map(actionPayload) } }); });
   transferQueueButton.addEventListener('click', showTransferQueueModal);
   transferQueueFooterCloseButton.addEventListener('click', hideTransferQueueModal);
+  if (serverOverviewDetailsGrid) serverOverviewDetailsGrid.addEventListener('click', event => {
+    const serverSortButton = event.target && event.target.closest ? event.target.closest('[data-server-sort-card][data-server-sort-key]') : null;
+    if (!serverSortButton) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleServerOverviewDetailsSortClick(serverSortButton.getAttribute('data-server-sort-card') || '', serverSortButton.getAttribute('data-server-sort-key') || '');
+  });
   if (serverOverviewDetailsCopyButton) serverOverviewDetailsCopyButton.addEventListener('click', () => { void copyServerOverviewDetails(); });
   if (confirmDialogCopyButton) confirmDialogCopyButton.addEventListener('click', () => { void copyConfirmDialogDetails(); });
   confirmDialogCancelButton.addEventListener('click', () => closeConfirmDialog(false));

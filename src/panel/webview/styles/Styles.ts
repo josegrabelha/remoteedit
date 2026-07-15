@@ -746,6 +746,9 @@ export function renderStyles(): string {
   .server-overview-detail-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
   .server-overview-detail-table th, .server-overview-detail-table td { padding: 6px 8px; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; white-space: nowrap; }
   .server-overview-detail-table th { color: var(--vscode-descriptionForeground); font-weight: 650; background: color-mix(in srgb, var(--vscode-editor-background) 95%, var(--vscode-foreground)); }
+  .server-overview-detail-table th .server-list-column-sort-button { width: 100%; }
+  .server-overview-detail-table th .server-list-column-sort-button:hover:not(:disabled),
+  .server-overview-detail-table th .server-list-column-sort-button:focus-visible { color: var(--vscode-foreground); background: transparent; outline: none; box-shadow: none; }
   .server-overview-detail-table tr:last-child td { border-bottom: 0; }
   .server-overview-detail-empty { padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; color: var(--vscode-descriptionForeground); background: var(--vscode-editor-background); font-size: 12px; }
   #serverOverviewDetailsBackdrop .file-properties-dialog { width: min(600px, 100%); }

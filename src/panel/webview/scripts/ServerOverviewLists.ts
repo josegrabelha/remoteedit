@@ -40,13 +40,18 @@ export function renderServerOverviewLists(): string {
     }).join('') + '</div>';
   }
 
-  function renderOverviewDetailTable(title, headers, rows) {
+  function renderOverviewDetailTable(title, card, columns, rows) {
     const safeRows = Array.isArray(rows) ? rows : [];
     if (!safeRows.length) {
       return '<div class="server-overview-detail-section"><div class="server-overview-detail-section-title">' + escapeHtml(title) + '</div><div class="server-overview-detail-empty">Details are not available for this platform.</div></div>';
     }
-    const headerHtml = headers.map(header => '<th>' + escapeHtml(header) + '</th>').join('');
-    const rowsHtml = safeRows.map(row => '<tr>' + row.map(cell => '<td>' + escapeHtml(cell || '—') + '</td>').join('') + '</tr>').join('');
+    const safeColumns = Array.isArray(columns) ? columns : [];
+    const visibleRows = sortServerItems(card, safeRows, (row, key) => {
+      const columnIndex = safeColumns.findIndex(column => column && column.key === key);
+      return columnIndex >= 0 && Array.isArray(row) ? row[columnIndex] : '';
+    });
+    const headerHtml = safeColumns.map(column => '<th>' + renderServerSortButton(card, column.key, column.label) + '</th>').join('');
+    const rowsHtml = visibleRows.map(row => '<tr>' + row.map(cell => '<td>' + escapeHtml(cell || '—') + '</td>').join('') + '</tr>').join('');
     return '<div class="server-overview-detail-section"><div class="server-overview-detail-section-title">' + escapeHtml(title) + '</div><div class="server-overview-detail-table-wrap"><table class="server-overview-detail-table"><thead><tr>' + headerHtml + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>';
   }
 
@@ -120,7 +125,14 @@ export function renderServerOverviewLists(): string {
       return {
         title: 'Disk Details',
         subtitle: 'Filesystems and mount usage',
-        html: rows.length ? renderOverviewDetailTable('Filesystems', ['Filesystem', 'Mount', 'Used', 'Free', 'Total', 'Use%'], rows) : unavailableHtml
+        html: rows.length ? renderOverviewDetailTable('Filesystems', 'overviewDisk', [
+          { key: 'filesystem', label: 'Filesystem' },
+          { key: 'mount', label: 'Mount' },
+          { key: 'used', label: 'Used' },
+          { key: 'free', label: 'Free' },
+          { key: 'total', label: 'Total' },
+          { key: 'percent', label: 'Use%' }
+        ], rows) : unavailableHtml
       };
     }
 
@@ -135,7 +147,12 @@ export function renderServerOverviewLists(): string {
       return {
         title: 'Sessions Details',
         subtitle: 'Logged-in user sessions',
-        html: rows.length ? renderOverviewDetailTable('Sessions', ['User', 'TTY', 'From', 'Login time'], rows) : unavailableHtml
+        html: rows.length ? renderOverviewDetailTable('Sessions', 'overviewSessions', [
+          { key: 'user', label: 'User' },
+          { key: 'tty', label: 'TTY' },
+          { key: 'from', label: 'From' },
+          { key: 'loginTime', label: 'Login time' }
+        ], rows) : unavailableHtml
       };
     }
 
@@ -150,7 +167,12 @@ export function renderServerOverviewLists(): string {
       return {
         title: 'Listeners Details',
         subtitle: 'Listening network sockets',
-        html: rows.length ? renderOverviewDetailTable('Listeners', ['Proto', 'Local address', 'Port', 'State'], rows) : unavailableHtml
+        html: rows.length ? renderOverviewDetailTable('Listeners', 'overviewListeners', [
+          { key: 'protocol', label: 'Proto' },
+          { key: 'localAddress', label: 'Local address' },
+          { key: 'port', label: 'Port' },
+          { key: 'state', label: 'State' }
+        ], rows) : unavailableHtml
       };
     }
 
@@ -205,18 +227,26 @@ export function renderServerOverviewLists(): string {
     };
   }
 
-  function showServerOverviewDetailsDialog(index) {
+  function renderServerOverviewDetailsDialogContent() {
     if (!serverOverviewDetailsBackdrop || !serverOverviewDetailsTitle || !serverOverviewDetailsSubtitle || !serverOverviewDetailsGrid) return;
     const items = getCurrentServerOverviewItems();
-    if (!Number.isFinite(index) || index < 0 || index >= items.length) return;
-    const item = items[index];
+    if (!Number.isFinite(serverOverviewDetailsItemIndex) || serverOverviewDetailsItemIndex < 0 || serverOverviewDetailsItemIndex >= items.length) return;
+    const item = items[serverOverviewDetailsItemIndex];
     const state = getActiveServerDashboardState();
     const model = getServerOverviewDetailsModel(item, state);
-    serverOverviewDetailsDialogOpen = true;
     serverOverviewDetailsTitle.textContent = model.title;
     serverOverviewDetailsSubtitle.textContent = model.subtitle;
     serverOverviewDetailsGrid.className = 'server-overview-details';
     serverOverviewDetailsGrid.innerHTML = model.html;
+  }
+
+  function showServerOverviewDetailsDialog(index) {
+    if (!serverOverviewDetailsBackdrop || !serverOverviewDetailsTitle || !serverOverviewDetailsSubtitle || !serverOverviewDetailsGrid) return;
+    const items = getCurrentServerOverviewItems();
+    if (!Number.isFinite(index) || index < 0 || index >= items.length) return;
+    serverOverviewDetailsItemIndex = index;
+    serverOverviewDetailsDialogOpen = true;
+    renderServerOverviewDetailsDialogContent();
     if (serverOverviewDetailsCopyButton) {
       serverOverviewDetailsCopyButton.textContent = 'Copy';
       serverOverviewDetailsCopyButton.setAttribute('data-original-text', 'Copy');
@@ -231,6 +261,7 @@ export function renderServerOverviewLists(): string {
   function hideServerOverviewDetailsDialog() {
     if (!serverOverviewDetailsBackdrop) return;
     serverOverviewDetailsDialogOpen = false;
+    serverOverviewDetailsItemIndex = -1;
     serverOverviewDetailsBackdrop.classList.remove('visible');
     serverOverviewDetailsBackdrop.setAttribute('aria-hidden', 'true');
   }
@@ -346,10 +377,10 @@ export function renderServerOverviewLists(): string {
     serverCardSortsByConnectionId.set(storageKey, { key: nextKey, direction: nextDirection });
   }
 
-  function handleServerCardSortClick(card, key) {
+  function cycleServerCardSort(card, key) {
     const normalizedCard = String(card || '');
     const normalizedKey = String(key || '');
-    if (!normalizedCard || !normalizedKey) return;
+    if (!normalizedCard || !normalizedKey) return false;
     const current = getServerCardSort(normalizedCard);
     if (current.key !== normalizedKey) {
       setServerCardSort(normalizedCard, normalizedKey, 'asc');
@@ -358,7 +389,17 @@ export function renderServerOverviewLists(): string {
     } else {
       setServerCardSort(normalizedCard, '', '');
     }
+    return true;
+  }
+
+  function handleServerCardSortClick(card, key) {
+    if (!cycleServerCardSort(card, key)) return;
     renderServerView();
+  }
+
+  function handleServerOverviewDetailsSortClick(card, key) {
+    if (!cycleServerCardSort(card, key)) return;
+    renderServerOverviewDetailsDialogContent();
   }
 
   function getServerSortComparable(value) {

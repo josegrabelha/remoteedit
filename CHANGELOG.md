@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* Added SFTP Jump Hosts in the Webview, Native Sidebar, and new-connection wizard, including multi-hop saved-profile chains, Quick Connect support, route summaries, and protected backup references.
+
+### Fixed
+
+* Choosing Direct clears a saved Jump Host. Canceling a Jump password prompt is shown as cancellation.
+* Canceling SFTP connection attempts releases any hops already opened. Remote closure removes the active connection, and cleanup releases each target's private SSH chain.
+
+### Notes
+
+* Jump Hosts are SFTP-only; FTP and FTPS remain direct. Version 3 backups preserve Jump references; older backups import as Direct, and older extensions reject version 3 backups.
+
 ## [1.8.11] - 2026-07-15
 
 ### Improved

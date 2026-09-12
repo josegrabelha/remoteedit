@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput } from '../connection/ConnectionManager';
+import type { JumpProfileDescriptor } from '../connection/JumpChain';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import type { LocalUploadEntry } from '../panel/PanelTypes';
@@ -16,7 +17,7 @@ import {
   OpenConnectionsTreeProvider,
   TransfersTreeProvider
 } from './TreeProviders';
-import { getParentRemotePath, normalizeRemotePath, type ConnectionDetailField, RemoteEditSidebarItem } from './Items';
+import { buildSidebarJumpDisplay, formatSidebarJumpProfileEndpoint, getParentRemotePath, normalizeRemotePath, type ConnectionDetailField, RemoteEditSidebarItem } from './Items';
 import { SidebarBackupController } from './BackupController';
 import { QUICK_CONNECT_ID, SidebarConnectionDraftStore } from './ConnectionDraftStore';
 import { buildRemoteEntryProperties, formatBytes, formatChecksumLine, permissionModeFromString } from './RemoteEntryProperties';
@@ -27,6 +28,7 @@ import { SidebarRemoteDragDropMoveController, type SidebarRemoteDragMoveTarget }
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { remoteClipboardService, type RemoteClipboardItem } from '../remote/RemoteClipboardService';
 import { RemoteMoveService } from '../remote/RemoteMoveService';
+import { isRemoteEditOperationCancelled } from '../utils/progressUtils';
 
 interface ConnectionChangeNotifier {
   onDidChangeConnections?: vscode.Event<void>;
@@ -623,6 +625,23 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
+    let jumpProfileId = '';
+    if (connectionType === 'sftp') {
+      const selectedJumpProfileId = await this.promptSidebarJumpProfileId({
+        id: '',
+        name: name.trim(),
+        connectionType,
+        host: host.trim(),
+        port: Number(portValue)
+      }, profiles, 'Add Connection');
+
+      if (selectedJumpProfileId === undefined) {
+        return;
+      }
+
+      jumpProfileId = selectedJumpProfileId;
+    }
+
     let ftpsAllowSelfSignedCertificate = false;
     let ftpsCaCertificatePath = '';
 
@@ -774,7 +793,8 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         startPath: normalizeRemotePath(startPath),
         keepAlive: keepAliveSelection.value,
         ftpsAllowSelfSignedCertificate,
-        ftpsCaCertificatePath
+        ftpsCaCertificatePath,
+        jumpProfileId
       });
 
       this.connectionsProvider.refresh();
@@ -2211,6 +2231,28 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return;
       }
 
+      if (field === 'jumpProfileId') {
+        if (normalizeConnectionType(currentProfile.connectionType || 'sftp') !== 'sftp') {
+          void vscode.window.showInformationMessage('Only SFTP connections can use a Jump Host.');
+          return;
+        }
+
+        const profiles = await this.connectionManager.listProfiles();
+        const selectedJumpProfileId = await this.promptSidebarJumpProfileId(currentProfile, profiles, 'Select Jump Host');
+        if (selectedJumpProfileId === undefined) {
+          return;
+        }
+
+        this.connectionDrafts.updateDraftValue(profileId, {
+          connectionType: currentProfile.connectionType,
+          authType: currentProfile.authType,
+          privateKeyPath: currentProfile.privateKeyPath,
+          jumpProfileId: selectedJumpProfileId
+        });
+        this.connectionsProvider.refresh();
+        return;
+      }
+
       if (field === 'authType') {
         if (normalizeConnectionType(currentProfile.connectionType || 'sftp') !== 'sftp') {
           void vscode.window.showInformationMessage('FTP and FTPS use password authentication.');
@@ -2635,6 +2677,57 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     });
   }
 
+  private async promptSidebarJumpProfileId(
+    target: JumpProfileDescriptor,
+    profiles: readonly ConnectionProfile[],
+    title: string
+  ): Promise<string | undefined> {
+    type SidebarJumpPickItem = vscode.QuickPickItem & { value: string };
+
+    const currentJumpProfileId = String(target.jumpProfileId || '').trim();
+    const directItem: SidebarJumpPickItem = {
+      label: 'Direct',
+      description: 'Connect directly to the target',
+      detail: 'Route: Direct',
+      value: ''
+    };
+    const candidateItems: SidebarJumpPickItem[] = [];
+    for (const profile of profiles) {
+      if (normalizeConnectionType(profile.connectionType || 'sftp') !== 'sftp' || profile.id === target.id) {
+        continue;
+      }
+
+      const display = buildSidebarJumpDisplay({ ...target, jumpProfileId: profile.id }, profiles);
+      if (!display.isAvailable) {
+        continue;
+      }
+
+      candidateItems.push({
+        label: display.label,
+        description: formatSidebarJumpProfileEndpoint(profile),
+        detail: display.route,
+        value: profile.id
+      });
+    }
+    candidateItems.sort((left, right) => {
+      const labelCompare = left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' });
+      return labelCompare || String(left.description || '').localeCompare(String(right.description || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    const currentItem = candidateItems.find(item => item.value === currentJumpProfileId);
+    const selected = await this.showQuickPickWithActiveItem<SidebarJumpPickItem>({
+      title,
+      placeHolder: currentJumpProfileId && !currentItem
+        ? 'The current Jump Host is unavailable. Select Direct or a valid saved SFTP profile.'
+        : 'Select Direct or a saved SFTP profile.',
+      activeItem: currentItem || directItem,
+      items: candidateItems.length > 0
+        ? [directItem, { label: '', kind: vscode.QuickPickItemKind.Separator }, ...candidateItems]
+        : [directItem]
+    });
+
+    return selected?.value;
+  }
+
 
   private async deleteConnectionGroup(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
     const groupId = typeof item === 'string' ? item : item?.groupId;
@@ -2945,10 +3038,22 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       return;
     }
 
-    await this.connectSavedConnection(profileId, this.connectionDrafts.getDraftProfileById(profileId));
+    const storedProfile = await this.connectionManager.getProfile(profileId);
+    if (!storedProfile) {
+      this.connectionsProvider.refresh();
+      void vscode.window.showWarningMessage('The selected saved connection no longer exists.');
+      return;
+    }
+
+    const draft = this.connectionDrafts.getDraft(profileId);
+    await this.connectSavedConnection(profileId, {
+      ...this.connectionDrafts.mergeProfileWithDraft(storedProfile),
+      password: draft?.password,
+      passphrase: draft?.passphrase
+    });
   }
 
-  private async connectSavedConnection(profileId: string, draftProfile?: ConnectionProfile): Promise<void> {
+  private async connectSavedConnection(profileId: string, draftProfile?: ConnectionProfileInput): Promise<void> {
     const payload = draftProfile ? { ...draftProfile, id: profileId } : { id: profileId };
     await this.connectWithPayload(payload);
   }
@@ -2959,6 +3064,12 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     try {
       options = await this.connectionManager.buildConnectOptions(payload || {});
     } catch (error) {
+      if (isRemoteEditOperationCancelled(error)) {
+        this.setConnectionActivity(payload.id || QUICK_CONNECT_ID, false);
+        this.output.appendLine('[Sidebar] Connection canceled.');
+        void vscode.window.showInformationMessage('Connection canceled.');
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       void vscode.window.showErrorMessage(message);
       return;
@@ -3034,7 +3145,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     void vscode.window.showInformationMessage('Copied connection detail.');
   }
 
-  private getProfileFieldValue(profile: { host: string; port: number; username: string; startPath: string; privateKeyPath?: string; ftpsCaCertificatePath?: string }, field: ConnectionDetailField): string {
+  private getProfileFieldValue(profile: { host: string; port: number; username: string; startPath: string; privateKeyPath?: string; ftpsCaCertificatePath?: string; jumpProfileId?: string }, field: ConnectionDetailField): string {
     switch (field) {
       case 'host':
         return profile.host || '';
@@ -3048,6 +3159,8 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return profile.privateKeyPath || '';
       case 'ftpsCaCertificatePath':
         return profile.ftpsCaCertificatePath || '';
+      case 'jumpProfileId':
+        return profile.jumpProfileId || '';
       default:
         return '';
     }
@@ -3067,6 +3180,8 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return 'Private Key Path';
       case 'ftpsCaCertificatePath':
         return 'CA Certificate Path';
+      case 'jumpProfileId':
+        return 'Jump Host';
       default:
         return 'Connection Field';
     }
@@ -3115,6 +3230,9 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         break;
       case 'ftpsCaCertificatePath':
         await this.connectionManager.saveProfile({ id: profileId, ftpsCaCertificatePath: value });
+        break;
+      case 'jumpProfileId':
+        await this.connectionManager.saveProfile({ id: profileId, jumpProfileId: value });
         break;
       default:
         break;

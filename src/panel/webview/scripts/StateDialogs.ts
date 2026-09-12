@@ -96,6 +96,12 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const connectionTypeDropdownButton = document.getElementById('connectionTypeDropdownButton');
   const connectionTypeDropdownLabel = document.getElementById('connectionTypeDropdownLabel');
   const connectionTypeDropdownMenu = document.getElementById('connectionTypeDropdownMenu');
+  const jumpProfileBlock = document.getElementById('jumpProfileBlock');
+  const jumpProfileId = document.getElementById('jumpProfileId');
+  const jumpProfileDropdownButton = document.getElementById('jumpProfileDropdownButton');
+  const jumpProfileDropdownLabel = document.getElementById('jumpProfileDropdownLabel');
+  const jumpProfileDropdownMenu = document.getElementById('jumpProfileDropdownMenu');
+  const jumpRouteSummary = document.getElementById('jumpRouteSummary');
   const ftpsCertificateBlock = document.getElementById('ftpsCertificateBlock');
   const ftpsAllowSelfSignedCertificate = document.getElementById('ftpsAllowSelfSignedCertificate');
   const ftpsCaCertificateBlock = document.getElementById('ftpsCaCertificateBlock');
@@ -558,6 +564,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   let profileDropdownFilterText = '';
   let collapsedProfileDropdownGroupIds = new Set();
   let connectionTypeDropdownOpen = false;
+  let jumpProfileDropdownOpen = false;
   let authDropdownOpen = false;
   let serverAutoRefreshDropdownOpen = false;
   let serverAutoRefreshValue = '30';

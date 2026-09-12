@@ -3,12 +3,14 @@
 
 # TypeScript sources and build metadata
 src/**
+out/test/**
 **/*.ts
 **/*.map
 tsconfig.json
 package-lock.json
 
 # Local/package artifacts
+.temp/**
 *.vsix
 *.zip
 .git/**

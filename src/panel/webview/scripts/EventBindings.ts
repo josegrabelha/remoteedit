@@ -95,6 +95,8 @@ export function renderEventBindings(): string {
         break;
       case 'sessionsChanged': {
         const previousSessionIds = new Set(sessions.map(session => session.id));
+        const cancelledConnectionId = String(payload.cancelledConnectionId || '');
+        if (cancelledConnectionId) clientPendingSessionsByConnectionId.delete(cancelledConnectionId);
         const incomingSessions = payload.sessions || [];
         const incomingSessionIds = new Set(incomingSessions.map(session => session.id));
         for (const incomingSession of incomingSessions) {
@@ -134,6 +136,13 @@ export function renderEventBindings(): string {
         pruneFileListSnapshotsForSessions();
         if (previousActiveConnectionId && remoteSearchDialogOpen) saveRemoteSearchFormForConnection(previousActiveConnectionId);
         activeConnectionId = payload.activeConnectionId || '';
+        if (cancelledConnectionId && (!activeConnectionId || activeConnectionId === cancelledConnectionId) && !activeSessionIds.has(cancelledConnectionId)) {
+          const fallback = sessions.find(isSessionConnected) || sessions[0];
+          activeConnectionId = fallback ? fallback.id : '';
+          if (fallback && isSessionConnected(fallback)) {
+            vscode.postMessage({ type: 'switchSession', payload: { connectionId: fallback.id } });
+          }
+        }
         connectionButtonState = '';
         renderSessionTabs();
         if (profileDropdownOpen) renderProfileDropdown({ preserveFilter: true, preserveScroll: true });
@@ -178,6 +187,13 @@ export function renderEventBindings(): string {
         renderRemoteCommandBadge();
         if (remoteSearchDialogOpen) updateRemoteSearchProtocolFields();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
+        if (cancelledConnectionId && previousActiveConnectionId === cancelledConnectionId && !activeConnectionId) {
+          currentEntries = [];
+          entriesRenderGeneration += 1;
+          renderEntriesEmptyMessage('Connect to a host to list remote files.');
+          currentPath.value = '';
+          setBusy(false, 'Connection canceled.');
+        }
         break;
       }
       case 'sudoModeChanged': {

@@ -4,8 +4,8 @@ import type { AuthType, ConnectionGroup, ConnectionProfile } from '../connection
 import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
 import type { TransferQueueItemSnapshot } from '../panel/RemoteEditPanel';
 import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
-import { buildConnectionDetail, buildGoParentTooltipOrEmpty, buildMarkdownTooltip, buildRemoteBrowseTooltipOrEmpty, buildRemoteEntryDescription, buildRemoteEntryTooltipOrEmpty, buildRemotePathTooltipOrEmpty, buildSidebarFullPathTreeNodeDisplay, buildSidebarPathDisplay, buildTransferItemTooltipContent, formatCredentialStatus, formatOpenConnectionLabel, formatTooltipPlainText, formatTransferItemDescription, formatTransferItemLabel, getConnectionDetailContextValue, getParentRemotePath, getRemoteEntryIcon, getRemoteEntryResourceUri, getSavedConnectionIcon, getSidebarOpenConnectionsPathView, getSidebarDecorationResourceUri, isPathAncestorOrSelf, isSftpConnection, normalizeRemotePath, normalizeRemoteRootStartPath, resolveRemoteEntryType, type ConnectionDetailField } from './ItemHelpers';
-export { getConnectionDetailFields, getParentRemotePath, getSidebarOpenConnectionsPathView, isPathAncestorOrSelf, normalizeRemotePath, sortRemoteEntries, type ConnectionDetailField, type SidebarOpenConnectionsPathView } from './ItemHelpers';
+import { buildConnectionDetail, buildGoParentTooltipOrEmpty, buildMarkdownTooltip, buildRemoteBrowseTooltipOrEmpty, buildRemoteEntryDescription, buildRemoteEntryTooltipOrEmpty, buildRemotePathTooltipOrEmpty, buildSidebarFullPathTreeNodeDisplay, buildSidebarPathDisplay, buildTransferItemTooltipContent, formatActiveConnectionJumpVia, formatCredentialStatus, formatOpenConnectionLabel, formatTooltipPlainText, formatTransferItemDescription, formatTransferItemLabel, getConnectionDetailContextValue, getParentRemotePath, getRemoteEntryIcon, getRemoteEntryResourceUri, getSavedConnectionIcon, getSidebarOpenConnectionsPathView, getSidebarDecorationResourceUri, isPathAncestorOrSelf, isSftpConnection, normalizeRemotePath, normalizeRemoteRootStartPath, resolveRemoteEntryType, type ConnectionDetailField } from './ItemHelpers';
+export { buildSidebarJumpDisplay, formatSidebarJumpProfileEndpoint, getConnectionDetailFields, getParentRemotePath, getSidebarOpenConnectionsPathView, isPathAncestorOrSelf, normalizeRemotePath, sortRemoteEntries, type ConnectionDetailField, type SidebarJumpDisplay, type SidebarOpenConnectionsPathView } from './ItemHelpers';
 
 export type RemoteEditSidebarItemKind =
   | 'action'
@@ -136,12 +136,12 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
-  static quickConnect(profile: ConnectionProfile, options?: { connecting?: boolean }): RemoteEditSidebarItem {
-    const tooltip = new vscode.MarkdownString(undefined, true);
-
-    tooltip.isTrusted = false;
-    tooltip.appendMarkdown('**Quick Connect**\n\n');
-    tooltip.appendMarkdown('Temporary connection. Fields are not saved as a profile.');
+  static quickConnect(profile: ConnectionProfile, options?: { connecting?: boolean; jumpRoute?: string }): RemoteEditSidebarItem {
+    const tooltipLines = ['Temporary connection. Fields are not saved as a profile.'];
+    if (options?.jumpRoute) {
+      tooltipLines.push(options.jumpRoute);
+    }
+    const tooltip = buildMarkdownTooltip('Quick Connect', tooltipLines);
 
     return new RemoteEditSidebarItem({
       label: 'Quick Connect',
@@ -174,8 +174,12 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
-  static connectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; modified?: boolean; connected?: boolean }): RemoteEditSidebarItem {
-    const detail = buildConnectionDetail(profile, field, { quickConnect: Boolean(options?.quickConnect) });
+  static connectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; modified?: boolean; connected?: boolean; jumpProfileLabel?: string; jumpRoute?: string }): RemoteEditSidebarItem {
+    const detail = buildConnectionDetail(profile, field, {
+      quickConnect: Boolean(options?.quickConnect),
+      jumpProfileLabel: options?.jumpProfileLabel,
+      jumpRoute: options?.jumpRoute
+    });
     const isQuickConnect = Boolean(options?.quickConnect);
     const isCredentials = field === 'credentials';
     const isReadOnly = !isQuickConnect && Boolean(options?.connected);
@@ -248,7 +252,7 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
   }
 
 
-  static fromConnectionProfile(profile: ConnectionProfile, options?: { modified?: boolean; connected?: boolean; draft?: boolean; connecting?: boolean }): RemoteEditSidebarItem {
+  static fromConnectionProfile(profile: ConnectionProfile, options?: { modified?: boolean; connected?: boolean; draft?: boolean; connecting?: boolean; jumpRoute?: string }): RemoteEditSidebarItem {
     const protocol = String(profile.connectionType || 'sftp').toUpperCase();
     const credentialStatus = formatCredentialStatus(profile);
     const tooltipLines = [
@@ -268,6 +272,10 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
 
     if (profile.startPath) {
       tooltipLines.push(`Start path: ${profile.startPath}`);
+    }
+
+    if (options?.jumpRoute) {
+      tooltipLines.push(options.jumpRoute);
     }
 
     const tooltip = buildMarkdownTooltip(profile.name, tooltipLines);
@@ -323,6 +331,11 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
 
     if (sudoModeEnabled) {
       tooltipLines.push('Sudo Mode: On');
+    }
+
+    const jumpVia = formatActiveConnectionJumpVia(connection);
+    if (jumpVia) {
+      tooltipLines.push(jumpVia);
     }
 
     const tooltip = buildMarkdownTooltip(connection.name, tooltipLines);

@@ -15,6 +15,7 @@ import type {
   RemoteEntry
 } from './RemoteSessionTypes';
 import type { RemoteEditProgressReporter } from '../utils/progressUtils';
+import { RemoteEditOperationCancelledError } from '../utils/progressUtils';
 
 export class RemoteSessionRouter implements RemoteSessionManager {
   private readonly onDidChangeConnectionsEmitter = new vscode.EventEmitter<void>();
@@ -25,6 +26,7 @@ export class RemoteSessionRouter implements RemoteSessionManager {
   private readonly sftpSessions: RemoteSessionManager;
   private readonly ftpSessions: RemoteSessionManager;
   private readonly sessionRoutes = new Map<string, RemoteSessionManager>();
+  private readonly pendingConnections = new Map<string, vscode.CancellationTokenSource>();
 
   constructor(
     output?: vscode.OutputChannel,
@@ -36,6 +38,15 @@ export class RemoteSessionRouter implements RemoteSessionManager {
     this.sftpSessions = sftpSessions;
     this.ftpSessions = ftpSessions;
 
+    for (const manager of [sftpSessions, ftpSessions]) {
+      manager.onDidCloseConnection?.(connectionId => {
+        if (this.sessionRoutes.get(connectionId) === manager && !manager.hasConnection(connectionId)) {
+          this.sessionRoutes.delete(connectionId);
+          this.onDidChangeConnectionsEmitter.fire();
+        }
+      });
+    }
+
     const ftpMetadataEvent = (ftpSessions as RemoteSessionManager & RemoteEntryMetadataNotifier).onRemoteEntryMetadataUpdated;
     if (ftpMetadataEvent) {
       ftpMetadataEvent(event => this.onRemoteEntryMetadataUpdatedEmitter.fire(event));
@@ -43,46 +54,54 @@ export class RemoteSessionRouter implements RemoteSessionManager {
   }
 
   async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
-    await this.disconnect(options.connectionId);
-
-    const manager = this.getManagerForConnectionType(options.connectionType);
-    const connection = await manager.connect(options, cancellationToken);
-
-    this.sessionRoutes.set(connection.id, manager);
-    this.onDidChangeConnectionsEmitter.fire();
-    return connection;
+    const previousClose = this.disconnect(options.connectionId);
+    const source = new vscode.CancellationTokenSource();
+    this.pendingConnections.set(options.connectionId, source);
+    const subscription = cancellationToken?.onCancellationRequested(() => source.cancel());
+    if (cancellationToken?.isCancellationRequested) source.cancel();
+    try {
+      await previousClose;
+      if (source.token.isCancellationRequested) throw new RemoteEditOperationCancelledError('Connection cancelled.');
+      const manager = this.getManagerForConnectionType(options.connectionType);
+      const connection = await manager.connect(options, source.token);
+      if (source.token.isCancellationRequested || this.pendingConnections.get(options.connectionId) !== source
+        || !manager.hasConnection(connection.id)) {
+        throw new RemoteEditOperationCancelledError('Connection cancelled.');
+      }
+      this.sessionRoutes.set(connection.id, manager);
+      this.onDidChangeConnectionsEmitter.fire();
+      return connection;
+    } finally {
+      if (this.pendingConnections.get(options.connectionId) === source) this.pendingConnections.delete(options.connectionId);
+      subscription?.dispose();
+      source.dispose();
+    }
   }
 
   async disconnect(connectionId: string): Promise<void> {
-    if (!connectionId || !this.hasConnection(connectionId)) {
-      this.sessionRoutes.delete(connectionId);
-      return;
-    }
-
+    const pending = this.pendingConnections.get(connectionId);
+    this.pendingConnections.delete(connectionId);
+    pending?.cancel();
     const manager = this.sessionRoutes.get(connectionId);
-
-    if (manager) {
-      await manager.disconnect(connectionId);
-      this.sessionRoutes.delete(connectionId);
-      this.onDidChangeConnectionsEmitter.fire();
-      return;
-    }
-
-    await Promise.all([
-      this.sftpSessions.disconnect(connectionId),
-      this.ftpSessions.disconnect(connectionId)
-    ]);
+    const wasActive = this.hasConnection(connectionId);
     this.sessionRoutes.delete(connectionId);
-    this.onDidChangeConnectionsEmitter.fire();
+    const closing = manager ? manager.disconnect(connectionId) : Promise.all([
+      this.sftpSessions.disconnect(connectionId), this.ftpSessions.disconnect(connectionId)
+    ]);
+    await closing;
+    if (wasActive) this.onDidChangeConnectionsEmitter.fire();
   }
 
   async disconnectAll(): Promise<void> {
+    for (const pending of this.pendingConnections.values()) pending.cancel();
+    this.pendingConnections.clear();
+    const wasActive = this.listConnections().length > 0;
+    this.sessionRoutes.clear();
     await Promise.all([
       this.sftpSessions.disconnectAll(),
       this.ftpSessions.disconnectAll()
     ]);
-    this.sessionRoutes.clear();
-    this.onDidChangeConnectionsEmitter.fire();
+    if (wasActive) this.onDidChangeConnectionsEmitter.fire();
   }
 
   getConnection(connectionId: string): ActiveConnection | undefined {

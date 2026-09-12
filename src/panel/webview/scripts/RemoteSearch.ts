@@ -131,7 +131,7 @@ export function renderRemoteSearch(): string {
   }
 
   function clearConnectionValidationErrors() {
-    for (const field of [host, port, username, password, privateKeyPath, ftpsCaCertificatePath]) {
+    for (const field of [host, port, jumpProfileDropdownButton, username, password, privateKeyPath, ftpsCaCertificatePath]) {
       clearConnectionFieldInvalid(field);
     }
   }
@@ -176,6 +176,13 @@ export function renderRemoteSearch(): string {
 
     if (mode === 'connect' && requiresFtpsCaCertificate && !String(ftpsCaCertificatePath.value || '').trim()) {
       errors.push({ field: ftpsCaCertificatePath, label: 'CA certificate path', kind: 'required', message: 'CA certificate path is required for FTPS unless self-signed/untrusted certificates are allowed.' });
+    }
+
+    if (normalizedConnectionType === 'sftp') {
+      const jumpError = getJumpProfileSelectionError();
+      if (jumpError) {
+        errors.push({ field: jumpProfileDropdownButton, label: 'Jump Host', kind: 'invalid', message: jumpError });
+      }
     }
 
     return errors;
@@ -347,6 +354,7 @@ export function renderRemoteSearch(): string {
       connectionType: typeValue,
       port: normalizeConnectionComparableNumber(profile.port, getDefaultPortForConnectionType(typeValue)),
       username: normalizeConnectionComparableString(profile.username),
+      jumpProfileId: typeValue === 'sftp' ? normalizeJumpProfileId(profile.jumpProfileId) : '',
       authType: authValue,
       privateKeyPath: authValue === 'privateKey' ? normalizeConnectionComparableString(profile.privateKeyPath) : '',
       startPath: normalizeConnectionComparableString(profile.startPath),
@@ -368,6 +376,7 @@ export function renderRemoteSearch(): string {
       connectionType: typeValue,
       port: normalizeConnectionComparableNumber(port.value, getDefaultPortForConnectionType(typeValue)),
       username: normalizeConnectionComparableString(username.value),
+      jumpProfileId: typeValue === 'sftp' ? normalizeJumpProfileId(jumpProfileId.value) : '',
       authType: authValue,
       privateKeyPath: authValue === 'privateKey' ? normalizeConnectionComparableString(privateKeyPath.value) : '',
       startPath: normalizeConnectionComparableString(startPath.value),
@@ -525,6 +534,7 @@ export function renderRemoteSearch(): string {
       connectionType: normalizeConnectionTypeValue(connectionType.value),
       port: port.value,
       username: username.value,
+      jumpProfileId: isSftpFormConnection() ? normalizeJumpProfileId(jumpProfileId.value) : undefined,
       authType: authType.value,
       password: password.value === SAVED_SECRET_MASK ? '' : password.value,
       rememberPassword: rememberPassword.checked,

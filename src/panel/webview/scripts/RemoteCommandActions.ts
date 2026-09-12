@@ -241,7 +241,7 @@ export function renderRemoteCommandActions(): string {
       return;
     }
 
-    browserSubtitle.textContent = formatConnectionLabel(active.name, formatSessionTarget(active));
+    browserSubtitle.textContent = formatConnectionLabel(active.name, formatSessionTarget(active)) + formatJumpViaSuffix(getSessionJumpProfileNames(active));
     if (active.currentPath) {
       currentPath.value = active.currentPath;
     }
@@ -562,6 +562,9 @@ export function renderRemoteCommandActions(): string {
     const id = String(connectionId || '').trim();
     if (!id) return;
 
+    const jumpAnalysis = analyzeJumpProfileCandidate(payload.jumpProfileId, payload.id);
+    const jumpProfiles = jumpAnalysis.valid ? jumpAnalysis.profiles : [];
+
     const session = {
       id,
       connectionType: normalizeConnectionTypeValue(payload.connectionType),
@@ -575,6 +578,9 @@ export function renderRemoteCommandActions(): string {
       currentPath: normalizeUiRemotePath(payload.startPath || '/'),
       keepAlive: payload.keepAlive !== false,
       isQuickConnect: !payload.id,
+      jumpProfileId: normalizeJumpProfileId(payload.jumpProfileId) || undefined,
+      jumpProfileIds: jumpProfiles.map(profile => profile.id),
+      jumpProfileNames: jumpProfiles.map(profile => profile.name),
       sudoModeEnabled: false,
       connectionState: 'connecting'
     };
@@ -647,11 +653,13 @@ export function renderRemoteCommandActions(): string {
       const usernameValue = String(username.value || '').trim();
       const authTypeValue = String(authType.value || 'password');
       const connectionTypeValue = normalizeConnectionTypeValue(connectionType.value);
+      const jumpProfileIdValue = connectionTypeValue === 'sftp' ? normalizeJumpProfileId(jumpProfileId.value) : '';
       return String(session.host || '').trim() === hostValue
         && normalizeConnectionTypeValue(session.connectionType) === connectionTypeValue
         && Number(session.port || getDefaultPortForConnectionType(session.connectionType)) === portValue
         && String(session.username || '').trim() === usernameValue
-        && String(session.authType || 'password') === authTypeValue;
+        && String(session.authType || 'password') === authTypeValue
+        && normalizeJumpProfileId(session.jumpProfileId) === jumpProfileIdValue;
     };
     return sessions.find(session => matchesForm(session) && predicate(session));
   }
@@ -692,6 +700,7 @@ export function renderRemoteCommandActions(): string {
       connectionType: connectionTypeValue,
       port: profile.port || getDefaultPortForConnectionType(connectionTypeValue),
       username: profile.username,
+      jumpProfileId: connectionTypeValue === 'sftp' ? (normalizeJumpProfileId(profile.jumpProfileId) || undefined) : undefined,
       authType: connectionTypeValue === 'sftp' ? (profile.authType || 'password') : 'password',
       password: '',
       rememberPassword: Boolean(profile.hasSavedPassword),
@@ -772,6 +781,7 @@ export function renderRemoteCommandActions(): string {
     connectionType.value = normalizeConnectionTypeValue(session.connectionType);
     port.value = String(session.port || getDefaultPortForConnectionType(connectionType.value));
     username.value = session.username || '';
+    const sessionJumpProfileId = isSftpFormConnection() ? normalizeJumpProfileId(session.jumpProfileId) : '';
     authType.value = isSftpFormConnection() ? (session.authType || 'password') : 'password';
     password.value = '';
     rememberPassword.checked = false;
@@ -786,6 +796,7 @@ export function renderRemoteCommandActions(): string {
     ftpsCaCertificatePath.value = session.ftpsCaCertificatePath || '';
     updateCredentialState();
     updateConnectionTypeDropdown();
+    updateJumpProfilePicker(sessionJumpProfileId);
     updateAuthFields();
   }
 
@@ -795,6 +806,8 @@ export function renderRemoteCommandActions(): string {
       port,
       connectionType,
       connectionTypeDropdownButton,
+      jumpProfileId,
+      jumpProfileDropdownButton,
       ftpsAllowSelfSignedCertificate,
       ftpsCaCertificatePath,
       ftpsCaCertificateBrowseButton,
@@ -837,6 +850,223 @@ export function renderRemoteCommandActions(): string {
 
   function isSftpFormConnection() {
     return normalizeConnectionTypeValue(connectionType.value) === 'sftp';
+  }
+
+  function normalizeJumpProfileId(value) {
+    return String(value || '').trim();
+  }
+
+  function getJumpProfileDisplayName(profile) {
+    if (!profile) return 'Unknown jump';
+    return String(profile.name || profile.host || profile.id || 'Unnamed jump').trim() || 'Unnamed jump';
+  }
+
+  function analyzeJumpProfileCandidate(profileId, currentProfileId) {
+    const requestedId = normalizeJumpProfileId(profileId);
+    if (!requestedId) return { valid: true, reason: '', profiles: [] };
+
+    const currentId = normalizeJumpProfileId(currentProfileId);
+    const profileById = new Map();
+    for (const profile of profiles) {
+      const id = normalizeJumpProfileId(profile && profile.id);
+      if (id) profileById.set(id, profile);
+    }
+
+    const visited = new Set();
+    const targetToOutermost = [];
+    let cursorId = requestedId;
+
+    while (cursorId) {
+      if (currentId && cursorId === currentId) {
+        return { valid: false, reason: cursorId === requestedId ? 'self' : 'cycle', profiles: [] };
+      }
+      if (visited.has(cursorId)) {
+        return { valid: false, reason: 'cycle', profiles: [] };
+      }
+      visited.add(cursorId);
+
+      const profile = profileById.get(cursorId);
+      if (!profile) {
+        return { valid: false, reason: 'missing', profiles: [] };
+      }
+      if (normalizeConnectionTypeValue(profile.connectionType) !== 'sftp') {
+        return { valid: false, reason: 'protocol', profiles: [] };
+      }
+
+      targetToOutermost.push(profile);
+      cursorId = normalizeJumpProfileId(profile.jumpProfileId);
+    }
+
+    return { valid: true, reason: '', profiles: targetToOutermost.reverse() };
+  }
+
+  function getJumpProfileSelectionAnalysis() {
+    return analyzeJumpProfileCandidate(jumpProfileId && jumpProfileId.value, selectedProfileId);
+  }
+
+  function getJumpProfileSelectionError() {
+    const selectedId = normalizeJumpProfileId(jumpProfileId && jumpProfileId.value);
+    if (!selectedId || !isSftpFormConnection()) return '';
+    const analysis = getJumpProfileSelectionAnalysis();
+    if (analysis.valid) return '';
+    if (analysis.reason === 'self') return 'A connection cannot use itself as its Jump Host.';
+    if (analysis.reason === 'missing') return 'The selected Jump Host no longer exists.';
+    if (analysis.reason === 'protocol') return 'The selected Jump Host and every profile in its chain must use SFTP.';
+    return 'The selected Jump Host would create or use a circular chain.';
+  }
+
+  function getSessionJumpProfileNames(session) {
+    if (!session || !Array.isArray(session.jumpProfileNames)) return [];
+    return session.jumpProfileNames.map(value => String(value || '').trim()).filter(Boolean);
+  }
+
+  function formatJumpViaSuffix(names) {
+    return names && names.length ? ' via ' + names.join(' → ') : '';
+  }
+
+  function formatJumpRouteSummary(jumpProfiles) {
+    const names = (jumpProfiles || []).map(getJumpProfileDisplayName).filter(Boolean);
+    return names.length ? 'Route: Local → ' + names.join(' → ') + ' → Target' : 'Route: Direct';
+  }
+
+  function formatJumpProfileEndpoint(profile) {
+    const userPart = profile && profile.username ? profile.username + '@' : '';
+    const hostPart = String(profile && profile.host || 'unknown host');
+    const portPart = String(profile && profile.port || 22);
+    return userPart + hostPart + ':' + portPart;
+  }
+
+  function buildJumpProfileDropdownItem(profileId, name, meta, selected) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'profile-dropdown-item has-tooltip' + (selected ? ' selected' : '');
+    item.dataset.jumpProfileId = normalizeJumpProfileId(profileId);
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    if (meta) item.dataset.tooltip = meta;
+
+    const nameElement = document.createElement('span');
+    nameElement.className = 'profile-dropdown-name';
+    nameElement.textContent = name;
+    item.appendChild(nameElement);
+
+    if (meta) {
+      const metaElement = document.createElement('span');
+      metaElement.className = 'profile-dropdown-meta';
+      metaElement.textContent = meta;
+      item.appendChild(metaElement);
+    }
+
+    return item;
+  }
+
+  function updateJumpProfilePicker(preferredId) {
+    if (!jumpProfileBlock || !jumpProfileId || !jumpProfileDropdownButton || !jumpProfileDropdownLabel || !jumpProfileDropdownMenu || !jumpRouteSummary) return;
+
+    const isSftp = isSftpFormConnection();
+    jumpProfileBlock.hidden = !isSftp;
+    if (!isSftp) {
+      jumpProfileId.value = '';
+      jumpProfileDropdownLabel.textContent = 'Direct';
+      jumpRouteSummary.textContent = 'Route: Direct';
+      clearConnectionFieldInvalid(jumpProfileDropdownButton);
+      hideJumpProfileDropdown();
+      return;
+    }
+
+    const selectedId = preferredId === undefined
+      ? normalizeJumpProfileId(jumpProfileId.value)
+      : normalizeJumpProfileId(preferredId);
+    const candidates = [];
+    for (const profile of profiles) {
+      const id = normalizeJumpProfileId(profile && profile.id);
+      if (!id || id === selectedProfileId || normalizeConnectionTypeValue(profile.connectionType) !== 'sftp') continue;
+      const analysis = analyzeJumpProfileCandidate(id, selectedProfileId);
+      if (analysis.valid) candidates.push({ profile, analysis });
+    }
+
+    jumpProfileId.innerHTML = '';
+    const directOption = document.createElement('option');
+    directOption.value = '';
+    directOption.textContent = 'Direct';
+    jumpProfileId.appendChild(directOption);
+    for (const candidate of candidates) {
+      const option = document.createElement('option');
+      option.value = candidate.profile.id;
+      option.textContent = getJumpProfileDisplayName(candidate.profile);
+      jumpProfileId.appendChild(option);
+    }
+    if (selectedId && !candidates.some(candidate => normalizeJumpProfileId(candidate.profile.id) === selectedId)) {
+      const unavailableOption = document.createElement('option');
+      unavailableOption.value = selectedId;
+      unavailableOption.textContent = 'Unavailable Jump Host';
+      jumpProfileId.appendChild(unavailableOption);
+    }
+    jumpProfileId.value = selectedId;
+
+    jumpProfileDropdownMenu.innerHTML = '';
+    jumpProfileDropdownMenu.appendChild(buildJumpProfileDropdownItem('', 'Direct', 'Connect directly to the target.', !selectedId));
+    for (const candidate of candidates) {
+      const route = formatJumpRouteSummary(candidate.analysis.profiles);
+      const meta = formatJumpProfileEndpoint(candidate.profile) + ' · ' + route;
+      jumpProfileDropdownMenu.appendChild(buildJumpProfileDropdownItem(
+        candidate.profile.id,
+        getJumpProfileDisplayName(candidate.profile),
+        meta,
+        normalizeJumpProfileId(candidate.profile.id) === selectedId
+      ));
+    }
+
+    const selectedProfile = candidates.find(candidate => normalizeJumpProfileId(candidate.profile.id) === selectedId);
+    const selectionError = getJumpProfileSelectionError();
+    jumpProfileDropdownLabel.textContent = selectedId
+      ? (selectedProfile ? getJumpProfileDisplayName(selectedProfile.profile) : 'Unavailable Jump Host')
+      : 'Direct';
+    jumpRouteSummary.textContent = selectionError
+      ? 'Route unavailable: ' + selectionError
+      : formatJumpRouteSummary(selectedProfile ? selectedProfile.analysis.profiles : []);
+    jumpProfileDropdownButton.dataset.tooltip = jumpRouteSummary.textContent;
+    setConnectionFieldInvalid(jumpProfileDropdownButton, Boolean(selectionError));
+  }
+
+  function showJumpProfileDropdown() {
+    if (!jumpProfileDropdownButton || !jumpProfileDropdownMenu || jumpProfileDropdownButton.disabled || !isSftpFormConnection()) return;
+    hideProfileDropdown();
+    hideConnectionTypeDropdown();
+    hideAuthDropdown();
+    hideConnectionNameGroupDropdown();
+    updateJumpProfilePicker();
+    jumpProfileDropdownOpen = true;
+    const picker = jumpProfileDropdownButton.closest('.jump-profile-picker');
+    if (picker) picker.classList.add('open');
+    jumpProfileDropdownButton.setAttribute('aria-expanded', 'true');
+  }
+
+  function hideJumpProfileDropdown() {
+    jumpProfileDropdownOpen = false;
+    if (!jumpProfileDropdownButton) return;
+    const picker = jumpProfileDropdownButton.closest('.jump-profile-picker');
+    if (picker) picker.classList.remove('open');
+    jumpProfileDropdownButton.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleJumpProfileDropdown() {
+    if (jumpProfileDropdownOpen) {
+      hideJumpProfileDropdown();
+    } else {
+      showJumpProfileDropdown();
+    }
+  }
+
+  function selectJumpProfile(value) {
+    if (!jumpProfileId || !isSftpFormConnection()) return;
+    const nextId = normalizeJumpProfileId(value);
+    if (nextId && !analyzeJumpProfileCandidate(nextId, selectedProfileId).valid) return;
+    clearConnectionValidationErrors();
+    jumpProfileId.value = nextId;
+    updateJumpProfilePicker();
+    hideJumpProfileDropdown();
+    setControls();
   }
 
   function getBrowserConnectionType() {
@@ -935,6 +1165,7 @@ export function renderRemoteCommandActions(): string {
   function showConnectionTypeDropdown() {
     if (!connectionTypeDropdownButton || !connectionTypeDropdownMenu || connectionTypeDropdownButton.disabled) return;
     hideProfileDropdown();
+    hideJumpProfileDropdown();
     hideAuthDropdown();
     connectionTypeDropdownOpen = true;
     const picker = connectionTypeDropdownButton.closest('.connection-type-picker');
@@ -972,9 +1203,12 @@ export function renderRemoteCommandActions(): string {
 
     if (next !== 'sftp') {
       authType.value = 'password';
+      jumpProfileId.value = '';
+      hideJumpProfileDropdown();
     }
 
     updateConnectionTypeDropdown();
+    updateJumpProfilePicker();
     updateAuthFields();
     setControls();
   }
@@ -1028,6 +1262,7 @@ export function renderRemoteCommandActions(): string {
     if (!authDropdownButton || !authDropdownMenu || authDropdownButton.disabled) return;
     hideProfileDropdown();
     hideConnectionTypeDropdown();
+    hideJumpProfileDropdown();
     authDropdownOpen = true;
     const picker = authDropdownButton.closest('.auth-picker');
     if (picker) picker.classList.add('open');
@@ -1061,7 +1296,10 @@ export function renderRemoteCommandActions(): string {
 
   function formatProfileTarget(profile) {
     const userPart = profile.username ? profile.username + '@' : '';
-    return getConnectionTypeLabel(profile.connectionType) + ' ' + userPart + profile.host + ':' + profile.port;
+    const target = getConnectionTypeLabel(profile.connectionType) + ' ' + userPart + profile.host + ':' + profile.port;
+    if (normalizeConnectionTypeValue(profile.connectionType) !== 'sftp' || !normalizeJumpProfileId(profile.jumpProfileId)) return target;
+    const analysis = analyzeJumpProfileCandidate(profile.jumpProfileId, profile.id);
+    return target + (analysis.valid ? formatJumpViaSuffix(analysis.profiles.map(getJumpProfileDisplayName)) : ' via unavailable Jump Host');
   }
 
   function formatSessionTarget(session) {
@@ -1071,7 +1309,7 @@ export function renderRemoteCommandActions(): string {
 
   function formatSessionTooltipTarget(session) {
     const userPart = session.username ? session.username + '@' : '';
-    return getConnectionTypeLabel(session.connectionType) + ' ' + userPart + session.host;
+    return getConnectionTypeLabel(session.connectionType) + ' ' + userPart + session.host + formatJumpViaSuffix(getSessionJumpProfileNames(session));
   }
 
   function formatConnectionLabel(name, target) {
@@ -1109,6 +1347,7 @@ export function renderRemoteCommandActions(): string {
     connectionType.value = normalizeConnectionTypeValue(profile.connectionType);
     port.value = String(profile.port || getDefaultPortForConnectionType(connectionType.value));
     username.value = profile.username || '';
+    const profileJumpProfileId = isSftpFormConnection() ? normalizeJumpProfileId(profile.jumpProfileId) : '';
     renderConnectionNameGroupOptions(profile.groupId || '');
     authType.value = isSftpFormConnection() ? (profile.authType || 'password') : 'password';
     password.value = profile.hasSavedPassword ? SAVED_SECRET_MASK : '';
@@ -1124,6 +1363,7 @@ export function renderRemoteCommandActions(): string {
     passphrase.placeholder = profile.hasSavedPassphrase ? 'Saved passphrase' : '';
     updateCredentialState(profile);
     updateConnectionTypeDropdown();
+    updateJumpProfilePicker(profileJumpProfileId);
     updateAuthFields();
     setControls();
   }
@@ -1135,6 +1375,7 @@ export function renderRemoteCommandActions(): string {
     connectionType.value = 'sftp';
     port.value = '22';
     username.value = '';
+    jumpProfileId.value = '';
     renderConnectionNameGroupOptions('');
     authType.value = 'password';
     password.value = '';
@@ -1150,6 +1391,7 @@ export function renderRemoteCommandActions(): string {
     ftpsCaCertificatePath.value = '';
     updateCredentialState();
     updateConnectionTypeDropdown();
+    updateJumpProfilePicker();
     updateAuthFields();
     setControls();
   }

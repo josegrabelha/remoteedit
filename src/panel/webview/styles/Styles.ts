@@ -443,7 +443,7 @@ export function renderStyles(): string {
   .profile-dropdown-button:focus { outline: none; border-color: var(--vscode-focusBorder); }
   .profile-dropdown-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-dropdown-chevron { width: 15px; height: 15px; display: block; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.78; transition: transform 120ms ease; }
-  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron, .connection-name-group-picker.open .profile-dropdown-chevron, .server-auto-refresh-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
+  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron, .jump-profile-picker.open .profile-dropdown-chevron, .connection-name-group-picker.open .profile-dropdown-chevron, .server-auto-refresh-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
   .profile-dropdown-menu { position: absolute; z-index: 130; top: calc(100% + 4px); left: 0; right: 0; display: none; width: 100%; max-width: 100%; box-sizing: border-box; max-height: 300px; overflow-y: auto; overflow-x: hidden; padding: 5px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
   .connection-profile-dropdown-menu { max-height: min(75vh, 600px); overflow: hidden; }
   .profile-dropdown-filter { padding: 2px 2px 5px; position: sticky; top: -5px; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
@@ -467,10 +467,14 @@ export function renderStyles(): string {
   .connection-profile-dropdown-menu .profile-dropdown-group-header:hover .profile-dropdown-group-chevron, .connection-profile-dropdown-menu .profile-dropdown-group-header:focus-visible .profile-dropdown-group-chevron, .connection-profile-dropdown-menu .profile-dropdown-group-header:active .profile-dropdown-group-chevron, .connection-profile-dropdown-menu .profile-dropdown-group-header:hover .profile-dropdown-group-name, .connection-profile-dropdown-menu .profile-dropdown-group-header:focus-visible .profile-dropdown-group-name, .connection-profile-dropdown-menu .profile-dropdown-group-header:active .profile-dropdown-group-name { opacity: 0.82; }
   .connection-profile-dropdown-menu .profile-dropdown-group-count { color: var(--vscode-textLink-foreground, #3794ff); opacity: 0.55; }
   .connection-profile-dropdown-menu .profile-dropdown-group-header:hover .profile-dropdown-group-count, .connection-profile-dropdown-menu .profile-dropdown-group-header:focus-visible .profile-dropdown-group-count, .connection-profile-dropdown-menu .profile-dropdown-group-header:active .profile-dropdown-group-count { color: inherit; opacity: 0.66; }
-  .profile-picker.open .profile-dropdown-menu, .auth-picker.open .profile-dropdown-menu, .connection-type-picker.open .profile-dropdown-menu, .connection-name-group-picker.open .profile-dropdown-menu, .server-auto-refresh-picker.open .profile-dropdown-menu { display: block; }
+  .profile-picker.open .profile-dropdown-menu, .auth-picker.open .profile-dropdown-menu, .connection-type-picker.open .profile-dropdown-menu, .jump-profile-picker.open .profile-dropdown-menu, .connection-name-group-picker.open .profile-dropdown-menu, .server-auto-refresh-picker.open .profile-dropdown-menu { display: block; }
   .profile-picker.open .connection-profile-dropdown-menu { display: flex; flex-direction: column; }
-  .auth-select-native, .connection-type-select-native { display: none; }
-  .auth-picker, .connection-type-picker, .connection-name-group-picker { position: relative; min-width: 0; }
+  .auth-select-native, .connection-type-select-native, .jump-profile-select-native { display: none; }
+  .auth-picker, .connection-type-picker, .jump-profile-picker, .connection-name-group-picker { position: relative; min-width: 0; }
+  .jump-profile-block[hidden] { display: none; }
+  .jump-profile-dropdown-menu { max-height: min(300px, 55vh); }
+  .jump-profile-dropdown-menu .profile-dropdown-meta { white-space: normal; line-height: 1.25; overflow-wrap: anywhere; }
+  .jump-route-summary { margin-top: 5px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.82; overflow-wrap: anywhere; }
   .connection-name-group-dropdown-menu { position: fixed; z-index: 10040; left: 0; top: 0; right: auto; width: 240px; max-width: calc(100vw - 16px); max-height: min(260px, calc(100vh - 24px)); }
   .connection-name-group-dropdown-menu.visible { display: block; }
   .connection-name-group-picker.new-group-mode .profile-dropdown-button { display: none; }

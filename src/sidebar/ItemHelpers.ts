@@ -121,7 +121,7 @@ export function buildConnectionDetail(profile: ConnectionProfile, field: Connect
     host: { name: 'Hostname', value: profile.host || '', icon: 'globe' },
     port: { name: 'Port', value: String(profile.port || ''), icon: 'plug' },
     connectionType: { name: 'Type', value: protocol, icon: 'remote' },
-    jumpProfileId: { name: 'Jump Host', value: isSftp ? options?.jumpProfileLabel || 'Direct' : 'Not used', icon: 'server-environment' },
+    jumpProfileId: { name: 'Jump Host', value: isSftp ? options?.jumpProfileLabel || 'Direct connection' : 'Not used', icon: 'server-environment' },
     username: { name: 'Username', value: profile.username || '', icon: 'account' },
     authType: { name: 'Auth Method', value: isSftp ? authLabel : 'Password', icon: 'key' },
     privateKeyPath: { name: 'Private Key Path', value: isPrivateKey ? profile.privateKeyPath || '' : 'Not used', icon: 'key' },
@@ -178,12 +178,12 @@ export function buildSidebarJumpDisplay(
   profiles: readonly ConnectionProfile[]
 ): SidebarJumpDisplay {
   if (!isSftpConnection(target.connectionType)) {
-    return { label: 'Direct', isAvailable: true };
+    return { label: 'Direct connection', isAvailable: true };
   }
 
   const jumpProfileId = String(target.jumpProfileId || '').trim();
   if (!jumpProfileId) {
-    return { label: 'Direct', route: 'Route: Direct', isAvailable: true };
+    return { label: 'Direct connection', route: 'Route: Direct', isAvailable: true };
   }
 
   try {

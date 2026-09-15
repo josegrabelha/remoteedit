@@ -318,12 +318,14 @@ Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 
 An SFTP connection can reach its target through one or more saved SFTP profiles. In either the Webview connection form or the Native Sidebar connection details, set **Jump Host** to:
 
-- **Direct** to connect to the target normally and clear a previously saved Jump Host.
+- **Direct connection** to connect to the target normally and clear a previously saved Jump Host.
 - A saved SFTP profile to use that profile as the hop nearest the target.
 
 Quick Connect can also use a saved SFTP profile as its Jump Host, but temporary and unsaved connections never become Jump Host candidates. Each saved Jump Host can select another saved SFTP profile, so finite nested chains are supported without an artificial depth limit.
 
-When creating a connection with **Remote Edit: Add Connection** in the Native Sidebar (`remoteedit.sidebar.newConnection`), the SFTP wizard asks for a Jump Host after the username. The picker starts with **Direct** and shows each eligible saved profile's endpoint and route. It still offers Direct when there are no saved candidates. Pressing Esc at this step exits without saving a connection or credentials. FTP/FTPS creation skips this step.
+In the Webview, the Jump Host picker includes a **Filter jump hosts...** field that filters eligible saved profiles by connection details while keeping **Direct connection** pinned and always available. The route summary remains visible below the picker, using **Route: Direct** for a direct connection or the resolved `Local → ... → Target` chain for a saved Jump Host.
+
+When creating a connection with **Remote Edit: Add Connection** in the Native Sidebar (`remoteedit.sidebar.newConnection`), the SFTP wizard asks for a Jump Host after the username. The picker starts with **Direct connection** and shows each eligible saved profile's endpoint and route. It still offers **Direct connection** when there are no saved candidates. Pressing Esc at this step exits without saving a connection or credentials. FTP/FTPS creation skips this step.
 
 For a target `A` reached through `B`, `C`, and outermost host `D`, configure the saved profiles in this order:
 

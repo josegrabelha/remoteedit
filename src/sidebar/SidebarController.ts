@@ -2686,7 +2686,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
     const currentJumpProfileId = String(target.jumpProfileId || '').trim();
     const directItem: SidebarJumpPickItem = {
-      label: 'Direct',
+      label: 'Direct connection',
       description: 'Connect directly to the target',
       detail: 'Route: Direct',
       value: ''
@@ -2717,8 +2717,8 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     const selected = await this.showQuickPickWithActiveItem<SidebarJumpPickItem>({
       title,
       placeHolder: currentJumpProfileId && !currentItem
-        ? 'The current Jump Host is unavailable. Select Direct or a valid saved SFTP profile.'
-        : 'Select Direct or a saved SFTP profile.',
+        ? 'The current Jump Host is unavailable. Select Direct connection or a valid saved SFTP profile.'
+        : 'Select Direct connection or a saved SFTP profile.',
       activeItem: currentItem || directItem,
       items: candidateItems.length > 0
         ? [directItem, { label: '', kind: vscode.QuickPickItemKind.Separator }, ...candidateItems]

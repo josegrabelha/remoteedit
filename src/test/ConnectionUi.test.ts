@@ -84,3 +84,32 @@ test('Sidebar draft editing, discard, Quick Connect and save preserve explicit D
   drafts.updateDraftValue(QUICK_CONNECT_ID, { connectionType: 'sftp' });
   assert.equal(drafts.buildQuickConnectProfile().jumpProfileId, '');
 });
+
+test('Webview Jump Host filter narrows valid candidates while keeping Direct connection pinned', () => {
+  const profiles = [
+    profile('ubuntu', { name: 'Ubuntu Bastion', host: 'ubuntu.example.com', username: 'jump-user' }),
+    profile('rhel', { name: 'RHEL Gateway', host: 'rhel.example.com', username: 'admin' }),
+    profile('target', { name: 'Target' })
+  ];
+  const { context } = createJumpWebviewHarness(profiles);
+  context.selectProfile('target');
+  assert.equal(context.jumpProfileDropdownLabel.textContent, 'Direct connection');
+
+  context.jumpProfileDropdownFilterText = 'ubuntu';
+  context.updateJumpProfilePicker();
+  const menu = context.jumpProfileDropdownMenu.children;
+  assert.equal(menu[1].children[0].dataset.jumpProfileId, '');
+  assert.equal(menu[1].children[0].children[0].textContent, 'Direct connection');
+  assert.equal(menu[2].children.length, 1);
+  assert.equal(menu[2].children[0].dataset.jumpProfileId, 'ubuntu');
+
+  context.jumpProfileDropdownFilterText = 'admin@rhel.example.com';
+  context.updateJumpProfilePicker();
+  assert.equal(context.jumpProfileDropdownMenu.children[2].children.length, 1);
+  assert.equal(context.jumpProfileDropdownMenu.children[2].children[0].dataset.jumpProfileId, 'rhel');
+
+  context.jumpProfileDropdownFilterText = 'does-not-exist';
+  context.updateJumpProfilePicker();
+  assert.equal(context.jumpProfileDropdownMenu.children[1].children[0].dataset.jumpProfileId, '');
+  assert.equal(context.jumpProfileDropdownMenu.children[2].children[0].textContent, 'No Jump Hosts found.');
+});

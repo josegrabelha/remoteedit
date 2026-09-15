@@ -472,7 +472,9 @@ export function renderStyles(): string {
   .auth-select-native, .connection-type-select-native, .jump-profile-select-native { display: none; }
   .auth-picker, .connection-type-picker, .jump-profile-picker, .connection-name-group-picker { position: relative; min-width: 0; }
   .jump-profile-block[hidden] { display: none; }
-  .jump-profile-dropdown-menu { max-height: min(300px, 55vh); }
+  .jump-profile-dropdown-menu { max-height: min(300px, 55vh); overflow: hidden; }
+  .jump-profile-picker.open .jump-profile-dropdown-menu { display: flex; flex-direction: column; }
+  .jump-profile-dropdown-menu .profile-dropdown-filter { position: static; flex: 0 0 auto; }
   .jump-profile-dropdown-menu .profile-dropdown-meta { white-space: normal; line-height: 1.25; overflow-wrap: anywhere; }
   .jump-route-summary { margin-top: 5px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.3; opacity: 0.82; overflow-wrap: anywhere; }
   .connection-name-group-dropdown-menu { position: fixed; z-index: 10040; left: 0; top: 0; right: auto; width: 240px; max-width: calc(100vw - 16px); max-height: min(260px, calc(100vh - 24px)); }

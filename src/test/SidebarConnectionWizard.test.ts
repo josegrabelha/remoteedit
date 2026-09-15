@@ -21,7 +21,7 @@ for (const scenario of ['direct', 'nested', 'empty', 'escape', 'ftp', 'ftps'] as
     if (type === 'sftp') ui.pickChoices.push(options => {
       assert.equal(harness.ui.prompts.length, 4, 'Jump follows username and precedes authentication');
       assert.equal(options.activeItem.value, '');
-      assert.equal(options.items[0].label, 'Direct');
+      assert.equal(options.items[0].label, 'Direct connection');
       const candidates = options.items.filter((item: any) => item.value);
       assert.ok(candidates.every((item: any) => ['outer', 'near'].includes(item.value)));
       if (scenario === 'empty') assert.equal(options.items.length, 1);

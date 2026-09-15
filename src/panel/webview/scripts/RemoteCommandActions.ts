@@ -960,14 +960,14 @@ export function renderRemoteCommandActions(): string {
     return item;
   }
 
-  function updateJumpProfilePicker(preferredId) {
+  function updateJumpProfilePicker(preferredId, options = {}) {
     if (!jumpProfileBlock || !jumpProfileId || !jumpProfileDropdownButton || !jumpProfileDropdownLabel || !jumpProfileDropdownMenu || !jumpRouteSummary) return;
 
     const isSftp = isSftpFormConnection();
     jumpProfileBlock.hidden = !isSftp;
     if (!isSftp) {
       jumpProfileId.value = '';
-      jumpProfileDropdownLabel.textContent = 'Direct';
+      jumpProfileDropdownLabel.textContent = 'Direct connection';
       jumpRouteSummary.textContent = 'Route: Direct';
       clearConnectionFieldInvalid(jumpProfileDropdownButton);
       hideJumpProfileDropdown();
@@ -988,7 +988,7 @@ export function renderRemoteCommandActions(): string {
     jumpProfileId.innerHTML = '';
     const directOption = document.createElement('option');
     directOption.value = '';
-    directOption.textContent = 'Direct';
+    directOption.textContent = 'Direct connection';
     jumpProfileId.appendChild(directOption);
     for (const candidate of candidates) {
       const option = document.createElement('option');
@@ -1004,29 +1004,74 @@ export function renderRemoteCommandActions(): string {
     }
     jumpProfileId.value = selectedId;
 
+    const filterTextBeforeRender = jumpProfileDropdownFilterText;
     jumpProfileDropdownMenu.innerHTML = '';
-    jumpProfileDropdownMenu.appendChild(buildJumpProfileDropdownItem('', 'Direct', 'Connect directly to the target.', !selectedId));
-    for (const candidate of candidates) {
-      const route = formatJumpRouteSummary(candidate.analysis.profiles);
-      const meta = formatJumpProfileEndpoint(candidate.profile) + ' · ' + route;
-      jumpProfileDropdownMenu.appendChild(buildJumpProfileDropdownItem(
-        candidate.profile.id,
-        getJumpProfileDisplayName(candidate.profile),
-        meta,
-        normalizeJumpProfileId(candidate.profile.id) === selectedId
-      ));
+
+    const filterWrap = document.createElement('div');
+    filterWrap.className = 'profile-dropdown-filter';
+    const filterInput = document.createElement('input');
+    filterInput.id = 'jumpProfileDropdownFilterInput';
+    filterInput.type = 'text';
+    filterInput.placeholder = 'Filter jump hosts...';
+    filterInput.setAttribute('aria-label', 'Filter Jump Hosts');
+    filterInput.setAttribute('autocomplete', 'off');
+    filterInput.value = filterTextBeforeRender;
+    filterWrap.appendChild(filterInput);
+    jumpProfileDropdownMenu.appendChild(filterWrap);
+
+    const pinnedWrap = document.createElement('div');
+    pinnedWrap.className = 'profile-dropdown-pinned';
+    pinnedWrap.appendChild(buildJumpProfileDropdownItem('', 'Direct connection', 'Connect directly to the target.', !selectedId));
+    if (candidates.length) {
+      const separator = document.createElement('div');
+      separator.className = 'profile-dropdown-separator';
+      pinnedWrap.appendChild(separator);
+    }
+    jumpProfileDropdownMenu.appendChild(pinnedWrap);
+
+    const listWrap = document.createElement('div');
+    listWrap.className = 'profile-dropdown-list';
+    jumpProfileDropdownMenu.appendChild(listWrap);
+
+    const filteredCandidates = candidates.filter(candidate => profileMatchesFilter(candidate.profile, filterTextBeforeRender));
+    if (candidates.length && !filteredCandidates.length) {
+      const empty = document.createElement('div');
+      empty.className = 'profile-dropdown-empty';
+      empty.textContent = 'No Jump Hosts found.';
+      listWrap.appendChild(empty);
+    } else {
+      for (const candidate of filteredCandidates) {
+        const route = formatJumpRouteSummary(candidate.analysis.profiles);
+        const meta = formatJumpProfileEndpoint(candidate.profile) + ' · ' + route;
+        listWrap.appendChild(buildJumpProfileDropdownItem(
+          candidate.profile.id,
+          getJumpProfileDisplayName(candidate.profile),
+          meta,
+          normalizeJumpProfileId(candidate.profile.id) === selectedId
+        ));
+      }
     }
 
     const selectedProfile = candidates.find(candidate => normalizeJumpProfileId(candidate.profile.id) === selectedId);
     const selectionError = getJumpProfileSelectionError();
     jumpProfileDropdownLabel.textContent = selectedId
       ? (selectedProfile ? getJumpProfileDisplayName(selectedProfile.profile) : 'Unavailable Jump Host')
-      : 'Direct';
+      : 'Direct connection';
     jumpRouteSummary.textContent = selectionError
       ? 'Route unavailable: ' + selectionError
       : formatJumpRouteSummary(selectedProfile ? selectedProfile.analysis.profiles : []);
     jumpProfileDropdownButton.dataset.tooltip = jumpRouteSummary.textContent;
     setConnectionFieldInvalid(jumpProfileDropdownButton, Boolean(selectionError));
+
+    if (options.focusFilter) {
+      setTimeout(() => {
+        const nextFilterInput = document.getElementById('jumpProfileDropdownFilterInput');
+        if (!nextFilterInput) return;
+        nextFilterInput.focus();
+        const valueLength = String(nextFilterInput.value || '').length;
+        try { nextFilterInput.setSelectionRange(valueLength, valueLength); } catch (error) { /* ignore */ }
+      }, 0);
+    }
   }
 
   function showJumpProfileDropdown() {
@@ -1035,7 +1080,8 @@ export function renderRemoteCommandActions(): string {
     hideConnectionTypeDropdown();
     hideAuthDropdown();
     hideConnectionNameGroupDropdown();
-    updateJumpProfilePicker();
+    jumpProfileDropdownFilterText = '';
+    updateJumpProfilePicker(undefined, { focusFilter: true });
     jumpProfileDropdownOpen = true;
     const picker = jumpProfileDropdownButton.closest('.jump-profile-picker');
     if (picker) picker.classList.add('open');
@@ -1044,6 +1090,7 @@ export function renderRemoteCommandActions(): string {
 
   function hideJumpProfileDropdown() {
     jumpProfileDropdownOpen = false;
+    jumpProfileDropdownFilterText = '';
     if (!jumpProfileDropdownButton) return;
     const picker = jumpProfileDropdownButton.closest('.jump-profile-picker');
     if (picker) picker.classList.remove('open');

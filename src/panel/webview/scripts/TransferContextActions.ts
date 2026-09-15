@@ -211,6 +211,22 @@ export function renderTransferContextActions(): string {
     selectJumpProfile(item.dataset.jumpProfileId || '');
   });
 
+  jumpProfileDropdownMenu.addEventListener('input', event => {
+    const target = event.target;
+    if (!target || target.id !== 'jumpProfileDropdownFilterInput') return;
+    jumpProfileDropdownFilterText = String(target.value || '');
+    updateJumpProfilePicker(undefined, { focusFilter: true });
+  });
+
+  jumpProfileDropdownMenu.addEventListener('keydown', event => {
+    const target = event.target;
+    if (!target || target.id !== 'jumpProfileDropdownFilterInput') return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      hideJumpProfileDropdown();
+    }
+  });
+
   authType.addEventListener('change', () => {
     clearConnectionValidationErrors();
     updateAuthFields();

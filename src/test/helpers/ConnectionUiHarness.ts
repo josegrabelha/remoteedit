@@ -57,6 +57,7 @@ class FormElement {
   set innerHTML(_value: string) { this.children = []; }
   appendChild(child: FormElement): void { this.children.push(child); }
   setAttribute() {}
+  setSelectionRange() {}
   removeAttribute() {}
   focus() {}
   select() {}
@@ -66,8 +67,8 @@ class FormElement {
 export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false) {
   const messages: any[] = [];
   const context: any = {
-    profiles, selectedProfileId: '', activeConnectionId: '', pendingConnectionNameGroupId: '', pendingConnectionNameNewGroupName: '',
-    FILES_STATUS_GLOBAL_KEY: 'global', SAVED_SECRET_MASK: '********',
+    profiles, connectionGroups: [], selectedProfileId: '', activeConnectionId: '', pendingConnectionNameGroupId: '', pendingConnectionNameNewGroupName: '',
+    jumpProfileDropdownFilterText: '', FILES_STATUS_GLOBAL_KEY: 'global', SAVED_SECRET_MASK: '********',
     document: { createElement: () => new FormElement() },
     vscode: { postMessage: (message: unknown) => messages.push(JSON.parse(JSON.stringify(message))) },
     showUnsavedConnectionProfileSwitchDialog: async () => 'discard',

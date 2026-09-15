@@ -565,6 +565,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   let collapsedProfileDropdownGroupIds = new Set();
   let connectionTypeDropdownOpen = false;
   let jumpProfileDropdownOpen = false;
+  let jumpProfileDropdownFilterText = '';
   let authDropdownOpen = false;
   let serverAutoRefreshDropdownOpen = false;
   let serverAutoRefreshValue = '30';

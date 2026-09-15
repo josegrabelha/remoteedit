@@ -2201,11 +2201,13 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "test": "npm run compile && node --test out/test/JumpChain.test.js out/test/SshJumpChain.test.js out/test/SftpSessionManager.test.js out/test/RemoteSessionRouter.test.js out/test/ConnectionManagerCredentials.test.js out/test/ConnectionCredentialUi.test.js out/test/ConnectionManagerReferences.test.js out/test/ConnectionManagerBackup.test.js out/test/SidebarConnectionWizard.test.js out/test/ConnectionUi.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out"
   },
   "dependencies": {
     "basic-ftp": "^5.3.1",
+    "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.0.1"
   },
   "devDependencies": {

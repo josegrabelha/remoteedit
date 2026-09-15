@@ -4,6 +4,20 @@ import type { RemotePlatform, RemoteShell } from './RemotePlatform';
 
 export type AuthType = 'password' | 'privateKey';
 
+export interface JumpConnectOptions {
+  profileId: string;
+  name: string;
+  connectionType: 'sftp';
+  host: string;
+  port: number;
+  username: string;
+  authType: AuthType;
+  password?: string;
+  privateKeyPath?: string;
+  passphrase?: string;
+  keepAlive?: boolean;
+}
+
 export interface ConnectOptions {
   connectionId: string;
   connectionType?: RemoteConnectionType;
@@ -20,6 +34,9 @@ export interface ConnectOptions {
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
   isQuickConnect?: boolean;
+  jumpProfileId?: string;
+  /** Ordered from the outermost jump to the jump nearest the target. */
+  jumpChain?: JumpConnectOptions[];
 }
 
 export interface ConnectionCancellationToken {
@@ -71,6 +88,11 @@ export interface ActiveConnection {
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
   isQuickConnect?: boolean;
+  jumpProfileId?: string;
+  /** Ordered from the outermost jump to the jump nearest the target. */
+  jumpProfileIds?: string[];
+  /** Ordered from the outermost jump to the jump nearest the target. */
+  jumpProfileNames?: string[];
   remotePlatform?: RemotePlatform;
   remoteShell?: RemoteShell;
   capabilities?: RemoteCapabilities;

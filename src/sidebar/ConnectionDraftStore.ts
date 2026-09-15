@@ -75,6 +75,7 @@ export class SidebarConnectionDraftStore {
       keepAlive: draft.keepAlive !== false,
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(draft.ftpsAllowSelfSignedCertificate) : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? String(draft.ftpsCaCertificatePath || '').trim() : '',
+      jumpProfileId: connectionType === 'sftp' ? draft.jumpProfileId : undefined,
       hasSavedPassword: authType === 'password' && Boolean(draft.password),
       hasSavedPassphrase: authType === 'privateKey' && Boolean(draft.passphrase),
       favoriteRemotePaths: [],
@@ -106,6 +107,7 @@ export class SidebarConnectionDraftStore {
       keepAlive: typeof mergedInput.keepAlive === 'boolean' ? mergedInput.keepAlive : profile.keepAlive !== false,
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(mergedInput.ftpsAllowSelfSignedCertificate ?? profile.ftpsAllowSelfSignedCertificate ?? false) : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? String(mergedInput.ftpsCaCertificatePath ?? profile.ftpsCaCertificatePath ?? '').trim() : '',
+      jumpProfileId: connectionType === 'sftp' ? mergedInput.jumpProfileId : undefined,
       hasSavedPassword: authType === 'password' ? (typeof draft.password === 'string' ? Boolean(draft.password) : draft.rememberPassword === false ? false : profile.hasSavedPassword) : false,
       hasSavedPassphrase: authType === 'privateKey' ? (typeof draft.passphrase === 'string' ? Boolean(draft.passphrase) : draft.rememberPassphrase === false ? false : profile.hasSavedPassphrase) : false
     };
@@ -152,6 +154,9 @@ export class SidebarConnectionDraftStore {
       case 'ftpsCaCertificatePath':
         this.updateDraftValue(profileId, { ftpsCaCertificatePath: value });
         break;
+      case 'jumpProfileId':
+        this.updateDraftValue(profileId, { jumpProfileId: value });
+        break;
       default:
         break;
     }
@@ -184,6 +189,7 @@ export class SidebarConnectionDraftStore {
       keepAlive: draft.keepAlive !== false,
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(draft.ftpsAllowSelfSignedCertificate) : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? String(draft.ftpsCaCertificatePath || '').trim() : '',
+      jumpProfileId: connectionType === 'sftp' ? draft.jumpProfileId : undefined,
       hasSavedPassword: authType === 'password' && Boolean(draft.password),
       hasSavedPassphrase: authType === 'privateKey' && Boolean(draft.passphrase),
       favoriteRemotePaths: [],
@@ -218,7 +224,12 @@ export class SidebarConnectionDraftStore {
       authType,
       privateKeyPath: authType === 'privateKey' ? draft.privateKeyPath : undefined,
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(draft.ftpsAllowSelfSignedCertificate) : false,
-      ftpsCaCertificatePath: connectionType === 'ftps' ? draft.ftpsCaCertificatePath : undefined
+      ftpsCaCertificatePath: connectionType === 'ftps' ? draft.ftpsCaCertificatePath : undefined,
+      jumpProfileId: connectionType !== 'sftp'
+        ? ''
+        : typeof draft.jumpProfileId === 'string'
+          ? draft.jumpProfileId.trim()
+          : undefined
     };
   }
 

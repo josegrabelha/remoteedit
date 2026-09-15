@@ -73,6 +73,7 @@ export interface RemoteOwnerGroupSuggestions {
 }
 
 export interface RemoteSessionManager {
+  readonly onDidCloseConnection?: vscode.Event<string>;
   connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection>;
   disconnect(connectionId: string): Promise<void>;
   disconnectAll(): Promise<void>;

@@ -584,6 +584,7 @@ export function renderLayoutSessions(): string {
     selectedProfileId = profileId || '';
     profileSelect.value = selectedProfileId;
     if (!options.keepDropdownOpen) hideProfileDropdown();
+    hideJumpProfileDropdown();
 
     const profile = selectedProfileId ? profiles.find(item => item.id === selectedProfileId) : undefined;
     if (profile) {
@@ -805,6 +806,7 @@ export function renderLayoutSessions(): string {
     if (!connectionNameGroupPicker || !connectionNameGroupDropdownButton || !connectionNameGroupDropdownMenu || connectionNameGroupNewMode) return;
     hideProfileDropdown();
     hideConnectionTypeDropdown();
+    hideJumpProfileDropdown();
     hideAuthDropdown();
     ensureConnectionNameGroupDropdownPortal();
     connectionNameGroupDropdownOpen = true;
@@ -1113,6 +1115,7 @@ export function renderLayoutSessions(): string {
     }
 
     hideConnectionTypeDropdown();
+    hideJumpProfileDropdown();
     hideAuthDropdown();
     hideConnectionNameGroupDropdown();
     profileDropdownOpen = true;

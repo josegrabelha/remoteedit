@@ -4,7 +4,7 @@ import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 import type { RemoteEntry, RemoteSessionManager } from '../remote/RemoteSessionManager';
-import { getConnectionDetailFields, getParentRemotePath, getSidebarOpenConnectionsPathView, isPathAncestorOrSelf, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './Items';
+import { buildSidebarJumpDisplay, getConnectionDetailFields, getParentRemotePath, getSidebarOpenConnectionsPathView, isPathAncestorOrSelf, normalizeRemotePath, RemoteEditSidebarItem, sortRemoteEntries } from './Items';
 import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 const COMMAND_OPEN = 'remoteedit.open';
@@ -145,8 +145,14 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
   async getChildren(element?: RemoteEditSidebarItem): Promise<RemoteEditSidebarItem[]> {
     if (element?.kind === 'quickConnect') {
       const profile = this.options.getQuickConnectProfile();
+      const profiles = await this.connectionManager.listProfiles();
+      const jumpDisplay = buildSidebarJumpDisplay(profile, profiles);
       return getConnectionDetailFields(profile)
-        .map(field => RemoteEditSidebarItem.connectionDetail(profile, field, { quickConnect: true }));
+        .map(field => RemoteEditSidebarItem.connectionDetail(profile, field, {
+          quickConnect: true,
+          jumpProfileLabel: jumpDisplay.label,
+          jumpRoute: jumpDisplay.route
+        }));
     }
 
     if (element?.kind === 'connectionGroup' && element.groupId) {
@@ -156,14 +162,24 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
       return profiles
         .filter(profile => profile.groupId === element.groupId)
         .filter(profile => !filterText || this.matchesFilter(this.options.getDraftProfile(profile), filterText, connectionGroups))
-        .map(profile => RemoteEditSidebarItem.fromConnectionProfile(
-          this.options.getDraftProfile(profile),
-          { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
-        ));
+        .map(profile => {
+          const draftProfile = this.options.getDraftProfile(profile);
+          const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
+          return RemoteEditSidebarItem.fromConnectionProfile(
+            draftProfile,
+            {
+              modified: this.options.hasDraft(profile.id),
+              connected: this.options.isConnected(profile.id),
+              connecting: this.options.isConnecting(profile.id),
+              jumpRoute: jumpDisplay.route
+            }
+          );
+        });
     }
 
     if (element?.kind === 'savedConnection' && element.profileId) {
-      const profile = await this.connectionManager.getProfile(element.profileId);
+      const profiles = await this.connectionManager.listProfiles();
+      const profile = profiles.find(candidate => candidate.id === element.profileId);
       const draftProfile = profile
         ? this.options.getDraftProfile(profile)
         : this.options.getDraftProfileById(element.profileId);
@@ -172,8 +188,13 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
         return [];
       }
 
+      const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
       return getConnectionDetailFields(draftProfile)
-        .map(field => RemoteEditSidebarItem.connectionDetail(draftProfile, field, { connected: this.options.isConnected(element.profileId!) }));
+        .map(field => RemoteEditSidebarItem.connectionDetail(draftProfile, field, {
+          connected: this.options.isConnected(element.profileId!),
+          jumpProfileLabel: jumpDisplay.label,
+          jumpRoute: jumpDisplay.route
+        }));
     }
 
     if (element) {
@@ -200,9 +221,14 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
       items.push(RemoteEditSidebarItem.connectionsFilter(this.filterText));
     }
 
+    const quickConnectProfile = this.options.getQuickConnectProfile();
+    const quickConnectJumpDisplay = buildSidebarJumpDisplay(quickConnectProfile, profiles);
     items.push(RemoteEditSidebarItem.quickConnect(
-      this.options.getQuickConnectProfile(),
-      { connecting: this.options.isConnecting('__remoteeditQuickConnect') }
+      quickConnectProfile,
+      {
+        connecting: this.options.isConnecting('__remoteeditQuickConnect'),
+        jumpRoute: quickConnectJumpDisplay.route
+      }
     ));
 
     if (profiles.length === 0 && newDraftProfiles.length === 0) {
@@ -228,25 +254,46 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
       return items;
     }
 
-    items.push(...filteredNewDraftProfiles.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
-      profile,
-      { draft: true, connected: false, connecting: this.options.isConnecting(profile.id) }
-    )));
+    items.push(...filteredNewDraftProfiles.map(profile => {
+      const jumpDisplay = buildSidebarJumpDisplay(profile, profiles);
+      return RemoteEditSidebarItem.fromConnectionProfile(
+        profile,
+        { draft: true, connected: false, connecting: this.options.isConnecting(profile.id), jumpRoute: jumpDisplay.route }
+      );
+    }));
 
     if (groupedProfiles) {
       for (const bucket of groupedProfiles.grouped) {
         items.push(RemoteEditSidebarItem.connectionGroup(bucket.group, bucket.profiles.length, { expanded: !this.collapsedGroupIds.has(bucket.group.id), renderVersion: this.connectionGroupRenderVersion }));
       }
 
-      items.push(...groupedProfiles.loose.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
-        this.options.getDraftProfile(profile),
-        { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
-      )));
+      items.push(...groupedProfiles.loose.map(profile => {
+        const draftProfile = this.options.getDraftProfile(profile);
+        const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
+        return RemoteEditSidebarItem.fromConnectionProfile(
+          draftProfile,
+          {
+            modified: this.options.hasDraft(profile.id),
+            connected: this.options.isConnected(profile.id),
+            connecting: this.options.isConnecting(profile.id),
+            jumpRoute: jumpDisplay.route
+          }
+        );
+      }));
     } else {
-      items.push(...filteredProfiles.map(profile => RemoteEditSidebarItem.fromConnectionProfile(
-        this.options.getDraftProfile(profile),
-        { modified: this.options.hasDraft(profile.id), connected: this.options.isConnected(profile.id), connecting: this.options.isConnecting(profile.id) }
-      )));
+      items.push(...filteredProfiles.map(profile => {
+        const draftProfile = this.options.getDraftProfile(profile);
+        const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
+        return RemoteEditSidebarItem.fromConnectionProfile(
+          draftProfile,
+          {
+            modified: this.options.hasDraft(profile.id),
+            connected: this.options.isConnected(profile.id),
+            connecting: this.options.isConnecting(profile.id),
+            jumpRoute: jumpDisplay.route
+          }
+        );
+      }));
     }
     return items;
   }

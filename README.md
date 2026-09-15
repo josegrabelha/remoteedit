@@ -314,6 +314,57 @@ Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 - Connection favorites
 - Secure credential storage
 
+## SFTP Jump Hosts
+
+An SFTP connection can reach its target through one or more saved SFTP profiles. In either the Webview connection form or the Native Sidebar connection details, set **Jump Host** to:
+
+- **Direct** to connect to the target normally and clear a previously saved Jump Host.
+- A saved SFTP profile to use that profile as the hop nearest the target.
+
+Quick Connect can also use a saved SFTP profile as its Jump Host, but temporary and unsaved connections never become Jump Host candidates. Each saved Jump Host can select another saved SFTP profile, so finite nested chains are supported without an artificial depth limit.
+
+When creating a connection with **Remote Edit: Add Connection** in the Native Sidebar (`remoteedit.sidebar.newConnection`), the SFTP wizard asks for a Jump Host after the username. The picker starts with **Direct** and shows each eligible saved profile's endpoint and route. It still offers Direct when there are no saved candidates. Pressing Esc at this step exits without saving a connection or credentials. FTP/FTPS creation skips this step.
+
+For a target `A` reached through `B`, `C`, and outermost host `D`, configure the saved profiles in this order:
+
+1. Set `D` to **Direct**.
+2. Set `C` to use `D`.
+3. Set `B` to use `C`.
+4. Set `A` to use `B`.
+
+Remote Edit then connects along `Local → D → C → B → A`. Selecting a Jump Host does not pre-connect a visible session, start a local listener, or create a configurable port mapping. The extension creates a private SSH client for each hop, opens one internal SSH forwarding stream to the next host, and supplies that stream directly as the next SSH connection's socket. Only the outermost host is probed from the workstation. Each final target owns its hidden chain, so disconnecting one target leaves other targets' chains intact.
+
+Jump references are validated before network work begins. Self-references, cycles, missing profiles, and FTP/FTPS profiles are rejected instead of silently falling back to Direct. A profile that is still used as a Jump Host cannot be deleted or changed to FTP/FTPS until its references are removed. Renaming or moving a profile keeps its reference identity. Deleting a group alone preserves its connections; deleting the group and its connections is allowed only when no connection outside the group depends on them.
+
+Each hop uses its own saved password or private key and passphrase. A missing Jump password is requested before connecting and is used only for that attempt; it is not saved automatically. Esc cancels the attempt in both interfaces. Private-key passphrases are requested when needed during connection. Credentials use VS Code Secret Storage, while route summaries expose profile names only.
+
+Errors identify the failing hop and connection stage. Failure, cancellation, and disconnect release the final SFTP client and its hidden chain, including any hops opened before a connection attempt is canceled. A remote close removes the connection from the active list and updates both interfaces. Cleanup allows up to five seconds for the final SFTP client to end before forcing its transport closed.
+
+Jump Hosts are available only for SSH/SFTP. FTP and FTPS remain direct because their separate dynamic data connections require a different proxy design.
+
+### Jump Host backup compatibility
+
+| Backup | Current extension behavior |
+| --- | --- |
+| Version 1 or 2 | Imports connections as Direct. A merge overwrites an existing same-ID Jump reference with Direct. |
+| Version 3 | Preserves profile IDs and Jump references, regardless of connection order in the file. Older extensions that support only v1/v2 reject v3. |
+
+Merge validates the resulting graph, including retained existing profiles and overwritten Jump profiles. Replace uses only imported profiles, so every referenced Jump Host must be included. Replace removes the old profiles' stored credentials before restoring any explicitly selected credentials. A merge without credential restoration keeps existing stored credentials.
+
+Ordinary backup connection entries contain no passwords or passphrases. Selecting credential export adds a password-protected scrypt/AES-256-GCM block; restoration is also explicit and matches credentials by profile ID. Version, reference-graph, and decryption checks run before settings or stored data are changed. This preflight protection is not a transaction across VS Code settings, connection storage, and Secret Storage. Settings-only imports remain available independently of connection imports.
+
+### Isolated topology verification
+
+To prove that traffic cannot bypass the configured chain, use disposable hosts or containers with this network policy:
+
+1. Allow the workstation to reach only `D` over SSH; block direct workstation access to `C`, `B`, and `A`.
+2. Allow `D → C`, `C → B`, and `B → A` over SSH, and block non-required paths. Make `A`'s test hostname resolvable from `B` but not from the workstation.
+3. Create the four saved SFTP profiles and Jump selections in the order above. Use test-only accounts and credentials.
+4. Connect to `A` and verify directory browsing, file read/write, upload, and download. Confirm the displayed route is `Local → D → C → B → A`.
+5. Repeat with a blocked middle edge, invalid middle-hop authentication, and user cancellation. Confirm the reported stage identifies the failing hop and that server-side SSH sessions close after failure, cancellation, and normal disconnect.
+6. Repeat with two targets sharing a saved Jump profile, remote closure, and cancellation during connection setup. Confirm one target's cleanup does not close the other and that both interfaces remove closed connections.
+7. Run `npm test` for the deterministic graph, credentials, backup, UI message, cancellation, and cleanup regression suite. These controlled tests complement the isolated network and VS Code UI checks above.
+
 ## Import and Export
 
 Create password-protected backups of Remote Edit data:
@@ -428,4 +479,3 @@ Enable debug and performance logs only while troubleshooting directory browsing,
 ## License
 
 Remote Edit is free to use for personal and professional use. See the [LICENSE](LICENSE) file for details.
-

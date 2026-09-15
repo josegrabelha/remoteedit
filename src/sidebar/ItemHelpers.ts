@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AuthType, ConnectionProfile } from '../connection/ConnectionManager';
+import { resolveJumpProfileChain, type JumpProfileDescriptor } from '../connection/JumpChain';
 import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
 import type { TransferQueueItemSnapshot } from '../panel/RemoteEditPanel';
 import { formatPermissionsPropertyValue } from '../utils/permissionFormatUtils';
@@ -32,6 +33,7 @@ export type ConnectionDetailField =
   | 'host'
   | 'port'
   | 'connectionType'
+  | 'jumpProfileId'
   | 'username'
   | 'authType'
   | 'privateKeyPath'
@@ -76,6 +78,10 @@ export function getConnectionDetailFields(profile: ConnectionProfile): Connectio
     'connectionType'
   ];
 
+  if (isSftp) {
+    fields.push('jumpProfileId');
+  }
+
   if (isFtps) {
     fields.push('ftpsAllowSelfSignedCertificate');
     if (!profile.ftpsAllowSelfSignedCertificate) {
@@ -99,7 +105,7 @@ export function getConnectionDetailFields(profile: ConnectionProfile): Connectio
   return fields;
 }
 
-export function buildConnectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean }): {
+export function buildConnectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; jumpProfileLabel?: string; jumpRoute?: string }): {
   label: string;
   value: string;
   icon: vscode.ThemeIcon;
@@ -115,6 +121,7 @@ export function buildConnectionDetail(profile: ConnectionProfile, field: Connect
     host: { name: 'Hostname', value: profile.host || '', icon: 'globe' },
     port: { name: 'Port', value: String(profile.port || ''), icon: 'plug' },
     connectionType: { name: 'Type', value: protocol, icon: 'remote' },
+    jumpProfileId: { name: 'Jump Host', value: isSftp ? options?.jumpProfileLabel || 'Direct' : 'Not used', icon: 'server-environment' },
     username: { name: 'Username', value: profile.username || '', icon: 'account' },
     authType: { name: 'Auth Method', value: isSftp ? authLabel : 'Password', icon: 'key' },
     privateKeyPath: { name: 'Private Key Path', value: isPrivateKey ? profile.privateKeyPath || '' : 'Not used', icon: 'key' },
@@ -126,15 +133,18 @@ export function buildConnectionDetail(profile: ConnectionProfile, field: Connect
   };
   const detail = details[field];
   const value = detail.value || 'Not set';
+  const tooltip = field === 'credentials'
+    ? isPrivateKey ? 'Click to manage passphrase.' : 'Click to manage password.'
+    : field === 'jumpProfileId'
+      ? `${options?.jumpRoute || 'Route: Direct'}\n\nClick to select a Jump Host.`
+      : field === 'keepAlive' || field === 'ftpsAllowSelfSignedCertificate'
+        ? `Click to toggle ${detail.name}.`
+        : `Click to edit ${detail.name}.`;
   return {
     label: `${detail.name}: ${value}`,
     value,
     icon: new vscode.ThemeIcon(detail.icon),
-    tooltip: field === 'credentials'
-      ? isPrivateKey ? 'Click to manage passphrase.' : 'Click to manage password.'
-      : field === 'keepAlive' || field === 'ftpsAllowSelfSignedCertificate'
-        ? `Click to toggle ${detail.name}.`
-        : `Click to edit ${detail.name}.`
+    tooltip
   };
 }
 
@@ -155,6 +165,70 @@ export function getSavedCredentialLabel(profile: ConnectionProfile, quickConnect
   }
 
   return profile.hasSavedPassword ? 'Saved' : 'Not saved';
+}
+
+export interface SidebarJumpDisplay {
+  readonly label: string;
+  readonly route?: string;
+  readonly isAvailable: boolean;
+}
+
+export function buildSidebarJumpDisplay(
+  target: JumpProfileDescriptor,
+  profiles: readonly ConnectionProfile[]
+): SidebarJumpDisplay {
+  if (!isSftpConnection(target.connectionType)) {
+    return { label: 'Direct', isAvailable: true };
+  }
+
+  const jumpProfileId = String(target.jumpProfileId || '').trim();
+  if (!jumpProfileId) {
+    return { label: 'Direct', route: 'Route: Direct', isAvailable: true };
+  }
+
+  try {
+    const chain = resolveJumpProfileChain({ ...target, jumpProfileId }, profiles);
+    const selectedProfile = chain[chain.length - 1];
+    return {
+      label: selectedProfile ? formatSidebarJumpProfileName(selectedProfile) : 'Unavailable Jump Host',
+      route: formatSidebarJumpRoute(chain),
+      isAvailable: Boolean(selectedProfile)
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The selected Jump Host is unavailable.';
+    return {
+      label: 'Unavailable Jump Host',
+      route: `Route unavailable: ${message}`,
+      isAvailable: false
+    };
+  }
+}
+
+export function formatSidebarJumpProfileName(profile: JumpProfileDescriptor): string {
+  return String(profile.name || '').trim()
+    || String(profile.host || '').trim()
+    || String(profile.id || '').trim()
+    || 'Unnamed connection';
+}
+
+export function formatSidebarJumpProfileEndpoint(profile: Pick<ConnectionProfile, 'host' | 'port' | 'username'>): string {
+  const username = String(profile.username || '').trim();
+  const host = String(profile.host || '').trim() || 'unknown host';
+  return `${username ? `${username}@` : ''}${host}:${profile.port || 22}`;
+}
+
+export function formatSidebarJumpRoute(chain: readonly JumpProfileDescriptor[]): string {
+  const names = chain.map(formatSidebarJumpProfileName).filter(Boolean);
+  return names.length > 0
+    ? `Route: Local → ${names.join(' → ')} → Target`
+    : 'Route: Direct';
+}
+
+export function formatActiveConnectionJumpVia(connection: ActiveConnection): string | undefined {
+  const names = (connection.jumpProfileNames || [])
+    .map(name => String(name || '').trim())
+    .filter(Boolean);
+  return names.length > 0 ? `Via: ${names.join(' → ')}` : undefined;
 }
 
 export function sortRemoteEntries(entries: RemoteEntry[]): RemoteEntry[] {

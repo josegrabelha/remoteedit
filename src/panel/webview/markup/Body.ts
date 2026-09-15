@@ -89,6 +89,19 @@ export function renderBody(): string {
               </div>
             </div>
 
+            <div id="jumpProfileBlock" class="full jump-profile-block">
+              <label for="jumpProfileDropdownButton">Jump Host</label>
+              <div class="jump-profile-picker">
+                <button id="jumpProfileDropdownButton" type="button" class="profile-dropdown-button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="jumpProfileDropdownLabel" class="profile-dropdown-label">Direct</span>
+                  <svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg>
+                </button>
+                <div id="jumpProfileDropdownMenu" class="profile-dropdown-menu jump-profile-dropdown-menu" role="listbox" aria-label="Jump Host"></div>
+              </div>
+              <select id="jumpProfileId" class="jump-profile-select-native" aria-hidden="true" tabindex="-1"><option value="">Direct</option></select>
+              <div id="jumpRouteSummary" class="jump-route-summary">Route: Direct</div>
+            </div>
+
             <div class="full"><label for="username">Username</label><input id="username" autocomplete="username" /></div>
             <div id="authMethodBlock" class="full auth-method-block">
               <label for="authDropdownButton">Authentication</label>

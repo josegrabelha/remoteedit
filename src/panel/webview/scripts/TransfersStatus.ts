@@ -628,6 +628,8 @@ export function renderTransfersStatus(): string {
 
     if (authDropdownButton) authDropdownButton.disabled = shouldLockConnectionDetails || !isSftpConnectionMethod;
     if (authType) authType.disabled = shouldLockConnectionDetails || !isSftpConnectionMethod;
+    if (jumpProfileDropdownButton) jumpProfileDropdownButton.disabled = shouldLockConnectionDetails || !isSftpConnectionMethod;
+    if (jumpProfileId) jumpProfileId.disabled = shouldLockConnectionDetails || !isSftpConnectionMethod;
     if (shouldLockConnectionDetails) {
       hideTemporaryPassword(password);
       hideTemporaryPassword(passphrase);
@@ -637,6 +639,7 @@ export function renderTransfersStatus(): string {
     updateFtpsCertificateFields(shouldLockConnectionDetails);
 
     if (shouldLockConnectionDetails || !connectionTypeDropdownButton || connectionTypeDropdownButton.disabled) hideConnectionTypeDropdown();
+    if (shouldLockConnectionDetails || !jumpProfileDropdownButton || jumpProfileDropdownButton.disabled) hideJumpProfileDropdown();
     if (shouldLockConnectionDetails || !authDropdownButton || authDropdownButton.disabled) hideAuthDropdown();
     currentPath.disabled = busy || !hasActiveSession;
     if (currentPath.disabled && remotePathEditing) {

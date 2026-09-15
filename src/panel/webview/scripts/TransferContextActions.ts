@@ -142,6 +142,9 @@ export function renderTransferContextActions(): string {
     if (connectionTypeDropdownOpen && event.target && event.target.closest && !event.target.closest('.connection-type-picker')) {
       hideConnectionTypeDropdown();
     }
+    if (jumpProfileDropdownOpen && event.target && event.target.closest && !event.target.closest('.jump-profile-picker')) {
+      hideJumpProfileDropdown();
+    }
     if (authDropdownOpen && event.target && event.target.closest && !event.target.closest('.auth-picker')) {
       hideAuthDropdown();
     }
@@ -190,6 +193,22 @@ export function renderTransferContextActions(): string {
     if (!item || connectionTypeDropdownButton.disabled) return;
     selectConnectionType(item.dataset.connectionType || 'sftp');
     hideConnectionTypeDropdown();
+  });
+
+  jumpProfileId.addEventListener('change', () => {
+    selectJumpProfile(jumpProfileId.value);
+  });
+
+  jumpProfileDropdownButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleJumpProfileDropdown();
+  });
+
+  jumpProfileDropdownMenu.addEventListener('click', event => {
+    const item = event.target && event.target.closest ? event.target.closest('[data-jump-profile-id]') : null;
+    if (!item || jumpProfileDropdownButton.disabled) return;
+    selectJumpProfile(item.dataset.jumpProfileId || '');
   });
 
   authType.addEventListener('change', () => {
@@ -309,6 +328,10 @@ export function renderTransferContextActions(): string {
     }
     if (event.key === 'Escape' && connectionTypeDropdownOpen) {
       hideConnectionTypeDropdown();
+      return;
+    }
+    if (event.key === 'Escape' && jumpProfileDropdownOpen) {
+      hideJumpProfileDropdown();
       return;
     }
     if (event.key === 'Escape' && authDropdownOpen) {

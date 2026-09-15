@@ -2,7 +2,7 @@
   "name": "remoteedit",
   "displayName": "Remote Edit",
   "description": "Browse, edit, transfer, and search remote files over SSH/SFTP, FTP, and FTPS, with SSH server tools.",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -95,6 +95,12 @@
         "command": "remoteedit.sidebar.renameSavedConnection",
         "title": "Rename Connection",
         "icon": "$(edit)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.sidebar.cloneSavedConnection",
+        "title": "Clone Connection",
+        "icon": "$(copy)",
         "category": "Remote Edit"
       },
       {
@@ -843,14 +849,19 @@
           "group": "2_manage@1"
         },
         {
-          "command": "remoteedit.sidebar.moveConnectionToGroup",
+          "command": "remoteedit.sidebar.cloneSavedConnection",
           "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
           "group": "2_manage@2"
         },
         {
-          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "command": "remoteedit.sidebar.moveConnectionToGroup",
           "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
           "group": "2_manage@3"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.disconnected",
+          "group": "2_manage@4"
         },
         {
           "command": "remoteedit.sidebar.disconnectConnection",
@@ -873,14 +884,19 @@
           "group": "2_manage@1"
         },
         {
-          "command": "remoteedit.sidebar.moveConnectionToGroup",
+          "command": "remoteedit.sidebar.cloneSavedConnection",
           "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
           "group": "2_manage@2"
         },
         {
-          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "command": "remoteedit.sidebar.moveConnectionToGroup",
           "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
           "group": "2_manage@3"
+        },
+        {
+          "command": "remoteedit.sidebar.deleteSavedConnection",
+          "when": "view == remoteedit.connectionsView && viewItem == remoteedit.savedConnection.connected",
+          "group": "2_manage@4"
         },
         {
           "command": "remoteedit.sidebar.saveConnectionChanges",
@@ -1937,6 +1953,10 @@
         },
         {
           "command": "remoteedit.sidebar.renameSavedConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteedit.sidebar.cloneSavedConnection",
           "when": "false"
         },
         {

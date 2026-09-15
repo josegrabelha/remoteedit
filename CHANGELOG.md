@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.9.1] - 2026-09-15
+
+### Added
+
+* Added **Clone Connection** to the Connections sidebar context menu for saved profiles.
+
 ## [1.9.0] - 2026-09-15
 
 ### Added

@@ -230,6 +230,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.clearCompletedTransfers', () => this.clearCompletedTransfers()),
       vscode.commands.registerCommand('remoteedit.sidebar.openSavedConnection', item => this.openSavedConnection(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.renameSavedConnection', item => this.renameSavedConnection(item)),
+      vscode.commands.registerCommand('remoteedit.sidebar.cloneSavedConnection', item => this.cloneSavedConnection(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.moveConnectionToGroup', item => this.moveSavedConnectionToGroup(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.deleteSavedConnection', item => this.deleteSavedConnection(item)),
       vscode.commands.registerCommand('remoteedit.sidebar.renameConnectionGroup', item => this.renameConnectionGroup(item)),
@@ -2791,6 +2792,25 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       void vscode.window.showErrorMessage(message);
     }
   }
+
+  private async cloneSavedConnection(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
+    const profileId = typeof item === 'string' ? item : item?.profileId;
+
+    if (!profileId || this.connectionDrafts.isQuickConnectId(profileId) || this.connectionDrafts.isNewDraftId(profileId)) {
+      return;
+    }
+
+    try {
+      const clone = await this.connectionManager.cloneProfile(profileId);
+      RemoteEditSharedState.fireProfilesChanged(clone.id, 'sidebar', 'cloneProfile');
+      this.connectionsProvider.refresh();
+      void vscode.window.showInformationMessage(`Connection cloned as "${clone.name}".`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
+    }
+  }
+
 
   private async renameSavedConnection(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
     const profileId = typeof item === 'string' ? item : item?.profileId;

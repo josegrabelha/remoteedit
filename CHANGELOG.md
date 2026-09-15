@@ -4,11 +4,13 @@
 
 ### Added
 
-* Added SFTP Jump Hosts in the Webview, Native Sidebar, and new-connection wizard, including multi-hop saved-profile chains, Quick Connect support, route summaries, and protected backup references.
+* Added SFTP Jump Hosts in the Webview, Native Sidebar, and new-connection wizard, including multi-hop saved-profile chains, Quick Connect support, route summaries, and protected backup references. Thanks to @tzraeq for the contribution.
+* Added a Clone action to Manage Saved Connections, creating an independent copy beside the source with a new profile ID and copied stored credentials.
+* Added **Save As...** to the Save split button for saved connections, creating a new profile from the current form values with a selectable connection group while keeping the original unchanged.
 
 ### Improved
 
-* Added filtering to the Webview Jump Host picker, matching the saved Connection Profile filter while keeping Direct connection always available.
+* Improved the Webview Jump Host picker with filtering that matches the saved Connection Profile filter, while keeping Direct connection always available.
 
 ### Fixed
 

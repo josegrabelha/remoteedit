@@ -1,9 +1,11 @@
 export const RemoteEditIncomingMessageType = {
   Ready: 'ready',
   SaveConnection: 'saveConnection',
+  SaveConnectionAs: 'saveConnectionAs',
   PickPrivateKeyPath: 'pickPrivateKeyPath',
   PickCaCertificatePath: 'pickCaCertificatePath',
   DeleteConnection: 'deleteConnection',
+  CloneConnection: 'cloneConnection',
   RenameConnection: 'renameConnection',
   ReorderConnections: 'reorderConnections',
   CreateConnectionGroup: 'createConnectionGroup',

@@ -113,3 +113,30 @@ test('Webview Jump Host filter narrows valid candidates while keeping Direct con
   assert.equal(context.jumpProfileDropdownMenu.children[1].children[0].dataset.jumpProfileId, '');
   assert.equal(context.jumpProfileDropdownMenu.children[2].children[0].textContent, 'No Jump Hosts found.');
 });
+
+test('Webview Save As uses the current draft, a new name, and the selected saved profile as the credential source', async () => {
+  const profiles = [profile('ubuntu', { name: 'Ubuntu', username: 'admin', groupId: 'group-a' })];
+  const { context, messages } = createJumpWebviewHarness(profiles);
+  context.selectProfile('ubuntu');
+  context.username.value = 'different-user';
+  context.startPath.value = '/srv/different';
+  let dialogOptions: any;
+  context.showConnectionNameDialog = async (initialName: string, groupId: string, options: any) => {
+    assert.equal(initialName, 'Ubuntu (copy)');
+    assert.equal(groupId, 'group-a');
+    dialogOptions = options;
+    return { name: 'Ubuntu Alternate', groupId: 'group-b', newGroupName: '' };
+  };
+
+  assert.equal(await context.saveCurrentConnectionAs(), true);
+  assert.equal(dialogOptions.title, 'Save Connection As');
+  assert.equal(dialogOptions.includeGroup, true);
+  const message = messages.find(message => message.type === 'saveConnectionAs');
+  assert.ok(message);
+  assert.equal(message.payload.sourceProfileId, 'ubuntu');
+  assert.equal(message.payload.id, undefined);
+  assert.equal(message.payload.name, 'Ubuntu Alternate');
+  assert.equal(message.payload.username, 'different-user');
+  assert.equal(message.payload.startPath, '/srv/different');
+  assert.equal(message.payload.groupId, 'group-b');
+});

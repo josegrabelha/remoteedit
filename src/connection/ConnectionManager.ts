@@ -226,6 +226,7 @@ export interface ConnectionProfileInput {
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
   jumpProfileId?: string;
+  favoriteRemotePaths?: string[];
 }
 
 const CONNECTIONS_KEY = 'remoteedit.connectionProfiles';
@@ -407,6 +408,128 @@ export class ConnectionManager {
     return profiles.find(profile => profile.id === profileId);
   }
 
+  async cloneProfile(profileId: string): Promise<ConnectionProfile> {
+    const timer = createPerformanceTimer();
+    const id = String(profileId || '').trim();
+    if (!id) {
+      throw new Error('Select a saved connection to clone.');
+    }
+
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    const profiles = storedProfiles.map(profile => this.normalizeStoredProfile(profile));
+    const sourceIndex = profiles.findIndex(profile => profile.id === id);
+    const source = sourceIndex >= 0 ? profiles[sourceIndex] : undefined;
+    if (!source) {
+      throw new Error('The selected saved connection no longer exists.');
+    }
+
+    const cloneName = buildCloneProfileName(source.name, profiles);
+    const now = Date.now();
+    const cloneId = buildProfileId(cloneName, source.host, source.username);
+    const { hasSavedPassword: _hasSavedPassword, hasSavedPassphrase: _hasSavedPassphrase, ...storedSource } = source;
+    const clone: ConnectionProfile = {
+      ...storedSource,
+      id: cloneId,
+      name: cloneName,
+      favoriteRemotePaths: normalizeFavoriteRemotePaths(source.favoriteRemotePaths || []),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const nextProfiles = [...profiles];
+    nextProfiles.splice(sourceIndex + 1, 0, clone);
+    this.validateProfileJumpReferences(nextProfiles);
+
+    const password = await this.context.secrets.get(secretKey(source.id, 'password'));
+    const passphrase = await this.context.secrets.get(secretKey(source.id, 'passphrase'));
+
+    await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
+    try {
+      if (password) {
+        await this.context.secrets.store(secretKey(clone.id, 'password'), password);
+      }
+      if (passphrase) {
+        await this.context.secrets.store(secretKey(clone.id, 'passphrase'), passphrase);
+      }
+    } catch (error) {
+      await this.context.globalState.update(CONNECTIONS_KEY, profiles);
+      await this.context.secrets.delete(secretKey(clone.id, 'password'));
+      await this.context.secrets.delete(secretKey(clone.id, 'passphrase'));
+      throw error;
+    }
+
+    this.logDebug('Cloned saved connection profile.', {
+      Source: source.name,
+      Clone: clone.name,
+      ProfileId: clone.id,
+      GroupId: clone.groupId || 'none'
+    });
+    this.logPerformance('Cloned saved connection profile', timer(), { Profiles: nextProfiles.length });
+
+    return {
+      ...clone,
+      hasSavedPassword: Boolean(password),
+      hasSavedPassphrase: Boolean(passphrase)
+    };
+  }
+
+
+  async saveProfileAs(sourceProfileId: string, input: ConnectionProfileInput): Promise<ConnectionProfile> {
+    const sourceId = String(sourceProfileId || '').trim();
+    if (!sourceId) {
+      throw new Error('Select a saved connection to save as a new connection.');
+    }
+
+    const profiles = await this.listProfiles();
+    const source = profiles.find(profile => profile.id === sourceId);
+    if (!source) {
+      throw new Error('The selected saved connection no longer exists.');
+    }
+
+    const name = String(input.name || '').trim();
+    if (!name) {
+      throw new Error('Connection name is required.');
+    }
+    if (profiles.some(profile => profile.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error(`A connection named '${name}' already exists.`);
+    }
+
+    let savedProfile: ConnectionProfile | undefined;
+    try {
+      savedProfile = await this.saveProfile({
+        ...input,
+        id: undefined,
+        favoriteRemotePaths: normalizeFavoriteRemotePaths(source.favoriteRemotePaths || [])
+      });
+
+      if (savedProfile.authType === 'password' && Boolean(input.rememberPassword) && !String(input.password || '')) {
+        const password = await this.context.secrets.get(secretKey(source.id, 'password'));
+        if (password) {
+          await this.context.secrets.store(secretKey(savedProfile.id, 'password'), password);
+        }
+      } else if (savedProfile.authType === 'privateKey' && Boolean(input.rememberPassphrase) && !String(input.passphrase || '')) {
+        const passphrase = await this.context.secrets.get(secretKey(source.id, 'passphrase'));
+        if (passphrase) {
+          await this.context.secrets.store(secretKey(savedProfile.id, 'passphrase'), passphrase);
+        }
+      }
+
+      return {
+        ...savedProfile,
+        hasSavedPassword: Boolean(await this.context.secrets.get(secretKey(savedProfile.id, 'password'))),
+        hasSavedPassphrase: Boolean(await this.context.secrets.get(secretKey(savedProfile.id, 'passphrase')))
+      };
+    } catch (error) {
+      if (savedProfile?.id) {
+        try {
+          await this.deleteProfile(savedProfile.id);
+        } catch {
+          // Preserve the original Save As error if rollback cleanup cannot complete.
+        }
+      }
+      throw error;
+    }
+  }
 
   async saveProfile(input: ConnectionProfileInput): Promise<ConnectionProfile> {
     const timer = createPerformanceTimer();
@@ -462,7 +585,7 @@ export class ConnectionManager {
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : '',
       jumpProfileId,
-      favoriteRemotePaths: normalizeFavoriteRemotePaths(existing?.favoriteRemotePaths || []),
+      favoriteRemotePaths: normalizeFavoriteRemotePaths(input.favoriteRemotePaths ?? existing?.favoriteRemotePaths ?? []),
       groupId,
       createdAt: existing?.createdAt || now,
       updatedAt: now
@@ -1676,6 +1799,24 @@ function resolveProfileName(
   }
 
   return String(existingName || buildDefaultProfileName(host, username)).trim();
+}
+
+function buildCloneProfileName(sourceName: string, profiles: ConnectionProfile[]): string {
+  const trimmedSourceName = String(sourceName || '').trim() || 'Connection';
+  const copyMatch = trimmedSourceName.match(/^(.*) \(copy(?: \d+)?\)$/i);
+  const baseName = String(copyMatch?.[1] || trimmedSourceName).trim() || 'Connection';
+  const existingNames = new Set(profiles.map(profile => String(profile.name || '').trim().toLowerCase()));
+
+  let candidate = `${baseName} (copy)`;
+  if (!existingNames.has(candidate.toLowerCase())) {
+    return candidate;
+  }
+
+  let copyNumber = 2;
+  while (existingNames.has(`${baseName} (copy ${copyNumber})`.toLowerCase())) {
+    copyNumber += 1;
+  }
+  return `${baseName} (copy ${copyNumber})`;
 }
 
 function buildDefaultProfileName(host: string, username: string): string {

@@ -211,6 +211,7 @@ export function renderTextEditContextMenu(): string {
   }, true);
 
   document.addEventListener('click', event => {
+    if (saveProfileMenuOpen && saveProfileSplitButton && event.target instanceof Node && !saveProfileSplitButton.contains(event.target)) hideSaveProfileMenu();
     if (!entryContextMenu.contains(event.target)) hideContextMenu();
     if (textEditContextMenu && !textEditContextMenu.contains(event.target)) hideTextEditContextMenu();
     if (remoteSearchResultContextMenu && !remoteSearchResultContextMenu.contains(event.target)) hideRemoteSearchResultContextMenu();

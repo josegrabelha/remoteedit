@@ -20,6 +20,10 @@ export function renderEventBindings(): string {
         profiles = payload.profiles || [];
         connectionGroups = payload.connectionGroups || [];
         renderProfiles(Object.prototype.hasOwnProperty.call(payload, 'selectedId') ? payload.selectedId : selectedProfileId);
+        if (manageProfilesDialogOpen && payload.renameProfileId && profiles.some(profile => profile.id === payload.renameProfileId)) {
+          renameProfileId = payload.renameProfileId;
+          renderManageProfilesList();
+        }
         updatePathFavoriteControls();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;
@@ -530,7 +534,20 @@ export function renderEventBindings(): string {
   }
 
   saveProfileButton.addEventListener('click', () => {
+    hideSaveProfileMenu();
     void saveCurrentConnection();
+  });
+
+  if (saveProfileMenuButton) saveProfileMenuButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleSaveProfileMenu();
+  });
+
+  if (saveProfileAsButton) saveProfileAsButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    void saveCurrentConnectionAs();
   });
 
   connectButton.addEventListener('click', () => {

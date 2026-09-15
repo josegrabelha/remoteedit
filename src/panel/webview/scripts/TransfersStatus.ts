@@ -609,6 +609,10 @@ export function renderTransfersStatus(): string {
 
     const selectedSavedConnectionDirty = updateConnectionProfileDirtyState();
     saveProfileButton.disabled = isConnectedForm || Boolean(pendingFormSession) || hasConnectingSession || (Boolean(getSelectedSavedProfile()) && !selectedSavedConnectionDirty);
+    if (saveProfileMenuButton) {
+      saveProfileMenuButton.disabled = isConnectedForm || Boolean(pendingFormSession) || hasConnectingSession || !Boolean(getSelectedSavedProfile());
+      if (saveProfileMenuButton.disabled && saveProfileMenuOpen) hideSaveProfileMenu();
+    }
     profileSelect.disabled = shouldLockConnectionPicker;
     profileDropdownButton.disabled = shouldLockConnectionPicker && !profileDropdownOpen;
     manageProfilesButton.disabled = false;

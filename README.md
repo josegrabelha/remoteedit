@@ -384,6 +384,14 @@ Import supports Merge and Replace modes and provides a summary before changes ar
 
 Session-only data is not included in backups. This includes command history, diagnostics debug/performance logging, open tabs, running/stopped state, Sudo Mode state, transfer runtime state, filters, and Log Viewer buffers.
 
+## Managing Saved Connections
+
+Open **Manage Saved Connections** from the button next to **Connection profile** to filter, group, reorder, rename, clone, or remove saved profiles. Hover a saved connection and choose **Clone** to create an independent copy directly below the source. The clone keeps the same connection settings, group, Jump Host reference, remote path favorites, and any password or private-key passphrase already stored in VS Code Secret Storage, but receives a new profile ID.
+
+Clones are named `Name (copy)`, then `Name (copy 2)`, `Name (copy 3)`, and so on when needed. After cloning, the new connection is selected and its name opens for editing immediately.
+
+For a saved connection, the **Save** control is a split button. Click **Save** to update the selected profile, or open the chevron menu and choose **Save As...** to create a new profile from the values currently shown in the connection form. Save As suggests the same `(copy)` naming pattern and asks for both the new connection name and its connection group before saving. The current group is preselected, but you can choose another group, no group, or create a new group. Remote path favorites are preserved, and unchanged credentials are carried through VS Code Secret Storage without modifying the original profile.
+
 ## Quick Access
 
 Open Remote Edit from:

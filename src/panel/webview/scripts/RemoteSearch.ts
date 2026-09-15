@@ -237,8 +237,10 @@ export function renderRemoteSearch(): string {
   }
 
   function validateConnectionNameInput(showFeedback) {
-    const nameMessage = getConnectionNameError(connectionNameInput.value, selectedProfileId || '');
-    const groupMessage = getConnectionNameNewGroupError(connectionNameGroupNewInput ? connectionNameGroupNewInput.value : '');
+    const nameMessage = getConnectionNameError(connectionNameInput.value, connectionNameDialogExcludeProfileId);
+    const groupMessage = connectionNameDialogIncludeGroup
+      ? getConnectionNameNewGroupError(connectionNameGroupNewInput ? connectionNameGroupNewInput.value : '')
+      : '';
     const message = nameMessage || groupMessage;
     connectionNameFeedback.textContent = (showFeedback || message) ? message : '';
     connectionNameInput.classList.toggle('connection-input-invalid', Boolean(nameMessage));
@@ -248,13 +250,28 @@ export function renderRemoteSearch(): string {
     return !message;
   }
 
-  function showConnectionNameDialog(initialName, initialGroupId) {
+  function showConnectionNameDialog(initialName, initialGroupId, options) {
     return new Promise(resolve => {
+      const dialogOptions = options || {};
+      // The group picker menu is portaled to document.body. Always close any stale
+      // instance before reusing this dialog (Save As intentionally hides the picker).
+      hideConnectionNameGroupDropdown();
       pendingConnectionNameResolver = resolve;
-      pendingConnectionNameGroupId = '';
+      pendingConnectionNameGroupId = String(initialGroupId || '').trim();
       pendingConnectionNameNewGroupName = '';
+      connectionNameDialogExcludeProfileId = Object.prototype.hasOwnProperty.call(dialogOptions, 'excludeProfileId')
+        ? String(dialogOptions.excludeProfileId || '').trim()
+        : String(selectedProfileId || '').trim();
+      connectionNameDialogIncludeGroup = dialogOptions.includeGroup !== false;
+      connectionNameGroupNewMode = false;
       connectionNameInput.value = String(initialName || '').trim();
       renderConnectionNameGroupOptions(initialGroupId || '');
+      if (connectionNameTitle) connectionNameTitle.textContent = String(dialogOptions.title || 'Save Connection');
+      if (connectionNameSubtitle) connectionNameSubtitle.textContent = String(dialogOptions.subtitle || 'Choose a unique name and optional group for this saved connection.');
+      if (connectionNameCreateButton) connectionNameCreateButton.textContent = String(dialogOptions.confirmLabel || 'Save');
+      if (connectionNameGroupLabel) connectionNameGroupLabel.hidden = !connectionNameDialogIncludeGroup;
+      if (connectionNameGroupPicker) connectionNameGroupPicker.hidden = !connectionNameDialogIncludeGroup;
+      if (connectionNameGroupNewInput) connectionNameGroupNewInput.hidden = true;
       connectionNameFeedback.textContent = '';
       connectionNameInput.classList.remove('connection-input-invalid');
       connectionNameDialogOpen = true;
@@ -275,6 +292,10 @@ export function renderRemoteSearch(): string {
     connectionNameInput.classList.remove('connection-input-invalid');
     if (connectionNameGroupNewInput) connectionNameGroupNewInput.classList.remove('connection-input-invalid');
     connectionNameFeedback.textContent = '';
+    connectionNameDialogExcludeProfileId = '';
+    connectionNameDialogIncludeGroup = true;
+    if (connectionNameGroupLabel) connectionNameGroupLabel.hidden = false;
+    if (connectionNameGroupPicker) connectionNameGroupPicker.hidden = false;
     if (!value) {
       pendingConnectionNameGroupId = '';
       pendingConnectionNameNewGroupName = '';
@@ -448,6 +469,79 @@ export function renderRemoteSearch(): string {
     }
 
     selectProfile(nextId, options);
+  }
+
+  function hideSaveProfileMenu() {
+    saveProfileMenuOpen = false;
+    if (saveProfileSplitButton) saveProfileSplitButton.classList.remove('open');
+    if (saveProfileMenuButton) saveProfileMenuButton.setAttribute('aria-expanded', 'false');
+    if (saveProfileMenu) saveProfileMenu.setAttribute('aria-hidden', 'true');
+  }
+
+  function showSaveProfileMenu() {
+    if (!saveProfileSplitButton || !saveProfileMenuButton || !saveProfileMenu) return;
+    const savedProfile = getSelectedSavedProfile();
+    if (!savedProfile || saveProfileMenuButton.disabled) return;
+    hideProfileDropdown();
+    hideJumpProfileDropdown();
+    saveProfileMenuOpen = true;
+    saveProfileSplitButton.classList.add('open');
+    saveProfileMenuButton.setAttribute('aria-expanded', 'true');
+    saveProfileMenu.setAttribute('aria-hidden', 'false');
+    window.setTimeout(() => { if (saveProfileAsButton) saveProfileAsButton.focus(); }, 0);
+  }
+
+  function toggleSaveProfileMenu() {
+    if (saveProfileMenuOpen) hideSaveProfileMenu();
+    else showSaveProfileMenu();
+  }
+
+  function buildConnectionCopyName(sourceName) {
+    const trimmedSourceName = String(sourceName || '').trim() || 'Connection';
+    const copyMatch = trimmedSourceName.match(/^(.*) \(copy(?: \d+)?\)$/i);
+    const baseName = String(copyMatch && copyMatch[1] || trimmedSourceName).trim() || 'Connection';
+    const existingNames = new Set(profiles.map(profile => normalizeConnectionNameForComparison(profile && profile.name)));
+    let candidate = baseName + ' (copy)';
+    if (!existingNames.has(normalizeConnectionNameForComparison(candidate))) return candidate;
+    let copyNumber = 2;
+    while (existingNames.has(normalizeConnectionNameForComparison(baseName + ' (copy ' + copyNumber + ')'))) copyNumber += 1;
+    return baseName + ' (copy ' + copyNumber + ')';
+  }
+
+  async function saveCurrentConnectionAs() {
+    hideSaveProfileMenu();
+    const savedProfile = getSelectedSavedProfile();
+    if (!savedProfile) return false;
+    if (!validateConnectionForm('save')) return false;
+
+    const suggestedName = buildConnectionCopyName(profileName.value || savedProfile.name);
+    const connectionNameResult = await showConnectionNameDialog(suggestedName, savedProfile.groupId || '', {
+      title: 'Save Connection As',
+      subtitle: 'Choose a unique name and connection group for the new saved connection.',
+      confirmLabel: 'Save',
+      includeGroup: true,
+      excludeProfileId: ''
+    });
+    if (!connectionNameResult) return false;
+
+    const statusConnectionId = activeConnectionId || FILES_STATUS_GLOBAL_KEY;
+    const connectionPayload = collectConnectionPayload();
+    delete connectionPayload.id;
+    connectionPayload.name = connectionNameResult.name;
+    connectionPayload.groupId = String(connectionNameResult.groupId || '').trim();
+    if (connectionNameResult.newGroupName) {
+      connectionPayload.newGroupName = String(connectionNameResult.newGroupName || '').trim();
+    }
+    setBusy(true, 'Saving connection as...', '', 'Cancel', statusConnectionId);
+    vscode.postMessage({
+      type: 'saveConnectionAs',
+      payload: {
+        ...connectionPayload,
+        sourceProfileId: savedProfile.id,
+        statusConnectionId
+      }
+    });
+    return true;
   }
 
   async function saveCurrentConnection() {

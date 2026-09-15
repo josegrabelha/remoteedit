@@ -338,6 +338,13 @@ export function renderTransferContextActions(): string {
       trapConfirmDialogFocus(event);
       return;
     }
+    if (event.key === 'Escape' && saveProfileMenuOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideSaveProfileMenu();
+      if (saveProfileMenuButton) saveProfileMenuButton.focus();
+      return;
+    }
     if (event.key === 'Escape' && profileDropdownOpen) {
       hideProfileDropdown();
       return;

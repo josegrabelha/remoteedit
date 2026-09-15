@@ -61,3 +61,41 @@ test('saving a profile writes credentials only to SecretStorage and keeps snapsh
   assert.ok(!snapshots.includes('synthetic-saved-target'));
   assert.equal(saved.jumpProfileId, 'jump');
 });
+
+test('Save As creates an independent profile from current values and carries unchanged saved credentials securely', async () => {
+  const source = profile('ubuntu', {
+    name: 'Ubuntu',
+    host: 'ubuntu.example.com',
+    username: 'admin',
+    startPath: '/home/admin',
+    favoriteRemotePaths: ['/var/log', '/opt/app']
+  });
+  const harness = createConnectionManagerHarness([source]);
+  harness.secrets.set(secretKey('ubuntu', 'password'), 'synthetic-source-password');
+
+  const saved = await harness.manager.saveProfileAs('ubuntu', {
+    name: 'Ubuntu Test',
+    host: 'ubuntu.example.com',
+    username: 'test-user',
+    startPath: '/srv/test',
+    rememberPassword: true
+  });
+
+  assert.notEqual(saved.id, source.id);
+  assert.equal(saved.name, 'Ubuntu Test');
+  assert.equal(saved.username, 'test-user');
+  assert.equal(saved.startPath, '/srv/test');
+  assert.deepEqual(saved.favoriteRemotePaths, ['/var/log', '/opt/app']);
+  assert.equal(harness.secrets.get(secretKey(saved.id, 'password')), 'synthetic-source-password');
+  assert.equal(harness.secrets.get(secretKey(source.id, 'password')), 'synthetic-source-password');
+
+  const original = await harness.manager.getProfile(source.id);
+  assert.equal(original?.name, 'Ubuntu');
+  assert.equal(original?.username, 'admin');
+  assert.equal(original?.startPath, '/home/admin');
+
+  await assert.rejects(
+    harness.manager.saveProfileAs('ubuntu', { name: 'ubuntu', host: 'other.invalid', username: 'other' }),
+    /already exists/i
+  );
+});

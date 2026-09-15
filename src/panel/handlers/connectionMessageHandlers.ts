@@ -12,6 +12,9 @@ export async function tryHandleConnectionMessage(
     case RemoteEditIncomingMessageType.SaveConnection:
       await handlers.saveConnection(message.payload);
       return true;
+    case RemoteEditIncomingMessageType.SaveConnectionAs:
+      await handlers.saveConnectionAs(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.PickPrivateKeyPath:
       await handlers.pickPrivateKeyPath();
       return true;
@@ -20,6 +23,9 @@ export async function tryHandleConnectionMessage(
       return true;
     case RemoteEditIncomingMessageType.DeleteConnection:
       await handlers.deleteConnection(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CloneConnection:
+      await handlers.cloneConnection(message.payload);
       return true;
     case RemoteEditIncomingMessageType.RenameConnection:
       await handlers.renameConnection(message.payload);

@@ -646,9 +646,11 @@ export class RemoteEditPanel {
           this.postRemoteClipboardState();
         },
         saveConnection: payload => this.saveConnection(payload),
+        saveConnectionAs: payload => this.saveConnectionAs(payload),
         pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
         pickCaCertificatePath: () => this.pickCaCertificatePath(),
         deleteConnection: payload => this.deleteConnection(payload),
+        cloneConnection: payload => this.cloneConnection(payload),
         renameConnection: payload => this.renameConnection(payload),
         reorderConnections: payload => this.reorderConnections(payload),
         createConnectionGroup: payload => this.createConnectionGroup(payload),
@@ -942,11 +944,16 @@ export class RemoteEditPanel {
     }
   }
 
-  private async sendProfiles(selectedId?: string): Promise<void> {
+  private async sendProfiles(selectedId?: string, options?: { renameProfileId?: string }): Promise<void> {
     const timer = createPerformanceTimer();
     const profiles = await this.connectionManager.listProfiles();
     const connectionGroups = await this.connectionManager.listGroups();
-    this.postMessage(RemoteEditOutboundMessageType.ProfilesLoaded, { profiles, connectionGroups, selectedId });
+    this.postMessage(RemoteEditOutboundMessageType.ProfilesLoaded, {
+      profiles,
+      connectionGroups,
+      selectedId,
+      renameProfileId: options?.renameProfileId
+    });
     appendPerformanceLog(this.output, 'Panel', `Posted profiles snapshot in ${timer()}ms`, {
       Profiles: profiles.length,
       Groups: connectionGroups.length,
@@ -1130,6 +1137,39 @@ export class RemoteEditPanel {
     }
   }
 
+  private async saveConnectionAs(payload: any): Promise<void> {
+    const statusConnectionId = this.getOperationStatusConnectionId(payload);
+    const profilePayload = { ...(payload || {}) };
+    const sourceProfileId = String(profilePayload.sourceProfileId || '').trim();
+    const newGroupName = String(profilePayload.newGroupName || '').trim();
+    delete profilePayload.statusConnectionId;
+    delete profilePayload.sourceProfileId;
+    delete profilePayload.newGroupName;
+    delete profilePayload.id;
+
+    this.postBusy(true, 'Saving connection as...', false, undefined, statusConnectionId);
+
+    try {
+      if (newGroupName) {
+        const group = await this.connectionManager.createGroup(newGroupName);
+        profilePayload.groupId = group.id;
+      }
+      const profile = await this.connectionManager.saveProfileAs(sourceProfileId, profilePayload);
+      await this.sendProfiles(profile.id);
+      RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'saveProfileAs');
+      this.postBusy(false, 'Connection saved.', false, undefined, statusConnectionId);
+      this.logInfo('Saved connection as a new profile.', {
+        Name: profile.name,
+        ProfileId: profile.id,
+        SourceProfileId: sourceProfileId,
+        Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}`
+      });
+    } catch (error) {
+      this.postBusy(false, 'Connection save failed.', false, undefined, statusConnectionId);
+      throw error;
+    }
+  }
+
   private getOperationStatusConnectionId(payload: any): string | undefined {
     const statusConnectionId = String(payload?.statusConnectionId || '').trim();
     return statusConnectionId || undefined;
@@ -1167,6 +1207,17 @@ export class RemoteEditPanel {
   }
 
 
+
+  private async cloneConnection(payload: any): Promise<void> {
+    const profileId = String(payload?.id || '').trim();
+
+    this.postBusy(true, 'Cloning connection...');
+    const profile = await this.connectionManager.cloneProfile(profileId);
+    await this.sendProfiles(profile.id, { renameProfileId: profile.id });
+    this.postBusy(false, 'Connection cloned.');
+    RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'cloneProfile');
+    this.logInfo('Cloned saved connection.', { Name: profile.name, ProfileId: profile.id, SourceProfileId: profileId });
+  }
 
   private async renameConnection(payload: any): Promise<void> {
     const profileId = String(payload?.id || '').trim();

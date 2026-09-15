@@ -78,6 +78,8 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const profileDropdownMenu = document.getElementById('profileDropdownMenu');
   const manageProfilesButton = document.getElementById('manageProfilesButton');
   const connectionNameBackdrop = document.getElementById('connectionNameBackdrop');
+  const connectionNameTitle = document.getElementById('connectionNameTitle');
+  const connectionNameSubtitle = document.getElementById('connectionNameSubtitle');
   const connectionNameInput = document.getElementById('connectionNameInput');
   const connectionNameFeedback = document.getElementById('connectionNameFeedback');
   const connectionNameCreateButton = document.getElementById('connectionNameCreateButton');
@@ -87,6 +89,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const port = document.getElementById('port');
   const username = document.getElementById('username');
   const connectionNameGroup = document.getElementById('connectionNameGroup');
+  const connectionNameGroupLabel = document.getElementById('connectionNameGroupLabel');
   const connectionNameGroupPicker = document.getElementById('connectionNameGroupPicker');
   const connectionNameGroupDropdownButton = document.getElementById('connectionNameGroupDropdownButton');
   const connectionNameGroupDropdownLabel = document.getElementById('connectionNameGroupDropdownLabel');
@@ -235,6 +238,10 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const sudoToggleState = document.getElementById('sudoToggleState');
 
   const saveProfileButton = document.getElementById('saveProfileButton');
+  const saveProfileSplitButton = document.getElementById('saveProfileSplitButton');
+  const saveProfileMenuButton = document.getElementById('saveProfileMenuButton');
+  const saveProfileMenu = document.getElementById('saveProfileMenu');
+  const saveProfileAsButton = document.getElementById('saveProfileAsButton');
   const connectButton = document.getElementById('connectButton');
   const showSettingsButton = document.getElementById('showSettingsButton');
   const showOutputButton = document.getElementById('showOutputButton');
@@ -554,6 +561,8 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   let selectedProfileId = '';
   let pendingConnectionNameResolver = null;
   let connectionNameDialogOpen = false;
+  let connectionNameDialogExcludeProfileId = '';
+  let connectionNameDialogIncludeGroup = true;
   let pendingConnectionNameGroupId = '';
   let pendingConnectionNameNewGroupName = '';
   let profileDropdownOpen = false;
@@ -562,6 +571,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   let connectionNameGroupNewMode = false;
   let connectionNameGroupPreviousId = '';
   let profileDropdownFilterText = '';
+  let saveProfileMenuOpen = false;
   let collapsedProfileDropdownGroupIds = new Set();
   let connectionTypeDropdownOpen = false;
   let jumpProfileDropdownOpen = false;

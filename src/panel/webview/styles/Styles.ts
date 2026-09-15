@@ -417,6 +417,14 @@ export function renderStyles(): string {
   .connection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; align-items: center; width: 100%; min-width: 0; margin-top: 0; }
   .connection-actions .connection-action-full { grid-column: 1 / -1; }
   .connection-actions button { width: 100%; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
+  .connection-save-split { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 34px; width: 100%; min-width: 0; }
+  .connection-save-split .connection-save-main { border-right-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .connection-save-split .connection-save-menu-button { min-width: 34px; width: 34px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .connection-save-menu-button svg { width: 14px; height: 14px; fill: currentColor; }
+  .connection-save-menu { position: absolute; z-index: 180; right: 0; bottom: calc(100% + 4px); display: none; min-width: 150px; padding: 4px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+  .connection-save-split.open .connection-save-menu { display: block; }
+  .connection-save-menu button { width: 100%; height: 28px; min-height: 28px; padding: 0 8px; justify-content: flex-start; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
+  .connection-save-menu button:hover:not(:disabled), .connection-save-menu button:focus-visible { background: var(--vscode-list-hoverBackground); outline: none; }
   button { min-height: 31px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 6px 12px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
   button.icon-only { min-width: 32px; width: 32px; height: 32px; min-height: 32px; padding: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
   button.icon-only svg { width: 16px; height: 16px; display: block; flex: 0 0 auto; fill: currentColor; }
@@ -518,6 +526,7 @@ export function renderStyles(): string {
   .profile-dropdown-item.selected .profile-dropdown-meta { color: inherit; opacity: 0.78; }
   .profile-dropdown-separator { height: 1px; margin: 5px 3px; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border)); }
   .connection-name-group-label { display: block; margin-top: 10px; }
+  .connection-name-group-label[hidden], .connection-name-group-picker[hidden] { display: none !important; }
   .connection-name-group-dropdown-menu .profile-dropdown-item { min-height: 30px; padding: 5px 7px; }
   .connection-name-group-dropdown-menu .profile-dropdown-separator { margin: 4px 3px; }
   .owner-group-combo { position: relative; }
@@ -869,7 +878,7 @@ export function renderStyles(): string {
   .backup-mode-help { margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.35; opacity: 0.78; }
   .backup-validation { min-height: 16px; color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground)); font-size: 12px; line-height: 1.35; }
   @media (max-width: 560px) { .manage-profiles-header-row { flex-direction: column; } .manage-profiles-toolbar { flex-wrap: wrap; align-items: stretch; } .manage-profiles-filter { flex-basis: 100%; } .manage-profiles-toolbar-separator { display: none; } .manage-profiles-toolbar-actions { margin-left: auto; } .backup-credential-fields { grid-template-columns: 1fr; } }
-  .manage-profile-row { --manage-profile-row-height: 44px; position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 6px; align-items: center; height: var(--manage-profile-row-height); min-height: var(--manage-profile-row-height); max-height: var(--manage-profile-row-height); padding: 5px 6px; overflow: hidden; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
+  .manage-profile-row { --manage-profile-row-height: 44px; position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; height: var(--manage-profile-row-height); min-height: var(--manage-profile-row-height); max-height: var(--manage-profile-row-height); padding: 5px 6px; overflow: hidden; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .manage-profile-row.grouped { background: var(--vscode-editor-background); }
   .manage-profile-row.can-reorder { cursor: grab; }
   .manage-profile-row.dragging { opacity: 0.55; cursor: grabbing; }

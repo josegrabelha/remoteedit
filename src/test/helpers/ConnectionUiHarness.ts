@@ -68,7 +68,7 @@ export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false)
   const messages: any[] = [];
   const context: any = {
     profiles, connectionGroups: [], selectedProfileId: '', activeConnectionId: '', pendingConnectionNameGroupId: '', pendingConnectionNameNewGroupName: '',
-    jumpProfileDropdownFilterText: '', FILES_STATUS_GLOBAL_KEY: 'global', SAVED_SECRET_MASK: '********',
+    jumpProfileDropdownFilterText: '', saveProfileMenuOpen: false, FILES_STATUS_GLOBAL_KEY: 'global', SAVED_SECRET_MASK: '********',
     document: { createElement: () => new FormElement() },
     vscode: { postMessage: (message: unknown) => messages.push(JSON.parse(JSON.stringify(message))) },
     showUnsavedConnectionProfileSwitchDialog: async () => 'discard',
@@ -81,7 +81,8 @@ export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false)
   for (const name of ['profileName', 'host', 'connectionType', 'port', 'username', 'jumpProfileId', 'authType', 'password',
     'rememberPassword', 'privateKeyPath', 'passphrase', 'rememberPassphrase', 'startPath', 'keepAlive',
     'ftpsAllowSelfSignedCertificate', 'ftpsCaCertificatePath', 'profileSelect', 'profileDropdownButton', 'profileDropdownLabel',
-    'jumpProfileBlock', 'jumpProfileDropdownButton', 'jumpProfileDropdownLabel', 'jumpProfileDropdownMenu', 'jumpRouteSummary']) {
+    'jumpProfileBlock', 'jumpProfileDropdownButton', 'jumpProfileDropdownLabel', 'jumpProfileDropdownMenu', 'jumpRouteSummary',
+    'saveProfileSplitButton', 'saveProfileMenuButton', 'saveProfileMenu', 'saveProfileAsButton']) {
     context[name] = new FormElement();
   }
   if (lifecycle) {
@@ -131,7 +132,7 @@ export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false)
     dependencies(declaration);
   };
   for (const name of ['selectProfile', 'requestSelectProfile', 'selectJumpProfile', 'selectConnectionType', 'collectConnectionPayload',
-    'saveCurrentConnection', 'isSelectedSavedConnectionDirty', 'getJumpProfileSelectionError', 'analyzeJumpProfileCandidate', 'updateJumpProfilePicker']) include(name);
+    'saveCurrentConnection', 'saveCurrentConnectionAs', 'buildConnectionCopyName', 'isSelectedSavedConnectionDirty', 'getJumpProfileSelectionError', 'analyzeJumpProfileCandidate', 'updateJumpProfilePicker']) include(name);
   if (lifecycle) {
     for (const name of ['createClientConnectionId', 'createClientPendingSession', 'getPendingSessionForCurrentForm',
       'hasAnyConnectingSession', 'isSessionConnected', 'getActiveSession']) include(name);

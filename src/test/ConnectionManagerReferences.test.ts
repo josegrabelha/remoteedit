@@ -2,6 +2,63 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
 
+
+test('cloning a saved connection creates an independent copy next to the source and copies stored credentials', async () => {
+  const harness = createConnectionManagerHarness([
+    profile('jump', { name: 'Jump' }),
+    profile('source', {
+      name: 'Ubuntu', host: 'ubuntu.invalid', port: 2222, username: 'admin', startPath: '/srv/app',
+      jumpProfileId: 'jump', groupId: 'lab', favoriteRemotePaths: ['/srv/app', '/var/log']
+    }),
+    profile('copy-one', { name: 'Ubuntu (copy)' }),
+    profile('copy-two', { name: 'ubuntu (COPY 2)' }),
+    profile('dependent', { name: 'Dependent', jumpProfileId: 'source' })
+  ]);
+  harness.state.set('remoteedit.connectionGroups', [{ id: 'lab', name: 'Lab', order: 0, createdAt: 1, updatedAt: 1 }]);
+  harness.secrets.set(secretKey('source', 'password'), 'synthetic-source-password');
+
+  const clone = await harness.manager.cloneProfile('source');
+  assert.equal(clone.name, 'Ubuntu (copy 3)');
+  assert.notEqual(clone.id, 'source');
+  assert.equal(clone.host, 'ubuntu.invalid');
+  assert.equal(clone.port, 2222);
+  assert.equal(clone.username, 'admin');
+  assert.equal(clone.startPath, '/srv/app');
+  assert.equal(clone.jumpProfileId, 'jump');
+  assert.equal(clone.groupId, 'lab');
+  assert.deepEqual(clone.favoriteRemotePaths, ['/srv/app', '/var/log']);
+  assert.equal(clone.hasSavedPassword, true);
+  assert.equal(harness.secrets.get(secretKey(clone.id, 'password')), 'synthetic-source-password');
+
+  const profiles = await harness.manager.listProfiles();
+  assert.deepEqual(profiles.slice(0, 3).map(item => item.id), ['jump', 'source', clone.id]);
+  await harness.manager.renameProfile(clone.id, 'Independent clone');
+  assert.equal((await harness.manager.getProfile('source'))?.name, 'Ubuntu');
+  assert.equal((await harness.manager.getProfile(clone.id))?.name, 'Independent clone');
+  assert.equal((await harness.manager.getProfile('dependent'))?.jumpProfileId, 'source');
+});
+
+test('cloning a private-key connection copies a saved passphrase without changing the original', async () => {
+  const harness = createConnectionManagerHarness([
+    profile('key-source', { name: 'Key host', authType: 'privateKey', privateKeyPath: '/tmp/id_test' })
+  ]);
+  harness.secrets.set(secretKey('key-source', 'passphrase'), 'synthetic-passphrase');
+
+  const clone = await harness.manager.cloneProfile('key-source');
+  assert.equal(clone.name, 'Key host (copy)');
+  assert.equal(clone.authType, 'privateKey');
+  assert.equal(clone.privateKeyPath, '/tmp/id_test');
+  assert.equal(clone.hasSavedPassphrase, true);
+  assert.equal(harness.secrets.get(secretKey(clone.id, 'passphrase')), 'synthetic-passphrase');
+  assert.equal(harness.secrets.get(secretKey('key-source', 'passphrase')), 'synthetic-passphrase');
+});
+
+test('cloning a missing saved connection fails without writes', async () => {
+  const harness = createConnectionManagerHarness([profile('source')]);
+  await assert.rejects(harness.manager.cloneProfile('missing'), /no longer exists/);
+  assert.deepEqual(harness.writes, []);
+});
+
 const invalidGraphs = [
   { name: 'self reference', profiles: [profile('target', { jumpProfileId: 'target' })], error: /itself|self/i },
   { name: 'target cycle', profiles: [profile('target', { jumpProfileId: 'jump' }), profile('jump', { jumpProfileId: 'target' })], error: /cycle/i },

@@ -3,9 +3,11 @@ export interface RemoteEditPanelMessageHandlers {
   getActivePath(): string;
   onReady(): Promise<void>;
   saveConnection(payload: any): Promise<void>;
+  saveConnectionAs(payload: any): Promise<void>;
   pickPrivateKeyPath(): Promise<void>;
   pickCaCertificatePath(): Promise<void>;
   deleteConnection(payload: any): Promise<void>;
+  cloneConnection(payload: any): Promise<void>;
   renameConnection(payload: any): Promise<void>;
   reorderConnections(payload: any): Promise<void>;
   createConnectionGroup(payload: any): Promise<void>;

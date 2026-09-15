@@ -161,7 +161,15 @@ export function renderBody(): string {
           <div class="connection-actions-section">
             <div class="button-row connection-actions">
               <button id="connectButton" class="connection-action-full">Connect</button>
-              <button id="saveProfileButton" class="secondary connection-action-full">Save</button>
+              <div id="saveProfileSplitButton" class="connection-save-split connection-action-full">
+                <button id="saveProfileButton" class="secondary connection-save-main" type="button">Save</button>
+                <button id="saveProfileMenuButton" class="secondary connection-save-menu-button" type="button" aria-label="More save options" aria-haspopup="menu" aria-expanded="false">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5-.7-.7L8 8.6 5.2 5.8l-.7.7Z" /></svg>
+                </button>
+                <div id="saveProfileMenu" class="connection-save-menu" role="menu" aria-hidden="true">
+                  <button id="saveProfileAsButton" type="button" role="menuitem">Save As...</button>
+                </div>
+              </div>
               <button id="showSettingsButton" class="secondary">Settings</button>
               <button id="showOutputButton" class="secondary">Output</button>
             </div>
@@ -488,12 +496,12 @@ export function renderBody(): string {
     <section class="file-properties-dialog connection-name-dialog">
       <div class="file-properties-header">
         <h2 id="connectionNameTitle" class="file-properties-title">Save Connection</h2>
-        <div class="file-properties-path">Choose a unique name and optional group for this saved connection.</div>
+        <div id="connectionNameSubtitle" class="file-properties-path">Choose a unique name and optional group for this saved connection.</div>
       </div>
       <div class="file-properties-body">
         <label for="connectionNameInput">Connection name</label>
         <input id="connectionNameInput" autocomplete="off" placeholder="Production Server" />
-        <label for="connectionNameGroupDropdownButton" class="connection-name-group-label">Connection group</label>
+        <label id="connectionNameGroupLabel" for="connectionNameGroupDropdownButton" class="connection-name-group-label">Connection group</label>
         <div id="connectionNameGroupPicker" class="connection-name-group-picker">
           <button id="connectionNameGroupDropdownButton" type="button" class="profile-dropdown-button" aria-haspopup="listbox" aria-expanded="false">
             <span id="connectionNameGroupDropdownLabel" class="profile-dropdown-label">No group</span>
@@ -517,7 +525,7 @@ export function renderBody(): string {
       <div class="file-properties-header manage-profiles-header-row">
         <div>
           <h2 id="manageProfilesTitle" class="file-properties-title">Manage Saved Connections</h2>
-          <div class="file-properties-path">Rename, reorder, or remove saved connection profiles.</div>
+          <div class="file-properties-path">Clone, rename, reorder, or remove saved connection profiles.</div>
         </div>
         <div class="manage-profiles-header-actions">
           <button id="manageProfilesImportButton" class="secondary" type="button">Import</button>

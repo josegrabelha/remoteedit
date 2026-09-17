@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.9.2] - 2026-09-17
+
+### Fixed
+
+* Fixed FTPS connections to servers requiring TLS session reuse by updating `basic-ftp` to 6.2.1.
+
 ## [1.9.1] - 2026-09-15
 
 ### Added

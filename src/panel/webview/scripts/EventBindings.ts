@@ -24,6 +24,7 @@ export function renderEventBindings(): string {
           renameProfileId = payload.renameProfileId;
           renderManageProfilesList();
         }
+        renderSessionTabs();
         updatePathFavoriteControls();
         if (pathFavoritesOpen) renderPathFavoritesPopover();
         break;

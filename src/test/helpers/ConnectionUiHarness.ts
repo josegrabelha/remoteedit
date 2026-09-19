@@ -54,8 +54,13 @@ class FormElement {
   dataset: Record<string, string> = {};
   children: FormElement[] = [];
   classList = { toggle() {}, add() {}, remove() {} };
-  set innerHTML(_value: string) { this.children = []; }
+  private html = '';
+  get innerHTML(): string { return this.html; }
+  set innerHTML(value: string) { this.html = value; this.children = []; }
   appendChild(child: FormElement): void { this.children.push(child); }
+  addEventListener() {}
+  closest() { return null; }
+  querySelector() { return new FormElement(); }
   setAttribute() {}
   setSelectionRange() {}
   removeAttribute() {}
@@ -91,12 +96,17 @@ export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false)
       profileDisconnectingIds: new Set(), serverPortForwardAutoStartedConnectionIds: new Set(),
       currentEntries: [], entriesRenderGeneration: 0, connectionButtonState: '', profileDropdownOpen: false,
       remoteSearchDialogOpen: false, remoteCommandDialogOpen: false, pathFavoritesOpen: false,
+      manageProfilesDialogOpen: false, renameProfileId: '',
       saveProfileButtonFeedbackProfileId: '', currentPath: new FormElement(),
+      sessionTabs: new FormElement(), browserSectionDivider: null, sessionTabsScrollbar: null,
+      SESSION_TAB_CONNECTING_ICON: '', SESSION_TAB_ERROR_ICON: '', SESSION_TAB_REMOTE_ICON: '',
+      requestAnimationFrame: (callback: () => void) => callback(),
       setBusy: (busy: boolean, message: string) => { context.busy = busy; context.statusMessage = message; }
     });
     for (const name of ['filesStatusByConnectionId', 'filesStableStatusByConnectionId',
       'serverLogShortcutsSessionByConnectionId', 'serverPortForwardRuntimeByConnectionId']) context[name] = new Map();
-    for (const name of ['clearFilterText', 'renderEntriesEmptyMessage', 'renderSessionTabs', 'updateActiveSessionUi',
+    for (const name of ['clearFilterText', 'renderEntriesEmptyMessage', 'renderProfiles', 'updateActiveSessionUi',
+      'updatePathFavoriteControls', 'clearSessionTabDragState',
       'updateConnectionViewUi', 'clearFilesStatusResetTimerForMissingSessions', 'requestServerPortForwardStatesForSession',
       'maybeAutoStartServerPortForwardsForSession', 'pruneConnectionViewState', 'pruneNavigationHistoryForSessions',
       'saveActiveFileListSnapshot', 'pruneFileListSnapshotsForSessions', 'restoreFilesStatusForActiveConnection',
@@ -135,7 +145,7 @@ export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false)
     'saveCurrentConnection', 'saveCurrentConnectionAs', 'buildConnectionCopyName', 'isSelectedSavedConnectionDirty', 'getJumpProfileSelectionError', 'analyzeJumpProfileCandidate', 'updateJumpProfilePicker']) include(name);
   if (lifecycle) {
     for (const name of ['createClientConnectionId', 'createClientPendingSession', 'getPendingSessionForCurrentForm',
-      'hasAnyConnectingSession', 'isSessionConnected', 'getActiveSession']) include(name);
+      'hasAnyConnectingSession', 'isSessionConnected', 'getActiveSession', 'renderSessionTabs']) include(name);
   }
   createContext(context);
   runInContext([...selected].map(name => functions.get(name)!.getText(source)).join('\n'), context);

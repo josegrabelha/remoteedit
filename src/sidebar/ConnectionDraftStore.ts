@@ -91,7 +91,11 @@ export class SidebarConnectionDraftStore {
       return profile;
     }
 
-    const mergedInput = this.normalizeDraftForType({ ...profile, ...draft });
+    const mergedInput = this.normalizeDraftForType({
+      ...profile,
+      ...draft,
+      jumpProfileId: draft.jumpProfileId !== undefined ? draft.jumpProfileId : profile.jumpProfileId
+    });
     const connectionType = normalizeConnectionType(mergedInput.connectionType || profile.connectionType || 'sftp');
     const authType = this.normalizeAuthTypeForDraft(mergedInput.authType || profile.authType, connectionType);
 

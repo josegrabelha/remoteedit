@@ -1,10 +1,105 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
-import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
+import { createConnectionManagerHarness, loadWithVscode, profile, secretKey } from './helpers/ConnectionManagerHarness';
 import { createConnectionUiHarness, createJumpWebviewHarness } from './helpers/ConnectionUiHarness';
 import { SidebarConnectionDraftStore, QUICK_CONNECT_ID } from '../sidebar/ConnectionDraftStore';
 import { buildSidebarJumpDisplay } from '../sidebar/ItemHelpers';
+
+for (const existingConnections of [false, true]) {
+  test(`Sidebar creates an independent group and notifies the panel with ${existingConnections ? 'existing' : 'no'} connections`, async () => {
+    const profiles = existingConnections ? [profile('target')] : [];
+    const harness = createConnectionManagerHarness(profiles);
+    const ui = createConnectionUiHarness(harness, {} as RemoteSessionManager);
+    const before = await harness.manager.listProfiles();
+    const { RemoteEditSharedState } = loadWithVscode(() => require('../state/RemoteEditSharedState'));
+    let notification: Promise<void> | undefined;
+    const listener = RemoteEditSharedState.onProfilesChanged((event: { selectedId?: string }) => {
+      notification = ui.panel.sendProfiles(event.selectedId);
+    });
+    try {
+      harness.ui.inputs.push('  Production  ');
+      await ui.sidebar.addConnectionGroup();
+      assert.ok(notification);
+      await notification;
+      const groups = await harness.manager.listGroups();
+      assert.equal(groups.length, 1);
+      assert.equal(groups[0].name, 'Production');
+      assert.deepEqual(await harness.manager.listProfiles(), before);
+      assert.deepEqual(ui.messages.find(message => message.type === 'profilesLoaded')?.payload.connectionGroups, groups);
+      assert.deepEqual(harness.ui.information, ['Connection group "Production" created.']);
+      assert.equal(ui.refreshes, 1);
+
+      const writes = harness.writes.length;
+      notification = undefined;
+      harness.ui.inputs.push(undefined);
+      await ui.sidebar.addConnectionGroup();
+      assert.equal(harness.writes.length, writes);
+      assert.equal(notification, undefined);
+      const prompt = harness.ui.prompts.at(-1) as { validateInput(value: string): string | undefined };
+      assert.match(prompt.validateInput('  ')!, /required/);
+      assert.match(prompt.validateInput(' production ')!, /already exists/);
+      assert.equal(prompt.validateInput('Staging'), undefined);
+      assert.deepEqual(harness.ui.errors, []);
+    } finally { listener.dispose(); }
+  });
+}
+
+for (const surface of ['sidebar', 'panel']) {
+  test(`${surface} rename updates open tabs and survives later session snapshots`, async () => {
+    const profiles = [profile('target', { name: 'Original' }), profile('other', { name: 'Original' }),
+      profile('quick', { name: 'Saved name must not replace Quick Connect' })];
+    const harness = createConnectionManagerHarness(profiles);
+    const open = [
+      { ...profiles[0], currentPath: '/srv/current' }, profiles[1],
+      { ...profile('quick', { name: 'Quick session' }), isQuickConnect: true },
+      profile('removed', { name: 'Removed profile session' })
+    ];
+    const sessions = { listConnections: () => open, hasConnection: () => true, isSudoModeEnabled: () => false } as unknown as RemoteSessionManager;
+    const ui = createConnectionUiHarness(harness, sessions);
+    const { context: view, messages } = createJumpWebviewHarness(profiles, true);
+    view.sessions = structuredClone(open);
+    view.activeConnectionId = surface === 'sidebar' ? 'target' : 'other';
+    const before = structuredClone(view.sessions);
+    const activeId = view.activeConnectionId;
+    view.renderSessionTabs();
+    const tabNames = () => Array.from(view.sessionTabs.children, (tab: any) =>
+      /<span class="session-name">(.*?)<\/span>/.exec(tab.innerHTML)?.[1]);
+    assert.deepEqual(tabNames(), ['Original', 'Original', 'Quick session', 'Removed profile session']);
+
+    const name = 'Renamed <host> & "test"';
+    if (surface === 'sidebar') {
+      const { RemoteEditSharedState } = loadWithVscode(() => require('../state/RemoteEditSharedState'));
+      let notification: Promise<void> | undefined;
+      const listener = RemoteEditSharedState.onProfilesChanged((event: { selectedId?: string }) => {
+        notification = ui.panel.sendProfiles(event.selectedId);
+      });
+      try {
+        harness.ui.inputs.push(name);
+        await ui.sidebar.renameSavedConnection('target');
+        assert.ok(notification, 'sidebar rename must notify the panel');
+        await notification;
+      } finally { listener.dispose(); }
+    } else {
+      await ui.panel.renameConnection({ id: 'target', name });
+    }
+    const update = ui.messages.find(message => message.type === 'profilesLoaded');
+    assert.ok(update);
+    view.dispatchMessage({ data: update });
+    const expected = ['Renamed &lt;host&gt; &amp; &quot;test&quot;', 'Original', 'Quick session', 'Removed profile session'];
+    assert.deepEqual(tabNames(), expected);
+    assert.deepEqual(view.sessions, before);
+    assert.equal(view.activeConnectionId, activeId);
+
+    view.dispatchMessage({ data: { type: 'sessionsChanged', payload: { sessions: structuredClone(open), activeConnectionId: activeId } } });
+    assert.deepEqual(tabNames(), expected);
+    assert.deepEqual(Array.from(view.sessions, (session: any) => session.id), open.map(session => session.id));
+    assert.equal(view.sessions[0].currentPath, '/srv/current');
+    assert.equal(view.activeConnectionId, activeId);
+    assert.deepEqual(messages, []);
+    assert.deepEqual(harness.ui.errors, []);
+  });
+}
 
 test('Webview Direct selection sends an explicit clear through the real save message and host persistence', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
@@ -63,6 +158,75 @@ test('both pickers exclude invalid candidates and report an unavailable saved re
   for (const candidate of ['target', 'cycle', 'broken', 'ftp']) assert.equal(context.analyzeJumpProfileCandidate(candidate, 'target').valid, false);
   assert.equal(context.analyzeJumpProfileCandidate('near', 'target').valid, true);
 });
+
+test('Sidebar editing only the cloned port preserves the saved Jump in the draft, discard and save', async () => {
+  const harness = createConnectionManagerHarness([profile('jump'), profile('source', { jumpProfileId: 'jump' })]);
+  const ui = createConnectionUiHarness(harness, { hasConnection: () => false } as unknown as RemoteSessionManager);
+  const target = await harness.manager.cloneProfile('source');
+  assert.equal(target.jumpProfileId, 'jump');
+
+  for (const action of ['discard', 'save']) {
+    harness.ui.inputs.push('2222');
+    await ui.sidebar.editConnectionDetail(target.id, 'port');
+    const visible = ui.sidebar.connectionDrafts.mergeProfileWithDraft(target);
+    assert.equal(visible.port, 2222);
+    assert.equal(visible.jumpProfileId, 'jump');
+    const display = buildSidebarJumpDisplay(visible, await harness.manager.listProfiles());
+    assert.equal(display.isAvailable, true);
+    assert.match(display.route || display.label, /jump/);
+    assert.deepEqual(await harness.manager.getProfile(target.id), target);
+
+    if (action === 'discard') ui.sidebar.discardConnectionChanges(target.id);
+    else await ui.sidebar.saveConnectionChanges(target.id);
+    const saved = (await harness.manager.getProfile(target.id))!;
+    assert.equal(saved.port, action === 'discard' ? 22 : 2222);
+    assert.equal(saved.jumpProfileId, 'jump');
+    assert.equal(ui.sidebar.connectionDrafts.hasDraft(target.id), false);
+    assert.equal(ui.sidebar.connectionDrafts.mergeProfileWithDraft(saved).jumpProfileId, 'jump');
+  }
+  assert.equal((await harness.manager.getProfile('source'))?.port, 22);
+  assert.equal((await harness.manager.getProfile('source'))?.jumpProfileId, 'jump');
+  assert.deepEqual(harness.ui.errors, []);
+});
+
+for (const jumpProfileId of ['', 'other-jump']) {
+  test(`Sidebar port editing preserves an explicit Jump selection: ${jumpProfileId || 'Direct'}`, async () => {
+    const harness = createConnectionManagerHarness([
+      profile('jump'), profile('other-jump'), profile('target', { jumpProfileId: 'jump' })
+    ]);
+    const ui = createConnectionUiHarness(harness, { hasConnection: () => false } as unknown as RemoteSessionManager);
+    const target = (await harness.manager.getProfile('target'))!;
+    ui.pickChoices.push(options => options.items.find((item: any) => item.value === jumpProfileId));
+    await ui.sidebar.editConnectionDetail('target', 'jumpProfileId');
+    harness.ui.inputs.push('2222');
+    await ui.sidebar.editConnectionDetail('target', 'port');
+    assert.equal(ui.sidebar.connectionDrafts.mergeProfileWithDraft(target).jumpProfileId, jumpProfileId);
+    await ui.sidebar.saveConnectionChanges('target');
+    const saved = (await harness.manager.getProfile('target'))!;
+    assert.equal(saved.port, 2222);
+    assert.equal(saved.jumpProfileId, jumpProfileId || undefined);
+    assert.deepEqual(harness.ui.errors, []);
+  });
+}
+
+for (const connectionType of ['ftp', 'ftps']) {
+  test(`Sidebar switching a saved Jump connection to ${connectionType} and back keeps Direct`, async () => {
+    const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
+    const ui = createConnectionUiHarness(harness, { hasConnection: () => false } as unknown as RemoteSessionManager);
+    const target = (await harness.manager.getProfile('target'))!;
+    harness.ui.picks.push({ value: connectionType });
+    await ui.sidebar.editConnectionDetail('target', 'connectionType');
+    const visible = ui.sidebar.connectionDrafts.mergeProfileWithDraft(target);
+    assert.equal(visible.connectionType, connectionType);
+    assert.equal(visible.jumpProfileId, undefined);
+    harness.ui.picks.push({ value: 'sftp' });
+    await ui.sidebar.editConnectionDetail('target', 'connectionType');
+    assert.equal(ui.sidebar.connectionDrafts.mergeProfileWithDraft(target).jumpProfileId, '');
+    await ui.sidebar.saveConnectionChanges('target');
+    assert.equal((await harness.manager.getProfile('target'))?.jumpProfileId, undefined);
+    assert.deepEqual(harness.ui.errors, []);
+  });
+}
 
 test('Sidebar draft editing, discard, Quick Connect and save preserve explicit Direct', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);

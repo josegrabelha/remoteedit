@@ -1498,13 +1498,14 @@ export function renderLayoutSessions(): string {
 
     for (const session of sessions) {
       const tab = document.createElement('button');
+      const profile = session.isQuickConnect ? undefined : profiles.find(profile => profile.id === session.id);
       const tabStateClass = isSessionConnecting(session) ? ' connecting' : (isSessionFailed(session) ? ' failed' : '');
       const tabIcon = isSessionConnecting(session) ? SESSION_TAB_CONNECTING_ICON : (isSessionFailed(session) ? SESSION_TAB_ERROR_ICON : SESSION_TAB_REMOTE_ICON);
       tab.className = 'session-tab has-tooltip tooltip-above' + tabStateClass + (session.id === activeConnectionId ? ' active' : '');
       tab.dataset.sessionId = session.id || '';
       tab.dataset.tooltip = formatSessionTooltipTarget(session);
       tab.draggable = true;
-      tab.innerHTML = '<span class="session-icon" aria-hidden="true">' + tabIcon + '</span><span class="session-name">' + escapeHtml(session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect"></span>';
+      tab.innerHTML = '<span class="session-icon" aria-hidden="true">' + tabIcon + '</span><span class="session-name">' + escapeHtml(profile ? profile.name : session.name) + '</span><span class="session-close has-tooltip tooltip-above" data-tooltip="Disconnect"></span>';
       tab.addEventListener('click', () => {
         if (session.id === activeConnectionId) {
           if (isSessionConnected(session)) syncConnectionFormWithActiveSession({ preserveStatus: true });

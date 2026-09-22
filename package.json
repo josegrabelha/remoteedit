@@ -56,6 +56,12 @@
         "category": "Remote Edit"
       },
       {
+        "command": "remoteedit.sidebar.newConnectionGroup",
+        "title": "New Group",
+        "icon": "$(new-folder)",
+        "category": "Remote Edit"
+      },
+      {
         "command": "remoteedit.sidebar.quickConnect",
         "title": "Quick Connect",
         "icon": "$(zap)",
@@ -770,6 +776,11 @@
           "command": "remoteedit.sidebar.newConnection",
           "when": "view == remoteedit.connectionsView",
           "group": "navigation@1"
+        },
+        {
+          "command": "remoteedit.sidebar.newConnectionGroup",
+          "when": "view == remoteedit.connectionsView",
+          "group": "navigation@1.5"
         },
         {
           "command": "remoteedit.sidebar.refreshConnections",

@@ -210,6 +210,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       this.openConnectionsTreeView,
       vscode.window.registerTreeDataProvider('remoteedit.transfersView', this.transfersProvider),
       vscode.commands.registerCommand('remoteedit.sidebar.newConnection', () => this.addConnection()),
+      vscode.commands.registerCommand('remoteedit.sidebar.newConnectionGroup', () => this.addConnectionGroup()),
       vscode.commands.registerCommand('remoteedit.sidebar.openSettings', () => this.openSettings()),
       vscode.commands.registerCommand('remoteedit.sidebar.exportBackup', () => this.exportBackup()),
       vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importBackup()),
@@ -2453,6 +2454,41 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
   }
 
+
+  private async addConnectionGroup(): Promise<void> {
+    const groups = await this.connectionManager.listGroups();
+    const existingNames = new Set(groups.map(group => group.name.trim().toLowerCase()));
+    const name = await vscode.window.showInputBox({
+      title: 'New Connection Group',
+      prompt: 'Enter the connection group name.',
+      placeHolder: 'Production',
+      validateInput: value => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) {
+          return 'Group name is required.';
+        }
+        if (existingNames.has(trimmed.toLowerCase())) {
+          return `A connection group named "${trimmed}" already exists.`;
+        }
+        return undefined;
+      },
+      ignoreFocusOut: true
+    });
+
+    if (name === undefined) {
+      return;
+    }
+
+    try {
+      const group = await this.connectionManager.createGroup(name);
+      this.connectionsProvider.refresh();
+      RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar', 'profileListChanged');
+      void vscode.window.showInformationMessage(`Connection group "${group.name}" created.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
+    }
+  }
 
   private async renameConnectionGroup(item: RemoteEditSidebarItem | string | undefined): Promise<void> {
     const groupId = typeof item === 'string' ? item : item?.groupId;

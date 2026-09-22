@@ -1226,6 +1226,7 @@ export class RemoteEditPanel {
     this.postBusy(true, 'Renaming connection...');
     const profile = await this.connectionManager.renameProfile(profileId, name);
     await this.sendProfiles(profile.id);
+    RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'saveProfile');
     this.postBusy(false, 'Connection renamed.');
     this.logInfo('Renamed saved connection.', { Name: profile.name, ProfileId: profileId });
   }

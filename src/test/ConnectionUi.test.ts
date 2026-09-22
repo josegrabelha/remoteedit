@@ -81,7 +81,15 @@ for (const surface of ['sidebar', 'panel']) {
         await notification;
       } finally { listener.dispose(); }
     } else {
-      await ui.panel.renameConnection({ id: 'target', name });
+      const { RemoteEditSharedState } = loadWithVscode(() => require('../state/RemoteEditSharedState'));
+      let profileChange: { selectedId?: string; source?: string; reason?: string } | undefined;
+      const listener = RemoteEditSharedState.onProfilesChanged((event: { selectedId?: string; source?: string; reason?: string }) => {
+        profileChange = event;
+      });
+      try {
+        await ui.panel.renameConnection({ id: 'target', name });
+        assert.deepEqual(profileChange, { selectedId: 'target', source: 'webview', reason: 'saveProfile' });
+      } finally { listener.dispose(); }
     }
     const update = ui.messages.find(message => message.type === 'profilesLoaded');
     assert.ok(update);

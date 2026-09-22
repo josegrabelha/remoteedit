@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.3] - 2026-09-22
+
+### Added
+
+* Added a New Group action to the Connections sidebar toolbar. Thanks to @tzraeq.
+
+### Fixed
+
+* Fixed SFTP Jump Host selections being lost when editing or cloning saved connections. Thanks to @tzraeq.
+* Fixed open connection tabs not updating after a saved connection is renamed. Thanks to @tzraeq.
+* Fixed the Connections sidebar not updating immediately when a connection is renamed from the Advanced View.
+
 ## [1.9.2] - 2026-09-17
 
 ### Fixed

@@ -2181,8 +2181,10 @@ ${result.stdout.toString('utf8')}`.trim();
       let forceKillRequested = false;
       let throttledOutputBytes = 0;
       let outputThrottleTimer: ReturnType<typeof setTimeout> | undefined;
+      let stopEscalationTimer: ReturnType<typeof setTimeout> | undefined;
       let forceCloseTimer: ReturnType<typeof setTimeout> | undefined;
       const maxOutputBytesBeforePause = 65536;
+      const gracefulStopTimeoutMs = 1000;
       const remoteProcessPidMarkerPrefix = String(options.remoteProcess?.pidMarkerPrefix || '');
       const remoteProcessPidPattern = remoteProcessPidMarkerPrefix
         ? new RegExp(`${escapeRegExp(remoteProcessPidMarkerPrefix)}(\\d+)__`)
@@ -2193,7 +2195,7 @@ ${result.stdout.toString('utf8')}`.trim();
       let lastRemoteKillSignal: 'TERM' | 'KILL' | undefined;
 
       const emitStdoutAfterRemoteProcessFilter = (text: string) => {
-        if (text) {
+        if (text && !stopRequested && !forceKillRequested) {
           callbacks.onStdout?.(text);
         }
       };
@@ -2229,6 +2231,9 @@ ${result.stdout.toString('utf8')}`.trim();
           }
 
           remoteProcessPid = String(match[1] || '').trim();
+          if (stopRequested) {
+            runRemoteProcessKill(forceKillRequested);
+          }
           pendingStdoutForRemoteProcess = pendingStdoutForRemoteProcess.slice(match.index + match[0].length);
 
           if (pendingStdoutForRemoteProcess.startsWith('\r\n')) {
@@ -2271,7 +2276,7 @@ ${result.stdout.toString('utf8')}`.trim();
       };
 
       const emitStderrAfterWrapperFilter = (text: string) => {
-        if (text) {
+        if (text && !stopRequested && !forceKillRequested) {
           callbacks.onStderr?.(text);
         }
       };
@@ -2431,6 +2436,35 @@ ${result.stdout.toString('utf8')}`.trim();
         }
       };
 
+      const scheduleStopEscalation = () => {
+        if (settled || forceKillRequested || stopEscalationTimer) {
+          return;
+        }
+
+        stopEscalationTimer = setTimeout(() => {
+          stopEscalationTimer = undefined;
+          if (settled) {
+            return;
+          }
+
+          forceKillRequested = true;
+          const remoteKillSent = runRemoteProcessKill(true);
+
+          try {
+            if (typeof remoteStream?.signal === 'function') {
+              remoteStream.signal('KILL');
+            }
+          } catch {
+            // Some servers do not support SSH channel signals. The remote PID kill above is the primary stop path.
+          }
+
+          if (forceCloseTimer) {
+            clearTimeout(forceCloseTimer);
+          }
+          forceCloseTimer = setTimeout(closeRemoteStreamForForceKill, remoteKillSent ? 500 : 0);
+        }, gracefulStopTimeoutMs);
+      };
+
       const settle = (callback: () => void) => {
         if (settled) {
           return;
@@ -2441,6 +2475,10 @@ ${result.stdout.toString('utf8')}`.trim();
         if (outputThrottleTimer) {
           clearTimeout(outputThrottleTimer);
           outputThrottleTimer = undefined;
+        }
+        if (stopEscalationTimer) {
+          clearTimeout(stopEscalationTimer);
+          stopEscalationTimer = undefined;
         }
         if (forceCloseTimer) {
           clearTimeout(forceCloseTimer);
@@ -2487,15 +2525,22 @@ ${result.stdout.toString('utf8')}`.trim();
         }
 
         if (force) {
+          if (stopEscalationTimer) {
+            clearTimeout(stopEscalationTimer);
+            stopEscalationTimer = undefined;
+          }
           if (forceCloseTimer) {
             clearTimeout(forceCloseTimer);
           }
           forceCloseTimer = setTimeout(closeRemoteStreamForForceKill, remoteKillSent ? 500 : 0);
-        } else if (!remoteKillSent && typeof remoteStream.signal !== 'function') {
-          try {
-            remoteStream.close?.();
-          } catch {
-            // Ignore stream close errors when a command is stopped.
+        } else {
+          scheduleStopEscalation();
+          if (!remoteKillSent && typeof remoteStream.signal !== 'function') {
+            try {
+              remoteStream.close?.();
+            } catch {
+              // Ignore stream close errors when a command is stopped.
+            }
           }
         }
       };
@@ -2547,6 +2592,25 @@ ${result.stdout.toString('utf8')}`.trim();
 
           if (!stream) {
             settle(() => reject(new Error('Remote command did not return a stream.')));
+            return;
+          }
+
+          if (settled && stopRequested) {
+            try {
+              stream.signal?.(forceKillRequested ? 'KILL' : 'TERM');
+            } catch {
+              // Ignore signal failures while cleaning up a command cancelled before its stream was ready.
+            }
+            try {
+              stream.close?.();
+            } catch {
+              // Ignore close failures while cleaning up a late stream.
+            }
+            try {
+              stream.destroy?.();
+            } catch {
+              // Ignore destroy failures while cleaning up a late stream.
+            }
             return;
           }
 

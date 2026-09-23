@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
 import { generateKeyPairSync } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -305,4 +306,105 @@ test('a delayed final close releases the Jump chain only after final SFTP end', 
   ended.resolve();
   await closing;
   assert.equal(harness.jumpClients[0].destroyCount, 1);
+});
+
+
+class ControlledExecStream extends EventEmitter {
+  readonly stderr = Object.assign(new EventEmitter(), { resume: () => undefined });
+  readonly signals: string[] = [];
+  closeCount = 0;
+  destroyCount = 0;
+
+  signal(signal: string): void { this.signals.push(signal); }
+  resume(): void {}
+  pause(): void {}
+  end(): void {}
+  write(_value: unknown): void {}
+  close(): void {
+    this.closeCount += 1;
+    queueMicrotask(() => this.emit('close', 0, undefined));
+  }
+  destroy(): void { this.destroyCount += 1; }
+}
+
+function streamingMarker(command: string, prefix: string): string {
+  const match = command.match(new RegExp(`${prefix}[A-Za-z0-9]+_`));
+  assert.ok(match, `Expected ${prefix} marker in controlled streaming command`);
+  return match[0];
+}
+
+test('streaming stop suppresses output received after stop is requested', async () => {
+  const client = new ControlledSftp();
+  harness.clients.push(client);
+  const manager = new SftpSessionManager();
+  await manager.connect(options());
+
+  const stream = new ControlledExecStream();
+  const killStream = { stderr: { resume: () => undefined }, resume: () => undefined, end: () => undefined };
+  let mainCommand = '';
+  (client.client as any).exec = (command: string, callback: (error: Error | undefined, stream?: unknown) => void) => {
+    if (/kill -(?:TERM|KILL)/.test(command)) {
+      callback(undefined, killStream);
+      return;
+    }
+    mainCommand = command;
+    callback(undefined, stream);
+  };
+
+  let output = '';
+  let control: { stop(): void; forceKill(): void } | undefined;
+  const running = manager.runRemoteCommandStreaming('target', '/', 'printf "before\\n"; sleep 60', {
+    onStdout: chunk => { output += chunk; },
+    onControl: value => { control = value; }
+  });
+  await flush();
+
+  const pidMarker = streamingMarker(mainCommand, '__REMOTE_EDIT_PROCESS_PID_');
+  const commandMarker = `${streamingMarker(mainCommand, '__REMOTE_EDIT_COMMAND_')}0__`;
+  stream.emit('data', `${pidMarker}123__\n${commandMarker}\nbefore\n`);
+  await flush();
+  assert.match(output, /before/);
+
+  assert.ok(control);
+  control.stop();
+  stream.emit('data', 'after\n');
+  stream.stderr.emit('data', 'stderr after\n');
+  await flush();
+  assert.doesNotMatch(output, /after/);
+
+  stream.emit('close', 0, undefined);
+  await running;
+  await manager.disconnectAll();
+});
+
+test('streaming stop escalates to KILL and closes an unresponsive SSH channel', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const client = new ControlledSftp();
+  harness.clients.push(client);
+  const manager = new SftpSessionManager();
+  await manager.connect(options());
+
+  const stream = new ControlledExecStream();
+  (client.client as any).exec = (_command: string, callback: (error: Error | undefined, stream?: unknown) => void) => {
+    callback(undefined, stream);
+  };
+
+  let control: { stop(): void; forceKill(): void } | undefined;
+  const running = manager.runRemoteCommandStreaming('target', '/', 'sleep 60', {
+    onControl: value => { control = value; }
+  });
+  await flush();
+
+  assert.ok(control);
+  control.stop();
+  assert.deepEqual(stream.signals, ['TERM']);
+
+  t.mock.timers.tick(1000);
+  assert.deepEqual(stream.signals, ['TERM', 'KILL']);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.ok(stream.closeCount > 0 || stream.destroyCount > 0);
+
+  await running;
+  await manager.disconnectAll();
 });

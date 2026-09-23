@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* Added reverse (remote-to-local) SSH port forwarding as a new direction option alongside the existing local forward, selectable per port forward definition in the Server View.
+
 ## [1.9.3] - 2026-09-22
 
 ### Added

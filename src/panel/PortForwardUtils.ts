@@ -1,7 +1,8 @@
-import type { SavedPortForwardConfig } from '../ssh/PortForwardManager';
+import type { PortForwardDirection, SavedPortForwardConfig } from '../ssh/PortForwardManager';
 
 export function parsePortForwardConfig(value: any): SavedPortForwardConfig {
   const id = String(value?.id || '').trim();
+  const direction: PortForwardDirection = value?.direction === 'remote' ? 'remote' : 'local';
   const localPort = Number(value?.localPort || 0);
   const remotePort = Number(value?.remotePort || 0);
   const localHost = String(value?.localHost || '').trim() || 'localhost';
@@ -16,9 +17,13 @@ export function parsePortForwardConfig(value: any): SavedPortForwardConfig {
     throw new Error('Ports must be between 1 and 65535.');
   }
 
-  return { id, name, localHost, localPort, remoteHost, remotePort, autoStartOnConnect: Boolean(value?.autoStartOnConnect) };
+  return { id, name, direction, localHost, localPort, remoteHost, remotePort, autoStartOnConnect: Boolean(value?.autoStartOnConnect) };
 }
 
 export function formatPortForwardLabel(config: SavedPortForwardConfig): string {
+  if (config.direction === 'remote') {
+    return `${config.remoteHost}:${config.remotePort} → ${config.localHost}:${config.localPort}`;
+  }
+
   return `${config.localHost}:${config.localPort} → ${config.remoteHost}:${config.remotePort}`;
 }

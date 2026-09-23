@@ -438,33 +438,37 @@ export function renderBody(): string {
       </div>
       <div class="file-properties-body">
         <div class="server-port-forward-fields">
+          <div class="server-port-forward-direction-switch" role="tablist" aria-label="Port forward direction">
+            <button id="serverPortForwardDirectionLocalButton" type="button" role="tab" class="server-port-forward-direction-button" data-server-port-forward-direction="local">Local</button>
+            <button id="serverPortForwardDirectionRemoteButton" type="button" role="tab" class="server-port-forward-direction-button" data-server-port-forward-direction="remote">Remote</button>
+          </div>
           <div class="server-port-forward-field">
             <label for="serverPortForwardNameInput">Name</label>
             <input id="serverPortForwardNameInput" type="text" autocomplete="off" placeholder="My App" />
           </div>
           <div class="server-port-forward-field-grid">
             <div class="server-port-forward-field">
-              <label for="serverPortForwardLocalHostInput">Local host</label>
+              <label id="serverPortForwardLocalHostLabel" for="serverPortForwardLocalHostInput">Local host</label>
               <input id="serverPortForwardLocalHostInput" type="text" autocomplete="off" placeholder="localhost" />
             </div>
             <div class="server-port-forward-field">
-              <label for="serverPortForwardLocalPortInput">Local port</label>
+              <label id="serverPortForwardLocalPortLabel" for="serverPortForwardLocalPortInput">Local port</label>
               <input id="serverPortForwardLocalPortInput" type="text" inputmode="numeric" autocomplete="off" placeholder="3000" />
             </div>
           </div>
           <div class="server-port-forward-field-grid">
             <div class="server-port-forward-field">
-              <label for="serverPortForwardRemoteHostInput">Remote host</label>
+              <label id="serverPortForwardRemoteHostLabel" for="serverPortForwardRemoteHostInput">Remote host</label>
               <input id="serverPortForwardRemoteHostInput" type="text" autocomplete="off" placeholder="127.0.0.1" />
             </div>
             <div class="server-port-forward-field">
-              <label for="serverPortForwardRemotePortInput">Remote port</label>
+              <label id="serverPortForwardRemotePortLabel" for="serverPortForwardRemotePortInput">Remote port</label>
               <input id="serverPortForwardRemotePortInput" type="text" inputmode="numeric" autocomplete="off" placeholder="3000" />
             </div>
           </div>
           <label class="modal-checkbox-line server-port-forward-option"><input id="serverPortForwardAutoStartInput" class="dialog-checkbox" type="checkbox" /> <span>Auto-start on connect</span></label>
           <div id="serverPortForwardRunningNote" class="server-port-forward-running-note" hidden>Stop the port forward before editing local or remote ports.</div>
-          <div class="server-port-forward-help">Local forwarding maps localhost:LOCAL_PORT on your computer to REMOTE_HOST:REMOTE_PORT from the remote server.</div>
+          <div id="serverPortForwardHelp" class="server-port-forward-help">Local forwarding maps localhost:LOCAL_PORT on your computer to REMOTE_HOST:REMOTE_PORT from the remote server.</div>
           <div id="serverPortForwardFeedback" class="server-port-forward-feedback" role="status" aria-live="polite"></div>
         </div>
       </div>

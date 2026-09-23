@@ -110,6 +110,10 @@ export function renderServerJobsPortsActions(): string {
     return 'pf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
+  function normalizeServerPortForwardDirection(value) {
+    return value === 'remote' ? 'remote' : 'local';
+  }
+
   function sanitizeServerPortForward(value) {
     if (!value || typeof value !== 'object') return null;
     const id = String(value.id || '').trim();
@@ -122,6 +126,7 @@ export function renderServerJobsPortsActions(): string {
     return {
       id: id,
       name: name,
+      direction: normalizeServerPortForwardDirection(value.direction),
       localHost: localHost,
       localPort: localPort,
       remoteHost: remoteHost,
@@ -137,6 +142,7 @@ export function renderServerJobsPortsActions(): string {
     return {
       id: createServerPortForwardId(),
       name: String(values.name || '').trim() || buildServerPortForwardDefaultName(values.localPort, values.remotePort),
+      direction: normalizeServerPortForwardDirection(values.direction),
       localHost: String(values.localHost || '').trim() || 'localhost',
       localPort: Number(values.localPort || 0),
       remoteHost: String(values.remoteHost || '').trim() || '127.0.0.1',
@@ -238,6 +244,7 @@ export function renderServerJobsPortsActions(): string {
       item && item.remoteHost,
       item && item.remotePort,
       item && item.autoStartOnConnect ? 'auto auto-start autostart' : '',
+      getServerPortForwardDirectionLabel(item),
       formatServerPortForwardTarget(item)
     ].map(value => String(value || '').toLowerCase()).join(' ');
     return haystack.includes(filter);
@@ -296,7 +303,13 @@ export function renderServerJobsPortsActions(): string {
 
   function formatServerPortForwardTarget(item) {
     if (!item) return '';
-    return String(item.localHost || 'localhost') + ':' + String(item.localPort || '') + ' → ' + String(item.remoteHost || '127.0.0.1') + ':' + String(item.remotePort || '');
+    const localSide = String(item.localHost || 'localhost') + ':' + String(item.localPort || '');
+    const remoteSide = String(item.remoteHost || '127.0.0.1') + ':' + String(item.remotePort || '');
+    return item.direction === 'remote' ? (remoteSide + ' → ' + localSide) : (localSide + ' → ' + remoteSide);
+  }
+
+  function getServerPortForwardDirectionLabel(item) {
+    return item && item.direction === 'remote' ? 'Remote' : 'Local';
   }
 
   function isServerPortForwardBusy(status) {
@@ -337,7 +350,38 @@ export function renderServerJobsPortsActions(): string {
       return null;
     }
     if (serverPortForwardFeedback) serverPortForwardFeedback.textContent = '';
-    return { name: name || buildServerPortForwardDefaultName(localPort, remotePort), localHost, localPort, remoteHost, remotePort, autoStartOnConnect };
+    return { name: name || buildServerPortForwardDefaultName(localPort, remotePort), direction: serverPortForwardDialogDirection, localHost, localPort, remoteHost, remotePort, autoStartOnConnect };
+  }
+
+  function updateServerPortForwardDirectionUi(running) {
+    const isRemote = serverPortForwardDialogDirection === 'remote';
+    if (serverPortForwardDirectionLocalButton) {
+      serverPortForwardDirectionLocalButton.classList.toggle('active', !isRemote);
+      serverPortForwardDirectionLocalButton.setAttribute('aria-selected', String(!isRemote));
+      serverPortForwardDirectionLocalButton.disabled = running;
+    }
+    if (serverPortForwardDirectionRemoteButton) {
+      serverPortForwardDirectionRemoteButton.classList.toggle('active', isRemote);
+      serverPortForwardDirectionRemoteButton.setAttribute('aria-selected', String(isRemote));
+      serverPortForwardDirectionRemoteButton.disabled = running;
+    }
+    if (serverPortForwardLocalHostLabel) serverPortForwardLocalHostLabel.textContent = isRemote ? 'Local target host' : 'Local host';
+    if (serverPortForwardLocalPortLabel) serverPortForwardLocalPortLabel.textContent = isRemote ? 'Local target port' : 'Local port';
+    if (serverPortForwardRemoteHostLabel) serverPortForwardRemoteHostLabel.textContent = isRemote ? 'Remote bind host' : 'Remote host';
+    if (serverPortForwardRemotePortLabel) serverPortForwardRemotePortLabel.textContent = isRemote ? 'Remote bind port' : 'Remote port';
+    if (serverPortForwardHelp) {
+      serverPortForwardHelp.textContent = isRemote
+        ? 'Reverse forwarding asks the remote server to listen on REMOTE_HOST:REMOTE_PORT and sends incoming connections back to LOCAL_HOST:LOCAL_PORT on your computer. The remote sshd needs GatewayPorts enabled to bind non-loopback hosts.'
+        : 'Local forwarding maps LOCAL_HOST:LOCAL_PORT on your computer to REMOTE_HOST:REMOTE_PORT from the remote server.';
+    }
+  }
+
+  function selectServerPortForwardDialogDirection(direction) {
+    const normalized = normalizeServerPortForwardDirection(direction);
+    if (serverPortForwardDialogDirection === normalized) return;
+    serverPortForwardDialogDirection = normalized;
+    updateServerPortForwardDirectionUi(Boolean(serverPortForwardSaveButton && serverPortForwardSaveButton.disabled));
+    readServerPortForwardDialogValues(false);
   }
 
   function showServerPortForwardDialog(mode, forwardId) {
@@ -352,8 +396,9 @@ export function renderServerJobsPortsActions(): string {
     serverPortForwardDialogOpen = true;
     serverPortForwardDialogMode = editing && forward ? 'edit' : 'add';
     serverPortForwardDialogForwardId = forward ? forward.id : '';
+    serverPortForwardDialogDirection = normalizeServerPortForwardDirection(forward ? forward.direction : 'local');
     if (serverPortForwardTitle) serverPortForwardTitle.textContent = forward ? 'Edit Port Forward' : 'Add Port Forward';
-    if (serverPortForwardSubtitle) serverPortForwardSubtitle.textContent = forward ? formatServerPortForwardTarget(forward) : 'Create a local SSH port forward for this connection.';
+    if (serverPortForwardSubtitle) serverPortForwardSubtitle.textContent = forward ? formatServerPortForwardTarget(forward) : 'Create an SSH port forward for this connection.';
     serverPortForwardNameInput.value = forward ? forward.name : '';
     serverPortForwardLocalHostInput.value = forward ? forward.localHost : 'localhost';
     serverPortForwardLocalPortInput.value = forward ? String(forward.localPort) : '';
@@ -374,6 +419,7 @@ export function renderServerJobsPortsActions(): string {
       serverPortForwardDeleteButton.disabled = running;
     }
     if (serverPortForwardSaveButton) serverPortForwardSaveButton.disabled = running;
+    updateServerPortForwardDirectionUi(running);
     serverPortForwardBackdrop.classList.add('visible');
     serverPortForwardBackdrop.setAttribute('aria-hidden', 'false');
     setTimeout(() => {
@@ -558,8 +604,11 @@ export function renderServerJobsPortsActions(): string {
         const target = formatServerPortForwardTarget(item);
         const statusTooltip = status === 'error' && runtime.error ? runtime.error : status;
         const autoBadge = item.autoStartOnConnect ? '<span class="server-port-forward-auto-badge tooltip-above" data-tooltip="Auto-start on connect">auto-start</span>' : '';
+        const isRemoteDirection = item.direction === 'remote';
+        const directionLabel = getServerPortForwardDirectionLabel(item);
+        const directionBadge = '<span class="server-port-forward-direction-badge' + (isRemoteDirection ? ' remote' : '') + ' tooltip-above" data-tooltip="' + escapeHtml(isRemoteDirection ? 'Reverse forward (remote → local)' : 'Local forward (local → remote)') + '">' + escapeHtml(directionLabel) + '</span>';
         return '<div class="server-list-row server-port-forward-row" data-server-port-forward-id="' + escapeHtml(item.id) + '" data-tooltip="Edit port forward">'
-          + '<div class="server-list-main server-port-forward-main"><span class="server-port-forward-name tooltip-above" data-tooltip="' + escapeHtml(item.name) + '">' + escapeHtml(item.name) + '</span><span class="server-port-forward-target tooltip-above" data-tooltip="' + escapeHtml(target) + '">' + escapeHtml(target) + '</span></div>'
+          + '<div class="server-list-main server-port-forward-main"><span class="server-port-forward-name tooltip-above" data-tooltip="' + escapeHtml(item.name) + '">' + escapeHtml(item.name) + '</span>' + directionBadge + '<span class="server-port-forward-target tooltip-above" data-tooltip="' + escapeHtml(target) + '">' + escapeHtml(target) + '</span></div>'
           + '<div class="server-port-forward-trailing">' + autoBadge + '<span class="server-port-forward-status ' + escapeHtml(status) + ' tooltip-above" data-tooltip="' + escapeHtml(statusTooltip) + '">' + escapeHtml(status) + '</span><div class="server-port-forward-actions"><span class="tooltip-anchor tooltip-above" data-tooltip="' + escapeHtml(disabled ? status : label + ' forward') + '"><button class="secondary server-port-forward-action-button" type="button" data-server-port-forward-action="' + escapeHtml(action) + '" data-server-port-forward-id="' + escapeHtml(item.id) + '"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(label) + '</button></span></div></div>'
           + '</div>';
       }).join('')

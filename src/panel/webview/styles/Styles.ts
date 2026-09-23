@@ -334,10 +334,12 @@ export function renderStyles(): string {
   .server-port-forwards-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .server-port-forward-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
   .server-port-forward-row:hover { background: var(--vscode-list-hoverBackground); }
-  .server-port-forward-main { display: grid; grid-template-columns: minmax(90px, 32%) minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-port-forward-main { display: grid; grid-template-columns: minmax(90px, 32%) auto minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
   .server-port-forward-name, .server-port-forward-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .server-port-forward-name { color: var(--vscode-foreground); font-size: 11.5px; }
   .server-port-forward-target { color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+  .server-port-forward-direction-badge { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 44px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; flex: 0 0 auto; }
+  .server-port-forward-direction-badge.remote { color: var(--vscode-charts-purple, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-charts-purple, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
   .server-port-forward-trailing { display: inline-flex; gap: 7px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 156px; }
   .server-port-forward-status { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 54px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
   .server-port-forward-status.running { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
@@ -350,6 +352,11 @@ export function renderStyles(): string {
   .server-port-forward-empty { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px 8px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent); }
   .server-port-forward-dialog { width: min(520px, calc(100vw - 48px)); }
   .server-port-forward-fields { display: grid; gap: 10px; }
+  .server-port-forward-direction-switch { display: inline-flex; align-items: center; width: fit-content; height: 28px; box-sizing: border-box; padding: 1px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-input-background); }
+  .server-port-forward-direction-button { height: 24px; min-height: 24px; padding: 0 12px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground)); font-size: 11px; }
+  .server-port-forward-direction-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-foreground); }
+  .server-port-forward-direction-button.active { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-foreground); box-shadow: inset 0 0 0 1px var(--vscode-widget-border, var(--vscode-panel-border)); }
+  .server-port-forward-direction-button:disabled { opacity: 0.48; cursor: default; }
   .server-port-forward-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .server-port-forward-field { display: grid; gap: 5px; }
   .server-port-forward-field label { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; }

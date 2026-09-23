@@ -9,6 +9,7 @@
 ### Improved
 
 * Improved Log Viewer Auto-scroll behavior when reviewing older entries, including stable positioning, manual access to pending lines, and a shortcut to jump back to the latest output.
+* Improved Log Viewer level highlighting with broader Linux, AIX, and Windows log format support, multiline stack-trace handling, and fewer false-positive matches.
 
 ### Fixed
 

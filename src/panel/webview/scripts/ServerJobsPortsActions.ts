@@ -480,7 +480,7 @@ export function renderServerJobsPortsActions(): string {
   }
 
   function maybeAutoStartServerPortForwardsForSession(session, isNewConnection) {
-    if (!isNewConnection || !session || !isServerViewSupported(session)) return;
+    if (!isNewConnection || !serverPortForwardStorageHydrated || !session || !isServerViewSupported(session)) return;
     const connectionId = getServerPortForwardStorageKey(session);
     if (!connectionId || serverPortForwardAutoStartedConnectionIds.has(connectionId)) return;
     serverPortForwardAutoStartedConnectionIds.add(connectionId);

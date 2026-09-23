@@ -1429,6 +1429,7 @@ export function renderRemoteCommandOutput(): string {
   }
 
   function applyPersistentStorageSnapshot(snapshot) {
+    const firstPortForwardHydration = !serverPortForwardStorageHydrated;
     persistentStorageApplyingSnapshot = true;
     try {
       const savedCommands = normalizePersistentStorageObject(snapshot && snapshot.savedCommands);
@@ -1443,8 +1444,15 @@ export function renderRemoteCommandOutput(): string {
       const portForwards = normalizePersistentStorageObject(snapshot && snapshot.portForwards);
       saveAllServerPortForwardsToStorage(portForwards);
       serverPortForwardsSessionByConnectionId.clear();
+      serverPortForwardStorageHydrated = true;
     } finally {
       persistentStorageApplyingSnapshot = false;
+    }
+
+    if (firstPortForwardHydration) {
+      sessions.forEach(session => {
+        if (isSessionConnected(session)) maybeAutoStartServerPortForwardsForSession(session, true);
+      });
     }
 
     renderRemoteCommandSavedList();

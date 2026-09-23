@@ -109,6 +109,42 @@ for (const surface of ['sidebar', 'panel']) {
   });
 }
 
+
+test('Webview auto-start detects the transition from connecting to connected', () => {
+  const { context } = createJumpWebviewHarness([], true);
+  context.sessions = [{ id: 'target', connectionType: 'sftp', connectionState: 'connecting', name: 'Target' }];
+  context.activeConnectionId = 'target';
+  const calls: Array<{ id: string; shouldAutoStart: boolean }> = [];
+  context.maybeAutoStartServerPortForwardsForSession = (session: { id: string }, shouldAutoStart: boolean) => {
+    calls.push({ id: session.id, shouldAutoStart });
+  };
+
+  context.dispatchMessage({
+    data: {
+      type: 'sessionsChanged',
+      payload: {
+        sessions: [{ id: 'target', connectionType: 'sftp', connectionState: 'connected', name: 'Target' }],
+        activeConnectionId: 'target'
+      }
+    }
+  });
+
+  context.dispatchMessage({
+    data: {
+      type: 'sessionsChanged',
+      payload: {
+        sessions: [{ id: 'target', connectionType: 'sftp', connectionState: 'connected', name: 'Target' }],
+        activeConnectionId: 'target'
+      }
+    }
+  });
+
+  assert.deepEqual(calls, [
+    { id: 'target', shouldAutoStart: true },
+    { id: 'target', shouldAutoStart: false }
+  ]);
+});
+
 test('Webview Direct selection sends an explicit clear through the real save message and host persistence', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
   const { context, messages } = createJumpWebviewHarness(await harness.manager.listProfiles());

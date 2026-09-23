@@ -602,6 +602,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const serverPortForwardsSessionByConnectionId = new Map();
   const serverPortForwardRuntimeByConnectionId = new Map();
   const serverPortForwardAutoStartedConnectionIds = new Set();
+  let serverPortForwardStorageHydrated = false;
   const SERVER_PORT_FORWARDS_STORAGE_KEY = 'remoteedit.serverPortForwards';
   let serverPortForwardDialogOpen = false;
   let serverPortForwardDialogMode = 'add';

@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.9.4] - 2026-09-24
 
 ### Added
 
@@ -14,8 +14,7 @@
 ### Fixed
 
 * Fixed reverse SSH port forwarding cleanup, lifecycle handling, and multiple-forward routing edge cases.
-* Fixed Port Forward auto-start not triggering reliably when a connection becomes ready.
-* Fixed a startup timing issue where saved Port Forward settings could load after the connection was already established.
+* Fixed Port Forward auto-start not triggering reliably when a connection becomes ready, including cases where saved Port Forward settings load after the connection is established.
 * Fixed Log Viewer Stop continuing to receive and display new lines after following was stopped, with forced cleanup for remote follow commands that do not exit promptly.
 
 ## [1.9.3] - 2026-09-22

@@ -224,12 +224,14 @@ Terminal access is available from both the Webview and the Native Sidebar.
 
 ## Port Forwarding
 
-For SSH/SFTP connections, Remote Edit can manage local-to-remote SSH port forwarding definitions from the Server View.
+For SSH/SFTP connections, Remote Edit can manage local and reverse SSH port forwarding definitions from the Server View.
 
-- Add and edit named port forwards
+- Add and edit named port forwards, choosing **Local** (local-to-remote) or **Remote** (reverse, remote-to-local) direction
 - Start and stop forwards from the Port Forwarding card
 - Optionally auto-start selected forwards when a connection opens
 - Save port forward definitions as part of Remote Edit backups
+
+Reverse forwards ask the remote SSH server to listen on a bind host/port and forward incoming connections back to a target on your machine. The remote sshd needs `GatewayPorts` enabled to bind non-loopback hosts.
 
 Runtime state is not exported. Backups save the definitions, not whether a forward was running at the time of export.
 

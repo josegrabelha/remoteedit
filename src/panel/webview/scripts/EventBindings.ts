@@ -956,6 +956,12 @@ export function renderEventBindings(): string {
   if (serverPortForwardCancelButton) serverPortForwardCancelButton.addEventListener('click', () => {
     hideServerPortForwardDialog();
   });
+  if (serverPortForwardDirectionLocalButton) serverPortForwardDirectionLocalButton.addEventListener('click', () => {
+    selectServerPortForwardDialogDirection('local');
+  });
+  if (serverPortForwardDirectionRemoteButton) serverPortForwardDirectionRemoteButton.addEventListener('click', () => {
+    selectServerPortForwardDialogDirection('remote');
+  });
   if (serverPortForwardDeleteButton) serverPortForwardDeleteButton.addEventListener('click', () => {
     showServerPortForwardRemoveDialog();
   });

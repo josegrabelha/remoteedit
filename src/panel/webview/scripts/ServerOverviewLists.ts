@@ -449,7 +449,12 @@ export function renderServerOverviewLists(): string {
   }
 
   function renderServerColumnHeader(card, mainClass, columns, trailingHtml) {
-    const columnButtons = (Array.isArray(columns) ? columns : []).map(column => renderServerSortButton(card, column.key, column.label)).join('');
+    const columnButtons = (Array.isArray(columns) ? columns : []).map(column => {
+      if (column && column.sortable === false) {
+        return '<span class="server-list-column-label">' + escapeHtml(column.label || '') + '</span>';
+      }
+      return renderServerSortButton(card, column.key, column.label);
+    }).join('');
     return '<div class="server-list-column-header"><div class="server-list-column-header-main ' + escapeHtml(mainClass || '') + '">' + columnButtons + '</div>' + (trailingHtml || '') + '</div>';
   }
 

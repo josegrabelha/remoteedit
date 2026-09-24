@@ -31,6 +31,8 @@ interface ActivePortForwardState extends PortForwardRuntimeState {
   server?: net.Server;
   sshClient?: Client;
   remoteBoundPort?: number;
+  remoteBindEstablished?: boolean;
+  cancelled?: boolean;
   sockets: Set<net.Socket>;
   streams: Set<NodeJS.ReadWriteStream>;
 }
@@ -110,10 +112,33 @@ export class PortForwardManager {
       this.notify(state);
       return this.snapshot(state);
     } catch (error) {
+      if (state.cancelled) {
+        if (state.config.direction === 'remote' && state.remoteBindEstablished) {
+          state.status = 'error';
+          state.error = `Port forward start was cancelled, but remote cleanup failed: ${this.formatError(error, 'remote')}`;
+          this.forwards.set(key, state);
+          this.notify(state);
+          return this.snapshot(state);
+        }
+
+        return {
+          id: state.id,
+          connectionId: state.connectionId,
+          status: 'stopped',
+          localUrl: this.buildLocalUrl(state.config)
+        };
+      }
+
       state.status = 'error';
-      state.error = this.formatError(error);
+      state.error = this.formatError(error, normalized.direction);
       this.notify(state);
-      await this.closeState(state);
+      try {
+        await this.closeState(state);
+      } catch (cleanupError) {
+        const cleanupMessage = this.formatError(cleanupError, normalized.direction);
+        state.error = state.error ? `${state.error} Cleanup failed: ${cleanupMessage}` : cleanupMessage;
+        this.notify(state);
+      }
       this.forwards.set(key, state);
       return this.snapshot(state);
     }
@@ -127,9 +152,17 @@ export class PortForwardManager {
       return { id: forwardId, connectionId, status: 'stopped' };
     }
 
+    state.cancelled = true;
     state.status = 'stopping';
     this.notify(state);
-    await this.closeState(state);
+    try {
+      await this.closeState(state);
+    } catch (error) {
+      state.status = 'error';
+      state.error = this.formatError(error, state.config.direction);
+      this.notify(state);
+      return this.snapshot(state);
+    }
     this.forwards.delete(key);
 
     const stopped: PortForwardRuntimeState = {
@@ -167,7 +200,7 @@ export class PortForwardManager {
       state.server = server;
 
       server.on('error', error => {
-        const message = this.formatError(error);
+        const message = this.formatError(error, 'local');
         state.error = message;
 
         if (!settled) {
@@ -223,13 +256,25 @@ export class PortForwardManager {
 
   private listenRemote(state: ActivePortForwardState, sshClient: Client): Promise<void> {
     return new Promise((resolve, reject) => {
-      sshClient.forwardIn(state.config.remoteHost, state.config.remotePort, (error, port) => {
+      sshClient.forwardIn(state.config.remoteHost, state.config.remotePort, async (error, port) => {
         if (error) {
           reject(error);
           return;
         }
 
         state.remoteBoundPort = port || state.config.remotePort;
+        state.remoteBindEstablished = true;
+
+        if (state.cancelled || state.status !== 'starting') {
+          try {
+            await this.cancelRemoteBind(state);
+            reject(new Error('Port forward start was cancelled.'));
+          } catch (cleanupError) {
+            reject(cleanupError);
+          }
+          return;
+        }
+
         this.registerRemoteForward(sshClient, state);
         resolve();
       });
@@ -261,7 +306,12 @@ export class PortForwardManager {
   ): void {
     const forwards = this.remoteForwardsByClient.get(sshClient);
     const destPort = Number(details?.destPort || 0);
-    const state = forwards ? Array.from(forwards.values()).find(item => (item.remoteBoundPort ?? item.config.remotePort) === destPort) : undefined;
+    const destHost = this.normalizeHost(details?.destIP);
+    const candidates = forwards
+      ? Array.from(forwards.values()).filter(item => (item.remoteBoundPort ?? item.config.remotePort) === destPort)
+      : [];
+    const state = candidates.find(item => this.normalizeHost(item.config.remoteHost) === destHost)
+      ?? candidates.find(item => this.isWildcardHost(item.config.remoteHost));
 
     if (!state) {
       reject();
@@ -276,7 +326,16 @@ export class PortForwardManager {
     const localSocket = net.connect(state.config.localPort, state.config.localHost);
     state.sockets.add(localSocket);
     localSocket.on('close', () => state.sockets.delete(localSocket));
-    localSocket.on('error', () => undefined);
+    localSocket.on('error', error => {
+      try {
+        (channel as any).destroy?.(error);
+      } catch {
+        // Ignore channel cleanup errors.
+      }
+    });
+    channel.on('error', error => {
+      localSocket.destroy(error instanceof Error ? error : undefined);
+    });
 
     localSocket.pipe(channel).pipe(localSocket);
   }
@@ -287,24 +346,52 @@ export class PortForwardManager {
       return;
     }
 
-    const forwards = this.remoteForwardsByClient.get(sshClient);
-    if (forwards) {
-      forwards.delete(state.id);
-      if (forwards.size === 0) {
-        this.remoteForwardsByClient.delete(sshClient);
-        const handler = this.tcpConnectionHandlerByClient.get(sshClient);
-        if (handler) {
-          sshClient.removeListener('tcp connection', handler);
-          this.tcpConnectionHandlerByClient.delete(sshClient);
-        }
-      }
+    this.unregisterRemoteForward(sshClient, state);
+
+    if (!state.remoteBindEstablished) {
+      return;
     }
 
-    await new Promise<void>(resolve => {
+    await this.cancelRemoteBind(state);
+  }
+
+  private unregisterRemoteForward(sshClient: Client, state: ActivePortForwardState): void {
+    const forwards = this.remoteForwardsByClient.get(sshClient);
+    if (!forwards) {
+      return;
+    }
+
+    forwards.delete(state.id);
+    if (forwards.size > 0) {
+      return;
+    }
+
+    this.remoteForwardsByClient.delete(sshClient);
+    const handler = this.tcpConnectionHandlerByClient.get(sshClient);
+    if (handler) {
+      sshClient.removeListener('tcp connection', handler);
+      this.tcpConnectionHandlerByClient.delete(sshClient);
+    }
+  }
+
+  private cancelRemoteBind(state: ActivePortForwardState): Promise<void> {
+    const sshClient = state.sshClient;
+    if (!sshClient || !state.remoteBindEstablished) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve, reject) => {
       try {
-        sshClient.unforwardIn(state.config.remoteHost, state.remoteBoundPort ?? state.config.remotePort, () => resolve());
-      } catch {
-        resolve();
+        sshClient.unforwardIn(state.config.remoteHost, state.remoteBoundPort ?? state.config.remotePort, error => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          state.remoteBindEstablished = false;
+          resolve();
+        });
+      } catch (error) {
+        reject(error);
       }
     });
   }
@@ -387,7 +474,8 @@ export class PortForwardManager {
   private buildDefaultName(config: SavedPortForwardConfig): string {
     const localPort = Number(config.localPort || 0);
     const remotePort = Number(config.remotePort || 0);
-    return localPort && remotePort ? `${localPort} → ${remotePort}` : 'Port forward';
+    if (!localPort || !remotePort) return 'Port forward';
+    return config.direction === 'remote' ? `${remotePort} → ${localPort}` : `${localPort} → ${remotePort}`;
   }
 
   private buildLocalUrl(config: SavedPortForwardConfig): string {
@@ -419,11 +507,24 @@ export class PortForwardManager {
     this.onDidChangeState?.(this.snapshot(state));
   }
 
-  private formatError(error: unknown): string {
+  private normalizeHost(host: unknown): string {
+    const value = String(host || '').trim().toLowerCase();
+    if (value === 'localhost') return '127.0.0.1';
+    if (value === '::1') return '127.0.0.1';
+    return value;
+  }
+
+  private isWildcardHost(host: unknown): boolean {
+    const value = this.normalizeHost(host);
+    return value === '0.0.0.0' || value === '::' || value === '';
+  }
+
+  private formatError(error: unknown, direction: PortForwardDirection = 'local'): string {
     if (error && typeof error === 'object' && 'code' in error) {
       const code = String((error as { code?: unknown }).code || '');
-      if (code === 'EADDRINUSE') return 'Local port is already in use.';
-      if (code === 'EACCES') return 'Permission denied for the local port.';
+      const side = direction === 'remote' ? 'remote' : 'local';
+      if (code === 'EADDRINUSE') return `${side === 'remote' ? 'Remote' : 'Local'} port is already in use.`;
+      if (code === 'EACCES') return `Permission denied for the ${side} port.`;
     }
 
     return error instanceof Error ? error.message : String(error || 'Port forwarding failed.');

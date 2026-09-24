@@ -169,6 +169,7 @@ export function renderStyles(): string {
   .server-list-column-header-main { min-width: 0; overflow: hidden; }
   .server-list-column-header-trailing { min-width: 0; }
   .server-list-column-sort-button { appearance: none; -webkit-appearance: none; display: inline-flex; align-items: center; gap: 3px; min-width: 0; height: 16px; min-height: 16px; padding: 0 2px; border: 0; border-radius: 2px; background: transparent; color: var(--vscode-descriptionForeground); font: inherit; font-weight: 600; line-height: 1.2; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-list-column-label { display: inline-flex; align-items: center; min-width: 0; height: 16px; min-height: 16px; padding: 0 2px; color: var(--vscode-descriptionForeground); font: inherit; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .server-list-column-sort-button.active { color: var(--vscode-foreground); }
   .server-list-column-header button.server-list-column-sort-button:hover:not(:disabled),
   .server-list-column-header button.server-list-column-sort-button:focus-visible { color: var(--vscode-foreground); background: transparent; outline: none; box-shadow: none; }
@@ -334,11 +335,11 @@ export function renderStyles(): string {
   .server-port-forwards-filter-box.has-value .filter-clear-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .server-port-forward-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 25px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
   .server-port-forward-row:hover { background: var(--vscode-list-hoverBackground); }
-  .server-port-forward-main { display: grid; grid-template-columns: minmax(90px, 32%) auto minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
+  .server-port-forward-main { display: grid; grid-template-columns: minmax(90px, 32%) 68px minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
   .server-port-forward-name, .server-port-forward-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .server-port-forward-name { color: var(--vscode-foreground); font-size: 11.5px; }
   .server-port-forward-target { color: var(--vscode-descriptionForeground); font-size: 10.5px; }
-  .server-port-forward-direction-badge { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 44px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; flex: 0 0 auto; }
+  .server-port-forward-direction-badge { display: inline-flex; align-items: center; justify-content: center; justify-self: start; height: 16px; min-width: 44px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; flex: 0 0 auto; }
   .server-port-forward-direction-badge.remote { color: var(--vscode-charts-purple, var(--vscode-foreground)); border-color: color-mix(in srgb, var(--vscode-charts-purple, var(--vscode-focusBorder)) 45%, var(--vscode-panel-border)); }
   .server-port-forward-trailing { display: inline-flex; gap: 7px; align-items: center; justify-content: flex-end; align-self: center; flex: 0 0 auto; min-width: 156px; }
   .server-port-forward-status { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 54px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
@@ -350,7 +351,8 @@ export function renderStyles(): string {
   .server-port-forward-actions .tooltip-anchor { display: inline-flex; align-items: center; justify-content: center; }
   .server-port-forward-action-button { height: 19px; min-height: 19px; padding: 0 6px; font-size: 10px; line-height: 1; }
   .server-port-forward-empty { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px 8px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent); }
-  .server-port-forward-dialog { width: min(520px, calc(100vw - 48px)); }
+  .server-port-forward-dialog { width: min(520px, calc(100vw - 48px)); height: 520px; }
+  .server-port-forward-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; }
   .server-port-forward-fields { display: grid; gap: 10px; }
   .server-port-forward-direction-switch { display: inline-flex; align-items: center; width: fit-content; height: 28px; box-sizing: border-box; padding: 1px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; background: var(--vscode-input-background); }
   .server-port-forward-direction-button { height: 24px; min-height: 24px; padding: 0 12px; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground)); font-size: 11px; }
@@ -359,13 +361,13 @@ export function renderStyles(): string {
   .server-port-forward-direction-button:disabled { opacity: 0.48; cursor: default; }
   .server-port-forward-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .server-port-forward-field { display: grid; gap: 5px; }
-  .server-port-forward-field label { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; }
+  .server-port-forward-field label, .server-port-forward-field-label { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 650; }
   .server-port-forward-field input { width: 100%; box-sizing: border-box; }
   .server-port-forward-field input.server-port-forward-input-invalid { border-color: var(--remoteedit-validation-error); }
   .server-port-forward-option { width: fit-content; color: var(--vscode-descriptionForeground); user-select: none; }
   .server-port-forward-auto-badge { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 30px; padding: 0 5px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); font-size: 10px; line-height: 1; white-space: nowrap; }
   .server-port-forward-feedback { min-height: 16px; line-height: 16px; color: var(--remoteedit-validation-error); font-size: 11px; }
-  .server-port-forward-help { color: var(--vscode-descriptionForeground); font-size: 10.5px; line-height: 1.35; }
+  .server-port-forward-help { min-height: 58px; color: var(--vscode-descriptionForeground); font-size: 10.5px; line-height: 1.35; }
   .server-port-forward-running-note { padding: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-size: 11px; }
   .server-port-forward-remove-path { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .server-placeholder { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px 8px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.25; background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent); }

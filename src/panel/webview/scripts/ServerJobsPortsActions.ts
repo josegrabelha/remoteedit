@@ -122,11 +122,12 @@ export function renderServerJobsPortsActions(): string {
     if (!id || !isValidServerPort(localPort) || !isValidServerPort(remotePort)) return null;
     const localHost = String(value.localHost || '').trim() || 'localhost';
     const remoteHost = String(value.remoteHost || '').trim() || '127.0.0.1';
-    const name = String(value.name || '').trim() || buildServerPortForwardDefaultName(localPort, remotePort);
+    const direction = normalizeServerPortForwardDirection(value.direction);
+    const name = String(value.name || '').trim() || buildServerPortForwardDefaultName(localPort, remotePort, direction);
     return {
       id: id,
       name: name,
-      direction: normalizeServerPortForwardDirection(value.direction),
+      direction: direction,
       localHost: localHost,
       localPort: localPort,
       remoteHost: remoteHost,
@@ -141,7 +142,7 @@ export function renderServerJobsPortsActions(): string {
     const now = Date.now();
     return {
       id: createServerPortForwardId(),
-      name: String(values.name || '').trim() || buildServerPortForwardDefaultName(values.localPort, values.remotePort),
+      name: String(values.name || '').trim() || buildServerPortForwardDefaultName(values.localPort, values.remotePort, values.direction),
       direction: normalizeServerPortForwardDirection(values.direction),
       localHost: String(values.localHost || '').trim() || 'localhost',
       localPort: Number(values.localPort || 0),
@@ -153,10 +154,10 @@ export function renderServerJobsPortsActions(): string {
     };
   }
 
-  function buildServerPortForwardDefaultName(localPort, remotePort) {
+  function buildServerPortForwardDefaultName(localPort, remotePort, direction) {
     const local = Number(localPort || 0);
     const remote = Number(remotePort || 0);
-    if (local && remote) return local + ' → ' + remote;
+    if (local && remote) return normalizeServerPortForwardDirection(direction) === 'remote' ? (remote + ' → ' + local) : (local + ' → ' + remote);
     return 'Port forward';
   }
 
@@ -350,7 +351,7 @@ export function renderServerJobsPortsActions(): string {
       return null;
     }
     if (serverPortForwardFeedback) serverPortForwardFeedback.textContent = '';
-    return { name: name || buildServerPortForwardDefaultName(localPort, remotePort), direction: serverPortForwardDialogDirection, localHost, localPort, remoteHost, remotePort, autoStartOnConnect };
+    return { name: name || buildServerPortForwardDefaultName(localPort, remotePort, serverPortForwardDialogDirection), direction: serverPortForwardDialogDirection, localHost, localPort, remoteHost, remotePort, autoStartOnConnect };
   }
 
   function updateServerPortForwardDirectionUi(running) {
@@ -572,6 +573,7 @@ export function renderServerJobsPortsActions(): string {
     const filterText = getServerPortForwardFilterText();
     const filtered = forwards.filter(item => matchesServerPortForwardFilter(item, filterText));
     const visible = sortServerItems('portForwards', filtered, (item, key) => {
+      if (key === 'direction') return getServerPortForwardDirectionLabel(item);
       if (key === 'target') return formatServerPortForwardTarget(item);
       if (key === 'status') return (item && item.autoStartOnConnect ? 'auto ' : '') + getServerPortForwardRuntimeState(activeConnectionId, item && item.id).status;
       return item && item.name;
@@ -592,6 +594,7 @@ export function renderServerJobsPortsActions(): string {
 
     const columns = renderServerColumnHeader('portForwards', 'server-port-forward-main', [
       { key: 'name', label: 'Name' },
+      { key: 'direction', label: 'Direction' },
       { key: 'target', label: 'Target' }
     ], '<div class="server-port-forward-trailing server-list-column-header-trailing">' + renderServerSortButton('portForwards', 'status', 'Status') + '<span class="server-list-column-header-actions-space server-port-forward-actions-space" aria-hidden="true"></span></div>');
     return '<section class="server-section-card server-port-forwards-card">' + header + columns + '<div class="server-list server-port-forwards-list">'

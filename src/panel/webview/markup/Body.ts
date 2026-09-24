@@ -438,9 +438,12 @@ export function renderBody(): string {
       </div>
       <div class="file-properties-body">
         <div class="server-port-forward-fields">
-          <div class="server-port-forward-direction-switch" role="tablist" aria-label="Port forward direction">
-            <button id="serverPortForwardDirectionLocalButton" type="button" role="tab" class="server-port-forward-direction-button" data-server-port-forward-direction="local">Local</button>
-            <button id="serverPortForwardDirectionRemoteButton" type="button" role="tab" class="server-port-forward-direction-button" data-server-port-forward-direction="remote">Remote</button>
+          <div class="server-port-forward-field server-port-forward-direction-field">
+            <div id="serverPortForwardDirectionLabel" class="server-port-forward-field-label">Direction</div>
+            <div class="server-port-forward-direction-switch" role="tablist" aria-labelledby="serverPortForwardDirectionLabel">
+              <button id="serverPortForwardDirectionLocalButton" type="button" role="tab" class="server-port-forward-direction-button" data-server-port-forward-direction="local">Local</button>
+              <button id="serverPortForwardDirectionRemoteButton" type="button" role="tab" class="server-port-forward-direction-button" data-server-port-forward-direction="remote">Remote</button>
+            </div>
           </div>
           <div class="server-port-forward-field">
             <label for="serverPortForwardNameInput">Name</label>

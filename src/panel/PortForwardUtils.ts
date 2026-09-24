@@ -7,7 +7,8 @@ export function parsePortForwardConfig(value: any): SavedPortForwardConfig {
   const remotePort = Number(value?.remotePort || 0);
   const localHost = String(value?.localHost || '').trim() || 'localhost';
   const remoteHost = String(value?.remoteHost || '').trim() || '127.0.0.1';
-  const name = String(value?.name || '').trim() || `${localPort || ''} → ${remotePort || ''}`.trim() || 'Port forward';
+  const defaultName = direction === 'remote' ? `${remotePort || ''} → ${localPort || ''}` : `${localPort || ''} → ${remotePort || ''}`;
+  const name = String(value?.name || '').trim() || defaultName.trim() || 'Port forward';
 
   if (!id) {
     throw new Error('Port forward id is required.');

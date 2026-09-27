@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { AsyncLocalStorage } from 'async_hooks';
 import { ConnectionManager, type RemoteEditPersistentWebviewStorage } from '../connection/ConnectionManager';
 import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
+import { resolveEditorRootSegments } from '../filesystem/EditorRootLabel';
 import type { ActiveConnection, ConnectOptions, RemoteSessionManager, RemoteEntryMetadataNotifier, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
 import { getRemoteConnectOriginalMessage, getRemoteConnectStatusMessage } from '../remote/ConnectionProbe';
 import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
@@ -2025,9 +2026,11 @@ export class RemoteEditPanel {
       : `${readOnly ? 'Opening read-only' : 'Opening'} ${resolvedEntries.length} remote files...`, false, undefined, connectionId);
 
     const failedEntries: Array<{ path: string; error: string }> = [];
+    const connection = this.sessions.getConnection(connectionId);
+    const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
 
     for (const entry of resolvedEntries) {
-      const uri = buildRemoteEditUri(connectionId, entry.path, this.getActiveUriAuthority(), { readOnly, openSource: 'webview' });
+      const uri = buildRemoteEditUri(connectionId, entry.path, connection?.host, { readOnly, openSource: 'webview', rootSegments });
 
       try {
         await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
@@ -2128,8 +2131,10 @@ export class RemoteEditPanel {
       throw error;
     }
 
-    const leftUri = buildRemoteEditUri(connectionId, left.path, this.getActiveUriAuthority(), { readOnly: true });
-    const rightUri = buildRemoteEditUri(connectionId, right.path, this.getActiveUriAuthority(), { readOnly: true });
+    const connection = this.sessions.getConnection(connectionId);
+    const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
+    const leftUri = buildRemoteEditUri(connectionId, left.path, connection?.host, { readOnly: true, rootSegments });
+    const rightUri = buildRemoteEditUri(connectionId, right.path, connection?.host, { readOnly: true, rootSegments });
     const title = `${left.name || left.path} ↔ ${right.name || right.path}`;
     await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
 
@@ -2197,7 +2202,9 @@ export class RemoteEditPanel {
   private async openFile(remotePath: string): Promise<void> {
     const connectionId = this.requireActiveConnectionId();
     const normalizedPath = normalizeRemotePath(remotePath);
-    const uri = buildRemoteEditUri(connectionId, normalizedPath, this.getActiveUriAuthority(), { openSource: 'webview' });
+    const connection = this.sessions.getConnection(connectionId);
+    const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
+    const uri = buildRemoteEditUri(connectionId, normalizedPath, connection?.host, { openSource: 'webview', rootSegments });
 
     await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
 
@@ -5140,16 +5147,6 @@ export class RemoteEditPanel {
     }
 
     return `[${connection.name}] ${connection.username}@${connection.host}:${normalizeRemotePath(remotePath)}`;
-  }
-
-  private getActiveUriAuthority(): string | undefined {
-    const activeConnectionId = this.state.getActiveConnectionId();
-
-    if (!activeConnectionId) {
-      return undefined;
-    }
-
-    return this.sessions.getConnection(activeConnectionId)?.host;
   }
 
   private updatePanelTitle(): void {

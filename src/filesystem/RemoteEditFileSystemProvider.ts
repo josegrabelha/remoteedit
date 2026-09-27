@@ -227,9 +227,21 @@ export function buildRemoteEditUri(
   connectionId: string,
   remotePath: string,
   displayAuthority?: string,
-  options: { readonly readOnly?: boolean; readonly openSource?: 'webview' | 'sidebar' } = {}
+  options: { readonly readOnly?: boolean; readonly openSource?: 'webview' | 'sidebar'; readonly rootSegments?: readonly string[] } = {}
 ): vscode.Uri {
   const normalizedRemotePath = remotePath.startsWith('/') ? remotePath : `/${remotePath}`;
+  if (options.rootSegments?.length) {
+    const virtualRoot = options.rootSegments.map(normalizeEditorRootSegment).join(' | ');
+    const remotePathWithoutRoot = normalizedRemotePath.replace(/^\/+/, '');
+
+    return vscode.Uri.from({
+      scheme: options.readOnly ? 'remoteedit-readonly' : 'remoteedit',
+      authority: normalizeUriAuthority(connectionId),
+      path: `/${virtualRoot}${remotePathWithoutRoot ? `/${remotePathWithoutRoot}` : ''}`,
+      query: buildRemoteEditUriQuery(connectionId, virtualRoot, options.openSource)
+    });
+  }
+
   const authority = normalizeUriAuthority(displayAuthority || connectionId);
   const scheme = options.readOnly ? 'remoteedit-readonly' : 'remoteedit';
 
@@ -323,6 +335,11 @@ function normalizeUriAuthority(authority: string): string {
 
 function normalizeUriPathSegment(segment: string): string {
   return segment.trim().replace(/[^A-Za-z0-9._~-]/g, '-').replace(/^-+|-+$/g, '') || 'remote';
+}
+
+function normalizeEditorRootSegment(segment: string): string {
+  const name = segment.replace(/\//g, '／').replace(/\\/g, '＼');
+  return name === '.' || name === '..' ? name.replace(/\./g, '．') : name;
 }
 
 function shortenHostname(hostname: string): string {

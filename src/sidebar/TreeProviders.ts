@@ -11,6 +11,7 @@ const COMMAND_OPEN = 'remoteedit.open';
 const COMMAND_OPEN_SETTINGS = 'remoteedit.sidebar.openSettings';
 const COMMAND_EXPORT_BACKUP = 'remoteedit.sidebar.exportBackup';
 const COMMAND_IMPORT_BACKUP = 'remoteedit.sidebar.importBackup';
+const COMMAND_OPEN_WORKSPACE_SYNC = 'remoteedit.workspaceSync.open';
 const COMMAND_OPEN_LOG_VIEWER = 'remoteedit.sidebar.openLogViewer';
 
 export interface RemoteEditActionsTreeProviderOptions {
@@ -54,6 +55,18 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
           title: 'Remote Edit (Advanced View)'
         },
         contextValue: 'remoteedit.action.advancedView'
+      }),
+      new RemoteEditSidebarItem({
+        label: 'Workspace Sync',
+        kind: 'action',
+        id: 'action:workspaceSync',
+        icon: new vscode.ThemeIcon('sync'),
+        tooltip: 'Open Workspace Sync.',
+        command: {
+          command: COMMAND_OPEN_WORKSPACE_SYNC,
+          title: 'Workspace Sync'
+        },
+        contextValue: 'remoteedit.action.workspaceSync'
       }),
       new RemoteEditSidebarItem({
         label: 'Log Viewer',

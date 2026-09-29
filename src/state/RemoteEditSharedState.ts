@@ -18,6 +18,11 @@ export interface RemoteEditProfilesState {
   reason?: string;
 }
 
+export interface RemoteEditWorkspaceSyncState {
+  source?: 'webview' | 'sidebar' | 'import';
+  reason?: string;
+}
+
 export interface RemoteEditRemoteDirectoryChangeState {
   connectionId: string;
   remotePath: string;
@@ -45,6 +50,7 @@ class RemoteEditSharedStateStore {
   private readonly navigationChangedEmitter = new vscode.EventEmitter<RemoteEditNavigationState>();
   private readonly favoritesChangedEmitter = new vscode.EventEmitter<RemoteEditFavoritesState>();
   private readonly profilesChangedEmitter = new vscode.EventEmitter<RemoteEditProfilesState>();
+  private readonly workspaceSyncChangedEmitter = new vscode.EventEmitter<RemoteEditWorkspaceSyncState>();
   private readonly remoteDirectoryChangedEmitter = new vscode.EventEmitter<RemoteEditRemoteDirectoryChangeState>();
   private readonly remoteFileOpenFailureEmitter = new vscode.EventEmitter<RemoteEditRemoteFileOpenFailureState>();
 
@@ -52,6 +58,7 @@ class RemoteEditSharedStateStore {
   readonly onNavigationChanged = this.navigationChangedEmitter.event;
   readonly onFavoritesChanged = this.favoritesChangedEmitter.event;
   readonly onProfilesChanged = this.profilesChangedEmitter.event;
+  readonly onWorkspaceSyncChanged = this.workspaceSyncChangedEmitter.event;
   readonly onRemoteDirectoryChanged = this.remoteDirectoryChangedEmitter.event;
   readonly onRemoteFileOpenFailure = this.remoteFileOpenFailureEmitter.event;
 
@@ -113,6 +120,10 @@ class RemoteEditSharedStateStore {
     this.profilesChangedEmitter.fire({ selectedId, source, reason });
   }
 
+  fireWorkspaceSyncChanged(source?: RemoteEditWorkspaceSyncState['source'], reason?: string): void {
+    this.workspaceSyncChangedEmitter.fire({ source, reason });
+  }
+
   fireRemoteDirectoryChanged(connectionId: string, remotePath: string, source?: RemoteEditRemoteDirectoryChangeState['source']): void {
     if (!connectionId) {
       return;
@@ -141,6 +152,7 @@ class RemoteEditSharedStateStore {
     this.navigationChangedEmitter.dispose();
     this.favoritesChangedEmitter.dispose();
     this.profilesChangedEmitter.dispose();
+    this.workspaceSyncChangedEmitter.dispose();
     this.remoteDirectoryChangedEmitter.dispose();
     this.remoteFileOpenFailureEmitter.dispose();
   }

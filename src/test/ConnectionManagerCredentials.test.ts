@@ -99,3 +99,17 @@ test('Save As creates an independent profile from current values and carries unc
     /already exists/i
   );
 });
+
+test('configuration-only credential accessor returns saved secrets without creating runtime state', async () => {
+  const harness = createConnectionManagerHarness([profile('target')]);
+  harness.secrets.set(secretKey('target', 'password'), 'synthetic-password');
+  harness.secrets.set(secretKey('target', 'passphrase'), 'synthetic-passphrase');
+
+  const credentials = await harness.manager.getProfileCredentials('target');
+
+  assert.deepEqual(credentials, {
+    password: 'synthetic-password',
+    passphrase: 'synthetic-passphrase'
+  });
+  assert.deepEqual(harness.writes, []);
+});

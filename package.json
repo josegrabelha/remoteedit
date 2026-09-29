@@ -1,7 +1,7 @@
 {
   "name": "remoteedit",
   "displayName": "Remote Edit",
-  "description": "Browse, edit, transfer, and search remote files over SSH/SFTP, FTP, and FTPS, with SSH server tools.",
+  "description": "Browse, edit, transfer, search, and synchronize remote files over SSH/SFTP, FTP, and FTPS, with SSH server tools.",
   "version": "1.9.4",
   "publisher": "josegrabelha",
   "license": "SEE LICENSE IN LICENSE",
@@ -179,6 +179,12 @@
         "command": "remoteedit.sidebar.openSshTerminal",
         "title": "Open SSH Terminal",
         "icon": "$(terminal)",
+        "category": "Remote Edit"
+      },
+      {
+        "command": "remoteedit.workspaceSync.open",
+        "title": "Open Workspace Sync",
+        "icon": "$(sync)",
         "category": "Remote Edit"
       },
       {
@@ -529,6 +535,63 @@
             "description": "Controls the root label shown in breadcrumbs and tab descriptions for remote files opened in the editor. Changes apply when opening files; already open editors keep their current labels until closed and reopened.",
             "scope": "window",
             "order": 50
+          }
+        }
+      },
+      {
+        "title": "Remote Edit: Workspace Sync UI",
+        "properties": {
+          "remoteedit.workspaceSync.editorTitleButtonPosition": {
+            "type": "string",
+            "default": "hidden",
+            "enum": [
+              "right",
+              "hidden"
+            ],
+            "enumDescriptions": [
+              "Show the Workspace Sync button in the Editor Title area.",
+              "Hide the Workspace Sync Editor Title button."
+            ],
+            "description": "Controls whether the Workspace Sync button appears in the editor title area.",
+            "order": 10
+          },
+          "remoteedit.workspaceSync.statusBarButtonPosition": {
+            "type": "string",
+            "default": "left",
+            "enum": [
+              "left",
+              "right",
+              "hidden"
+            ],
+            "enumDescriptions": [
+              "Show the Workspace Sync button on the left side of the Status Bar.",
+              "Show the Workspace Sync button on the right side of the Status Bar.",
+              "Hide the Workspace Sync Status Bar button."
+            ],
+            "description": "Controls where the Workspace Sync status bar button appears.",
+            "order": 20
+          },
+          "remoteedit.workspaceSync.statusBarButtonStyle": {
+            "type": "string",
+            "default": "iconAndText",
+            "enum": [
+              "iconAndText",
+              "iconOnly",
+              "textOnly"
+            ],
+            "enumDescriptions": [
+              "Show both the icon and the Workspace Sync text.",
+              "Show only the Workspace Sync icon.",
+              "Show only the Workspace Sync text."
+            ],
+            "description": "Controls how the Workspace Sync status bar button is displayed.",
+            "order": 30
+          },
+          "remoteedit.workspaceSync.statusBarButtonPriority": {
+            "type": "number",
+            "default": 999,
+            "description": "Controls the Workspace Sync status bar button priority. Higher values appear closer to the left within the selected alignment group.",
+            "order": 40
           }
         }
       },
@@ -2219,6 +2282,11 @@
           "command": "remoteedit.open",
           "when": "config.remoteedit.editorTitleButtonPosition == right",
           "group": "navigation@99"
+        },
+        {
+          "command": "remoteedit.workspaceSync.open",
+          "when": "config.remoteedit.workspaceSync.editorTitleButtonPosition == right",
+          "group": "navigation@100"
         }
       ]
     },
@@ -2247,7 +2315,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "test": "npm run compile && node --test out/test/JumpChain.test.js out/test/SshJumpChain.test.js out/test/SftpSessionManager.test.js out/test/RemoteSessionRouter.test.js out/test/ConnectionManagerCredentials.test.js out/test/ConnectionCredentialUi.test.js out/test/ConnectionManagerReferences.test.js out/test/ConnectionManagerBackup.test.js out/test/SidebarConnectionWizard.test.js out/test/ConnectionUi.test.js out/test/PortForwardManager.test.js out/test/LogLevelClassifier.test.js out/test/EditorRootLabel.test.js",
+    "test": "npm run compile && node --test out/test/JumpChain.test.js out/test/SshJumpChain.test.js out/test/SftpSessionManager.test.js out/test/RemoteSessionRouter.test.js out/test/ConnectionManagerCredentials.test.js out/test/ConnectionCredentialUi.test.js out/test/ConnectionManagerReferences.test.js out/test/ConnectionManagerBackup.test.js out/test/SidebarConnectionWizard.test.js out/test/ConnectionUi.test.js out/test/PortForwardManager.test.js out/test/LogLevelClassifier.test.js out/test/EditorRootLabel.test.js out/test/workspaceSync/DiffEngine.test.js out/test/workspaceSync/SyncPlanner.test.js out/test/workspaceSync/IgnoreMatcher.test.js out/test/workspaceSync/ContentVerifier.test.js out/test/workspaceSync/Scanner.test.js out/test/workspaceSync/SyncExecutor.test.js out/test/workspaceSync/OperationFailureDetails.test.js out/test/workspaceSync/OperationJournal.test.js out/test/workspaceSync/TargetOperationQueue.test.js out/test/workspaceSync/LocalRootOperationCoordinator.test.js out/test/workspaceSync/BaselineStore.test.js out/test/workspaceSync/WorkspaceMapping.test.js out/test/workspaceSync/SyncRevalidator.test.js out/test/workspaceSync/PathCollisionDetector.test.js out/test/workspaceSync/SftpPathStyle.test.js out/test/workspaceSync/WatchedDeletePlan.test.js out/test/workspaceSync/PathSegment.test.js out/test/workspaceSync/ConnectionIdentity.test.js out/test/workspaceSync/DiffTempStore.test.js out/test/workspaceSync/PathSafety.test.js out/test/workspaceSync/LocalFilesystemCapabilities.test.js out/test/workspaceSync/ConnectionSnapshot.test.js out/test/workspaceSync/FtpPathLookup.test.js out/test/workspaceSync/FtpSyncSession.test.js out/test/workspaceSync/WatcherCoalescing.test.js out/test/workspaceSync/RemoteWatchDiff.test.js out/test/workspaceSync/WorkspaceSyncSessionManager.test.js out/test/workspaceSync/WorkspaceSyncUi.test.js out/test/workspaceSync/WorkspaceSyncDiagnostics.test.js out/test/workspaceSync/SftpSyncSession.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out"
   },
@@ -2279,16 +2347,16 @@
     "upload",
     "download",
     "remote search",
+    "workspace sync",
+    "file sync",
+    "bidirectional sync",
     "sudo",
     "permissions",
     "remote command",
     "saved commands",
-    "quick tasks",
     "remote server",
     "server tools",
     "server view",
-    "services",
-    "processes",
     "cron",
     "logs",
     "log viewer",

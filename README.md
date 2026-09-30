@@ -47,6 +47,17 @@ Use it to manage connections, open sessions, favorites, transfers, SSH terminals
 
 Choose the workflow that fits you best. Use the full-featured Remote Edit Webview or the native VS Code Sidebar. Both experiences can be used independently.
 
+### Remote File Editor Labels
+
+In VS Code settings, **Remote Edit: UI → Editor Root Label** (`remoteedit.editorRootLabel`) controls the virtual root shown in editor breadcrumbs and tab path descriptions:
+
+- `host` (default): use the target hostname, consistently for files opened from the Webview and Sidebar.
+- `connectionName`: use `group | connection` as a single root, or just `connection` when there is no group. This helps distinguish connections that share a hostname or loopback address. Quick Connect and sessions whose saved profile was removed use the session name.
+
+The virtual root represents the remote `/` directory; it does not change the file's actual remote path. Normal, read-only, and comparison editors use the same naming rules. VS Code controls when tab path descriptions appear and how they are shortened.
+
+Changes apply to subsequent file opens. Close and reopen existing editors to use the current setting or updated connection names; their unsaved contents and undo history are not migrated or modified by changing the setting.
+
 ## When to Use Remote Edit
 
 Remote Edit is useful when you need to work with remote servers without opening a full remote workspace. Use it to browse and edit files, transfer content, run commands, inspect server status, view logs, search remotely, and manage SSH port forwards directly from VS Code.

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* Added the Editor Root Label setting to show saved connection names, with an optional group prefix, as a single virtual root in remote file editor breadcrumbs and tab descriptions. Existing editors retain their labels until reopened.
+
+### Fixed
+
+* Made hostname-based editor roots consistent between files opened from the Native Sidebar and Webview.
+
 ## [1.9.4] - 2026-09-24
 
 ### Added

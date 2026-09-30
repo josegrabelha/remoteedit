@@ -168,6 +168,7 @@ interface StoredCredentialMap {
 const CONFIG_SECTION = 'remoteedit';
 const SUPPORTED_BACKUP_VERSION = 3;
 const REMOTE_EDIT_SETTING_DEFAULTS = {
+  editorRootLabel: 'host',
   editorTitleButtonPosition: 'hidden',
   statusBarButtonPosition: 'left',
   statusBarButtonStyle: 'iconAndText',
@@ -406,6 +407,22 @@ export class ConnectionManager {
   async getProfile(profileId: string): Promise<ConnectionProfile | undefined> {
     const profiles = await this.listProfiles();
     return profiles.find(profile => profile.id === profileId);
+  }
+
+  getProfileMetadata(profileId: string): Pick<ConnectionProfile, 'id' | 'name' | 'groupId'> | undefined {
+    const id = String(profileId || '').trim();
+    if (!id) {
+      return undefined;
+    }
+
+    const storedProfiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    const storedProfile = storedProfiles.find(profile => profile.id === id);
+    if (!storedProfile) {
+      return undefined;
+    }
+
+    const profile = this.normalizeStoredProfile(storedProfile);
+    return { id: profile.id, name: profile.name, groupId: profile.groupId };
   }
 
   async cloneProfile(profileId: string): Promise<ConnectionProfile> {

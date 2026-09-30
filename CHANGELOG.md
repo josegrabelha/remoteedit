@@ -4,11 +4,12 @@
 
 ### Added
 
-* Added the Editor Root Label setting to show saved connection names, with an optional group prefix, as a single virtual root in remote file editor breadcrumbs and tab descriptions. Existing editors retain their labels until reopened.
+* Added **Workspace Sync** for synchronizing local workspaces with saved Remote Edit connections, including multi-target and automatic synchronization support.
+* Added the Editor Root Label setting to show saved connection names, with an optional group prefix, as a single virtual root in remote file editor breadcrumbs and tab descriptions. Existing editors retain their labels until reopened. Thanks to @tzraeq.
 
 ### Fixed
 
-* Made hostname-based editor roots consistent between files opened from the Native Sidebar and Webview.
+* Made hostname-based editor roots consistent between files opened from the Native Sidebar and Webview. Thanks to @tzraeq.
 
 ## [1.9.4] - 2026-09-24
 

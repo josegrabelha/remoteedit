@@ -65,7 +65,7 @@ export class PanelBackupController {
   async exportConnectionsSettings(payload: any): Promise<void> {
     const exportOptions = parseExportOptions(payload || {});
 
-    if (!exportOptions.includeSettings && !exportOptions.includeConnections) {
+    if (!exportOptions.includeSettings && !exportOptions.includeConnections && !exportOptions.includeWorkspaceSync) {
       throw new Error('Select at least one export option.');
     }
 
@@ -93,6 +93,7 @@ export class PanelBackupController {
       File: target.fsPath,
       Settings: backup.settings ? 'Yes' : 'No',
       Connections: String(backup.connections?.length || 0),
+      WorkspaceSyncMappings: String(backup.workspaceSync?.mappings.length || 0),
       Favorites: String(countBackupFavorites(backup)),
       Usernames: exportOptions.includeUsernames ? 'Yes' : 'No',
       EncryptedCredentials: backup.encryptedCredentials ? 'Yes' : 'No'
@@ -106,7 +107,7 @@ export class PanelBackupController {
 
     const importOptions = parseImportOptions(payload || {});
 
-    if (!importOptions.includeSettings && !importOptions.includeConnections) {
+    if (!importOptions.includeSettings && !importOptions.includeConnections && !importOptions.includeWorkspaceSync) {
       throw new Error('Select at least one import option.');
     }
 
@@ -114,6 +115,9 @@ export class PanelBackupController {
 
     await this.options.sendProfiles();
     RemoteEditSharedState.fireProfilesChanged(undefined, 'webview', 'importBackup');
+    if (importOptions.includeWorkspaceSync) {
+      RemoteEditSharedState.fireWorkspaceSyncChanged('webview', 'importBackup');
+    }
     this.options.postPersistentStorageSnapshot();
 
     if (importOptions.importMode === 'replace') {
@@ -131,7 +135,8 @@ export class PanelBackupController {
       Skipped: String(result.skippedUnsupported),
       FavoritesImported: String(result.favoritesImported),
       UsernamesImported: String(result.usernamesImported),
-      CredentialsRestored: String(result.credentialsRestored)
+      CredentialsRestored: String(result.credentialsRestored),
+      WorkspaceSyncMappingsImported: String(result.workspaceSyncMappingsImported)
     });
   }
 }

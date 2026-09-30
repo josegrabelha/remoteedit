@@ -8,11 +8,9 @@
   <img src="https://img.shields.io/badge/Remote%20Targets-Linux%20%7C%20Unix%20%7C%20AIX%20%7C%20Windows-6E7681" alt="Remote Targets">
 </p>
 
-**Remote Edit** is a VS Code extension for browsing, editing, transferring, and searching remote files over SSH/SFTP, FTP, and FTPS, with SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
+**Remote Edit** is a VS Code extension for browsing, editing, transferring, searching, and synchronizing files over SSH/SFTP, FTP, and FTPS. It combines a full visual remote file browser, a native VS Code Sidebar, **Workspace Sync**, and SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
 
-It supports Linux, Unix, AIX, and Windows OpenSSH targets, with protocol-specific features available depending on the remote server.
-
-Connect to remote servers, browse and edit files, transfer content, run commands, inspect server status, view logs, manage SSH port forwards, and choose the workflow that fits you best.
+Remote Edit supports Linux, Unix, AIX, and Windows OpenSSH targets, with protocol-specific features available depending on the remote server.
 
 ![Remote Edit Webview](images/remoteedit-hero.png)
 
@@ -20,34 +18,63 @@ Connect to remote servers, browse and edit files, transfer content, run commands
 
 Remote Edit is available on the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=josegrabelha.remoteedit) and the [Open VSX Registry](https://open-vsx.org/extension/josegrabelha/remoteedit).
 
-## Two Ways to Work
+## Highlights
 
-### Full-Featured Remote Edit Webview
+- SSH/SFTP, FTP, and FTPS connections
+- Full-featured Remote Edit Webview
+- Native VS Code Sidebar
+- Workspace Sync with multi-target and automatic synchronization support
+- Remote file browsing and direct editing in VS Code
+- Multiple active connections
+- Multiple simultaneous transfers and Transfer Queue
+- Unified Remote Search
+- Dedicated Log Viewer
+- Server View for SSH/SFTP connections
+- SSH Terminal access
+- Run Remote Command, Saved Commands, and Quick Tasks
+- Local and reverse SSH port forwarding
+- SFTP Jump Hosts and multi-hop saved connection chains
+- Sudo Mode on supported SSH/SFTP targets
+- File permissions and ownership management
+- Favorites, saved connections, connection groups, Clone, and Save As
+- Password-protected import/export backups
 
-The Remote Edit Webview provides the complete visual experience for managing remote servers.
+## Remote Edit Webview
+
+The **Remote Edit (Advanced View)** provides the complete visual workflow for managing remote servers.
 
 - Browse remote files and folders
 - Open and edit files directly in VS Code
-- Manage connections
+- Upload and download files and folders
+- Manage saved connections and connection groups
 - Run remote commands and Quick Tasks
 - Search remote files by name or content
-- Use Server View for system information, services, processes, scheduled jobs, and port forwarding
+- Use Server View for system information and server-side actions
 - Manage permissions and ownership
-- Use Sudo Mode
-- Upload and download files
+- Use Sudo Mode where supported
 - Monitor transfers
 
-### Native VS Code Sidebar
+The Webview and Native Sidebar can be used independently or together.
 
-Remote Edit also includes a fully native VS Code Sidebar experience.
+## Native VS Code Sidebar
 
-Use it to manage connections, open sessions, favorites, transfers, SSH terminals, import/export operations, and Log Viewer access without leaving the VS Code interface.
+Remote Edit also includes a native VS Code Sidebar for compact day-to-day access to connections and tools.
 
 ![Remote Edit Sidebar](images/remoteedit-sidebar.png)
 
-Choose the workflow that fits you best. Use the full-featured Remote Edit Webview or the native VS Code Sidebar. Both experiences can be used independently.
+Use the Sidebar to access:
 
-### Remote File Editor Labels
+- **Remote Edit (Advanced View)**
+- **Workspace Sync**
+- **Log Viewer**
+- Saved connections and Quick Connect
+- Open Connections
+- Favorites
+- Transfers
+- SSH Terminal actions
+- Import/Export backups
+
+## Remote File Editor Labels
 
 In VS Code settings, **Remote Edit: UI → Editor Root Label** (`remoteedit.editorRootLabel`) controls the virtual root shown in editor breadcrumbs and tab path descriptions:
 
@@ -58,36 +85,6 @@ The virtual root represents the remote `/` directory; it does not change the fil
 
 Changes apply to subsequent file opens. Close and reopen existing editors to use the current setting or updated connection names; their unsaved contents and undo history are not migrated or modified by changing the setting.
 
-## When to Use Remote Edit
-
-Remote Edit is useful when you need to work with remote servers without opening a full remote workspace. Use it to browse and edit files, transfer content, run commands, inspect server status, view logs, search remotely, and manage SSH port forwards directly from VS Code.
-
-## Webview or Native Sidebar?
-
-Use the Webview when you want a complete visual file browser for remote files and folders.
-
-Use the Native Sidebar when you prefer a compact VS Code workflow for connections, favorites, transfers, terminals and Log Viewer access.
-
-## Highlights
-
-- SSH/SFTP, FTP, and FTPS support
-- Full-featured Remote File Browser
-- Native VS Code Sidebar
-- Server View dashboard for SSH/SFTP connections
-- Open files directly in VS Code
-- SSH Terminal Access
-- Unified Remote Search
-- Dedicated Log Viewer
-- Quick Tasks and Saved Commands
-- SSH Port Forwarding
-- Multiple Simultaneous Transfers
-- Transfer Queue Management
-- Import and Export Backups
-- Sudo Mode
-- Permissions and Ownership Management
-- Favorites and Saved Connections
-- Multiple Active Connections
-
 ## Why Remote Edit?
 
 | Capability | Included |
@@ -97,6 +94,7 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 | FTPS | ✓ |
 | Full Visual Webview | ✓ |
 | Native VS Code Sidebar | ✓ |
+| Workspace Sync | ✓ |
 | Multiple Active Connections | ✓ |
 | Favorites | ✓ |
 | Transfer Queue | ✓ |
@@ -107,7 +105,8 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 | Saved Commands / Quick Tasks | ✓ |
 | Remote Search | ✓ |
 | Server View | ✓ |
-| Port Forwarding | ✓ |
+| Local and Reverse SSH Port Forwarding | ✓ |
+| SFTP Jump Hosts | ✓ |
 | Log Viewer | ✓ |
 | Sudo Mode | ✓ |
 | Permissions Management | ✓ |
@@ -115,18 +114,83 @@ Use the Native Sidebar when you prefer a compact VS Code workflow for connection
 | Checksums | ✓ |
 | Archive Creation | ✓ |
 
+## Workspace Sync
+
+Open **Workspace Sync** from the Remote Edit Sidebar, directly below **Remote Edit (Advanced View)**. Workspace Sync synchronizes a local directory with one or more saved Remote Edit connections without requiring a full remote VS Code workspace.
+
+![Workspace Sync](images/remoteedit-workspace-sync.png)
+
+Create a **mapping** with a Local Root and one or more remote targets. Each target uses a saved SFTP, FTP, or FTPS connection and an absolute Remote Directory.
+
+### Mappings and targets
+
+- Use **Local → Remote**, **Remote → Local**, or **Bidirectional** direction
+- Add multiple independently enabled targets to the same mapping
+- Select an individual target or **All Enabled** to work across enabled targets together
+- Use saved SFTP connections with their configured Jump Host chains
+- Keep an independent synchronization baseline for each mapping/target
+- Prevent duplicate synchronization routes that point the same Local Root to the same connection and Remote Directory
+- Configure Ignore patterns per mapping; `.git/` and `node_modules/` are ignored by default
+- Workspace Sync uses its own Ignore list and does not read `.gitignore`
+
+### Refresh and Changes
+
+Connecting a target automatically performs a **Refresh** of the Local and Remote state. Use **Refresh** at any time to reconcile the current state again.
+
+The **Changes** view provides:
+
+- Changes, Modified, Local, Remote, Conflicts, Same, and All filters
+- Path filtering and sortable Target, Path, and Status columns
+- Multi-selection with Upload and Download actions
+- Local/Remote comparison for supported text files
+- Conflict choices such as **Use Local**, **Use Remote**, or **Skip**
+- A **Sync Review** before planned synchronization is applied
+- **Reset Baseline…** to clear synchronization history without modifying Local or Remote files
+- A read-only last known state while disconnected, until the next successful Refresh
+
+With **All Enabled**, Workspace Sync aggregates enabled targets into one Changes view and can Refresh or Sync the connected targets together. Disconnected targets are not connected automatically.
+
+### Automatic synchronization
+
+Workspace Sync can automate selected workflows while a target is connected:
+
+- **Upload on Save** — uploads files saved from the VS Code editor
+- **Watch Local Changes** — reacts to local filesystem changes
+- **Watch Remote Changes** — monitors changes on the remote target
+- **Unknown Change Protection** — prevents automatic decisions when there is not enough trusted history to determine the safe side
+- **Atomic Transfer when supported** — avoids replacing the destination until a transfer completes successfully
+- **Propagate Deletes** — allows deletions to flow according to the selected sync direction
+
+Watch and Upload on Save never establish a connection by themselves. Automatic resources are active only for targets that the user has explicitly connected.
+
+In one-way modes, the configured source side is authoritative for automatic watch actions. In Bidirectional mode, Workspace Sync compares both sides against the stored baseline and keeps conflicts or ambiguous differences manual.
+
+### Activity and operation status
+
+The **Activity** section records connection changes, manual and automatic operations, file results, conflicts, retries, cancellations, and actionable error details with local timestamps.
+
+The bottom operation status shows the current lifecycle, such as Connecting, Refreshing, Syncing, Uploading, Downloading, Cancelling, or Disconnecting. Multi-target operations show aggregate progress while detailed per-target events remain in Activity.
+
+Activity also provides **Follow latest**, **Copy**, and **Clear** controls. Credentials are redacted from Activity messages. The most recent **1,000 Activity events** are kept locally across VS Code reloads and restarts; **Clear** removes that saved local history.
+
+### Workspace Sync backup behavior
+
+Import/Export can include Workspace Sync mappings, targets, and options. Operational state such as Activity history, active sessions, comparison snapshots, current selection, and synchronization baselines stays local and is not exported.
+
 ## Supported Protocols
 
-| Protocol | Browse | Upload | Download | Edit | File Search | Content Search | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode |
+| Protocol | Browse / Edit | Upload / Download | File Search | Content Search | Workspace Sync | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode | Jump Hosts |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - |
-| FTP | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - | - |
-| FTPS | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | - | - |
+| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | ✓ |
+| FTP | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - |
+| FTPS | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - |
+
+FTP and FTPS Remote Search supports file-name/path search. Content search requires SSH/SFTP.
 
 ## Server View
 
-Switch an active SSH/SFTP connection from **Files** to **Server** to inspect and manage common server-side information without leaving the Remote Edit Webview.
+Switch an active SSH/SFTP connection from **Files** to **Server** to inspect and manage common server-side information without leaving Remote Edit.
 
 ![Remote Edit Server View](images/remoteedit-server-view.png)
 
@@ -134,54 +198,50 @@ Switch an active SSH/SFTP connection from **Files** to **Server** to inspect and
 - Inspect services and run supported start, stop, and restart actions
 - Review running processes and kill selected processes when needed
 - Open, follow, edit, or copy saved server log shortcuts
-- Review scheduled jobs from user crontab and system cron locations on Linux/Unix/AIX, or Scheduled Tasks on Windows OpenSSH sessions
-- Manage SSH port forwarding definitions from the Port Forwarding card
-- Run saved commands as Quick Tasks from the Server View
-- Use manual refresh or optional auto refresh intervals while the Server View is open
-- Refresh automatically when Sudo Mode is enabled or disabled while the Server View is active
+- Review user and system scheduled jobs on Linux/Unix/AIX, or Scheduled Tasks on Windows OpenSSH
+- Manage local and reverse SSH port forwarding definitions
+- Run Saved Commands as Quick Tasks
+- Use manual refresh or optional auto-refresh intervals
 
-Server View is available for Linux/Unix/AIX SSH/SFTP connections and Windows OpenSSH sessions. Windows Server View uses PowerShell to collect system information, memory, disks, services, processes, Scheduled Tasks, listeners, and session details. Sudo Mode remains unavailable on Windows; Windows Server View uses the permissions of the connected SSH user.
+Server View is available for Linux/Unix/AIX SSH/SFTP connections and Windows OpenSSH sessions. Windows Server View uses PowerShell for supported system information and management tasks. Sudo Mode is not available on Windows OpenSSH targets.
 
 ## Remote Search
 
-Use Remote Search from the Webview toolbar to find remote files without leaving the current connection. Remote Search is Webview-only and keeps search state per active connection.
+Use Remote Search from the Webview toolbar to find remote files without leaving the current connection.
 
 ![Remote Search](images/remoteedit-remote-search.png)
 
 - Search file names and paths with wildcard support
 - Choose a scope path manually or with the remote directory picker
-- Include or exclude subdirectories
-- Include or exclude hidden files
+- Include or exclude subdirectories and hidden files
 - Use case-sensitive matching when needed
-- Search inside files on SSH/SFTP connections, including Windows OpenSSH sessions
-- Use sudo for protected SSH/SFTP paths when Sudo Mode is available
+- Search inside files on SSH/SFTP connections
+- Use Sudo Mode for protected SSH/SFTP paths when available
 - View live results while the search is running
-- Keep searches running after closing the modal and track active searches with the toolbar badge
+- Keep searches running after closing the dialog
 - Stop long-running searches
-- Copy all results, selected paths, or selected filenames
-- Open result files in edit or read-only mode
+- Copy results, paths, or filenames
+- Open results in edit or read-only mode
 
-FTP and FTPS connections support file name search. Content search requires SSH/SFTP. Sudo search is available only on SSH/SFTP sessions that support Sudo Mode.
+FTP and FTPS support file-name/path search. Content search requires SSH/SFTP.
 
 ## Run Remote Command
 
-Run non-interactive commands on active SSH/SFTP connections without leaving the Webview. Windows OpenSSH sessions run command features through PowerShell.
+Run non-interactive commands on active SSH/SFTP connections without leaving the Webview. Windows OpenSSH sessions use PowerShell for command features.
 
 ![Run Remote Command](images/remoteedit-run-remote-command.png)
 
-- Open Run Remote Command from the Webview toolbar or from a remote directory context
-- Choose the remote working directory manually or with the remote directory picker
-- Stream stdout and stderr output while the command is running
-- Stop long-running commands and force kill commands that do not stop cleanly
-- Copy or clear command output
+- Run commands from the Webview toolbar or a remote directory context
+- Choose the remote working directory manually or with the directory picker
+- Stream stdout and stderr
+- Stop long-running commands and force-kill commands that do not stop cleanly
+- Copy or clear output
 - Save frequently used commands per connection
-- Save and restore the remote path used by each saved command
-- Reuse command history for the current session
-- Run with Sudo Mode when the active SSH/SFTP connection supports sudo
+- Save and restore the Remote Path for each Saved Command
+- Reuse session command history
+- Run with Sudo Mode when supported
 
-Saved Commands are also available as Quick Tasks in Server View. Command history is session-only and is not included in backups.
-
-Remote Commands require SSH/SFTP because FTP/FTPS cannot execute remote shell commands.
+Saved Commands are also available as **Quick Tasks** in Server View. Command history is session-only and is not included in backups.
 
 ## Log Viewer
 
@@ -189,43 +249,45 @@ Use Log Viewer from an active SSH/SFTP connection to monitor remote logs without
 
 ![Log Viewer](images/remoteedit-log-viewer.png)
 
-- Open logs from the Webview toolbar, file context menu, or Primary Sidebar context menu
+- Open logs from the Webview toolbar, file context menu, or Sidebar
 - Tail and follow remote log files in real time
-- Use Linux/Unix/AIX-friendly `tail` fallbacks and Windows PowerShell `Get-Content -Wait` for Windows OpenSSH sessions
 - Keep multiple logs open in tabs
 - Pause and resume displayed updates with bounded buffering
-- Search loaded log content, jump between matches, or show matching lines only
-- Enable case-sensitive search when needed
-- Auto-scroll with jump-to-bottom behavior
-- Optional log level highlighting for common text and structured formats, including syslog/journald, Linux auditd and SELinux/rsyslog signatures, Pino/Bunyan, OpenTelemetry, Serilog, ASP.NET Core, ANSI-colored output, multiline stack traces, and standard application log levels
-- Optional JSON log formatting with `Auto`, `On`, and `Off` modes
-- Optional line wrap and line numbers
-- Uses Sudo Mode when the active SSH/SFTP connection has sudo enabled
+- Search loaded content, navigate matches, or show matching lines only
+- Enable case-sensitive search
+- Use stable auto-scroll with pending-line awareness and jump-to-latest behavior
+- Highlight common text and structured log levels, including Linux/Unix/AIX and Windows-oriented formats
+- Handle ANSI-colored output and multiline stack traces
+- Format JSON logs with `Auto`, `On`, and `Off` modes
+- Toggle line wrap and line numbers
+- Use Sudo Mode when the active SSH/SFTP connection supports it
 
-Log Viewer is intentionally limited to SSH/SFTP connections because FTP/FTPS cannot run remote follow commands. The viewer shows continuity markers when output is limited, portable tail mode is used, or older buffered lines are discarded. Level classification is bounded to the beginning of large text records and cached with each loaded line, so scrolling and re-rendering do not repeatedly reclassify the same content.
+Log Viewer is limited to SSH/SFTP because FTP/FTPS cannot run remote follow commands.
 
-## Transfer Queue
+## Transfer Queue and File Transfers
 
-Upload and download files with built-in queue management.
+Upload and download files and folders with built-in queue management.
 
-- Current transfers
-- Pending transfers
-- Completed transfers
+- Current, pending, and completed transfers
 - Individual transfer cancellation
 - Progress tracking
 - Multiple simultaneous transfers
-- Drag-and-drop upload from the OS into the Webview file list or Sidebar Open Connections tree
-- In the Webview, hover over a remote folder row while dragging to open that folder before dropping, including `..` for the parent folder.
-- Sidebar drag-and-drop uses local paths exposed by VS Code. If paths are unavailable, use the Upload button or the Webview drop area.
+- Recursive folder transfers
+- Conflict handling
 - FTP, FTPS, and SFTP support
+- Drag-and-drop upload from the OS into the Webview or Sidebar Open Connections tree
+
+In the Webview, hovering over a remote folder while dragging can open that folder before the drop, including `..` for the parent folder.
+
+Configure normal Remote Edit transfer concurrency with:
 
 ```json
 "remoteedit.maxConcurrentTransfers": 2
 ```
 
-Default: 2  
-Minimum: 1  
-Maximum: 5
+Default: `2`
+Minimum: `1`
+Maximum: `5`
 
 ## SSH Terminal
 
@@ -235,30 +297,66 @@ Terminal access is available from both the Webview and the Native Sidebar.
 
 ## Port Forwarding
 
-For SSH/SFTP connections, Remote Edit can manage local and reverse SSH port forwarding definitions from the Server View.
+For SSH/SFTP connections, Remote Edit can manage **Local** and **Remote** SSH port forwarding definitions from Server View.
 
-- Add and edit named port forwards, choosing **Local** (local-to-remote) or **Remote** (reverse, remote-to-local) direction
+- **Local** — local-to-remote forwarding
+- **Remote** — reverse, remote-to-local forwarding
 - Start and stop forwards from the Port Forwarding card
 - Optionally auto-start selected forwards when a connection opens
-- Save port forward definitions as part of Remote Edit backups
+- Save forwarding definitions in Remote Edit backups
 
-Reverse forwards ask the remote SSH server to listen on a bind host/port and forward incoming connections back to a target on your machine. The remote sshd needs `GatewayPorts` enabled to bind non-loopback hosts.
+Reverse forwarding asks the remote SSH server to listen on a bind host/port and forward incoming connections back to a target reachable from your machine. Binding reverse forwards to non-loopback remote addresses depends on the remote SSH server configuration, including `GatewayPorts` where applicable.
 
-Runtime state is not exported. Backups save the definitions, not whether a forward was running at the time of export.
+Backups store forwarding definitions, not their current running/stopped state.
+
+## SFTP Jump Hosts
+
+Saved SFTP connections can reach a target through one or more other saved SFTP profiles.
+
+Set **Jump Host** to **Direct connection** or select another saved SFTP profile. Jump Hosts can themselves use another saved SFTP Jump Host, allowing multi-hop chains such as:
+
+```text
+Local → D → C → B → A
+```
+
+For a target `A` reached through `B`, `C`, and outermost host `D`:
+
+1. Set `D` to **Direct connection**.
+2. Set `C` to use `D`.
+3. Set `B` to use `C`.
+4. Set `A` to use `B`.
+
+Remote Edit validates missing profiles, self-references, cycles, and invalid non-SFTP hops before connecting. Each hop uses its own saved or prompted credentials. Passwords and private-key passphrases are stored only when explicitly saved through VS Code Secret Storage.
+
+Jump Host references are preserved by current Remote Edit backups. Workspace Sync also resolves the Jump Host chain of saved SFTP connections used by its targets.
+
+FTP and FTPS remain direct connections.
 
 ## Sudo Mode
 
-Need to edit protected system files?
+Need to edit protected system files on supported SSH/SFTP targets? Enable **Sudo Mode** and work with privileged files directly from VS Code.
 
-Enable Sudo Mode and work with privileged files directly from VS Code.
+Sudo passwords are never stored and are kept only in memory for the active session.
 
-Sudo passwords are never stored and are only kept in memory during the active session.
+## Remote File Browser and File Operations
 
-## Remote Path Breadcrumb Picker
+Use the Webview and Native Sidebar context menus to manage remote files and folders.
 
-The Remote Path bar includes clickable breadcrumb chevrons for quickly jumping to sibling directories. The directory picker can show owner/group and permission details in aligned columns for POSIX-compatible SSH/SFTP sessions. Its permission value follows the Webview permission display setting, so it can show symbolic, numeric, or combined permissions when the remote server provides compatible permission data. Windows OpenSSH sessions hide POSIX owner/group/permission metadata because NTFS ACLs do not map reliably to SFTP POSIX fields.
+- View/Edit files or open them read-only
+- Create, rename, and delete remote files and folders
+- Make a copy of an existing remote file
+- Compare two selected remote files
+- Compress files or folders into remote archives where supported
+- View file and folder properties
+- Calculate checksums
+- Copy remote paths, filenames, or the current path
+- Cut and paste remote files or folders within the same connection
+- Drag selected remote items onto folders to move them within the same connection
+- Refresh listings after remote changes
 
-Use this setting to hide those details when you prefer a simpler directory list:
+### Remote Path breadcrumb
+
+The Remote Path bar includes clickable breadcrumb chevrons for navigating parent and sibling directories. On POSIX-compatible SSH/SFTP targets, the picker can show owner/group and permission details.
 
 ```json
 "remoteedit.webview.remotePathBreadcrumb.showDirectoryDetails": true
@@ -266,175 +364,89 @@ Use this setting to hide those details when you prefer a simpler directory list:
 
 Default: `true`
 
-## Permission Display
+### Permission display
 
-The Webview file list and Remote Path directory picker can show POSIX permissions in symbolic, numeric, or combined format. Numeric permissions use 4-digit octal values so special bits are visible when present. Windows OpenSSH sessions hide POSIX permission columns and ignore this display setting.
+The Webview file list and Remote Path picker can show POSIX permissions as symbolic, numeric, or both. Numeric values use four-digit octal notation so special bits remain visible.
 
 ```json
 "remoteedit.webview.fileList.permissionsDisplay": "symbolic"
 ```
 
 Supported values: `symbolic`, `numeric`, `both`
-
 Default: `symbolic`
 
-File and directory Properties and Sidebar hover details show the complete symbolic plus 4-digit octal value when symbolic permissions are available on POSIX-compatible sessions. Windows OpenSSH sessions hide POSIX owner/group/permission metadata in file lists, properties, breadcrumbs, and Sidebar details.
+Windows OpenSSH sessions hide POSIX owner/group/permission metadata because NTFS ACLs do not map reliably to SFTP POSIX fields.
 
-## File Operations
+### Permissions and ownership
 
-Use the Webview and Native Sidebar context menus to manage remote files and folders.
-
-- View/Edit files or open them as read-only
-- Create, rename and delete remote files and folders
-- Make a copy of an existing remote file
-- Compare two selected remote files
-- Compress files or folders to remote archives
-- View file and folder properties
-- Calculate checksums
-- Copy remote paths, filenames, or the current remote path
-- Cut and paste remote files or folders to move them within the same connection. In the Webview, use Paste Here from empty space, file rows, or folder rows when the current directory is a valid destination, or Paste Into This Folder from a folder row.
-- Drag selected remote files or folders onto a folder row in the Webview or Sidebar Open Connections tree to move them within the same connection.
-- Refresh listings after remote changes
-
-## Permissions and Ownership
-
-Manage permissions, owners and groups directly from VS Code.
-
-- Multiple selection support
-- Recursive updates
-- File and folder support
-
-## Upload and Download
-
-Transfer files and folders between your local machine and remote servers.
-
-- Recursive folder transfers
-- Conflict handling
-- Progress tracking
-- Queue management
-- Multiple simultaneous transfers
-- Drag-and-drop upload from the OS into the Webview file list or Sidebar Open Connections tree
-- In the Webview, hover over a remote folder row while dragging to open that folder before dropping, including `..` for the parent folder.
-- Sidebar drag-and-drop uses local paths exposed by VS Code. If paths are unavailable, use the Upload button or the Webview drop area.
+On supported POSIX-compatible SSH/SFTP targets, Remote Edit can update permissions, owner, and group information, including multiple selection and recursive operations.
 
 ## Saved Connections
 
 Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 
+- Connection groups
 - Password authentication
-- SSH private key authentication
-- Optional private key passphrases
+- SSH private-key authentication
+- Optional private-key passphrases
 - Start paths
-- Connection favorites
-- Secure credential storage
+- Favorites
+- Jump Host references for SFTP profiles
+- Secure credential storage through VS Code Secret Storage
 
-## SFTP Jump Hosts
-
-An SFTP connection can reach its target through one or more saved SFTP profiles. In either the Webview connection form or the Native Sidebar connection details, set **Jump Host** to:
-
-- **Direct connection** to connect to the target normally and clear a previously saved Jump Host.
-- A saved SFTP profile to use that profile as the hop nearest the target.
-
-Quick Connect can also use a saved SFTP profile as its Jump Host, but temporary and unsaved connections never become Jump Host candidates. Each saved Jump Host can select another saved SFTP profile, so finite nested chains are supported without an artificial depth limit.
-
-In the Webview, the Jump Host picker includes a **Filter jump hosts...** field that filters eligible saved profiles by connection details while keeping **Direct connection** pinned and always available. The route summary remains visible below the picker, using **Route: Direct** for a direct connection or the resolved `Local → ... → Target` chain for a saved Jump Host.
-
-When creating a connection with **Remote Edit: Add Connection** in the Native Sidebar (`remoteedit.sidebar.newConnection`), the SFTP wizard asks for a Jump Host after the username. The picker starts with **Direct connection** and shows each eligible saved profile's endpoint and route. It still offers **Direct connection** when there are no saved candidates. Pressing Esc at this step exits without saving a connection or credentials. FTP/FTPS creation skips this step.
-
-For a target `A` reached through `B`, `C`, and outermost host `D`, configure the saved profiles in this order:
-
-1. Set `D` to **Direct**.
-2. Set `C` to use `D`.
-3. Set `B` to use `C`.
-4. Set `A` to use `B`.
-
-Remote Edit then connects along `Local → D → C → B → A`. Selecting a Jump Host does not pre-connect a visible session, start a local listener, or create a configurable port mapping. The extension creates a private SSH client for each hop, opens one internal SSH forwarding stream to the next host, and supplies that stream directly as the next SSH connection's socket. Only the outermost host is probed from the workstation. Each final target owns its hidden chain, so disconnecting one target leaves other targets' chains intact.
-
-Jump references are validated before network work begins. Self-references, cycles, missing profiles, and FTP/FTPS profiles are rejected instead of silently falling back to Direct. A profile that is still used as a Jump Host cannot be deleted or changed to FTP/FTPS until its references are removed. Renaming or moving a profile keeps its reference identity. Deleting a group alone preserves its connections; deleting the group and its connections is allowed only when no connection outside the group depends on them.
-
-Each hop uses its own saved password or private key and passphrase. A missing Jump password is requested before connecting and is used only for that attempt; it is not saved automatically. Esc cancels the attempt in both interfaces. Private-key passphrases are requested when needed during connection. Credentials use VS Code Secret Storage, while route summaries expose profile names only.
-
-Errors identify the failing hop and connection stage. Failure, cancellation, and disconnect release the final SFTP client and its hidden chain, including any hops opened before a connection attempt is canceled. A remote close removes the connection from the active list and updates both interfaces. Cleanup allows up to five seconds for the final SFTP client to end before forcing its transport closed.
-
-Jump Hosts are available only for SSH/SFTP. FTP and FTPS remain direct because their separate dynamic data connections require a different proxy design.
-
-### Jump Host backup compatibility
-
-| Backup | Current extension behavior |
-| --- | --- |
-| Version 1 or 2 | Imports connections as Direct. A merge overwrites an existing same-ID Jump reference with Direct. |
-| Version 3 | Preserves profile IDs and Jump references, regardless of connection order in the file. Older extensions that support only v1/v2 reject v3. |
-
-Merge validates the resulting graph, including retained existing profiles and overwritten Jump profiles. Replace uses only imported profiles, so every referenced Jump Host must be included. Replace removes the old profiles' stored credentials before restoring any explicitly selected credentials. A merge without credential restoration keeps existing stored credentials.
-
-Ordinary backup connection entries contain no passwords or passphrases. Selecting credential export adds a password-protected scrypt/AES-256-GCM block; restoration is also explicit and matches credentials by profile ID. Version, reference-graph, and decryption checks run before settings or stored data are changed. This preflight protection is not a transaction across VS Code settings, connection storage, and Secret Storage. Settings-only imports remain available independently of connection imports.
-
-### Isolated topology verification
-
-To prove that traffic cannot bypass the configured chain, use disposable hosts or containers with this network policy:
-
-1. Allow the workstation to reach only `D` over SSH; block direct workstation access to `C`, `B`, and `A`.
-2. Allow `D → C`, `C → B`, and `B → A` over SSH, and block non-required paths. Make `A`'s test hostname resolvable from `B` but not from the workstation.
-3. Create the four saved SFTP profiles and Jump selections in the order above. Use test-only accounts and credentials.
-4. Connect to `A` and verify directory browsing, file read/write, upload, and download. Confirm the displayed route is `Local → D → C → B → A`.
-5. Repeat with a blocked middle edge, invalid middle-hop authentication, and user cancellation. Confirm the reported stage identifies the failing hop and that server-side SSH sessions close after failure, cancellation, and normal disconnect.
-6. Repeat with two targets sharing a saved Jump profile, remote closure, and cancellation during connection setup. Confirm one target's cleanup does not close the other and that both interfaces remove closed connections.
-7. Run `npm test` for the deterministic graph, credentials, backup, UI message, cancellation, and cleanup regression suite. These controlled tests complement the isolated network and VS Code UI checks above.
+Use **Clone** to create an independent copy of a saved connection. Use the **Save** split button and **Save As...** to create a new saved profile from the current values without modifying the original.
 
 ## Import and Export
 
-Create password-protected backups of Remote Edit data:
+Create password-protected backups of Remote Edit data, including selected categories such as:
 
 - Remote Edit settings
 - Saved connections
-- Remote path favorites
-- Encrypted credentials
-- Saved Commands with Remote Path
+- Remote Path favorites
+- Encrypted credentials when explicitly selected
+- Saved Commands and their Remote Paths
 - Port Forwarding definitions
 - Server Log Shortcuts
 - Log Viewer favorite files
+- Workspace Sync mappings, targets, and options
 
-Import supports Merge and Replace modes and provides a summary before changes are applied. Webview and Sidebar import/export actions use the same shared backend data source, so backups are consistent from either entry point.
+Import supports **Merge** and **Replace** modes and shows a summary before changes are applied. Webview and Sidebar import/export actions use the same backend data source.
 
-Session-only data is not included in backups. This includes command history, diagnostics debug/performance logging, open tabs, running/stopped state, Sudo Mode state, transfer runtime state, filters, and Log Viewer buffers.
-
-## Managing Saved Connections
-
-Open **Manage Saved Connections** from the button next to **Connection profile** to filter, group, reorder, rename, clone, or remove saved profiles. Hover a saved connection and choose **Clone** to create an independent copy directly below the source. The clone keeps the same connection settings, group, Jump Host reference, remote path favorites, and any password or private-key passphrase already stored in VS Code Secret Storage, but receives a new profile ID.
-
-Clones are named `Name (copy)`, then `Name (copy 2)`, `Name (copy 3)`, and so on when needed. After cloning, the new connection is selected and its name opens for editing immediately.
-
-For a saved connection, the **Save** control is a split button. Click **Save** to update the selected profile, or open the chevron menu and choose **Save As...** to create a new profile from the values currently shown in the connection form. Save As suggests the same `(copy)` naming pattern and asks for both the new connection name and its connection group before saving. The current group is preselected, but you can choose another group, no group, or create a new group. Remote path favorites are preserved, and unchanged credentials are carried through VS Code Secret Storage without modifying the original profile.
+Operational and session-only state is not included in backups. Examples include open tabs, active connections, running transfers, Sudo Mode state, Log Viewer buffers, command history, Workspace Sync Activity history, sessions, comparison snapshots, and synchronization baselines. Workspace Sync Activity is retained locally across VS Code reloads and restarts, but it is not transferred through Import/Export.
 
 ## Quick Access
 
 Open Remote Edit from:
 
+- VS Code Activity Bar / Primary Sidebar
 - Command Palette
-- VS Code Primary Sidebar
 - Editor Title Bar Button
 - Status Bar Button
 
-## Native Sidebar Details
+The Sidebar provides direct access to the Advanced View, Workspace Sync, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, transfers, and backup actions.
 
-The Primary Sidebar provides quick access to the main Remote Edit Webview, Log Viewer, saved connections, Quick Connect, open remote sessions, favorites, transfers, and import/export backups.
-
-The Log Viewer item appears below `Remote Edit (Advanced View)` and is enabled when there is an active SSH/SFTP connection, including Windows OpenSSH sessions.
-
-Open Connections uses a breadcrumb path tree by default. The parent folder chain is displayed as clickable folder nodes above the current directory, keeping the current folder focused while still making parent navigation easy without the redundant Go Parent Folder item. When navigating back to a parent folder, previously focused child folders are shown collapsed so the breadcrumb layout stays focused on the current directory. Users who prefer the shorter layout can set `remoteedit.sidebar.openConnections.pathView` to `compact`, and users who prefer the expanded path tree can set it to `fullPathTree`.
+Open Connections uses a breadcrumb path tree by default. Users who prefer a shorter or more expanded layout can use `remoteedit.sidebar.openConnections.pathView`.
 
 ## Multiple Active Connections
 
-Work with multiple remote servers at the same time and quickly switch between active connections.
+Work with multiple remote servers at the same time and quickly switch between active connections. Runtime state remains isolated per active connection.
 
 ## Extension Settings
 
 ### User Interface
 
+- `remoteedit.editorRootLabel`
 - `remoteedit.editorTitleButtonPosition`
 - `remoteedit.statusBarButtonPosition`
 - `remoteedit.statusBarButtonStyle`
 - `remoteedit.statusBarButtonPriority`
+
+### Workspace Sync UI
+
+- `remoteedit.workspaceSync.editorTitleButtonPosition` — controls whether the Workspace Sync button appears in the Editor Title area. Default: `hidden`.
+- `remoteedit.workspaceSync.statusBarButtonPosition` — controls where the Workspace Sync Status Bar button appears: `left`, `right`, or `hidden`. Default: `left`.
+- `remoteedit.workspaceSync.statusBarButtonStyle` — controls whether the Status Bar button shows the icon and text, icon only, or text only. Default: `iconAndText`.
+- `remoteedit.workspaceSync.statusBarButtonPriority` — controls the button priority within the selected Status Bar alignment group. Default: `999`, immediately after the default Remote Edit priority of `1000` when both are shown on the left.
 
 ### Webview
 
@@ -479,18 +491,19 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 ### Diagnostics
 
-- `remoteedit.diagnostics.debugLogs` — Enable debug logs for the current VS Code session. Automatically turns off when VS Code is restarted or reloaded.
-- `remoteedit.diagnostics.performanceLogs` — Enable performance timing logs for the current VS Code session. Automatically turns off when VS Code is restarted or reloaded.
+- `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including Remote Edit and Workspace Sync lifecycle, Watch/reconciliation, planner, and FTP/FTPS/SFTP diagnostics
+- `remoteedit.diagnostics.performanceLogs` — enable performance timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, incremental view updates, and multi-target operations
 
-Enable debug and performance logs only while troubleshooting directory browsing, cache behavior, transfers, Remote Search, or Log Viewer sessions. Then reproduce the issue and copy the relevant entries from the `Remote Edit` Output channel when opening a GitHub issue.
+Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
 
 ## Security
 
-- Credentials can be stored using VS Code Secret Storage
+- Saved credentials use VS Code Secret Storage
+- Prompted Workspace Sync credentials remain session-only unless already stored with the saved connection
 - FTPS supports certificate validation
 - Sudo passwords are never saved
-- Password-protected import/export backups
-- SFTP and FTPS are recommended for secure connections
+- Optional credential export uses password-protected encrypted backup data
+- SFTP and FTPS are recommended when secure transport is required
 
 ## Requirements
 
@@ -499,6 +512,7 @@ Enable debug and performance logs only while troubleshooting directory browsing,
 ## Notes
 
 - Symbolic links are skipped during recursive transfers.
+- Feature availability depends on the selected protocol and remote operating system.
 
 ## License
 

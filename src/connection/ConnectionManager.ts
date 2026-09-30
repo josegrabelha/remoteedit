@@ -6,6 +6,12 @@ import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '..
 import { RemoteEditOperationCancelledError } from '../utils/progressUtils';
 import { DEFAULT_CONNECTION_TYPE, getDefaultPortForConnectionType, isKnownConnectionType, normalizeConnectionType, SFTP_CONNECTION_TYPE, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
 import { resolveJumpProfileChain, type JumpProfileDescriptor } from './JumpChain';
+import {
+  getWorkspaceSyncBackupState,
+  prepareWorkspaceSyncBackupImport,
+  writeWorkspaceSyncMappings,
+  type WorkspaceSyncBackupState
+} from '../workspaceSync/mapping/WorkspaceMappingStore';
 
 export type AuthType = 'password' | 'privateKey';
 
@@ -31,6 +37,11 @@ export interface ConnectionProfile {
   updatedAt: number;
 }
 
+export interface ConnectionProfileCredentials {
+  password?: string;
+  passphrase?: string;
+}
+
 export interface ConnectionGroup {
   id: string;
   name: string;
@@ -45,6 +56,7 @@ export type RemoteEditImportMode = 'merge' | 'replace';
 export interface ConnectionBackupExportOptions {
   includeSettings: boolean;
   includeConnections: boolean;
+  includeWorkspaceSync?: boolean;
   includeFavorites: boolean;
   includeUsernames: boolean;
   includeCredentials: boolean;
@@ -55,6 +67,7 @@ export interface ConnectionBackupExportOptions {
 export interface ConnectionBackupImportOptions {
   includeSettings: boolean;
   includeConnections: boolean;
+  includeWorkspaceSync?: boolean;
   includeFavorites: boolean;
   includeUsernames: boolean;
   restoreCredentials: boolean;
@@ -125,10 +138,12 @@ export interface RemoteEditBackupFile {
   serverLogShortcuts?: Record<string, unknown[]>;
   portForwards?: Record<string, unknown[]>;
   logViewerFavorites?: Record<string, string[]>;
+  workspaceSync?: WorkspaceSyncBackupState;
 }
 
 export interface RemoteEditBackupSummary {
   hasSettings: boolean;
+  hasWorkspaceSync: boolean;
   connectionCount: number;
   connectionGroupCount: number;
   supportedConnectionCount: number;
@@ -140,6 +155,8 @@ export interface RemoteEditBackupSummary {
   serverLogShortcutCount: number;
   portForwardCount: number;
   logViewerFavoriteCount: number;
+  workspaceSyncMappingCount: number;
+  workspaceSyncTargetCount: number;
 }
 
 export interface RemoteEditBackupImportResult {
@@ -156,6 +173,8 @@ export interface RemoteEditBackupImportResult {
   serverLogShortcutsImported: number;
   portForwardsImported: number;
   logViewerFavoritesImported: number;
+  workspaceSyncMappingsImported: number;
+  workspaceSyncTargetsImported: number;
 }
 
 interface StoredCredentialMap {
@@ -173,6 +192,10 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   statusBarButtonPosition: 'left',
   statusBarButtonStyle: 'iconAndText',
   statusBarButtonPriority: 1000,
+  'workspaceSync.editorTitleButtonPosition': 'hidden',
+  'workspaceSync.statusBarButtonPosition': 'left',
+  'workspaceSync.statusBarButtonStyle': 'iconAndText',
+  'workspaceSync.statusBarButtonPriority': 999,
   'webview.remotePathBreadcrumb.showDirectoryDetails': true,
   'webview.fileList.openOnNameClick': true,
   'webview.fileList.permissionsDisplay': 'symbolic',
@@ -423,6 +446,24 @@ export class ConnectionManager {
 
     const profile = this.normalizeStoredProfile(storedProfile);
     return { id: profile.id, name: profile.name, groupId: profile.groupId };
+  }
+
+  /**
+   * Returns the secure credentials associated with a saved connection profile.
+   * This is intentionally configuration-only: callers receive no active
+   * Remote Edit session, socket, cache, or connection lifecycle state.
+   */
+  async getProfileCredentials(profileId: string): Promise<ConnectionProfileCredentials> {
+    const id = String(profileId || '').trim();
+    if (!id) return {};
+    const [password, passphrase] = await Promise.all([
+      this.context.secrets.get(secretKey(id, 'password')),
+      this.context.secrets.get(secretKey(id, 'passphrase'))
+    ]);
+    return {
+      ...(password ? { password } : {}),
+      ...(passphrase ? { passphrase } : {})
+    };
   }
 
   async cloneProfile(profileId: string): Promise<ConnectionProfile> {
@@ -831,7 +872,8 @@ export class ConnectionManager {
       savedCommands: persistentStorage?.savedCommands,
       serverLogShortcuts: persistentStorage?.serverLogShortcuts,
       portForwards: persistentStorage?.portForwards,
-      logViewerFavorites: includeConnections ? this.getLogViewerFavoritesSnapshot() : undefined
+      logViewerFavorites: includeConnections ? this.getLogViewerFavoritesSnapshot() : undefined,
+      workspaceSync: options.includeWorkspaceSync ? getWorkspaceSyncBackupState(this.context) : undefined
     };
 
     if (includeCredentials) {
@@ -850,11 +892,13 @@ export class ConnectionManager {
       Settings: Boolean(backup.settings),
       Profiles: backup.connections?.length || 0,
       Groups: backup.connectionGroups?.length || 0,
+      WorkspaceSyncMappings: backup.workspaceSync?.mappings.length || 0,
       Credentials: Boolean(backup.encryptedCredentials)
     });
     this.logPerformance('Built Remote Edit backup file', timer(), {
       Profiles: backup.connections?.length || 0,
-      Groups: backup.connectionGroups?.length || 0
+      Groups: backup.connectionGroups?.length || 0,
+      WorkspaceSyncMappings: backup.workspaceSync?.mappings.length || 0
     });
     return backup;
   }
@@ -865,9 +909,11 @@ export class ConnectionManager {
     const connections = Array.isArray(backup.connections) ? backup.connections : [];
     const connectionGroups = normalizeBackupConnectionGroups(backup.connectionGroups || []);
     const supportedConnections = connections.filter(connection => isSupportedBackupConnection(connection));
+    const workspaceSyncMappings = Array.isArray(backup.workspaceSync?.mappings) ? backup.workspaceSync!.mappings : [];
 
     return {
       hasSettings: Boolean(backup.settings && typeof backup.settings === 'object'),
+      hasWorkspaceSync: Boolean(backup.workspaceSync && typeof backup.workspaceSync === 'object'),
       connectionCount: connections.length,
       connectionGroupCount: connectionGroups.length,
       supportedConnectionCount: supportedConnections.length,
@@ -881,7 +927,9 @@ export class ConnectionManager {
       savedCommandCount: countCollectionItems(backup.savedCommands),
       serverLogShortcutCount: countCollectionItems(backup.serverLogShortcuts),
       portForwardCount: countCollectionItems(backup.portForwards),
-      logViewerFavoriteCount: countCollectionItems(backup.logViewerFavorites)
+      logViewerFavoriteCount: countCollectionItems(backup.logViewerFavorites),
+      workspaceSyncMappingCount: workspaceSyncMappings.length,
+      workspaceSyncTargetCount: workspaceSyncMappings.reduce((count, mapping) => count + (Array.isArray(mapping?.targets) ? mapping.targets.length : 0), 0)
     };
   }
 
@@ -889,9 +937,13 @@ export class ConnectionManager {
     const timer = createPerformanceTimer();
     const backupVersion = validateBackupVersion(backup);
 
-    if (!options.includeSettings && !options.includeConnections) {
+    if (!options.includeSettings && !options.includeConnections && !options.includeWorkspaceSync) {
       throw new Error('Select at least one import option.');
     }
+
+    const preparedWorkspaceSyncImport = options.includeWorkspaceSync && backup.workspaceSync
+      ? prepareWorkspaceSyncBackupImport(this.context, backup.workspaceSync, options.importMode)
+      : undefined;
 
     const result: RemoteEditBackupImportResult = {
       settingsImported: false,
@@ -906,13 +958,20 @@ export class ConnectionManager {
       savedCommandsImported: 0,
       serverLogShortcutsImported: 0,
       portForwardsImported: 0,
-      logViewerFavoritesImported: 0
+      logViewerFavoritesImported: 0,
+      workspaceSyncMappingsImported: 0,
+      workspaceSyncTargetsImported: 0
     };
 
     if (!options.includeConnections) {
       if (options.includeSettings && backup.settings && typeof backup.settings === 'object') {
         await this.importSettings(backup.settings, Array.isArray(backup.settingsKeys) ? backup.settingsKeys : undefined);
         result.settingsImported = true;
+      }
+      if (preparedWorkspaceSyncImport) {
+        await writeWorkspaceSyncMappings(this.context, preparedWorkspaceSyncImport.mappings);
+        result.workspaceSyncMappingsImported = preparedWorkspaceSyncImport.result.mappingsImported;
+        result.workspaceSyncTargetsImported = preparedWorkspaceSyncImport.result.targetsImported;
       }
       return result;
     }
@@ -1035,18 +1094,26 @@ export class ConnectionManager {
     result.portForwardsImported = persistentResult.portForwardsImported;
     result.logViewerFavoritesImported = persistentResult.logViewerFavoritesImported;
 
+    if (preparedWorkspaceSyncImport) {
+      await writeWorkspaceSyncMappings(this.context, preparedWorkspaceSyncImport.mappings);
+      result.workspaceSyncMappingsImported = preparedWorkspaceSyncImport.result.mappingsImported;
+      result.workspaceSyncTargetsImported = preparedWorkspaceSyncImport.result.targetsImported;
+    }
+
     this.logDebug('Imported Remote Edit backup file.', {
       Mode: options.importMode,
       Added: result.added,
       Updated: result.updated,
       Groups: result.connectionGroupsImported,
+      WorkspaceSyncMappings: result.workspaceSyncMappingsImported,
       MissingGroupReferences: missingGroupReferenceCount,
       SkippedUnsupported: result.skippedUnsupported
     });
     this.logPerformance('Imported Remote Edit backup file', timer(), {
       Added: result.added,
       Updated: result.updated,
-      Groups: result.connectionGroupsImported
+      Groups: result.connectionGroupsImported,
+      WorkspaceSyncMappings: result.workspaceSyncMappingsImported
     });
 
     return result;

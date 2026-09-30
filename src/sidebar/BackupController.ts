@@ -11,6 +11,7 @@ import type {
   RemoteEditBackupSummary
 } from '../connection/ConnectionManager';
 import { formatBackupFileDate } from '../panel/FileNameUtils';
+import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 
 interface SidebarBackupControllerOptions {
   context: vscode.ExtensionContext;
@@ -30,7 +31,7 @@ export class SidebarBackupController {
         return;
       }
 
-      if (!exportOptions.includeSettings && !exportOptions.includeConnections) {
+      if (!exportOptions.includeSettings && !exportOptions.includeConnections && !exportOptions.includeWorkspaceSync) {
         void vscode.window.showWarningMessage('Remote Edit: Select at least one export option.');
         return;
       }
@@ -103,13 +104,16 @@ export class SidebarBackupController {
         return;
       }
 
-      if (!importOptions.includeSettings && !importOptions.includeConnections) {
+      if (!importOptions.includeSettings && !importOptions.includeConnections && !importOptions.includeWorkspaceSync) {
         void vscode.window.showWarningMessage('Remote Edit: Select at least one import option.');
         return;
       }
 
       const result = await this.options.connectionManager.importBackupFile(backup, importOptions);
       this.options.onImported();
+      if (importOptions.includeWorkspaceSync) {
+        RemoteEditSharedState.fireWorkspaceSyncChanged('sidebar', 'importBackup');
+      }
       this.options.output.appendLine(`[Sidebar] Imported Remote Edit backup: ${selectedPath}`);
       void vscode.window.showInformationMessage(this.buildImportResultMessage(result));
     } catch (error) {
@@ -118,9 +122,10 @@ export class SidebarBackupController {
   }
 
   private async pickBackupExportOptions(): Promise<ConnectionBackupExportOptions | undefined> {
-    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'favorites' | 'usernames' | 'credentials' }> = [
+    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'favorites' | 'usernames' | 'credentials' }> = [
       { label: 'Remote Edit settings', description: 'Export Remote Edit settings', option: 'settings', picked: true },
       { label: 'Saved connections', description: 'Export saved connection profiles', option: 'connections', picked: true },
+      { label: 'Workspace Sync mappings', description: 'Export Workspace Sync mappings, targets, and sync options', option: 'workspaceSync', picked: true },
       { label: 'Remote path favorites', description: 'Export favorites stored with saved connections', option: 'favorites', picked: true },
       { label: 'Include usernames', description: 'Include saved usernames in exported connections', option: 'usernames', picked: true },
       { label: 'Include encrypted saved passwords/passphrases', description: 'Requires an export password', option: 'credentials' }
@@ -154,6 +159,7 @@ export class SidebarBackupController {
     return {
       includeSettings: selectedOptions.has('settings'),
       includeConnections,
+      includeWorkspaceSync: selectedOptions.has('workspaceSync'),
       includeFavorites: includeConnections && selectedOptions.has('favorites'),
       includeUsernames,
       includeCredentials,
@@ -162,9 +168,10 @@ export class SidebarBackupController {
   }
 
   private async pickBackupImportOptions(summary: RemoteEditBackupSummary): Promise<ConnectionBackupImportOptions | undefined> {
-    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'favorites' | 'usernames' | 'credentials' }> = [
+    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'favorites' | 'usernames' | 'credentials' }> = [
       { label: 'Remote Edit settings', description: summary.hasSettings ? 'Import Remote Edit settings' : 'Not available in this backup', option: 'settings', picked: summary.hasSettings },
       { label: 'Saved connections', description: `${summary.supportedConnectionCount} supported connection(s)`, option: 'connections', picked: summary.supportedConnectionCount > 0 },
+      { label: 'Workspace Sync mappings', description: summary.hasWorkspaceSync ? `${summary.workspaceSyncMappingCount} mapping(s), ${summary.workspaceSyncTargetCount} target(s)` : 'Not available in this backup', option: 'workspaceSync', picked: summary.hasWorkspaceSync },
       { label: 'Remote path favorites', description: `${summary.remotePathFavoriteCount} favorite path(s)`, option: 'favorites', picked: summary.remotePathFavoriteCount > 0 },
       { label: 'Include usernames', description: summary.usernamesIncluded ? 'Restore usernames from backup' : 'No usernames found in this backup', option: 'usernames', picked: summary.usernamesIncluded },
       { label: 'Restore encrypted saved passwords/passphrases', description: summary.hasEncryptedCredentials ? 'Requires the export password' : 'No encrypted credentials found', option: 'credentials' }
@@ -183,17 +190,18 @@ export class SidebarBackupController {
 
     const selectedOptions = new Set(selected.map(item => item.option));
     const includeConnections = selectedOptions.has('connections') && summary.supportedConnectionCount > 0;
+    const includeWorkspaceSync = selectedOptions.has('workspaceSync') && summary.hasWorkspaceSync;
     const includeUsernames = includeConnections && selectedOptions.has('usernames');
     const restoreCredentials = includeConnections && includeUsernames && summary.hasEncryptedCredentials && selectedOptions.has('credentials');
     let credentialPassword = '';
 
-    const mode = includeConnections
+    const mode = includeConnections || includeWorkspaceSync
       ? await vscode.window.showQuickPick([
-        { label: 'Merge', description: 'Add new connections and update matching IDs', value: 'merge' as const },
-        { label: 'Replace', description: 'Replace all saved connections with the backup connections', value: 'replace' as const }
+        { label: 'Merge', description: 'Add new items and update matching saved configuration', value: 'merge' as const },
+        { label: 'Replace', description: 'Replace the selected saved configuration with the backup content', value: 'replace' as const }
       ], {
         title: 'Import Mode',
-        placeHolder: 'Choose how saved connections should be imported',
+        placeHolder: 'Choose how saved configuration should be imported',
         ignoreFocusOut: true
       })
       : { value: 'merge' as const };
@@ -213,6 +221,7 @@ export class SidebarBackupController {
     return {
       includeSettings: selectedOptions.has('settings') && summary.hasSettings,
       includeConnections,
+      includeWorkspaceSync,
       includeFavorites: includeConnections && selectedOptions.has('favorites'),
       includeUsernames,
       restoreCredentials,
@@ -261,6 +270,7 @@ export class SidebarBackupController {
   private buildImportSummaryDetails(summary: RemoteEditBackupSummary): string {
     const lines = [
       `Settings: ${summary.hasSettings ? 'Yes' : 'No'}`,
+      `Workspace Sync: ${summary.hasWorkspaceSync ? 'Yes' : 'No'}`,
       `Connections: ${summary.supportedConnectionCount}${summary.unsupportedConnectionCount ? ` supported, ${summary.unsupportedConnectionCount} unsupported` : ''}`,
       `Remote path favorites: ${summary.remotePathFavoriteCount}`,
       `Usernames: ${summary.usernamesIncluded ? 'Yes' : 'No'}`,
@@ -270,6 +280,9 @@ export class SidebarBackupController {
       `Server log shortcuts: ${summary.serverLogShortcutCount}`,
       `Log Viewer favorites: ${summary.logViewerFavoriteCount}`
     ];
+
+    lines.push(`Workspace Sync mappings: ${summary.workspaceSyncMappingCount}`);
+    lines.push(`Workspace Sync targets: ${summary.workspaceSyncTargetCount}`);
 
     return lines.join('\n');
   }
@@ -308,6 +321,11 @@ export class SidebarBackupController {
 
     if (result.logViewerFavoritesImported) {
       parts.push(`Log Viewer favorites imported: ${result.logViewerFavoritesImported}.`);
+    }
+
+    if (result.workspaceSyncMappingsImported) {
+      parts.push(`Workspace Sync mappings imported: ${result.workspaceSyncMappingsImported}.`);
+      parts.push(`Workspace Sync targets imported: ${result.workspaceSyncTargetsImported}.`);
     }
 
     if (result.skippedUnsupported) {

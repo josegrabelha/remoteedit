@@ -1561,6 +1561,7 @@ export function renderRemoteCommandActions(): string {
   function showExportBackupDialog() {
     exportBackupDialogOpen = true;
     exportIncludeSettings.checked = true;
+    exportIncludeWorkspaceSync.checked = true;
     exportIncludeConnections.checked = true;
     exportIncludeFavorites.checked = true;
     exportIncludeUsernames.checked = true;
@@ -1637,7 +1638,7 @@ export function renderRemoteCommandActions(): string {
     const credentialPassword = String(exportCredentialPassword.value || '');
     const credentialConfirmPassword = String(exportCredentialConfirmPassword.value || '');
 
-    if (!exportIncludeSettings.checked && !exportIncludeConnections.checked) {
+    if (!exportIncludeSettings.checked && !exportIncludeWorkspaceSync.checked && !exportIncludeConnections.checked) {
       showBackupResult(exportBackupResult, 'Select at least one export option.', true);
       return;
     }
@@ -1670,6 +1671,7 @@ export function renderRemoteCommandActions(): string {
       type: 'exportConnectionsSettings',
       payload: {
         includeSettings: Boolean(exportIncludeSettings.checked),
+        includeWorkspaceSync: Boolean(exportIncludeWorkspaceSync.checked),
         includeConnections: Boolean(exportIncludeConnections.checked),
         includeFavorites: Boolean(exportIncludeFavorites.checked) && !exportIncludeFavorites.disabled,
         includeUsernames: Boolean(exportIncludeUsernames.checked) && !exportIncludeUsernames.disabled,
@@ -1684,6 +1686,9 @@ export function renderRemoteCommandActions(): string {
     importBackupDialogOpen = true;
     importBackupSummaryState = Object.assign({
       hasSettings: false,
+      hasWorkspaceSync: false,
+      workspaceSyncMappingCount: 0,
+      workspaceSyncTargetCount: 0,
       connectionCount: 0,
       connectionGroupCount: 0,
       supportedConnectionCount: 0,
@@ -1696,6 +1701,7 @@ export function renderRemoteCommandActions(): string {
 
     renderImportBackupSummary(importBackupSummaryState);
     importIncludeSettings.checked = Boolean(importBackupSummaryState.hasSettings);
+    importIncludeWorkspaceSync.checked = Boolean(importBackupSummaryState.hasWorkspaceSync);
     importIncludeConnections.checked = Number(importBackupSummaryState.supportedConnectionCount || 0) > 0;
     importIncludeFavorites.checked = Number(importBackupSummaryState.remotePathFavoriteCount || 0) > 0;
     importIncludeUsernames.checked = Boolean(importBackupSummaryState.usernamesIncluded);

@@ -9,6 +9,7 @@ import { appendOutputLog } from './utils/outputLogger';
 import { RemoteEditSidebarController } from './sidebar/SidebarController';
 import { cleanupDroppedUploadStagingRoot } from './panel/DroppedUploadStagingService';
 import { remoteClipboardService } from './remote/RemoteClipboardService';
+import { WorkspaceSyncFeature } from './workspaceSync/WorkspaceSyncFeature';
 
 type StatusBarButtonStyle = 'iconAndText' | 'iconOnly' | 'textOnly';
 type StatusBarButtonPosition = 'left' | 'right' | 'hidden';
@@ -47,6 +48,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const readOnlyFileSystemProvider = new RemoteEditFileSystemProvider(sessions, output, true);
   let statusBarButton: StatusBarButtonState | undefined;
   const sidebarController = new RemoteEditSidebarController(context, sessions, connectionManager, output);
+  const workspaceSync = new WorkspaceSyncFeature(context, connectionManager, output);
 
   const disposeStatusBarButton = (): void => {
     statusBarButton?.item.dispose();
@@ -89,6 +91,7 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
     remoteClipboardService,
     sidebarController,
+    workspaceSync,
     fileSystemProvider,
     readOnlyFileSystemProvider,
     vscode.workspace.registerFileSystemProvider('remoteedit', fileSystemProvider, {

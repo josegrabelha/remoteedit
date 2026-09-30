@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ConnectionBackupImportOptions, RemoteEditBackupFile } from '../connection/ConnectionManager';
 import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
+import { WORKSPACE_SYNC_ACTIVITY_KEY } from '../workspaceSync/ui/WorkspaceSyncActivityStore';
 
 const exportOptions = { includeSettings: true, includeConnections: true, includeFavorites: true, includeUsernames: true, includeCredentials: false };
 const importOptions: ConnectionBackupImportOptions = { includeSettings: true, includeConnections: true, includeFavorites: true,
@@ -148,7 +149,6 @@ test('settings-only import keeps its independent path and does not mutate connec
   assert.deepEqual((await harness.manager.listProfiles()).map(item => item.id), ['existing']);
 });
 
-
 test('editor root label setting is included in backup and restored', async () => {
   const source = createConnectionManagerHarness();
   source.ui.configuration.set('editorRootLabel', 'connectionName');
@@ -168,4 +168,176 @@ test('editor root label setting is included in backup and restored', async () =>
   });
 
   assert.equal(destination.ui.configuration.get('editorRootLabel'), 'connectionName');
+});
+
+test('Workspace Sync configuration survives a backup/restore roundtrip without requiring connections', async () => {
+  const source = createConnectionManagerHarness();
+  const mapping = {
+    id: 'ws-production',
+    name: 'Production',
+    localRoot: '/tmp/project',
+    targets: [{
+      id: 'target-primary',
+      name: 'Primary',
+      connectionId: 'conn-production',
+      remoteRoot: '/var/www/app',
+      enabled: true,
+      createdAt: 10,
+      updatedAt: 20
+    }],
+    options: {
+      direction: 'localToRemote' as const,
+      uploadOnSave: true,
+      watchLocalChanges: true,
+      watchRemoteChanges: false,
+      conflictProtection: true,
+      atomicTransfer: true,
+      propagateDeletes: false,
+      ignorePatterns: ['.git/', 'node_modules/', '.env']
+    },
+    createdAt: 10,
+    updatedAt: 20
+  };
+  source.state.set('remoteedit.workspaceSync.mappings.v1', [mapping]);
+  source.state.set(WORKSPACE_SYNC_ACTIVITY_KEY, [{ id: 1, time: 123, level: 'info', message: 'Local-only Activity marker' }]);
+
+  const exported = await source.manager.buildBackupFile({
+    includeSettings: false,
+    includeConnections: false,
+    includeWorkspaceSync: true,
+    includeFavorites: false,
+    includeUsernames: false,
+    includeCredentials: false
+  });
+
+  assert.deepEqual(exported.workspaceSync?.mappings, [mapping]);
+  assert.equal('activity' in (exported.workspaceSync || {}), false);
+  assert.equal(JSON.stringify(exported).includes('Local-only Activity marker'), false);
+  assert.equal('activeMappingId' in (exported.workspaceSync || {}), false);
+  assert.equal('activeTargetIds' in (exported.workspaceSync || {}), false);
+  const summary = source.manager.summarizeBackupFile(exported);
+  assert.equal(summary.workspaceSyncMappingCount, 1);
+  assert.equal(summary.workspaceSyncTargetCount, 1);
+
+  const destination = createConnectionManagerHarness();
+  const destinationActivity = [{ id: 9, time: 999, level: 'info', message: 'Keep local Activity' }];
+  destination.state.set(WORKSPACE_SYNC_ACTIVITY_KEY, destinationActivity);
+  const result = await destination.manager.importBackupFile(exported, {
+    includeSettings: false,
+    includeConnections: false,
+    includeWorkspaceSync: true,
+    includeFavorites: false,
+    includeUsernames: false,
+    restoreCredentials: false,
+    importMode: 'replace'
+  });
+
+  assert.equal(result.workspaceSyncMappingsImported, 1);
+  assert.equal(result.workspaceSyncTargetsImported, 1);
+  assert.deepEqual(destination.state.get('remoteedit.workspaceSync.mappings.v1'), [mapping]);
+  assert.deepEqual(destination.state.get(WORKSPACE_SYNC_ACTIVITY_KEY), destinationActivity);
+  assert.equal(destination.state.get('remoteedit.workspaceSync.activeMapping.v1'), mapping.id);
+  assert.deepEqual(destination.state.get('remoteedit.workspaceSync.activeTargets.v1'), {});
+});
+
+test('Workspace Sync merge rejects a same-name mapping with a different identity before connection writes', async () => {
+  const harness = createConnectionManagerHarness([profile('existing')]);
+  harness.state.set('remoteedit.workspaceSync.mappings.v1', [{
+    id: 'ws-existing', name: 'Production', localRoot: '/tmp/existing',
+    targets: [{ id: 'target-existing', name: 'Primary', connectionId: 'existing', remoteRoot: '/existing', enabled: true, createdAt: 1, updatedAt: 1 }],
+    options: { direction: 'bidirectional', uploadOnSave: false, watchLocalChanges: false, watchRemoteChanges: false, conflictProtection: true, atomicTransfer: true, propagateDeletes: false, ignorePatterns: [] },
+    createdAt: 1, updatedAt: 1
+  }]);
+
+  const data = backup([profile('incoming')]);
+  data.workspaceSync = {
+    mappings: [{
+      id: 'ws-incoming', name: 'Production', localRoot: '/tmp/incoming',
+      targets: [{ id: 'target-incoming', name: 'Primary', connectionId: 'incoming', remoteRoot: '/incoming', enabled: true, createdAt: 2, updatedAt: 2 }],
+      options: { direction: 'bidirectional', uploadOnSave: false, watchLocalChanges: false, watchRemoteChanges: false, conflictProtection: true, atomicTransfer: true, propagateDeletes: false, ignorePatterns: [] },
+      createdAt: 2, updatedAt: 2
+    }]
+  };
+
+  await assert.rejects(harness.manager.importBackupFile(data, {
+    ...importOptions,
+    includeWorkspaceSync: true
+  }), /Workspace Sync mapping 'Production' already exists/);
+  assert.deepEqual(harness.writes, []);
+});
+
+test('Workspace Sync replace can restore an explicitly empty configuration', async () => {
+  const harness = createConnectionManagerHarness();
+  harness.state.set('remoteedit.workspaceSync.mappings.v1', [{
+    id: 'ws-old', name: 'Old', localRoot: '/tmp/old',
+    targets: [{ id: 'target-old', name: 'Old target', connectionId: 'old', remoteRoot: '/old', enabled: true, createdAt: 1, updatedAt: 1 }],
+    options: { direction: 'bidirectional', uploadOnSave: false, watchLocalChanges: false, watchRemoteChanges: false, conflictProtection: true, atomicTransfer: true, propagateDeletes: false, ignorePatterns: [] },
+    createdAt: 1, updatedAt: 1
+  }]);
+
+  const data: RemoteEditBackupFile = {
+    remoteEditExportVersion: 3,
+    exportedAt: '2026-09-25T00:00:00Z',
+    workspaceSync: { mappings: [] }
+  };
+  const summary = harness.manager.summarizeBackupFile(data);
+  assert.equal(summary.hasWorkspaceSync, true);
+  assert.equal(summary.workspaceSyncMappingCount, 0);
+
+  await harness.manager.importBackupFile(data, {
+    includeSettings: false,
+    includeConnections: false,
+    includeWorkspaceSync: true,
+    includeFavorites: false,
+    includeUsernames: false,
+    restoreCredentials: false,
+    importMode: 'replace'
+  });
+
+  assert.deepEqual(harness.state.get('remoteedit.workspaceSync.mappings.v1'), []);
+  assert.deepEqual(harness.state.get('remoteedit.workspaceSync.activeTargets.v1'), {});
+});
+
+test('Workspace Sync UI settings survive a settings backup/restore roundtrip', async () => {
+  const source = createConnectionManagerHarness();
+  source.ui.configuration.set('workspaceSync.editorTitleButtonPosition', 'right');
+  source.ui.configuration.set('workspaceSync.statusBarButtonPosition', 'right');
+  source.ui.configuration.set('workspaceSync.statusBarButtonStyle', 'textOnly');
+  source.ui.configuration.set('workspaceSync.statusBarButtonPriority', 777);
+
+  const exported = await source.manager.buildBackupFile({
+    includeSettings: true,
+    includeConnections: false,
+    includeWorkspaceSync: false,
+    includeFavorites: false,
+    includeUsernames: false,
+    includeCredentials: false
+  });
+
+  assert.equal(exported.settings?.['workspaceSync.editorTitleButtonPosition'], 'right');
+  assert.equal(exported.settings?.['workspaceSync.statusBarButtonPosition'], 'right');
+  assert.equal(exported.settings?.['workspaceSync.statusBarButtonStyle'], 'textOnly');
+  assert.equal(exported.settings?.['workspaceSync.statusBarButtonPriority'], 777);
+  assert.ok(exported.settingsKeys?.includes('workspaceSync.editorTitleButtonPosition'));
+  assert.ok(exported.settingsKeys?.includes('workspaceSync.statusBarButtonPosition'));
+  assert.ok(exported.settingsKeys?.includes('workspaceSync.statusBarButtonStyle'));
+  assert.ok(exported.settingsKeys?.includes('workspaceSync.statusBarButtonPriority'));
+
+  const destination = createConnectionManagerHarness();
+  const result = await destination.manager.importBackupFile(exported, {
+    includeSettings: true,
+    includeConnections: false,
+    includeWorkspaceSync: false,
+    includeFavorites: false,
+    includeUsernames: false,
+    restoreCredentials: false,
+    importMode: 'merge'
+  });
+
+  assert.equal(result.settingsImported, true);
+  assert.equal(destination.ui.configuration.get('workspaceSync.editorTitleButtonPosition'), 'right');
+  assert.equal(destination.ui.configuration.get('workspaceSync.statusBarButtonPosition'), 'right');
+  assert.equal(destination.ui.configuration.get('workspaceSync.statusBarButtonStyle'), 'textOnly');
+  assert.equal(destination.ui.configuration.get('workspaceSync.statusBarButtonPriority'), 777);
+
 });

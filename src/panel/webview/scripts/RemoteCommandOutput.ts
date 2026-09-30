@@ -3,7 +3,9 @@ export function renderRemoteCommandOutput(): string {
     }
     importBackupBackdrop.classList.add('visible');
     importBackupBackdrop.setAttribute('aria-hidden', 'false');
-    setTimeout(() => (importBackupSummaryState.importError ? importBackupCancelButton : (importIncludeSettings.disabled ? importIncludeConnections : importIncludeSettings)).focus(), 0);
+    setTimeout(() => (importBackupSummaryState.importError
+      ? importBackupCancelButton
+      : (!importIncludeSettings.disabled ? importIncludeSettings : (!importIncludeWorkspaceSync.disabled ? importIncludeWorkspaceSync : importIncludeConnections))).focus(), 0);
   }
 
   function hideImportBackupDialog() {
@@ -31,8 +33,11 @@ export function renderRemoteCommandOutput(): string {
     const portForwardCount = Number(summary.portForwardCount || 0);
     const serverLogShortcutCount = Number(summary.serverLogShortcutCount || 0);
     const logViewerFavoriteCount = Number(summary.logViewerFavoriteCount || 0);
+    const workspaceSyncMappingCount = Number(summary.workspaceSyncMappingCount || 0);
+    const workspaceSyncTargetCount = Number(summary.workspaceSyncTargetCount || 0);
     const parts = [
       summary.hasSettings ? 'Settings included' : 'Settings not included',
+      summary.hasWorkspaceSync ? 'Workspace Sync included' : 'Workspace Sync not included',
       connectionCount === 1 ? '1 connection' : connectionCount + ' connections',
       favoriteCount === 1 ? '1 favorite' : favoriteCount + ' favorites',
       summary.usernamesIncluded ? 'usernames included' : 'usernames not included',
@@ -44,6 +49,8 @@ export function renderRemoteCommandOutput(): string {
     if (portForwardCount) parts.push(portForwardCount === 1 ? '1 port forward' : portForwardCount + ' port forwards');
     if (serverLogShortcutCount) parts.push(serverLogShortcutCount === 1 ? '1 log shortcut' : serverLogShortcutCount + ' log shortcuts');
     if (logViewerFavoriteCount) parts.push(logViewerFavoriteCount === 1 ? '1 log favorite' : logViewerFavoriteCount + ' log favorites');
+    if (workspaceSyncMappingCount) parts.push(workspaceSyncMappingCount === 1 ? '1 Workspace Sync mapping' : workspaceSyncMappingCount + ' Workspace Sync mappings');
+    if (workspaceSyncTargetCount) parts.push(workspaceSyncTargetCount === 1 ? '1 Workspace Sync target' : workspaceSyncTargetCount + ' Workspace Sync targets');
 
     if (unsupportedCount) {
       parts.splice(2, 0, unsupportedCount === 1 ? '1 unsupported' : unsupportedCount + ' unsupported');
@@ -57,6 +64,7 @@ export function renderRemoteCommandOutput(): string {
     const hasImportError = Boolean(summary.importError);
     const hasSettings = !hasImportError && Boolean(summary.hasSettings);
     const hasConnections = !hasImportError && Number(summary.supportedConnectionCount || 0) > 0;
+    const hasWorkspaceSync = !hasImportError && Boolean(summary.hasWorkspaceSync);
     const hasFavorites = !hasImportError && Number(summary.remotePathFavoriteCount || 0) > 0;
     const hasUsernames = !hasImportError && Boolean(summary.usernamesIncluded);
     const hasCredentials = !hasImportError && Boolean(summary.hasEncryptedCredentials);
@@ -66,6 +74,9 @@ export function renderRemoteCommandOutput(): string {
 
     importIncludeConnections.disabled = !hasConnections;
     if (!hasConnections) importIncludeConnections.checked = false;
+
+    importIncludeWorkspaceSync.disabled = !hasWorkspaceSync;
+    if (!hasWorkspaceSync) importIncludeWorkspaceSync.checked = false;
 
     const includeConnections = hasConnections && Boolean(importIncludeConnections.checked);
     importIncludeFavorites.disabled = !includeConnections || !hasFavorites;
@@ -91,7 +102,8 @@ export function renderRemoteCommandOutput(): string {
         ? 'This backup does not contain encrypted passwords/passphrases.'
         : (includeConnections && !importIncludeUsernames.checked ? 'Enable usernames to restore encrypted passwords/passphrases.' : ''));
 
-    const enableImportMode = includeConnections;
+    const includeWorkspaceSync = hasWorkspaceSync && Boolean(importIncludeWorkspaceSync.checked);
+    const enableImportMode = includeConnections || includeWorkspaceSync;
     importModeBlock.style.opacity = enableImportMode ? '1' : '0.6';
     importModeMerge.disabled = !enableImportMode;
     importModeReplace.disabled = !enableImportMode;
@@ -99,8 +111,8 @@ export function renderRemoteCommandOutput(): string {
     importModeHelp.textContent = hasImportError
       ? ''
       : (importModeReplace.checked
-        ? 'Existing connections will be replaced by this backup.'
-        : 'Matching connections are updated. New connections are added.');
+        ? 'Selected saved configuration will be replaced by this backup.'
+        : 'Matching saved configuration is updated. New items are added.');
 
     importBackupApplyButton.disabled = hasImportError;
     importBackupValidation.textContent = '';
@@ -115,7 +127,7 @@ export function renderRemoteCommandOutput(): string {
     const restoreCredentials = Boolean(importRestoreCredentials.checked) && !importRestoreCredentials.disabled;
     const credentialPassword = String(importCredentialPassword.value || '');
 
-    if (!importIncludeSettings.checked && !importIncludeConnections.checked) {
+    if (!importIncludeSettings.checked && !importIncludeWorkspaceSync.checked && !importIncludeConnections.checked) {
       showBackupResult(importBackupResult, 'Select at least one import option.', true);
       return;
     }
@@ -131,6 +143,7 @@ export function renderRemoteCommandOutput(): string {
       type: 'importConnectionsSettings',
       payload: {
         includeSettings: Boolean(importIncludeSettings.checked) && !importIncludeSettings.disabled,
+        includeWorkspaceSync: Boolean(importIncludeWorkspaceSync.checked) && !importIncludeWorkspaceSync.disabled,
         includeConnections: Boolean(importIncludeConnections.checked) && !importIncludeConnections.disabled,
         includeFavorites: Boolean(importIncludeFavorites.checked) && !importIncludeFavorites.disabled,
         includeUsernames: Boolean(importIncludeUsernames.checked) && !importIncludeUsernames.disabled,

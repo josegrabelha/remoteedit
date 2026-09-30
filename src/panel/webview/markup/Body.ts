@@ -616,7 +616,7 @@ export function renderBody(): string {
   <div id="exportBackupBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="exportBackupTitle" aria-hidden="true">
     <section class="file-properties-dialog backup-dialog export-backup-dialog">
       <div class="file-properties-header">
-        <h2 id="exportBackupTitle" class="file-properties-title">Export Connections and Settings</h2>
+        <h2 id="exportBackupTitle" class="file-properties-title">Export Remote Edit Backup</h2>
         <div class="file-properties-path">Export Remote Edit data to a JSON backup file.</div>
       </div>
       <div class="file-properties-body">
@@ -624,6 +624,7 @@ export function renderBody(): string {
           <p class="backup-section-title">Export content</p>
           <div class="backup-checkbox-list">
             <label class="modal-checkbox-line"><input id="exportIncludeSettings" class="dialog-checkbox" type="checkbox" checked> Remote Edit settings</label>
+            <label class="modal-checkbox-line"><input id="exportIncludeWorkspaceSync" class="dialog-checkbox" type="checkbox" checked> Workspace Sync mappings</label>
             <div class="modal-checkbox-block">
               <label class="modal-checkbox-line"><input id="exportIncludeConnections" class="dialog-checkbox" type="checkbox" checked> Saved connections</label>
               <div class="backup-child-options">
@@ -671,7 +672,7 @@ export function renderBody(): string {
   <div id="importBackupBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="importBackupTitle" aria-hidden="true">
     <section class="file-properties-dialog backup-dialog import-backup-dialog">
       <div class="file-properties-header">
-        <h2 id="importBackupTitle" class="file-properties-title">Import Connections and Settings</h2>
+        <h2 id="importBackupTitle" class="file-properties-title">Import Remote Edit Backup</h2>
         <div class="file-properties-path">Review the backup content before importing.</div>
       </div>
       <div class="file-properties-body">
@@ -683,6 +684,7 @@ export function renderBody(): string {
           <p class="backup-section-title">Import content</p>
           <div class="backup-checkbox-list">
             <label class="modal-checkbox-line"><input id="importIncludeSettings" class="dialog-checkbox" type="checkbox" checked> Remote Edit settings</label>
+            <label class="modal-checkbox-line"><input id="importIncludeWorkspaceSync" class="dialog-checkbox" type="checkbox" checked> Workspace Sync mappings</label>
             <div class="modal-checkbox-block">
               <label class="modal-checkbox-line"><input id="importIncludeConnections" class="dialog-checkbox" type="checkbox" checked> Saved connections</label>
               <div class="backup-child-options">

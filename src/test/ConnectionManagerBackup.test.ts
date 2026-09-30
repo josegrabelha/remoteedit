@@ -147,3 +147,25 @@ test('settings-only import keeps its independent path and does not mutate connec
   assert.deepEqual(harness.writes, []);
   assert.deepEqual((await harness.manager.listProfiles()).map(item => item.id), ['existing']);
 });
+
+
+test('editor root label setting is included in backup and restored', async () => {
+  const source = createConnectionManagerHarness();
+  source.ui.configuration.set('editorRootLabel', 'connectionName');
+
+  const exported = await source.manager.buildBackupFile({
+    ...exportOptions,
+    includeConnections: false
+  });
+
+  assert.equal(exported.settings?.editorRootLabel, 'connectionName');
+  assert.ok(exported.settingsKeys?.includes('editorRootLabel'));
+
+  const destination = createConnectionManagerHarness();
+  await destination.manager.importBackupFile(exported, {
+    ...importOptions,
+    includeConnections: false
+  });
+
+  assert.equal(destination.ui.configuration.get('editorRootLabel'), 'connectionName');
+});

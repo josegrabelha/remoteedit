@@ -34,6 +34,7 @@ test('connection labels use the latest saved group and name, with session fallba
   assert.deepEqual(await resolve(), ['Renamed']);
   harness.state.set('remoteedit.connectionProfiles', []);
   assert.deepEqual(await resolve(), ['Session']);
+  assert.deepEqual(harness.reads, []);
   assert.deepEqual(harness.writes, []);
 });
 

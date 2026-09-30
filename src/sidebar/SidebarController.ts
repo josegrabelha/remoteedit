@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput } from '../connection/ConnectionManager';
 import type { JumpProfileDescriptor } from '../connection/JumpChain';
-import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
+import { buildRemoteEditUri, preferOpenRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { resolveEditorRootSegments } from '../filesystem/EditorRootLabel';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import type { LocalUploadEntry } from '../panel/PanelTypes';
@@ -1214,7 +1214,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
     const connection = this.sessions.getConnection(connectionId);
     const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
-    const uri = buildRemoteEditUri(connectionId, remotePath, connection?.host, { readOnly, rootSegments });
+    const uri = preferOpenRemoteEditUri(buildRemoteEditUri(connectionId, remotePath, connection?.host, { readOnly, rootSegments }));
     await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
   }
 

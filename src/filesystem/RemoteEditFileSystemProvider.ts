@@ -286,6 +286,27 @@ export function parseRemoteEditUri(uri: vscode.Uri): { connectionId: string; rem
   };
 }
 
+export function preferOpenRemoteEditUri(uri: vscode.Uri): vscode.Uri {
+  const target = parseRemoteEditUri(uri);
+
+  for (const document of vscode.workspace.textDocuments) {
+    if (document.uri.scheme !== uri.scheme) {
+      continue;
+    }
+
+    try {
+      const candidate = parseRemoteEditUri(document.uri);
+      if (candidate.connectionId === target.connectionId && candidate.remotePath === target.remotePath) {
+        return document.uri;
+      }
+    } catch {
+      // Ignore unrelated or malformed documents and use the newly built URI.
+    }
+  }
+
+  return uri;
+}
+
 
 function buildRemoteEditUriQuery(connectionId: string, remoteRoot: string, openSource?: 'webview' | 'sidebar'): string {
   const params = new URLSearchParams();

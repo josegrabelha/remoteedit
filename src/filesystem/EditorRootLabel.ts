@@ -11,7 +11,7 @@ export async function resolveEditorRootSegments(
     return undefined;
   }
 
-  const profile = connection?.isQuickConnect ? undefined : await connectionManager.getProfile(connectionId);
+  const profile = connection?.isQuickConnect ? undefined : connectionManager.getProfileMetadata(connectionId);
   const name = profile?.name || connection?.name || connectionId;
   const group = profile?.groupId
     ? (await connectionManager.listGroups()).find(item => item.id === profile.groupId)

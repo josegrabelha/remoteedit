@@ -4,7 +4,6 @@
 # TypeScript sources and build metadata
 src/**
 out/test/**
-scripts/test-editor-root-label.cjs
 **/*.ts
 **/*.map
 tsconfig.json

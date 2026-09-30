@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AsyncLocalStorage } from 'async_hooks';
 import { ConnectionManager, type RemoteEditPersistentWebviewStorage } from '../connection/ConnectionManager';
-import { buildRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
+import { buildRemoteEditUri, preferOpenRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { resolveEditorRootSegments } from '../filesystem/EditorRootLabel';
 import type { ActiveConnection, ConnectOptions, RemoteSessionManager, RemoteEntryMetadataNotifier, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
 import { getRemoteConnectOriginalMessage, getRemoteConnectStatusMessage } from '../remote/ConnectionProbe';
@@ -2030,7 +2030,7 @@ export class RemoteEditPanel {
     const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
 
     for (const entry of resolvedEntries) {
-      const uri = buildRemoteEditUri(connectionId, entry.path, connection?.host, { readOnly, openSource: 'webview', rootSegments });
+      const uri = preferOpenRemoteEditUri(buildRemoteEditUri(connectionId, entry.path, connection?.host, { readOnly, openSource: 'webview', rootSegments }));
 
       try {
         await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
@@ -2133,8 +2133,8 @@ export class RemoteEditPanel {
 
     const connection = this.sessions.getConnection(connectionId);
     const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
-    const leftUri = buildRemoteEditUri(connectionId, left.path, connection?.host, { readOnly: true, rootSegments });
-    const rightUri = buildRemoteEditUri(connectionId, right.path, connection?.host, { readOnly: true, rootSegments });
+    const leftUri = preferOpenRemoteEditUri(buildRemoteEditUri(connectionId, left.path, connection?.host, { readOnly: true, rootSegments }));
+    const rightUri = preferOpenRemoteEditUri(buildRemoteEditUri(connectionId, right.path, connection?.host, { readOnly: true, rootSegments }));
     const title = `${left.name || left.path} ↔ ${right.name || right.path}`;
     await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
 
@@ -2204,7 +2204,7 @@ export class RemoteEditPanel {
     const normalizedPath = normalizeRemotePath(remotePath);
     const connection = this.sessions.getConnection(connectionId);
     const rootSegments = await resolveEditorRootSegments(connectionId, connection, this.connectionManager);
-    const uri = buildRemoteEditUri(connectionId, normalizedPath, connection?.host, { openSource: 'webview', rootSegments });
+    const uri = preferOpenRemoteEditUri(buildRemoteEditUri(connectionId, normalizedPath, connection?.host, { openSource: 'webview', rootSegments }));
 
     await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
 

@@ -1,3 +1,4 @@
+import { settlesWithin } from './connection/SessionLifetime';
 import { WorkspaceSyncUi, type SyncActivity } from './ui/WorkspaceSyncUi';
 import { WorkspaceSyncActivityStore } from './ui/WorkspaceSyncActivityStore';
 import { compareText } from './compare/TextComparison';
@@ -10,34 +11,39 @@ import type { WorkspaceSyncConnectionConfigSource } from './connection/Workspace
 import { appendOutputLog } from '../utils/outputLogger';
 import type { WorkspaceSyncDiagnostics } from './WorkspaceSyncDiagnostics';
 import { createWorkspaceSyncDiagnostics } from './WorkspaceSyncDiagnosticsFactory';
-import { WorkspaceMappingStore } from './mapping/WorkspaceMappingStore';
+import { WorkspaceMappingStore, getWorkspaceSyncPreferences, setWorkspaceSyncPreferences } from './mapping/WorkspaceMappingStore';
 import { BaselineStore } from './baseline/BaselineStore';
 import { WorkspaceSyncSessionManager } from './connection/WorkspaceSyncSessionManager';
 import { scanLocalTree } from './scan/LocalScanner';
 import { scanRemoteTree } from './scan/RemoteScanner';
+import { scanLocalSubtree, scanRemoteSubtree } from './scan/SubtreeScanner';
 import { diffSnapshots } from './compare/DiffEngine';
 import { verifyComparisonContent } from './compare/ContentVerifier';
+import { baselineRequiresStrongFingerprint, readAndClassifyCurrentPath } from './compare/CurrentPathClassifier';
+import { suggestConflictResolution } from './compare/ResolutionSuggestions';
 import { protectCaseCollisions } from './compare/PathCollisionDetector';
 import { detectLocalCaseSensitivity } from './compare/LocalFilesystemCapabilities';
 import { WorkspaceSyncDiffTempStore } from './compare/DiffTempStore';
 import { buildSyncPlan } from './planning/SyncPlanner';
 import { localFilenameStyle } from './planning/PathCompatibility';
 import { revalidateSyncPlan } from './planning/SyncRevalidator';
+import { expandDirectoryDeletePlan } from './planning/DirectoryDeleteExpansion';
 import { executeSyncPlan } from './execution/SyncExecutor';
 import { describeSyncOperationFailure } from './execution/OperationFailureDetails';
 import { TargetOperationQueue } from './execution/TargetOperationQueue';
-import { LocalRootOperationCoordinator } from './execution/LocalRootOperationCoordinator';
+import { LocalRootOperationCoordinator, localRootsOverlap, type LocalPathAccess } from './execution/LocalRootOperationCoordinator';
 import { validateUniqueMappingRoutes, validateUniqueTargetDestinations, type WorkspaceMappingInput } from './mapping/WorkspaceMapping';
 import { loadEffectiveIgnorePatterns } from './ignore/IgnoreRules';
 import { IgnoreMatcher } from './ignore/IgnoreMatcher';
 import { OperationJournal } from './watcher/OperationJournal';
 import { WorkspaceWatcher, type WorkspaceLocalChange } from './watcher/WorkspaceWatcher';
+import { WatchRetryQueue } from './watcher/WatchRetryQueue';
+import type { WorkspaceSyncRemoteSession } from './connection/WorkspaceSyncSession';
 import { RemoteWorkspaceWatcher } from './watcher/RemoteWorkspaceWatcher';
 import { collectRemoteWatchChangedPaths } from './watcher/RemoteWatchDiff';
 import { initialWatchReconcileDecision, isLocalChangeEnabled, isWatchSourceAuthoritative } from './watcher/WatcherCoalescing';
 import { collectWatchedDeletePaths } from './watcher/WatchedDeletePlan';
 import { readLocalFingerprint, readRemoteFingerprint } from './snapshot/CurrentState';
-import { fingerprintsEqual } from './snapshot/FileFingerprint';
 import { resolveSyncPaths } from './execution/SyncPathUtils';
 import { WorkspaceSyncLastKnownViewStore } from './view/LastKnownViewStore';
 import type {
@@ -47,6 +53,7 @@ import type {
   SyncOperation,
   SyncPlan,
   SyncSnapshot,
+  SyncBaseline,
   WorkspaceSyncConflictResolution,
   WorkspaceSyncConnectionSummary,
   WorkspaceSyncMapping,
@@ -57,10 +64,18 @@ import type {
 
 
 interface RemoteWatchSnapshotState {
+  retryPaths?: string[];
   snapshot: SyncSnapshot;
   connectionIdentity: string;
   mappingUpdatedAt: number;
   targetUpdatedAt: number;
+}
+
+interface LocalWatchRetry {
+  mapping: WorkspaceSyncMapping;
+  target: WorkspaceSyncTarget;
+  change: WorkspaceLocalChange;
+  session: WorkspaceSyncRemoteSession;
 }
 
 interface AutomaticPathObservation {
@@ -74,6 +89,7 @@ interface AutomaticPathObservation {
 }
 
 interface MappingRuntimeState {
+  localMutationEpoch?: number;
   local?: SyncSnapshot;
   remote?: SyncSnapshot;
   diffs: DiffEntry[];
@@ -94,6 +110,7 @@ interface SharedRefreshContext {
 
 const MAX_PARALLEL_TARGET_REFRESHES = 4;
 const MAX_PARALLEL_TARGET_SYNCS = 2;
+const MAX_DEFERRED_DELETE_REEVALUATIONS = 3;
 
 export interface WorkspaceSyncTargetViewState {
   targetId: string;
@@ -106,10 +123,12 @@ export interface WorkspaceSyncTargetViewState {
 
 export interface WorkspaceSyncBackgroundActivity {
   active: boolean;
-  kind: 'refresh';
+  kind: 'refresh' | 'watch';
   label: string;
   mappingId?: string;
+  targetId?: string;
   detail?: string;
+  cancellable?: boolean;
 }
 
 export interface WorkspaceSyncViewState {
@@ -119,6 +138,7 @@ export interface WorkspaceSyncViewState {
   activeTargetId?: string;
   targetStates: WorkspaceSyncTargetSummary[];
   targetViews: WorkspaceSyncTargetViewState[];
+  mappingInitializing?: boolean;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   connectionMessage?: string;
   connectionConfigChanged?: boolean;
@@ -126,10 +146,14 @@ export interface WorkspaceSyncViewState {
   plan?: SyncPlan;
   lastComparedAt?: number;
   showingLastKnownState?: boolean;
+  hideUnsupportedFiles: boolean;
+  showModifiedTimes: boolean;
+  defaultCompare: 'internal' | 'vscode';
 }
 
 
 export class WorkspaceSyncController implements vscode.Disposable {
+  private disposed = false;
   readonly ui: WorkspaceSyncUi;
   private readonly uiSubscriptions: vscode.Disposable[] = [];
   readonly mappings: WorkspaceMappingStore;
@@ -138,10 +162,17 @@ export class WorkspaceSyncController implements vscode.Disposable {
   private readonly journal = new OperationJournal();
   private readonly operations = new TargetOperationQueue();
   private readonly localRootOperations = new LocalRootOperationCoordinator();
+  /** Remote writes to the same endpoint remain serialized until remote-path
+   * containment has been proven across all remote filesystem conventions. */
+  private readonly remoteEndpointOperations = new LocalRootOperationCoordinator();
   /** Manual Disconnect takes effect immediately for queued automatic work. */
   private readonly disconnectRequested = new Set<string>();
   private readonly watcher: WorkspaceWatcher;
   private readonly remoteWatcher: RemoteWorkspaceWatcher;
+  private readonly localWatchRetries = new WatchRetryQueue<LocalWatchRetry>(async retry => {
+    if (!this.isLocalWatchRetryCurrent(retry)) return;
+    await this.dispatchLocalWatchChange(retry.mapping, retry.target, retry.change, retry.session);
+  });
   private readonly remoteWatchSnapshots = new Map<string, RemoteWatchSnapshotState>();
   private readonly runtimeByTarget = new Map<string, MappingRuntimeState>();
   /** Coalesces duplicate Refresh requests for the same target/config revision. */
@@ -155,6 +186,22 @@ export class WorkspaceSyncController implements vscode.Disposable {
   /** Exact internal atomic-upload temp paths whose best-effort cleanup failed. */
   private readonly orphanedRemoteTemps = new Map<string, Map<string, string>>();
   private watchRefreshGeneration = 0;
+  /** Connected sessions do not start Watch until their first Compare/reconciliation finishes. */
+  private readonly preparingTargets = new Set<string>();
+  /** An automatic Watch transfer is executing on this exact mapping/target. */
+  private readonly watchingTargets = new Set<string>();
+  /** Connected but deliberately not eligible for automatic Watch/Sync after Cancel. */
+  private readonly suspendedTargets = new Set<string>();
+  private readonly initializingMappings = new Map<string, number>();
+  /** Cancellation belongs to the background INITIAL refresh, not the foreground Connect. */
+  private readonly initialRefreshTokens = new Map<string, Set<vscode.CancellationTokenSource>>();
+  /** Cross-mapping Local mutations are reclassified and, when Local Watch is
+   * enabled, fed through the SAME target Watch pipeline as filesystem events.
+   * The map coalesces paths per target while preserving delete semantics. */
+  private readonly pendingSharedLocalPaths = new Map<string, Map<string, { kind: WorkspaceLocalChange['kind']; physicalRelativePath: string }>>();
+  private localMutationEpoch = 0;
+  private readonly lastLocalMutationByRoot = new Map<string, number>();
+  private sharedLocalRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private automaticViewNotificationTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly automaticViewDirtyMappings = new Set<string>();
   private readonly viewStateChangedEmitter = new vscode.EventEmitter<void>();
@@ -182,7 +229,13 @@ export class WorkspaceSyncController implements vscode.Disposable {
       (request, message) => {
         const mapping = this.mappings.get(request.mappingId);
         const target = mapping?.targets.find(item => item.id === request.targetId);
+        const sessionKey = this.sessionKey(request.mappingId, request.targetId);
+        if (this.disconnectRequested.has(sessionKey)) {
+          if (mapping && target) this.ui.log('Remote Watch stopped during disconnect.', 'info', `${mapping.name} / ${target.name}`);
+          return true;
+        }
         this.log('WARN', `Remote Watch failed${mapping && target ? `: ${mapping.name} / ${target.name}` : ''}. ${message}`);
+        return false;
       }
     );
     this.uiSubscriptions.push(this.sessions.onDidChange(state => {
@@ -197,6 +250,10 @@ export class WorkspaceSyncController implements vscode.Disposable {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.localWatchRetries.dispose();
+    this.operations.dispose();
     this.uiSubscriptions.forEach(item => item.dispose());
     this.ui.dispose();
     this.watcher.dispose();
@@ -206,6 +263,14 @@ export class WorkspaceSyncController implements vscode.Disposable {
     this.localCaseSensitivityFlights.clear();
     this.strongVerificationPaths.clear();
     this.orphanedRemoteTemps.clear();
+    this.preparingTargets.clear();
+    this.suspendedTargets.clear();
+    for (const sources of this.initialRefreshTokens.values()) for (const source of sources) { source.cancel(); source.dispose(); }
+    this.initialRefreshTokens.clear();
+    this.initializingMappings.clear();
+    this.pendingSharedLocalPaths.clear();
+    this.lastLocalMutationByRoot.clear();
+    if (this.sharedLocalRefreshTimer) clearTimeout(this.sharedLocalRefreshTimer);
     if (this.automaticViewNotificationTimer) clearTimeout(this.automaticViewNotificationTimer);
     this.automaticViewNotificationTimer = undefined;
     this.automaticViewDirtyMappings.clear();
@@ -230,6 +295,9 @@ export class WorkspaceSyncController implements vscode.Disposable {
           targetId: target.id,
           targetName: target.name,
           connectionName: profile?.name || 'Missing connection',
+          preparing: state.status === 'connected' && this.preparingTargets.has(this.runtimeKey(activeMapping.id, target.id)),
+          watching: state.status === 'connected' && this.watchingTargets.has(this.runtimeKey(activeMapping.id, target.id)),
+          preparationCancelled: state.status === 'connected' && this.suspendedTargets.has(this.runtimeKey(activeMapping.id, target.id)),
           status: state.status,
           message: state.message,
           connectionConfigChanged: state.status === 'connected'
@@ -249,11 +317,16 @@ export class WorkspaceSyncController implements vscode.Disposable {
         const runtime = this.runtimeByTarget.get(this.runtimeKey(activeMapping.id, target.id));
         const lastKnown = runtime ? undefined : await this.lastViews.get(activeMapping, target);
         const sessionState = this.sessions.getState(this.sessionKey(activeMapping.id, target.id));
+        const profile = connectionProfiles.get(target.connectionId);
+        const sourceDiffs = runtime?.diffs || lastKnown?.diffs || [];
+        const diffs = sourceDiffs.map(diff => decorateResolutionSuggestion(diff, profile?.connectionType === 'sftp'));
         return {
           targetId: target.id,
           targetName: target.name,
-          diffs: runtime?.diffs || lastKnown?.diffs || [],
-          plan: target.enabled && sessionState.status === 'connected' ? runtime?.plan : undefined,
+          diffs,
+          plan: target.enabled && sessionState.status === 'connected'
+            && !this.preparingTargets.has(this.runtimeKey(activeMapping.id, target.id))
+            && !this.suspendedTargets.has(this.runtimeKey(activeMapping.id, target.id)) ? runtime?.plan : undefined,
           lastComparedAt: runtime?.lastComparedAt || lastKnown?.lastRefreshedAt,
           showingLastKnownState: Boolean((runtime || lastKnown) && sessionState.status !== 'connected') || Boolean(!runtime && lastKnown)
         };
@@ -286,17 +359,61 @@ export class WorkspaceSyncController implements vscode.Disposable {
       activeTargetId: activeTarget?.id,
       targetStates,
       targetViews,
+      mappingInitializing: Boolean(activeMapping && this.initializingMappings.has(activeMapping.id)),
       connectionStatus: sessionState.status,
       connectionMessage: sessionState.message,
       connectionConfigChanged,
       diffs: activeView?.diffs || [],
       plan: activeView?.plan,
       lastComparedAt: activeView?.lastComparedAt,
-      showingLastKnownState: activeView?.showingLastKnownState
+      showingLastKnownState: activeView?.showingLastKnownState,
+      hideUnsupportedFiles: getWorkspaceSyncPreferences(this.context).hideUnsupportedFiles,
+      showModifiedTimes: getWorkspaceSyncPreferences(this.context).showModifiedTimes,
+      defaultCompare: this.getDefaultCompareSetting()
     };
   }
 
+  async setHideUnsupportedFiles(value: boolean): Promise<void> {
+    await setWorkspaceSyncPreferences(this.context, { hideUnsupportedFiles: value });
+    this.viewStateChangedEmitter.fire();
+  }
+
+  async setShowModifiedTimes(value: boolean): Promise<void> {
+    await setWorkspaceSyncPreferences(this.context, { showModifiedTimes: value });
+    this.viewStateChangedEmitter.fire();
+  }
+
+  async setDefaultCompare(value: 'internal' | 'vscode'): Promise<void> {
+    const normalized = value === 'vscode' ? 'vscode' : 'internal';
+    await vscode.workspace.getConfiguration('remoteedit.workspaceSync').update(
+      'defaultCompare',
+      normalized,
+      vscode.ConfigurationTarget.Global
+    );
+    // Keep the Workspace Sync backup payload backward-compatible and usable
+    // even when the user exports only Workspace Sync state.
+    await setWorkspaceSyncPreferences(this.context, { defaultCompare: normalized });
+    this.viewStateChangedEmitter.fire();
+  }
+
+  notifyConfigurationChanged(): void {
+    this.viewStateChangedEmitter.fire();
+  }
+
+  private getDefaultCompareSetting(): 'internal' | 'vscode' {
+    const config = vscode.workspace.getConfiguration('remoteedit.workspaceSync');
+    const inspection = config.inspect<'internal' | 'vscode'>('defaultCompare');
+    const explicit = inspection?.workspaceFolderValue ?? inspection?.workspaceValue ?? inspection?.globalValue;
+    if (explicit === 'vscode' || explicit === 'internal') return explicit;
+    // One-release compatibility path for users who exercised the pre-Settings
+    // implementation. WorkspaceSyncFeature migrates this value to Settings.
+    return getWorkspaceSyncPreferences(this.context).defaultCompare;
+  }
+
   async saveMapping(input: WorkspaceMappingInput): Promise<WorkspaceSyncMapping> {
+    if (input.id && this.initializingMappings.has(input.id)) {
+      throw new Error('Wait until this mapping finishes its initial Refresh before saving changes.');
+    }
     await this.validateMappingInput(input);
     const before = input.id ? this.mappings.get(input.id) : undefined;
     const mapping = await this.mappings.save(input);
@@ -316,10 +433,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
       for (const previousTarget of before.targets) {
         const nextTarget = nextTargets.get(previousTarget.id);
         if (!nextTarget) {
-          this.disconnectRequested.add(this.sessionKey(mapping.id, previousTarget.id));
-          await this.operations.run(this.runtimeKey(mapping.id, previousTarget.id), () =>
-            this.sessions.disconnect(this.sessionKey(mapping.id, previousTarget.id))
-          );
+          await this.disconnect(mapping.id, previousTarget.id);
           this.runtimeByTarget.delete(this.runtimeKey(mapping.id, previousTarget.id));
           await this.lastViews.clear(mapping.id, previousTarget.id);
           if (!localRootChanged) await this.baselines.clear(mapping.id, previousTarget.id);
@@ -334,10 +448,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
           await this.lastViews.clear(mapping.id, nextTarget.id);
         }
         if (connectionChanged || disabled) {
-          this.disconnectRequested.add(this.sessionKey(mapping.id, nextTarget.id));
-          await this.operations.run(this.runtimeKey(mapping.id, nextTarget.id), () =>
-            this.sessions.disconnect(this.sessionKey(mapping.id, nextTarget.id))
-          );
+          await this.disconnect(mapping.id, nextTarget.id);
         }
       }
     }
@@ -347,32 +458,40 @@ export class WorkspaceSyncController implements vscode.Disposable {
     }
 
     if (ignorePatternsChanged) {
-      // A cached view was built with the previous Ignore rules. It cannot be
-      // filtered safely in memory because removing an Ignore pattern can reveal
-      // paths that were never scanned. Clear the stale list synchronously so a
-      // successful Save can close the modal immediately, then rebuild connected
-      // targets asynchronously in the normal Workspace Sync view.
+      // Removing an Ignore rule can reveal paths never scanned previously.
       await this.lastViews.clear(mapping.id);
-      this.refreshWatchers();
-      void this.refreshConnectedTargetsAfterIgnoreChange(mapping).catch(error => {
-        this.log('WARN', `Workspace Sync refresh after Ignore change failed: ${mapping.name}. ${error instanceof Error ? error.message : String(error)}`);
-      });
-    } else {
-      this.refreshWatchers([mapping.id]);
     }
+
+    // Save must follow the SAME two-phase pipeline as an explicit Connect:
+    // refresh every already-connected target in parallel, then reconcile each
+    // target under path-aware Local Root protection. A target selected in
+    // the combobox, or an enabled but disconnected target, changes nothing here.
+    // Mark every participant before returning from Save; otherwise Sync could
+    // execute against a stale plan while the background task is being queued.
+    const connected = mapping.targets.flatMap(target => {
+      const sessionKey = this.sessionKey(mapping.id, target.id);
+      const session = target.enabled && !this.disconnectRequested.has(sessionKey)
+        && this.sessions.getState(sessionKey).status === 'connected'
+        ? this.sessions.getSession(sessionKey) : undefined;
+      return session ? [{ target, session }] : [];
+    });
+    for (const { target } of connected) this.preparingTargets.add(this.runtimeKey(mapping.id, target.id));
+    this.refreshWatchers();
+    if (connected.length) this.startPostConnectInitialization(mapping, connected);
 
     this.ui.notify(`Mapping saved: ${mapping.name}.`, 'success');
     return mapping;
   }
 
   async deleteMapping(mappingId: string): Promise<void> {
+    if (this.initializingMappings.has(mappingId)) {
+      throw new Error('Wait until this mapping finishes its initial Refresh before deleting it.');
+    }
     const mapping = this.mappings.get(mappingId);
     if (mapping) {
       for (const target of mapping.targets) this.disconnectRequested.add(this.sessionKey(mappingId, target.id));
       await Promise.all(mapping.targets.map(target =>
-        this.operations.run(this.runtimeKey(mappingId, target.id), () =>
-          this.sessions.disconnect(this.sessionKey(mappingId, target.id))
-        )
+        this.disconnect(mappingId, target.id)
       ));
       for (const target of mapping.targets) this.runtimeByTarget.delete(this.runtimeKey(mappingId, target.id));
     }
@@ -404,13 +523,16 @@ export class WorkspaceSyncController implements vscode.Disposable {
       for (const target of mapping.targets) this.disconnectRequested.add(this.sessionKey(mapping.id, target.id));
     }
     await this.sessions.disconnectAll();
+    this.initializingMappings.clear();
     this.runtimeByTarget.clear();
+    this.preparingTargets.clear();
     this.remoteWatchSnapshots.clear();
     // Restore Watch registrations without opening remote connections.
     this.refreshWatchers();
     this.ui.log('Workspace Sync configuration reloaded from persistent storage.');
   }
 
+  /** Establish the private session first; initial Compare/Watch continues separately. */
   async connect(
     mappingId: string,
     targetId: string,
@@ -419,58 +541,265 @@ export class WorkspaceSyncController implements vscode.Disposable {
   ): Promise<void> {
     const mapping = this.requireMapping(mappingId);
     const target = this.requireEnabledTarget(mapping, targetId);
+    if (cancellationToken?.isCancellationRequested) return;
+    const session = await this.openTargetConnection(mapping, target, false, cancellationToken);
+    if (session && !cancellationToken?.isCancellationRequested) {
+      this.startPostConnectInitialization(mapping, [{ target, session }], progress);
+    }
+  }
+
+  private async openTargetConnection(
+    mapping: WorkspaceSyncMapping,
+    target: WorkspaceSyncTarget,
+    reconnect: boolean,
+    cancellationToken?: { readonly isCancellationRequested: boolean }
+  ): Promise<import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession | undefined> {
     const key = this.runtimeKey(mapping.id, target.id);
     const sessionKey = this.sessionKey(mapping.id, target.id);
     this.disconnectRequested.delete(sessionKey);
+    this.suspendedTargets.delete(key);
+    this.preparingTargets.add(key);
     this.runtimeByTarget.delete(key);
-    const connectTimer = this.diagnostics.timer();
-    this.diagnostics.debug('Controller', 'Connect started.', { Mapping: mapping.name, Target: target.name });
-    let connectOutcome = 'completed';
+    this.remoteWatchSnapshots.delete(key);
+    this.refreshWatchers();
+    const timer = this.diagnostics.timer();
     try {
-      await this.operations.run(key, async () => {
-        let session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession | undefined;
-        try {
-          session = await this.sessions.connect(sessionKey, target.connectionId);
-          await this.ensureBaselineContext(mapping, target, session);
-          await this.cleanupKnownOrphanedRemoteTemps(mapping, target, session);
-          await this.localRootOperations.run(mapping.localRoot, async () => {
-            const runtime = await this.compareTargetCore(mapping, target, progress, cancellationToken);
-            if (cancellationToken?.isCancellationRequested) return;
-            await this.reconcileWatchRuntimeCore(mapping, target, session!, runtime, this.watchRefreshGeneration);
-          });
-
-          if (cancellationToken?.isCancellationRequested) {
-            await this.sessions.disconnectSessionIfCurrent(sessionKey, session);
-          }
-        } catch (error) {
-          if (session) {
-            if (cancellationToken?.isCancellationRequested) {
-              await this.sessions.disconnectSessionIfCurrent(sessionKey, session);
-            } else {
-              await this.sessions.failConnectedSession(sessionKey, session, error);
-            }
-          }
-          throw error;
+      const session = await this.operations.run(key, async () => {
+        if (cancellationToken?.isCancellationRequested || this.disconnectRequested.has(sessionKey)) return undefined;
+        if (reconnect) await this.sessions.disconnect(sessionKey);
+        const session = await this.sessions.connect(sessionKey, target.connectionId);
+        if (cancellationToken?.isCancellationRequested || this.disconnectRequested.has(sessionKey)) {
+          await this.sessions.disconnectSessionIfCurrent(sessionKey, session);
+          this.preparingTargets.delete(key);
+          return undefined;
         }
+        return session;
       });
-      if (cancellationToken?.isCancellationRequested) connectOutcome = 'cancelled';
-      this.diagnostics.debug('Controller', 'Connect preparation completed.', { Mapping: mapping.name, Target: target.name, Outcome: connectOutcome });
+      // Cancellation before the target queue acquires its turn must not leave
+      // the target stuck in the preparing state.
+      if (!session) this.preparingTargets.delete(key);
+      return session;
     } catch (error) {
-      connectOutcome = cancellationToken?.isCancellationRequested ? 'cancelled' : 'failed';
-      this.diagnostics.debug('Controller', 'Connect preparation failed.', {
-        Mapping: mapping.name,
-        Target: target.name,
-        Outcome: connectOutcome,
+      this.preparingTargets.delete(key);
+      this.diagnostics.debug('Controller', 'Physical connection failed.', {
+        Mapping: mapping.name, Target: target.name,
         Error: this.ui.sanitize(error instanceof Error ? error.message : String(error))
       });
       throw error;
     } finally {
-      this.diagnostics.performance('Controller', `Connect ${connectOutcome} in ${formatDuration(connectTimer())}.`, { Mapping: mapping.name, Target: target.name });
-      // Automatic handlers are registered only after the complete
-      // Connect -> Compare -> initial Watch reconciliation sequence succeeds.
-      // A failed/cancelled preparation closes the private session first.
+      this.diagnostics.performance('Controller', `Physical ${reconnect ? 'Reconnect' : 'Connect'} finished in ${formatDuration(timer())}.`, {
+        Mapping: mapping.name, Target: target.name
+      });
       this.refreshWatchers();
     }
+  }
+
+  private startPostConnectInitialization(
+    mapping: WorkspaceSyncMapping,
+    connections: Array<{ target: WorkspaceSyncTarget; session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession }>,
+    progress?: (progress: WorkspaceSyncProgress) => void
+  ): void {
+    if (this.disposed || !connections.length) return;
+    const source = new vscode.CancellationTokenSource();
+    let tokens = this.initialRefreshTokens.get(mapping.id);
+    if (!tokens) this.initialRefreshTokens.set(mapping.id, tokens = new Set());
+    tokens.add(source);
+    this.initializingMappings.set(mapping.id, (this.initializingMappings.get(mapping.id) || 0) + 1);
+    this.backgroundActivityEmitter.fire({
+      active: true, kind: 'refresh', label: 'Refreshing connected targets...', mappingId: mapping.id,
+      detail: `Refreshing: ${formatWorkspaceSyncTargetNames(connections.map(item => item.target.name))}`, cancellable: true
+    });
+    void this.initializeConnectedTargets(mapping, connections, progress, source.token).catch(async error => {
+      if (source.token.isCancellationRequested) {
+        for (const { target, session } of connections) {
+          if (this.sessions.getSession(this.sessionKey(mapping.id, target.id)) !== session) continue;
+          const key = this.runtimeKey(mapping.id, target.id);
+          if (!this.preparingTargets.has(key)) continue;
+          this.preparingTargets.delete(key);
+          this.runtimeByTarget.delete(key);
+          this.suspendedTargets.add(key);
+        }
+        this.refreshWatchers();
+        this.ui.log('Initial Refresh cancelled. The connection remains open; run Refresh to complete Watch preparation.', 'warning', mapping.name);
+        return;
+      }
+      for (const { target, session } of connections) {
+        if (this.preparingTargets.has(this.runtimeKey(mapping.id, target.id))) {
+          await this.failInitialPreparation(mapping, target, session, error);
+        }
+      }
+      this.log('WARN', `Workspace Sync initial preparation failed: ${mapping.name}. ${error instanceof Error ? error.message : String(error)}`);
+    }).finally(() => {
+      // Cancellation can also arrive while reconciliation is finishing normally;
+      // no cancelled target may acquire Watch or a stale Sync plan afterwards.
+      if (source.token.isCancellationRequested) {
+        for (const { target, session } of connections) {
+          if (this.sessions.getSession(this.sessionKey(mapping.id, target.id)) !== session) continue;
+          const key = this.runtimeKey(mapping.id, target.id);
+          if (!this.preparingTargets.has(key)) continue;
+          this.preparingTargets.delete(key);
+          this.runtimeByTarget.delete(key);
+          this.suspendedTargets.add(key);
+        }
+      }
+      tokens!.delete(source);
+      if (!tokens!.size) this.initialRefreshTokens.delete(mapping.id);
+      source.dispose();
+      const remaining = (this.initializingMappings.get(mapping.id) || 1) - 1;
+      if (remaining > 0) this.initializingMappings.set(mapping.id, remaining);
+      else {
+        this.initializingMappings.delete(mapping.id);
+        this.backgroundActivityEmitter.fire({
+          active: false, kind: 'refresh', label: 'Refreshing connected targets...', mappingId: mapping.id
+        });
+      }
+      this.refreshWatchers();
+      this.viewStateChangedEmitter.fire();
+    });
+  }
+
+  private async initializeConnectedTargets(
+    mapping: WorkspaceSyncMapping,
+    connections: Array<{ target: WorkspaceSyncTarget; session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession }>,
+    progress?: (progress: WorkspaceSyncProgress) => void,
+    cancellationToken?: vscode.CancellationToken
+  ): Promise<void> {
+    const ready: typeof connections = [];
+    // Network housekeeping is independent per target and never holds a Local Root lock.
+    await runWithConcurrency(connections, MAX_PARALLEL_TARGET_REFRESHES, async connection => {
+      if (cancellationToken?.isCancellationRequested) return;
+      const { target, session } = connection;
+      const sessionKey = this.sessionKey(mapping.id, target.id);
+      try {
+        await this.operations.run(this.runtimeKey(mapping.id, target.id), async () => {
+          if (cancellationToken?.isCancellationRequested || this.sessions.getSession(sessionKey) !== session || this.disconnectRequested.has(sessionKey)) return;
+          await this.ensureBaselineContext(mapping, target, session);
+          if (cancellationToken?.isCancellationRequested) return;
+          await this.cleanupKnownOrphanedRemoteTemps(mapping, target, session);
+          if (cancellationToken?.isCancellationRequested) return;
+          ready.push(connection);
+        });
+      } catch (error) {
+        await this.failInitialPreparation(mapping, target, session, error);
+      }
+    });
+    const current = ready.filter(({ target, session }) =>
+      this.sessions.getSession(this.sessionKey(mapping.id, target.id)) === session
+      && !this.disconnectRequested.has(this.sessionKey(mapping.id, target.id))
+    );
+    // Scan Local once while fetching every Remote snapshot concurrently. Plans
+    // with independent Local paths can then reconcile at the same time.
+    const refreshingTargets = new Set(current.map(item => item.target.name));
+    let refreshedTargets = 0;
+    let failedRefreshTargets = 0;
+    const emitRefreshStatus = (): void => {
+      const running = formatWorkspaceSyncTargetNames([...refreshingTargets]);
+      const parts = [`${refreshedTargets}/${current.length} refreshed`];
+      if (failedRefreshTargets) parts.push(`${failedRefreshTargets} failed`);
+      if (running) parts.push(`Refreshing: ${running}`);
+      this.backgroundActivityEmitter.fire({
+        active: true, kind: 'refresh', label: 'Refreshing connected targets...', mappingId: mapping.id,
+        detail: parts.join(' · '), cancellable: true
+      });
+    };
+    emitRefreshStatus();
+    const refreshed = await this.refreshTargetsInParallel(
+      mapping,
+      current.map(item => item.target),
+      progress,
+      cancellationToken,
+      true,
+      (target, state) => {
+        if (state === 'started') return;
+        refreshingTargets.delete(target.name);
+        if (state === 'completed') refreshedTargets += 1;
+        else failedRefreshTargets += 1;
+        emitRefreshStatus();
+      }
+    );
+    this.backgroundActivityEmitter.fire({
+      active: true, kind: 'refresh', label: 'Reconciling connected targets...', mappingId: mapping.id,
+      detail: `${refreshed.size}/${current.length} target(s) refreshed`, cancellable: true
+    });
+    let reconciledTargets = 0;
+    await runWithConcurrency(current, MAX_PARALLEL_TARGET_SYNCS, async ({ target, session }) => {
+      const key = this.runtimeKey(mapping.id, target.id);
+      const sessionKey = this.sessionKey(mapping.id, target.id);
+      try {
+        await this.operations.run(key, async () => {
+          if (cancellationToken?.isCancellationRequested || this.sessions.getSession(sessionKey) !== session || this.disconnectRequested.has(sessionKey)) return;
+          let runtime = refreshed.get(target.id);
+          if (!runtime) throw new Error('The initial Refresh could not complete.');
+          // A previous writer might have completed after the shared scan. A
+          // refreshed plan is still revalidated AFTER taking its path locks.
+          if (this.localRootChangedAfter(mapping.localRoot, runtime.localMutationEpoch || 0)) {
+            runtime = await this.localRootOperations.runShared(mapping.localRoot, () =>
+              this.compareTargetCore(mapping, target, undefined, cancellationToken));
+          }
+          if (cancellationToken?.isCancellationRequested) return;
+          await this.reconcileWatchRuntimeCore(mapping, target, session, runtime, this.watchRefreshGeneration, cancellationToken);
+        });
+      } catch (error) {
+        await this.failInitialPreparation(mapping, target, session, error);
+      } finally {
+        reconciledTargets += 1;
+        this.backgroundActivityEmitter.fire({
+          active: true, kind: 'refresh', label: 'Reconciling connected targets...', mappingId: mapping.id,
+          detail: `${reconciledTargets}/${current.length} target(s) processed`, cancellable: true
+        });
+        // Late completion from an old session must not alter a new Connect.
+        if (this.sessions.getSession(sessionKey) === session && !this.disconnectRequested.has(sessionKey)) {
+          if (cancellationToken?.isCancellationRequested) {
+            this.runtimeByTarget.delete(key);
+            this.suspendedTargets.add(key);
+          }
+          this.preparingTargets.delete(key);
+        }
+        this.refreshWatchers();
+        this.viewStateChangedEmitter.fire();
+      }
+    });
+    // A target whose housekeeping failed was already marked failed; targets
+    // whose Refresh failed must also lose their half-prepared private session.
+    for (const { target, session } of connections) {
+      const key = this.runtimeKey(mapping.id, target.id);
+      if (this.sessions.getSession(this.sessionKey(mapping.id, target.id)) !== session) continue;
+      if (!this.preparingTargets.has(key)) continue;
+      if (!refreshed.has(target.id)) {
+        await this.failInitialPreparation(mapping, target, session, new Error('Initial Refresh failed. See Activity for details.'));
+      }
+      this.preparingTargets.delete(key);
+    }
+    this.refreshWatchers();
+  }
+
+  /** Cancel initial background preparation without disconnecting established sessions.
+   * A manual Disconnect owns socket interruption separately, so Cancel remains a
+   * soft cancellation and never turns a connected target into Disconnected. */
+  cancelInitialRefresh(mappingId: string): void {
+    const sources = this.initialRefreshTokens.get(mappingId);
+    if (!sources?.size) return;
+    for (const source of sources) source.cancel();
+    this.backgroundActivityEmitter.fire({
+      active: true, kind: 'refresh', label: 'Cancelling initial Refresh...', mappingId,
+      detail: 'Waiting for active reads or reconciliation steps to stop safely.', cancellable: false
+    });
+    this.viewStateChangedEmitter.fire();
+  }
+
+  private async failInitialPreparation(
+    mapping: WorkspaceSyncMapping,
+    target: WorkspaceSyncTarget,
+    session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
+    error: unknown
+  ): Promise<void> {
+    const sessionKey = this.sessionKey(mapping.id, target.id);
+    if (this.sessions.getSession(sessionKey) !== session || this.disconnectRequested.has(sessionKey)) return;
+    const key = this.runtimeKey(mapping.id, target.id);
+    this.runtimeByTarget.delete(key);
+    this.preparingTargets.delete(key);
+    await this.sessions.failConnectedSession(sessionKey, session, error);
+    this.ui.log(`Initial Refresh failed: ${error instanceof Error ? error.message : String(error)}`, 'error', `${mapping.name} / ${target.name}`);
   }
 
   async disconnect(mappingId: string, targetId: string): Promise<void> {
@@ -481,13 +810,26 @@ export class WorkspaceSyncController implements vscode.Disposable {
     // work already waiting behind another target/root operation must not run
     // merely because the physical session has not closed yet.
     this.disconnectRequested.add(sessionKey);
+    const key = this.runtimeKey(mappingId, targetId);
+    this.operations.cancelPending(key);
+    this.sessions.cancelPendingConnection(sessionKey);
+    // A Disconnect is stronger than Cancel: interrupt pending reads for this
+    // target so the socket can close promptly, without cancelling unrelated targets.
+    // Read-only metadata requests can hang waiting for a network response. Ask
+    // the protocol adapter to interrupt reads, never in-flight writes.
+    this.sessions.interruptPendingReads(sessionKey);
+    this.preparingTargets.delete(this.runtimeKey(mappingId, targetId));
+    this.suspendedTargets.delete(this.runtimeKey(mappingId, targetId));
     // Stop Local Watch / Upload on Save / Remote Watch immediately, even if
     // the physical disconnect must wait behind already queued target work.
     this.refreshWatchers();
     try {
-      await this.operations.run(this.runtimeKey(mappingId, targetId), () =>
-        this.sessions.disconnect(sessionKey)
-      );
+      // Let an active mutation finish, but never put shutdown behind a stuck
+      // transfer, NOOP, reconnect or cross-target lock indefinitely.
+      if (!await settlesWithin(this.operations.waitForIdle(key), 5000)) {
+        this.log('WARN', `Workspace Sync Disconnect: pending work did not finish within 5 seconds; closing the private session (${mappingId} / ${targetId}).`);
+      }
+      await this.sessions.disconnect(sessionKey);
     } finally {
       this.refreshWatchers();
       this.diagnostics.performance('Controller', `Disconnect completed in ${formatDuration(disconnectTimer())}.`, { MappingId: mappingId, TargetId: targetId });
@@ -500,60 +842,45 @@ export class WorkspaceSyncController implements vscode.Disposable {
     cancellationToken?: { readonly isCancellationRequested: boolean }
   ): Promise<void> {
     const mapping = this.requireMapping(mappingId);
-    const connectAllTimer = this.diagnostics.timer();
     const enabled = mapping.targets.filter(target => target.enabled);
     if (!enabled.length) throw new Error('This mapping has no enabled Workspace Sync targets.');
     if (cancellationToken?.isCancellationRequested) return;
-
     const profiles = new Map((await this.connectionManager.listProfiles()).map(profile => [profile.id, profile]));
-    if (cancellationToken?.isCancellationRequested) return;
-
+    const connected: Array<{ target: WorkspaceSyncTarget; session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession }> = [];
     const failures: unknown[] = [];
-    // Connect enabled targets in mapping order. Each target must finish its
-    // Connect -> Compare -> initial Watch reconciliation before the next target
-    // can inspect or modify the same Local Root. Failures do not prevent later
-    // targets from being attempted.
-    for (const target of enabled) {
+    let completed = 0;
+    // Physical connections are independent, even when targets share Local Root.
+    // Do not make target N wait for another target's Compare or Watch transfer.
+    await runWithConcurrency(enabled, MAX_PARALLEL_TARGET_REFRESHES, async target => {
       if (cancellationToken?.isCancellationRequested) return;
+      const sessionKey = this.sessionKey(mapping.id, target.id);
       try {
-        const sessionKey = this.sessionKey(mapping.id, target.id);
         const state = this.sessions.getState(sessionKey);
         const profile = profiles.get(target.connectionId);
-        const configChanged = state.status === 'connected'
-          && state.profileUpdatedAt !== undefined
-          && profile !== undefined
+        const changed = state.status === 'connected'
+          && state.profileUpdatedAt !== undefined && profile !== undefined
           && profile.updatedAt !== state.profileUpdatedAt;
-        if (state.status === 'connected' && !configChanged) {
-          // All Enabled is explicit user intent to keep this target connected,
-          // even when no new physical connection is necessary.
+        if (state.status === 'connected' && !changed && this.sessions.getSession(sessionKey)) {
           this.disconnectRequested.delete(sessionKey);
-          continue;
+        } else {
+          const session = await this.openTargetConnection(mapping, target, changed, cancellationToken);
+          if (session) connected.push({ target, session });
         }
-        if (configChanged) await this.reconnect(mapping.id, target.id, progress, cancellationToken);
-        else await this.connect(mapping.id, target.id, progress, cancellationToken);
       } catch (error) {
         failures.push(error);
+      } finally {
+        completed += 1;
+        progress?.({ completed, total: enabled.length, currentPath: target.name, phase: `Connection attempts ${completed} of ${enabled.length}.` });
       }
-    }
-
-    // An already-connected target may only have needed its Disconnect intent
-    // cleared above, so refresh registrations even when no physical Connect ran.
-    this.refreshWatchers();
-
-    // Cancellation is not a partial-connect failure. The panel's cancellation
-    // cleanup disconnects enabled targets after the current serialized target
-    // operation unwinds.
-    if (cancellationToken?.isCancellationRequested) return;
-
-    this.diagnostics.performance('Controller', `Connect All Enabled completed in ${formatDuration(connectAllTimer())}.`, {
-      Mapping: mapping.name,
-      Targets: enabled.length,
-      Failures: failures.length
     });
+    if (cancellationToken?.isCancellationRequested) return;
+    this.refreshWatchers();
+    // The foreground Connect finishes here. Subsequent Refresh and initial
+    // reconciliation report via Activity; Mapping/Target remain navigable.
+    this.startPostConnectInitialization(mapping, connected);
     if (failures.length) {
-      const first = failures[0];
-      const detail = first instanceof Error ? first.message : String(first);
-      throw new Error(`Could not connect ${failures.length} of ${enabled.length} enabled target(s). ${detail}`);
+      const error = failures[0];
+      throw new Error(`Could not connect ${failures.length} of ${enabled.length} enabled target(s). ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -565,6 +892,10 @@ export class WorkspaceSyncController implements vscode.Disposable {
     const enabled = mapping.targets.filter(target => target.enabled);
     if (!enabled.length) throw new Error('This mapping has no enabled Workspace Sync targets.');
 
+    // All enabled targets are being disconnected, so cancel the shared initial
+    // preparation token as well. Individual disconnects still interrupt only
+    // their own pending reads.
+    this.cancelInitialRefresh(mappingId);
     let completed = 0;
     progress?.({ completed, total: enabled.length, phase: `Disconnecting 0 of ${enabled.length} target(s)...` });
     const results = await Promise.allSettled(enabled.map(async target => {
@@ -596,49 +927,10 @@ export class WorkspaceSyncController implements vscode.Disposable {
   ): Promise<void> {
     const mapping = this.requireMapping(mappingId);
     const target = this.requireEnabledTarget(mapping, targetId);
-    const key = this.runtimeKey(mapping.id, target.id);
-    const sessionKey = this.sessionKey(mapping.id, target.id);
-    this.disconnectRequested.delete(sessionKey);
-    this.runtimeByTarget.delete(key);
-    const reconnectTimer = this.diagnostics.timer();
-    this.diagnostics.debug('Controller', 'Reconnect started.', { Mapping: mapping.name, Target: target.name });
-    let reconnectOutcome = 'completed';
-    try {
-      await this.operations.run(key, async () => {
-        await this.sessions.disconnect(sessionKey);
-        let session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession | undefined;
-        try {
-          session = await this.sessions.connect(sessionKey, target.connectionId);
-          await this.ensureBaselineContext(mapping, target, session);
-          await this.cleanupKnownOrphanedRemoteTemps(mapping, target, session);
-          await this.localRootOperations.run(mapping.localRoot, async () => {
-            const runtime = await this.compareTargetCore(mapping, target, progress, cancellationToken);
-            if (cancellationToken?.isCancellationRequested) return;
-            await this.reconcileWatchRuntimeCore(mapping, target, session!, runtime, this.watchRefreshGeneration);
-          });
-
-          if (cancellationToken?.isCancellationRequested) {
-            await this.sessions.disconnectSessionIfCurrent(sessionKey, session);
-          }
-        } catch (error) {
-          if (session) {
-            if (cancellationToken?.isCancellationRequested) {
-              await this.sessions.disconnectSessionIfCurrent(sessionKey, session);
-            } else {
-              await this.sessions.failConnectedSession(sessionKey, session, error);
-            }
-          }
-          throw error;
-        }
-      });
-    } catch (error) {
-      reconnectOutcome = cancellationToken?.isCancellationRequested ? 'cancelled' : 'failed';
-      this.diagnostics.debug('Controller', 'Reconnect failed.', { Mapping: mapping.name, Target: target.name, Error: this.ui.sanitize(error instanceof Error ? error.message : String(error)) });
-      throw error;
-    } finally {
-      if (cancellationToken?.isCancellationRequested && reconnectOutcome === 'completed') reconnectOutcome = 'cancelled';
-      this.refreshWatchers();
-      this.diagnostics.performance('Controller', `Reconnect ${reconnectOutcome} in ${formatDuration(reconnectTimer())}.`, { Mapping: mapping.name, Target: target.name });
+    if (cancellationToken?.isCancellationRequested) return;
+    const session = await this.openTargetConnection(mapping, target, true, cancellationToken);
+    if (session && !cancellationToken?.isCancellationRequested) {
+      this.startPostConnectInitialization(mapping, [{ target, session }], progress);
     }
   }
 
@@ -713,6 +1005,79 @@ export class WorkspaceSyncController implements vscode.Disposable {
     });
   }
 
+  /** Reset only the enabled targets of the requested mapping. Do not reset any
+   * baseline unless every member of the selection is already connected. Each
+   * clear is serialized with work on its target and overlapping Local Roots;
+   * subsequent comparisons share one Local scan and run remote scans in parallel.
+   */
+  async resetBaselineEnabledTargets(
+    mappingId: string,
+    progress?: (progress: WorkspaceSyncProgress) => void,
+    cancellationToken?: { readonly isCancellationRequested: boolean }
+  ): Promise<void> {
+    const mapping = this.requireMapping(mappingId);
+    const enabled = mapping.targets.filter(target => target.enabled);
+    if (!enabled.length) throw new Error('This mapping has no enabled Workspace Sync targets.');
+    for (const target of enabled) {
+      if (this.sessions.getState(this.sessionKey(mapping.id, target.id)).status !== 'connected'
+        || !this.sessions.getSession(this.sessionKey(mapping.id, target.id))) {
+        throw new Error(`Connect all enabled targets before resetting their baselines (${target.name} is not connected).`);
+      }
+      if (this.preparingTargets.has(this.runtimeKey(mapping.id, target.id))) {
+        throw new Error(`Wait until ${target.name} finishes its initial Refresh before resetting baselines.`);
+      }
+    }
+
+    // Suppress automatic Watch activity while the manual maintenance operation
+    // clears historical state and refreshes. No local/remote file is modified.
+    for (const target of enabled) this.preparingTargets.add(this.runtimeKey(mapping.id, target.id));
+    this.refreshWatchers();
+    this.viewStateChangedEmitter.fire();
+    try {
+      let completed = 0;
+      const resetFailures: Array<{ target: WorkspaceSyncTarget; error: unknown }> = [];
+      // Keep the existing lock order: target queue -> Local Root coordinator.
+      // Acquiring a Local Root lock before a target queue could deadlock a
+      // running Watch transfer that holds its target queue already.
+      await runWithConcurrency(enabled, MAX_PARALLEL_TARGET_REFRESHES, async target => {
+        if (cancellationToken?.isCancellationRequested) return;
+        const key = this.runtimeKey(mapping.id, target.id);
+        try {
+          await this.operations.run(key, () => this.localRootOperations.run(mapping.localRoot, async () => {
+            if (cancellationToken?.isCancellationRequested) return;
+            if (this.sessions.getState(this.sessionKey(mapping.id, target.id)).status !== 'connected') {
+              throw new Error(`Target '${target.name}' was disconnected before its baseline could be reset.`);
+            }
+            await this.baselines.clear(mapping.id, target.id);
+            await this.lastViews.clear(mapping.id, target.id);
+            this.runtimeByTarget.delete(key);
+            this.remoteWatchSnapshots.delete(key);
+            this.strongVerificationPaths.delete(key);
+            this.ui.log('Baseline reset. Local and Remote files were not modified.', 'info', `${mapping.name} / ${target.name}`);
+            completed += 1;
+            progress?.({ completed, total: enabled.length, currentPath: target.name, phase: 'Resetting baselines...' });
+            this.viewStateChangedEmitter.fire();
+          }));
+        } catch (error) {
+          // Wait for every in-flight target to settle before re-enabling Watch.
+          // Promise.all rejects on the first failure and would otherwise release
+          // preparation guards while another reset still holds a target lock.
+          resetFailures.push({ target, error });
+        }
+      });
+      if (resetFailures.length) {
+        const failure = resetFailures[0];
+        throw new Error(`Reset Baseline failed for ${failure.target.name}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)} (${completed}/${enabled.length} target(s) reset).`);
+      }
+      if (cancellationToken?.isCancellationRequested) return;
+      await this.refreshTargetsInParallel(mapping, enabled, progress, cancellationToken, false);
+    } finally {
+      for (const target of enabled) this.preparingTargets.delete(this.runtimeKey(mapping.id, target.id));
+      this.refreshWatchers();
+      this.viewStateChangedEmitter.fire();
+    }
+  }
+
   private async compareTargetCore(
     mapping: WorkspaceSyncMapping,
     target: WorkspaceSyncTarget,
@@ -722,7 +1087,12 @@ export class WorkspaceSyncController implements vscode.Disposable {
   ): Promise<MappingRuntimeState> {
     const refreshStartedAt = Date.now();
     this.diagnostics.debug('Refresh', 'Refresh started.', { Mapping: mapping.name, Target: target.name });
-    const session = this.requireSession(mapping.id, target.id);
+    const runtimeKey = this.runtimeKey(mapping.id, target.id);
+    const preparationWasCancelled = this.suspendedTargets.has(runtimeKey);
+    const session = preparationWasCancelled
+      ? this.sessions.getSession(this.sessionKey(mapping.id, target.id))
+      : this.requireSession(mapping.id, target.id);
+    if (!session) throw new Error('Connect Workspace Sync before running this operation.');
     await this.ensureBaselineContext(mapping, target, session);
     this.ui.log('Refreshing local and remote files...', 'info', `${mapping.name} / ${target.name}`);
     const ignorePatterns = shared?.ignorePatterns || await loadEffectiveIgnorePatterns(mapping);
@@ -812,8 +1182,23 @@ export class WorkspaceSyncController implements vscode.Disposable {
       Conflicts: plan.conflicts.length,
       Errors: plan.errors.length
     });
-    const runtime = { local, remote, diffs, plan, lastComparedAt: Date.now() };
+    const runtime: MappingRuntimeState = {
+      local, remote, diffs, plan, lastComparedAt: Date.now(), localMutationEpoch: this.localMutationEpoch
+    };
+    // A stale scan must never publish a Sync plan after Disconnect/Cancel or
+    // replace the state of a newer private session (Reconnect racing Refresh).
+    if (cancellationToken?.isCancellationRequested
+      || this.disconnectRequested.has(this.sessionKey(mapping.id, target.id))
+      || this.sessions.getSession(this.sessionKey(mapping.id, target.id)) !== session) {
+      throw new Error('Workspace Sync Refresh cancelled or target disconnected.');
+    }
     this.runtimeByTarget.set(this.runtimeKey(mapping.id, target.id), runtime);
+    // A successful manual/maintenance Refresh makes a previously cancelled
+    // preparation eligible for Watch again without requiring Reconnect.
+    if (preparationWasCancelled) {
+      this.suspendedTargets.delete(runtimeKey);
+      this.refreshWatchers();
+    }
     if (runtime.lastComparedAt) await this.lastViews.set(mapping, target, runtime.diffs, runtime.lastComparedAt);
 
     // Emit per target, not only after the All Enabled batch. The webview can
@@ -827,6 +1212,127 @@ export class WorkspaceSyncController implements vscode.Disposable {
     return runtime;
   }
 
+  /**
+   * Refresh only the affected subtrees and merge them into the last complete
+   * target runtime. This is used by deferred directory-delete recovery: a
+   * single .dotnet retry must not rescan an entire large target.
+   */
+  private async compareTargetScopesCore(
+    mapping: WorkspaceSyncMapping,
+    target: WorkspaceSyncTarget,
+    scopes: string[],
+    cancellationToken?: { readonly isCancellationRequested: boolean }
+  ): Promise<MappingRuntimeState> {
+    const normalizedScopes = normalizeReconcileScopes(scopes);
+    if (!normalizedScopes.length) return this.compareTargetCore(mapping, target, undefined, cancellationToken);
+
+    const key = this.runtimeKey(mapping.id, target.id);
+    const current = this.runtimeByTarget.get(key);
+    if (!current?.local || !current.remote) {
+      return this.compareTargetCore(mapping, target, undefined, cancellationToken);
+    }
+
+    const runtimeKey = this.runtimeKey(mapping.id, target.id);
+    const preparationWasCancelled = this.suspendedTargets.has(runtimeKey);
+    const session = preparationWasCancelled
+      ? this.sessions.getSession(this.sessionKey(mapping.id, target.id))
+      : this.requireSession(mapping.id, target.id);
+    if (!session) throw new Error('Connect Workspace Sync before running this operation.');
+    await this.ensureBaselineContext(mapping, target, session);
+    const baseline = await this.baselines.get(mapping.id, target.id);
+    const ignorePatterns = await loadEffectiveIgnorePatterns(mapping);
+    this.ui.log(
+      `Re-evaluating affected subtree${normalizedScopes.length > 1 ? 's' : ''}: ${normalizedScopes.slice(0, 3).join(', ')}${normalizedScopes.length > 3 ? '…' : ''}`,
+      'info',
+      `${mapping.name} / ${target.name}`
+    );
+
+    const localParts: SyncSnapshot[] = [];
+    const remoteParts: SyncSnapshot[] = [];
+    await runWithConcurrency(normalizedScopes, Math.min(MAX_PARALLEL_TARGET_REFRESHES, normalizedScopes.length), async scope => {
+      if (cancellationToken?.isCancellationRequested) throw new Error('Workspace Sync Refresh cancelled.');
+      const localPhysical = current.local?.entries[scope]?.physicalRelativePath
+        || baseline?.entries[scope]?.localRelativePath
+        || scope;
+      const remotePhysical = current.remote?.entries[scope]?.physicalRelativePath
+        || baseline?.entries[scope]?.remoteRelativePath
+        || scope;
+      const [localPart, remotePart] = await Promise.all([
+        scanLocalSubtree(mapping.localRoot, scope, localPhysical, { ignorePatterns, cancellationToken }),
+        scanRemoteSubtree(session, target.remoteRoot, scope, remotePhysical, {
+          ignorePatterns,
+          concurrency: session.capabilities.maxConcurrentMetadata,
+          cancellationToken
+        })
+      ]);
+      localParts.push(localPart);
+      remoteParts.push(remotePart);
+    });
+
+    const scopedLocal = combineSnapshots(localParts);
+    const scopedRemote = combineSnapshots(remoteParts);
+    const scopedBaseline = filterBaselineToScopes(baseline, normalizedScopes);
+    const verified = await verifyComparisonContent(
+      mapping.localRoot,
+      target.remoteRoot,
+      session,
+      scopedLocal,
+      scopedRemote,
+      scopedBaseline,
+      {
+        concurrency: Math.min(4, session.capabilities.maxConcurrentTransfers),
+        cancellationToken,
+        forceHashPaths: [...(this.strongVerificationPaths.get(key) || [])].filter(candidate => pathInScopes(candidate, normalizedScopes))
+      }
+    );
+
+    const local = replaceSnapshotScopes(current.local, verified.local, normalizedScopes);
+    const remote = replaceSnapshotScopes(current.remote, verified.remote, normalizedScopes);
+    const scopedMetadataDiffs = diffSnapshots(verified.local, verified.remote, scopedBaseline, {
+      mtimeToleranceMs: 2000,
+      remoteMtimeReliable: session.capabilities.reliableMtime
+    });
+    const localCaseSensitive = await this.getLocalCaseSensitivity(mapping.localRoot);
+    const scopedDiffs = protectCaseCollisions(scopedMetadataDiffs, verified.local, verified.remote, {
+      direction: mapping.options.direction,
+      localCaseSensitive,
+      remoteCaseSensitive: session.capabilities.caseSensitive
+    });
+    await this.trustEqualEntries(mapping.id, target.id, scopedDiffs);
+    this.clearStrongVerificationForProvenSame(mapping.id, target.id, scopedDiffs);
+
+    const diffs = [
+      ...current.diffs.filter(diff => !pathInScopes(diff.relativePath, normalizedScopes)),
+      ...scopedDiffs
+    ].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    const plan = buildSyncPlan(mapping.id, target.id, diffs, {
+      direction: mapping.options.direction,
+      propagateDeletes: mapping.options.propagateDeletes,
+      conflictProtection: mapping.options.conflictProtection,
+      localFilenameStyle: localFilenameStyle(),
+      remoteFilenameStyle: session.capabilities.filenameStyle
+    });
+    const runtime: MappingRuntimeState = {
+      local,
+      remote,
+      diffs,
+      plan,
+      lastComparedAt: Date.now(),
+      localMutationEpoch: this.localMutationEpoch
+    };
+
+    if (cancellationToken?.isCancellationRequested
+      || this.disconnectRequested.has(this.sessionKey(mapping.id, target.id))
+      || this.sessions.getSession(this.sessionKey(mapping.id, target.id)) !== session) {
+      throw new Error('Workspace Sync subtree Refresh cancelled or target disconnected.');
+    }
+    this.runtimeByTarget.set(key, runtime);
+    if (runtime.lastComparedAt) await this.lastViews.set(mapping, target, runtime.diffs, runtime.lastComparedAt);
+    this.viewStateChangedEmitter.fire();
+    this.ui.log('Affected subtree re-evaluation completed.', 'success', `${mapping.name} / ${target.name}`);
+    return runtime;
+  }
+
   async executeCurrentPlan(
     mappingId: string,
     targetId: string,
@@ -837,7 +1343,14 @@ export class WorkspaceSyncController implements vscode.Disposable {
     const target = this.requireEnabledTarget(mapping, targetId);
     const key = this.runtimeKey(mapping.id, target.id);
 
+    if (this.watchingTargets.has(key)) {
+      throw new Error(`Wait for Watch reconciliation on '${target.name}' before starting Sync.`);
+    }
+
     return this.operations.run(key, async () => {
+      if (this.preparingTargets.has(key) || this.initializingMappings.has(mapping.id) || this.watchingTargets.has(key)) {
+        throw new Error('Wait for the initial Refresh and Watch reconciliation before starting Sync.');
+      }
       const session = this.requireSession(mapping.id, target.id);
       const runtime = this.runtimeByTarget.get(key);
       if (!runtime?.plan || !runtime.local || !runtime.remote) throw new Error('Refresh the target before starting Sync.');
@@ -848,7 +1361,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
       if (runtime.plan.conflicts.length) throw new Error('Resolve or skip conflicts before starting Sync.');
       if (runtime.plan.errors.length) throw new Error('Sync cannot start while the compare result contains unknown or incomplete paths.');
 
-      return this.runWithPlanLocalRootProtection(mapping, runtime.plan, async () => {
+      return this.runWithPlanLocalRootProtection(mapping, target, runtime.plan, session, async () => {
         progress?.({ completed: 0, total: runtime.plan!.operations.length, phase: 'Revalidating sync plan...' });
         const revalidated = await this.revalidatePlan(mapping, target, runtime.plan!, session, cancellationToken);
         if (revalidated.stale.length) {
@@ -875,7 +1388,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
         });
 
         const observations = await this.updateBaselineForOperations(mapping, target, session, result.completed);
-        if (!result.cancelled && !result.failed.length) {
+        if (!result.cancelled && !result.failed.length && !result.deferred.length) {
           await this.reflectSuccessfulManualOperationsInView(mapping, target, session, observations, runtime);
         } else {
           this.runtimeByTarget.delete(key);
@@ -884,8 +1397,8 @@ export class WorkspaceSyncController implements vscode.Disposable {
             await this.compareTargetCore(mapping, target, progress, cancellationToken);
           }
         }
-        this.log(result.failed.length ? 'WARN' : 'INFO', `Workspace Sync execution completed: ${mapping.name} / ${target.name} (${result.completed.length} completed, ${result.failed.length} failed${result.cancelled ? ', cancelled' : ''}).`);
-        return { failed: result.failed.length, stale: 0, cancelled: result.cancelled };
+        this.log(result.failed.length || result.deferred.length ? 'WARN' : 'INFO', `Workspace Sync execution completed: ${mapping.name} / ${target.name} (${result.completed.length} completed, ${result.failed.length} failed${result.deferred.length ? `, ${result.deferred.length} deferred` : ''}${result.cancelled ? ', cancelled' : ''}).`);
+        return { failed: result.failed.length, stale: result.deferred.length, cancelled: result.cancelled };
       });
     });
   }
@@ -906,6 +1419,10 @@ export class WorkspaceSyncController implements vscode.Disposable {
     // path can never become an implicit Connect operation.
     const totals = new Map<string, number>();
     for (const target of targets) {
+      if (this.preparingTargets.has(this.runtimeKey(mapping.id, target.id)) || this.initializingMappings.has(mapping.id)
+        || this.watchingTargets.has(this.runtimeKey(mapping.id, target.id))) {
+        throw new Error(`Wait for the initial Refresh before syncing '${target.name}'.`);
+      }
       this.requireSession(mapping.id, target.id);
       const runtime = this.runtimeByTarget.get(this.runtimeKey(mapping.id, target.id));
       if (!runtime?.plan || !runtime.local || !runtime.remote) {
@@ -945,8 +1462,14 @@ export class WorkspaceSyncController implements vscode.Disposable {
     const mapping = this.requireMapping(mappingId);
     const target = this.requireEnabledTarget(mapping, targetId);
     const key = this.runtimeKey(mapping.id, target.id);
+    if (this.watchingTargets.has(key)) {
+      throw new Error(`Wait for Watch reconciliation on '${target.name}' before transferring files.`);
+    }
 
     return this.operations.run(key, async () => {
+      if (this.preparingTargets.has(key) || this.initializingMappings.has(mapping.id) || this.watchingTargets.has(key)) {
+        throw new Error('Wait for the initial Refresh and Watch reconciliation before transferring selected files.');
+      }
       const session = this.requireSession(mapping.id, target.id);
       const runtime = this.runtimeByTarget.get(key);
       if (!runtime?.diffs.length) throw new Error('Refresh the target before transferring selected files.');
@@ -971,7 +1494,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
       if (!operations.length) throw new Error(`No selected paths can be ${direction === 'upload' ? 'uploaded' : 'downloaded'}.`);
 
       const plan = singleOperationPlan(mapping, target, operations);
-      return this.runWithPlanLocalRootProtection(mapping, plan, async () => {
+      return this.runWithPlanLocalRootProtection(mapping, target, plan, session, async () => {
         const revalidated = await this.revalidatePlan(mapping, target, plan, session, cancellationToken);
         if (revalidated.stale.length) return { failed: 0, stale: revalidated.stale.length, cancelled: false };
         const result = await this.executePlan(mapping, target, plan, session, {
@@ -981,7 +1504,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
           journal: this.journal
         });
         const observations = await this.updateBaselineForOperations(mapping, target, session, result.completed);
-        if (!result.cancelled && !result.failed.length) {
+        if (!result.cancelled && !result.failed.length && !result.deferred.length) {
           await this.reflectSuccessfulManualOperationsInView(mapping, target, session, observations, runtime);
         } else {
           this.runtimeByTarget.delete(key);
@@ -990,7 +1513,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
             await this.compareTargetCore(mapping, target, progress, cancellationToken);
           }
         }
-        return { failed: result.failed.length, stale: 0, cancelled: result.cancelled };
+        return { failed: result.failed.length, stale: result.deferred.length, cancelled: result.cancelled };
       });
     });
   }
@@ -1018,7 +1541,13 @@ export class WorkspaceSyncController implements vscode.Disposable {
 
     // Manual aggregate transfers are allowed only for sessions the user already
     // connected. Never let All Enabled become another path to auto-connect.
-    for (const selection of normalized) this.requireSession(mapping.id, selection.target.id);
+    for (const selection of normalized) {
+      const key = this.runtimeKey(mapping.id, selection.target.id);
+      if (this.preparingTargets.has(key) || this.initializingMappings.has(mapping.id) || this.watchingTargets.has(key)) {
+        throw new Error(`Wait for Refresh or Watch reconciliation on '${selection.target.name}' before transferring files.`);
+      }
+      this.requireSession(mapping.id, selection.target.id);
+    }
 
     const totals = new Map(normalized.map(selection => [selection.target.id, selection.relativePaths.length]));
     const aggregateProgress = createAggregateSyncProgress(normalized.map(selection => selection.target), totals, progress);
@@ -1045,12 +1574,26 @@ export class WorkspaceSyncController implements vscode.Disposable {
 
   private runWithPlanLocalRootProtection<T>(
     mapping: WorkspaceSyncMapping,
+    target: WorkspaceSyncTarget,
     plan: SyncPlan,
+    session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
     task: () => Promise<T>
   ): Promise<T> {
-    return planMutatesLocal(plan)
-      ? this.localRootOperations.run(mapping.localRoot, task)
-      : this.localRootOperations.runShared(mapping.localRoot, task);
+    const accesses = planLocalPathAccesses(mapping, target, plan);
+    // Lock order for every transfer path: target queue -> remote endpoint ->
+    // Local paths. This prevents circular waits between the Watchers and Sync.
+    return this.remoteEndpointOperations.run(remoteEndpointLockRoot(session), () =>
+      this.localRootOperations.runPaths(mapping.localRoot, accesses, task));
+  }
+
+  private runWithAutomaticPathProtection<T>(
+    mapping: WorkspaceSyncMapping,
+    session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
+    accesses: LocalPathAccess[],
+    task: () => Promise<T>
+  ): Promise<T> {
+    return this.remoteEndpointOperations.run(remoteEndpointLockRoot(session), () =>
+      this.localRootOperations.runPaths(mapping.localRoot, accesses, task));
   }
 
   async setConflictResolution(
@@ -1076,37 +1619,64 @@ export class WorkspaceSyncController implements vscode.Disposable {
       const runtime = this.runtimeByTarget.get(this.runtimeKey(mapping.id, target.id));
       if (!runtime?.plan) throw new Error('Refresh the target before selecting conflict resolutions.');
 
-      const requested = Object.entries(resolutions);
-      for (const [relativePath, resolution] of requested) {
-        if (resolution !== undefined && resolution !== 'useLocal' && resolution !== 'useRemote' && resolution !== 'skip') {
-          throw new Error('Invalid Workspace Sync conflict resolution.');
-        }
-        const diff = runtime.diffs.find(item => item.relativePath === relativePath);
-        if (!diff || (diff.status !== 'conflict' && diff.status !== 'different')) {
-          throw new Error(`'${relativePath}' no longer requires a Workspace Sync resolution. Run Refresh again.`);
-        }
-        if (resolution !== undefined && resolution !== 'skip') validateConflictResolutionChoice(diff, resolution);
-      }
-
-      const resolutionByPath = new Map(requested);
-      runtime.diffs = runtime.diffs.map(diff => {
-        if (!resolutionByPath.has(diff.relativePath)) return diff;
-        const resolution = resolutionByPath.get(diff.relativePath);
-        if (resolution) return { ...diff, resolution };
-        const reset = { ...diff };
-        delete reset.resolution;
-        return reset;
-      });
-      runtime.plan = buildSyncPlan(mapping.id, target.id, runtime.diffs, {
-        direction: mapping.options.direction,
-        propagateDeletes: mapping.options.propagateDeletes,
-        conflictProtection: mapping.options.conflictProtection,
-        localFilenameStyle: localFilenameStyle(),
-        remoteFilenameStyle: session.capabilities.filenameStyle
-      });
+      const preview = this.buildRuntimePlanWithResolutions(mapping, target, session, runtime, resolutions);
+      runtime.diffs = preview.diffs;
+      runtime.plan = preview.plan;
       this.runtimeByTarget.set(this.runtimeKey(mapping.id, target.id), runtime);
       if (notifyViewState) this.viewStateChangedEmitter.fire();
     });
+  }
+
+  async previewPlanWithResolutions(
+    mappingId: string,
+    targetId: string,
+    resolutions: Record<string, WorkspaceSyncConflictResolution | undefined>
+  ): Promise<SyncPlan> {
+    const mapping = this.requireMapping(mappingId);
+    const target = this.requireEnabledTarget(mapping, targetId);
+    const session = this.requireSession(mapping.id, target.id);
+    const runtime = this.runtimeByTarget.get(this.runtimeKey(mapping.id, target.id));
+    if (!runtime?.plan) throw new Error('Refresh the target before reviewing its Sync plan.');
+    return this.buildRuntimePlanWithResolutions(mapping, target, session, runtime, resolutions).plan;
+  }
+
+  private buildRuntimePlanWithResolutions(
+    mapping: WorkspaceSyncMapping,
+    target: WorkspaceSyncTarget,
+    session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
+    runtime: MappingRuntimeState,
+    resolutions: Record<string, WorkspaceSyncConflictResolution | undefined>
+  ): { diffs: DiffEntry[]; plan: SyncPlan } {
+    const requested = Object.entries(resolutions);
+    for (const [relativePath, resolution] of requested) {
+      if (resolution !== undefined && resolution !== 'useLocal' && resolution !== 'useRemote' && resolution !== 'skip') {
+        throw new Error('Invalid Workspace Sync conflict resolution.');
+      }
+      const diff = runtime.diffs.find(item => item.relativePath === relativePath);
+      const planConflict = runtime.plan?.conflicts.some(item => item.relativePath === relativePath);
+      if (!diff || ((diff.status !== 'conflict' && diff.status !== 'different') && !planConflict)) {
+        throw new Error(`'${relativePath}' no longer requires a Workspace Sync resolution. Run Refresh again.`);
+      }
+      if (resolution !== undefined && resolution !== 'skip') validateConflictResolutionChoice(diff, resolution);
+    }
+
+    const resolutionByPath = new Map(requested);
+    const diffs = runtime.diffs.map(diff => {
+      if (!resolutionByPath.has(diff.relativePath)) return { ...diff };
+      const resolution = resolutionByPath.get(diff.relativePath);
+      if (resolution) return { ...diff, resolution };
+      const reset: DiffEntry = { ...diff };
+      delete reset.resolution;
+      return reset;
+    });
+    const plan = buildSyncPlan(mapping.id, target.id, diffs, {
+      direction: mapping.options.direction,
+      propagateDeletes: mapping.options.propagateDeletes,
+      conflictProtection: mapping.options.conflictProtection,
+      localFilenameStyle: localFilenameStyle(),
+      remoteFilenameStyle: session.capabilities.filenameStyle
+    });
+    return { diffs, plan };
   }
 
   async openDiff(mappingId: string, targetId: string, relativePath: string) {
@@ -1132,7 +1702,12 @@ export class WorkspaceSyncController implements vscode.Disposable {
           try {
             if (buffers.some(buffer => buffer.includes(0))) throw new Error('Binary');
             texts = buffers.map(buffer => new TextDecoder('utf-8', { fatal: true }).decode(buffer));
-          } catch { throw new Error('This file is binary or is not UTF-8 text. Text comparison is unavailable.'); }
+          } catch {
+            // Put the guidance in the thrown message itself so the panel's
+            // normal error path always records it in Activity. A separate info
+            // log could be lost visually behind the subsequent error entry.
+            throw new Error('This file is binary or is not UTF-8 text. Internal Compare is unavailable. Try Open in VS Code Compare; VS Code can handle additional binary file types.');
+          }
           if (texts.some(text => text.split('\n').length > 20000)) throw new Error('The comparison viewer supports up to 20,000 lines per side.');
           this.ui.log(`Opened comparison: ${relativePath}`, 'info', target.name);
           return { relativePath, targetName: target.name, lines: compareText(texts[0], texts[1]), identical: buffers[0].equals(buffers[1]) };
@@ -1140,6 +1715,37 @@ export class WorkspaceSyncController implements vscode.Disposable {
       })
     );
   }
+  async openDiffInVsCode(mappingId: string, targetId: string, relativePath: string): Promise<void> {
+    const mapping = this.requireMapping(mappingId);
+    const target = this.requireEnabledTarget(mapping, targetId);
+    await this.operations.run(this.runtimeKey(mapping.id, target.id), () =>
+      this.localRootOperations.run(mapping.localRoot, async () => {
+        const session = this.requireSession(mapping.id, target.id);
+        const diff = this.runtimeByTarget.get(this.runtimeKey(mapping.id, target.id))?.diffs.find(item => item.relativePath === relativePath);
+        if (diff?.local?.kind !== 'file' || diff.remote?.kind !== 'file') {
+          throw new Error('Diff is available only when the file exists on both Local and Remote.');
+        }
+        const { localPath, remotePath, localRelativePath, remoteRelativePath } = resolveSyncPaths(mapping, target, relativePath, diff);
+        await Promise.all([
+          assertLocalPathAncestorsSafe(mapping.localRoot, localRelativePath),
+          assertRemotePathAncestorsSafe(session, target.remoteRoot, remoteRelativePath)
+        ]);
+        await assertLocalRegularFile(localPath, relativePath);
+        const remoteCopy = await this.diffTempStore.allocate(relativePath);
+        await session.download(remotePath, remoteCopy);
+        await vscode.commands.executeCommand(
+          'vscode.diff',
+          vscode.Uri.file(localPath),
+          vscode.Uri.file(remoteCopy),
+          `Workspace Sync: ${relativePath} (Local ↔ ${target.name})`
+        );
+        // Keep the downloaded side alive while VS Code owns the diff editor.
+        // DiffTempStore prunes old copies on future comparisons.
+        this.ui.log(`Opened VS Code comparison: ${relativePath}`, 'info', target.name);
+      })
+    );
+  }
+
 
   private async validateMappingInput(input: WorkspaceMappingInput): Promise<void> {
     // Keep duplicate-destination validation on mutation paths only. Persisted
@@ -1178,7 +1784,8 @@ export class WorkspaceSyncController implements vscode.Disposable {
     targets: WorkspaceSyncTarget[],
     progress?: (progress: WorkspaceSyncProgress) => void,
     cancellationToken?: { readonly isCancellationRequested: boolean },
-    continueOnError = false
+    continueOnError = false,
+    onTargetState?: (target: WorkspaceSyncTarget, state: 'started' | 'completed' | 'failed') => void
   ): Promise<Map<string, MappingRuntimeState>> {
     const startedAt = Date.now();
     const ignorePatterns = await loadEffectiveIgnorePatterns(mapping);
@@ -1212,6 +1819,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
 
     await runWithConcurrency(targets, MAX_PARALLEL_TARGET_REFRESHES, async target => {
       if (cancellationToken?.isCancellationRequested) return;
+      onTargetState?.(target, 'started');
       try {
         const runtime = await this.requestCoalescedRefresh(mapping, target, () =>
           this.operations.run(this.runtimeKey(mapping.id, target.id), () =>
@@ -1231,6 +1839,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
         );
         results.set(target.id, runtime);
         completedTargets += 1;
+        onTargetState?.(target, 'completed');
         progress?.({
           completed: completedTargets,
           total: targets.length,
@@ -1238,6 +1847,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
         });
       } catch (error) {
         failures.push({ target, error });
+        onTargetState?.(target, 'failed');
         if (continueOnError) {
           this.log('WARN', `Workspace Sync refresh failed: ${mapping.name} / ${target.name}. ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -1311,58 +1921,8 @@ export class WorkspaceSyncController implements vscode.Disposable {
     });
   }
 
-  private async refreshConnectedTargetsAfterIgnoreChange(mapping: WorkspaceSyncMapping): Promise<void> {
-    const generation = this.watchRefreshGeneration;
-    const connectedTargets = mapping.targets.filter(target =>
-      target.enabled && Boolean(this.getConnectedAutomaticSession(mapping.id, target.id))
-    );
-    if (!connectedTargets.length) return;
-
-    this.backgroundActivityEmitter.fire({
-      active: true,
-      kind: 'refresh',
-      label: 'Refreshing after mapping update...',
-      mappingId: mapping.id,
-      detail: connectedTargets.length > 1 ? `${connectedTargets.length} connected targets` : connectedTargets[0].name
-    });
-    try {
-      const runtimes = await this.refreshTargetsInParallel(mapping, connectedTargets, undefined, undefined, true);
-
-      // Initial Watch reconciliation may mutate Local/Remote state, so keep that
-      // phase exclusive and ordered even though the read-only Refresh above ran
-      // in parallel.
-      for (const target of connectedTargets) {
-        const runtime = runtimes.get(target.id);
-        if (!runtime) continue;
-        try {
-          await this.operations.run(this.runtimeKey(mapping.id, target.id), async () => {
-            const currentMapping = this.mappings.get(mapping.id);
-            const currentTarget = currentMapping?.targets.find(item => item.id === target.id);
-            if (!currentMapping || !currentTarget?.enabled) return;
-            const session = this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id);
-            if (!session) return;
-            await this.localRootOperations.run(currentMapping.localRoot, async () => {
-              if (this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id) !== session) return;
-              if (currentMapping.options.watchLocalChanges || currentMapping.options.watchRemoteChanges) {
-                await this.reconcileWatchRuntimeCore(currentMapping, currentTarget, session, runtime, generation);
-              }
-            });
-          });
-        } catch (error) {
-          this.log('WARN', `Workspace Sync Watch reconciliation after Ignore change failed: ${mapping.name} / ${target.name}. ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    } finally {
-      this.backgroundActivityEmitter.fire({
-        active: false,
-        kind: 'refresh',
-        label: 'Refreshing after mapping update...',
-        mappingId: mapping.id
-      });
-    }
-  }
-
-  private refreshWatchers(reconcileMappingIds: string[] = []): void {
+  private refreshWatchers(): void {
+    if (this.disposed) return;
     // Watchers are runtime resources, not merely mapping options. Keep only
     // targets with a currently usable session registered. This means a mapping
     // with Watch/Upload on Save enabled consumes no per-mapping watcher/polling
@@ -1380,63 +1940,17 @@ export class WorkspaceSyncController implements vscode.Disposable {
     this.diagnostics.debug('Watch', 'Watcher registrations refreshed.', {
       Generation: generation,
       Mappings: mappings.length,
-      Targets: targetCount,
-      ReconcileMappings: reconcileMappingIds.length
+      Targets: targetCount
     });
-    this.remoteWatchSnapshots.clear();
+    const activeWatchKeys = new Set(mappings.flatMap(mapping => mapping.targets
+      .filter(_target => mapping.options.watchRemoteChanges && mapping.options.direction !== 'localToRemote')
+      .map(target => this.runtimeKey(mapping.id, target.id))));
+    for (const key of this.remoteWatchSnapshots.keys()) {
+      if (!activeWatchKeys.has(key)) this.remoteWatchSnapshots.delete(key);
+    }
+    this.localWatchRetries.retain(retry => this.isLocalWatchRetryCurrent(retry));
     this.watcher.refresh(mappings);
     this.remoteWatcher.refresh(mappings);
-
-    const ids = [...new Set(reconcileMappingIds)];
-    if (!ids.length) return;
-    // Refresh is intentionally synchronous because it is also used from the
-    // constructor. Reconciliation starts on the next microtask so all watcher
-    // registrations and controller initialization are complete first.
-    void Promise.resolve().then(() => this.reconcileInitialWatchState(ids, generation)).catch(error => {
-      this.log('WARN', `Workspace Sync initial Watch reconciliation failed. ${error instanceof Error ? error.message : String(error)}`);
-    });
-  }
-
-  private async reconcileInitialWatchState(mappingIds: string[], generation: number): Promise<void> {
-    for (const mappingId of mappingIds) {
-      if (generation !== this.watchRefreshGeneration) return;
-      const mapping = this.mappings.get(mappingId);
-      if (!mapping || (!mapping.options.watchLocalChanges && !mapping.options.watchRemoteChanges)) continue;
-
-      for (const target of mapping.targets.filter(item => item.enabled)) {
-        if (generation !== this.watchRefreshGeneration) return;
-        await this.reconcileConnectedWatchTarget(mapping.id, target.id, generation);
-      }
-    }
-  }
-
-  private async reconcileConnectedWatchTarget(mappingId: string, targetId: string, generation: number): Promise<void> {
-    if (generation !== this.watchRefreshGeneration) return;
-    const mapping = this.mappings.get(mappingId);
-    const target = mapping?.targets.find(item => item.id === targetId);
-    if (!mapping || !target?.enabled) return;
-    if (!mapping.options.watchLocalChanges && !mapping.options.watchRemoteChanges) return;
-
-    if (!this.getConnectedAutomaticSession(mapping.id, target.id)) return;
-
-    const key = this.runtimeKey(mapping.id, target.id);
-    await this.operations.run(key, async () => {
-      if (generation !== this.watchRefreshGeneration) return;
-      const currentMapping = this.mappings.get(mapping.id);
-      const currentTarget = currentMapping?.targets.find(item => item.id === target.id);
-      if (!currentMapping || !currentTarget?.enabled) return;
-      if (!currentMapping.options.watchLocalChanges && !currentMapping.options.watchRemoteChanges) return;
-
-      const session = this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id);
-      if (!session) return;
-
-      await this.localRootOperations.run(currentMapping.localRoot, async () => {
-        if (this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id) !== session) return;
-        await this.ensureBaselineContext(currentMapping, currentTarget, session);
-        const runtime = await this.compareTargetCore(currentMapping, currentTarget);
-        await this.reconcileWatchRuntimeCore(currentMapping, currentTarget, session, runtime, generation);
-      });
-    });
   }
 
   private async reconcileWatchRuntimeCore(
@@ -1444,10 +1958,14 @@ export class WorkspaceSyncController implements vscode.Disposable {
     target: WorkspaceSyncTarget,
     session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
     runtime: MappingRuntimeState,
-    generation: number
-  ): Promise<void> {
-    if (generation !== this.watchRefreshGeneration) return;
-    if (!mapping.options.watchLocalChanges && !mapping.options.watchRemoteChanges) return;
+    generation: number,
+    cancellationToken?: { readonly isCancellationRequested: boolean },
+    internalReplanAttempts = 0,
+    reconcileScopes?: string[],
+    deferredReplanAttempts: Record<string, number> = {}
+  ): Promise<boolean> {
+    if (generation !== this.watchRefreshGeneration || cancellationToken?.isCancellationRequested) return false;
+    if (!mapping.options.watchLocalChanges && !mapping.options.watchRemoteChanges) return false;
 
     const reconciliationTimer = this.diagnostics.timer();
     this.diagnostics.debug('Watch', 'Initial reconciliation started.', {
@@ -1462,8 +1980,16 @@ export class WorkspaceSyncController implements vscode.Disposable {
     const operations: SyncOperation[] = [];
     let conflicts = 0;
     let unknown = 0;
+    const normalizedScopes = reconcileScopes?.length
+      ? [...new Set(reconcileScopes.map(scope => scope.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')))]
+        .filter(Boolean)
+        .sort((left, right) => left.length - right.length || left.localeCompare(right))
+        .filter((scope, index, all) => !all.slice(0, index).some(parent => scope === parent || scope.startsWith(`${parent}/`)))
+      : undefined;
 
     for (const diff of runtime.diffs) {
+      if (cancellationToken?.isCancellationRequested) return false;
+      if (normalizedScopes && !normalizedScopes.some(scope => diff.relativePath === scope || diff.relativePath.startsWith(`${scope}/`))) continue;
       if (diff.status === 'same') continue;
       if (diff.status === 'unknown') {
         unknown += 1;
@@ -1504,7 +2030,20 @@ export class WorkspaceSyncController implements vscode.Disposable {
     let failed = 0;
     if (operations.length) {
       const plan = singleOperationPlan(mapping, target, operations);
-      const revalidated = await this.revalidatePlan(mapping, target, plan, session);
+      let replanAfterInternalMutation = false;
+      let deferredReplanScopes: string[] = [];
+      await this.runWithPlanLocalRootProtection(mapping, target, plan, session, async () => {
+      // Validation belongs INSIDE the path/endpoint locks. If another target
+      // completed a Local mutation while this target was waiting for those
+      // locks, the old plan is known to be obsolete. Do not manufacture a
+      // conflict from our own coordinated work: release the locks, Refresh,
+      // and build a new plan from this target's own baseline instead.
+      if (this.localRootChangedAfter(mapping.localRoot, runtime.localMutationEpoch || 0)) {
+        replanAfterInternalMutation = true;
+        return;
+      }
+      const revalidated = await this.revalidatePlan(mapping, target, plan, session, cancellationToken);
+      if (cancellationToken?.isCancellationRequested) return;
       stale = revalidated.stale.length;
       for (const item of revalidated.stale) {
         await this.reportAutomaticConflict(mapping, target, item.operation.relativePath, `State changed after the initial Watch Refresh. ${item.reason}`);
@@ -1512,17 +2051,130 @@ export class WorkspaceSyncController implements vscode.Disposable {
 
       if (revalidated.valid.length) {
         const validPlan = singleOperationPlan(mapping, target, revalidated.valid);
-        const result = await this.executePlan(mapping, target, validPlan, session, {
-          atomicTransfer: mapping.options.atomicTransfer,
-          journal: this.journal
-        });
-        await this.updateBaselineForOperations(mapping, target, session, result.completed);
+        const key = this.runtimeKey(mapping.id, target.id);
+        const pendingViewUpdates: SyncOperation[] = [];
+        let flushTimer: ReturnType<typeof setTimeout> | undefined;
+        // A completed transfer has already passed executor validation. Publish
+        // these successful paths to Changes in short batches without waiting
+        // for every transfer in the plan. Failed/stale paths remain unchanged.
+        const publishCompleted = () => {
+          flushTimer = undefined;
+          if (!pendingViewUpdates.length) return;
+          const current = this.runtimeByTarget.get(key);
+          if (!current || this.sessions.getSession(this.sessionKey(mapping.id, target.id)) !== session) {
+            pendingViewUpdates.length = 0;
+            return;
+          }
+          const operationsToPublish = pendingViewUpdates.splice(0);
+          this.runtimeByTarget.set(key, this.applyCompletedOperationsToRuntime(
+            mapping, target, session, current, operationsToPublish
+          ));
+          this.scheduleAutomaticViewStateChanged(mapping.id);
+        };
+        let result: Awaited<ReturnType<typeof executeSyncPlan>>;
+        try {
+          result = await this.executePlan(mapping, target, validPlan, session, {
+            atomicTransfer: mapping.options.atomicTransfer,
+            journal: this.journal,
+            watchActivity: true,
+            cancellationToken,
+            onActivity: event => {
+              if (event.kind === 'completed') {
+                pendingViewUpdates.push(event.operation);
+                if (!flushTimer) flushTimer = setTimeout(publishCompleted, 80);
+                // Record changes for other mappings as each Local mutation
+                // finishes. Shared-root readers cannot inspect an in-flight
+                // write because the path lock conflicts with whole-tree scans.
+                this.scheduleSharedLocalReclassification(mapping, target, [event.operation]);
+              }
+            }
+          });
+        } finally {
+          if (flushTimer) clearTimeout(flushTimer);
+          publishCompleted();
+        }
+        const observations = await this.updateBaselineForOperations(mapping, target, session, result.completed);
+        // Verify the final state against actual post-transfer fingerprints, not
+        // only the expected source metadata used for the live UI update.
+        if (observations.length) {
+          await this.refreshAutomaticPathsInView(mapping, target, session, observations,
+            undefined, true);
+        }
+        if (result.deferred.length) {
+          // ENOTEMPTY on an empty-directory delete means the directory changed
+          // after validation. Keep the new contents intact and re-evaluate the
+          // affected subtree automatically after releasing the path locks. A
+          // deferred delete is therefore TRANSIENT, not a terminal Watch state.
+          deferredReplanScopes = [...new Set(result.deferred.map(item => item.operation.relativePath))]
+            .sort((left, right) => left.length - right.length || left.localeCompare(right))
+            .filter((scope, index, all) => !all.slice(0, index).some(parent => scope === parent || scope.startsWith(`${parent}/`)));
+          await this.refreshAutomaticPathsInView(
+            mapping,
+            target,
+            session,
+            deferredReplanScopes.map(relativePath => ({ relativePath })),
+            undefined,
+            true
+          ).catch(() => undefined);
+        }
         completed = result.completed;
         failed = result.failed.length;
       }
-    }
+      });
 
-    await this.reflectAutomaticOperationsInView(mapping, target, session, completed, runtime);
+      if (replanAfterInternalMutation) {
+        if (internalReplanAttempts >= 3) {
+          this.log('WARN', `Watch reconciliation could not stabilize after coordinated Local changes: ${mapping.name} / ${target.name}. A fresh Refresh is required.`);
+          return false;
+        }
+        this.ui.log('Watch reconciliation replanning after another connected target changed the shared Local directory.', 'info', `${mapping.name} / ${target.name}`);
+        const refreshedRuntime = await this.localRootOperations.runShared(mapping.localRoot, () =>
+          this.compareTargetCore(mapping, target, undefined, cancellationToken));
+        return this.reconcileWatchRuntimeCore(
+          mapping, target, session, refreshedRuntime, generation, cancellationToken, internalReplanAttempts + 1, normalizedScopes, deferredReplanAttempts
+        );
+      }
+
+      if (deferredReplanScopes.length) {
+        const nextAttempts = { ...deferredReplanAttempts };
+        const retryScopes: string[] = [];
+        const exhaustedScopes: string[] = [];
+        for (const scope of deferredReplanScopes) {
+          const attempts = (nextAttempts[scope] || 0) + 1;
+          nextAttempts[scope] = attempts;
+          if (attempts <= MAX_DEFERRED_DELETE_REEVALUATIONS) retryScopes.push(scope);
+          else exhaustedScopes.push(scope);
+        }
+
+        if (exhaustedScopes.length) {
+          stale += exhaustedScopes.length;
+          const listed = exhaustedScopes.slice(0, 3).join(', ');
+          this.ui.log(
+            `Delete remained unstable after ${MAX_DEFERRED_DELETE_REEVALUATIONS} automatic re-evaluation(s): ${listed}${exhaustedScopes.length > 3 ? '…' : ''}. The path remains in Changes.`,
+            'warning',
+            `${mapping.name} / ${target.name}`
+          );
+          this.log('WARN', `Watch delete remained unstable after automatic re-evaluation: ${mapping.name} / ${target.name} / ${listed}.`);
+        }
+
+        if (retryScopes.length && !cancellationToken?.isCancellationRequested) {
+          const attempt = Math.max(...retryScopes.map(scope => nextAttempts[scope] || 1));
+          this.ui.log(
+            `Re-evaluating deferred Watch delete${retryScopes.length > 1 ? 's' : ''} (${attempt}/${MAX_DEFERRED_DELETE_REEVALUATIONS})…`,
+            'info',
+            `${mapping.name} / ${target.name}`
+          );
+          const refreshedRuntime = await this.localRootOperations.runShared(mapping.localRoot, () =>
+            this.compareTargetScopesCore(mapping, target, retryScopes, cancellationToken));
+          const changedAfterRetry = await this.reconcileWatchRuntimeCore(
+            mapping, target, session, refreshedRuntime, generation, cancellationToken,
+            internalReplanAttempts, retryScopes, nextAttempts
+          );
+          const changedThisAttempt = completed.some(operation => ['download', 'deleteLocal', 'createLocalDirectory'].includes(operation.type));
+          return changedThisAttempt || changedAfterRetry;
+        }
+      }
+    }
 
     const warnings = conflicts + unknown + stale + failed;
     this.ui.log(
@@ -1541,6 +2193,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
       Failed: failed
     });
     this.diagnostics.performance('Watch', `Initial reconciliation completed in ${formatDuration(reconciliationTimer())}.`, { Mapping: mapping.name, Target: target.name });
+    return completed.some(operation => ['download', 'deleteLocal', 'createLocalDirectory'].includes(operation.type));
   }
 
   private applyCompletedOperationsToRuntime(
@@ -1614,8 +2267,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
     // when the user selects them.
     this.automaticViewNotificationTimer = setTimeout(() => {
       this.automaticViewNotificationTimer = undefined;
-      const activeMappingId = this.mappings.getActive()?.id;
-      const shouldNotify = Boolean(activeMappingId && this.automaticViewDirtyMappings.has(activeMappingId));
+      const shouldNotify = this.automaticViewDirtyMappings.size > 0;
       this.automaticViewDirtyMappings.clear();
       if (shouldNotify) this.viewStateChangedEmitter.fire();
     }, 40);
@@ -1652,52 +2304,28 @@ export class WorkspaceSyncController implements vscode.Disposable {
       const localRelativePath = observation.localRelativePath || previous?.localRelativePath || baseline?.localRelativePath || relativePath;
       const remoteRelativePath = observation.remoteRelativePath || previous?.remoteRelativePath || baseline?.remoteRelativePath || relativePath;
       const resolved = resolveSyncPaths(mapping, target, relativePath, { localRelativePath, remoteRelativePath });
-      const includeLocalHash = Boolean(baseline?.local?.hash) || !session.capabilities.reliableMtime;
-      const includeRemoteHash = Boolean(baseline?.remote?.hash) || !session.capabilities.reliableMtime;
-
-      let local = observation.localKnown
-        ? observation.local
-        : await readLocalFingerprint(resolved.localPath, includeLocalHash);
-      let remote = observation.remoteKnown
-        ? observation.remote
-        : await readRemoteFingerprint(session, resolved.remotePath, includeRemoteHash);
-
-      // A polling snapshot can provide a cheap metadata fingerprint. Upgrade
-      // it only when trusted history or an unreliable Remote mtime makes a hash
-      // necessary for the same one-path classification used by Refresh.
-      if (local?.kind === 'file' && includeLocalHash && !local.hash) {
-        local = await readLocalFingerprint(resolved.localPath, true) || local;
-      }
-      if (remote?.kind === 'file' && includeRemoteHash && !remote.hash) {
-        remote = await readRemoteFingerprint(session, resolved.remotePath, true) || remote;
-      }
+      const classified = await readAndClassifyCurrentPath(session, {
+        relativePath,
+        localPath: resolved.localPath,
+        remotePath: resolved.remotePath,
+        baseline,
+        baselineCapturedAt: baselineState?.capturedAt,
+        localRelativePath,
+        remoteRelativePath,
+        localKnown: observation.localKnown,
+        local: observation.local,
+        remoteKnown: observation.remoteKnown,
+        remote: observation.remote,
+        mtimeToleranceMs: 2000
+      });
+      const { local, remote } = classified;
 
       if (!local && !remote && !baseline) {
         byPath.delete(relativePath);
         continue;
       }
 
-      const capturedAt = Date.now();
-      const localSnapshot: SyncSnapshot = {
-        capturedAt,
-        entries: local ? { [relativePath]: { relativePath, physicalRelativePath: localRelativePath, fingerprint: local } } : {},
-        incompletePaths: []
-      };
-      const remoteSnapshot: SyncSnapshot = {
-        capturedAt,
-        entries: remote ? { [relativePath]: { relativePath, physicalRelativePath: remoteRelativePath, fingerprint: remote } } : {},
-        incompletePaths: []
-      };
-      const scopedBaseline = baseline ? {
-        mappingId: mapping.id,
-        targetId: target.id,
-        capturedAt: baselineState?.capturedAt || capturedAt,
-        entries: { [relativePath]: baseline }
-      } : undefined;
-      let diff = diffSnapshots(localSnapshot, remoteSnapshot, scopedBaseline, {
-        mtimeToleranceMs: 2000,
-        remoteMtimeReliable: session.capabilities.reliableMtime
-      })[0];
+      let diff = classified.diff;
       if (!diff) {
         byPath.delete(relativePath);
         continue;
@@ -1782,6 +2410,14 @@ export class WorkspaceSyncController implements vscode.Disposable {
       if (!currentMapping.options.watchRemoteChanges || currentMapping.options.direction === 'localToRemote') return;
       const session = this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id);
       if (!session) return;
+      const isCurrent = (): boolean => {
+        const latest = this.mappings.get(mappingId);
+        const latestTarget = latest?.targets.find(item => item.id === targetId);
+        return latest?.updatedAt === currentMapping.updatedAt
+          && latestTarget?.updatedAt === currentTarget.updatedAt
+          && Boolean(latest.options.watchRemoteChanges)
+          && this.getConnectedAutomaticSession(mappingId, targetId) === session;
+      };
 
       const contextChanged = await this.ensureBaselineContext(currentMapping, currentTarget, session);
       const ignorePatterns = await loadEffectiveIgnorePatterns(currentMapping);
@@ -1793,6 +2429,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
         throw new Error(`Remote Watch scan was incomplete at ${snapshot.incompletePaths.slice(0, 3).join(', ')}${snapshot.incompletePaths.length > 3 ? '…' : ''}.`);
       }
 
+      if (!isCurrent()) return;
       const previous = this.remoteWatchSnapshots.get(key);
       const currentState: RemoteWatchSnapshotState = {
         snapshot,
@@ -1806,14 +2443,34 @@ export class WorkspaceSyncController implements vscode.Disposable {
         || previous.connectionIdentity !== currentState.connectionIdentity
         || previous.mappingUpdatedAt !== currentState.mappingUpdatedAt
         || previous.targetUpdatedAt !== currentState.targetUpdatedAt;
-      if (reset) {
-        this.remoteWatchSnapshots.set(key, currentState);
-        this.diagnostics.debug('Remote Watch', 'Polling baseline initialized or reset.', { Mapping: currentMapping.name, Target: currentTarget.name, Entries: Object.keys(snapshot.entries).length });
-        this.ui.log('Remote Watch initialized.', 'info', `${currentMapping.name} / ${currentTarget.name}`);
-        return;
-      }
-
-      const changedPaths = collectRemoteWatchChangedPaths(previous.snapshot, snapshot);
+      // The first poll must compare with trusted history, not accept the
+      // current Remote contents as its starting state. An edit can occur after
+      // initial Compare/reconciliation and before this first timer fires.
+      const priorBaseline = await this.baselines.get(currentMapping.id, currentTarget.id);
+      const previousSnapshot: SyncSnapshot = reset ? {
+        capturedAt: priorBaseline?.capturedAt || snapshot.capturedAt,
+        incompletePaths: [],
+        entries: Object.fromEntries(Object.entries(priorBaseline?.entries || {})
+          .filter(([, entry]) => entry.remote)
+          .map(([relativePath, entry]) => [relativePath, {
+            relativePath, physicalRelativePath: entry.remoteRelativePath || relativePath,
+            fingerprint: entry.remote!
+          }]))
+      } : previous.snapshot;
+      const matcher = new IgnoreMatcher(ignorePatterns);
+      const changedPaths = [...new Set([
+        ...collectRemoteWatchChangedPaths(previousSnapshot, snapshot),
+        ...(!reset ? previous.retryPaths || [] : [])
+      ])].filter(relativePath => {
+        // A newly ignored subtree is absent from a scan, not remotely deleted.
+        // Match ancestors too, just as the recursive scanner prunes them.
+        const segments = relativePath.split('/');
+        const entry = snapshot.entries[relativePath] || previousSnapshot.entries[relativePath];
+        return !segments.some((_segment, index) => matcher.ignores(
+          segments.slice(0, index + 1).join('/'),
+          index < segments.length - 1 || entry?.fingerprint.kind === 'directory'
+        ));
+      });
       if (!changedPaths.length) {
         this.remoteWatchSnapshots.set(key, currentState);
         this.diagnostics.debug('Remote Watch', 'Poll completed with no changes.', { Mapping: currentMapping.name, Target: currentTarget.name });
@@ -1821,13 +2478,42 @@ export class WorkspaceSyncController implements vscode.Disposable {
       }
 
       this.diagnostics.debug('Remote Watch', 'Remote changes detected.', { Mapping: currentMapping.name, Target: currentTarget.name, Changes: changedPaths.length });
-      this.ui.log(`Remote Watch detected ${changedPaths.length} remote change(s).`, 'info', `${currentMapping.name} / ${currentTarget.name}`);
-      await this.localRootOperations.run(currentMapping.localRoot, async () => {
-        if (this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id) !== session) return;
-        await this.handleRemoteWatchChangesForTarget(currentMapping, currentTarget, session, snapshot, changedPaths);
+      const affectedLocalPaths = changedPaths.flatMap(relativePath => {
+        // A remote directory removal may delete an entire Local subtree.
+        // Also protect the baseline's PHYSICAL Local spelling (which may differ
+        // from a logical/case-normalized name). Parent/child overlap in runPaths
+        // blocks every descendant transfer under either spelling.
+        const spellings = new Set([relativePath, priorBaseline?.entries[relativePath]?.localRelativePath || relativePath]);
+        return [...spellings].map(spelling => ({
+          path: resolveSyncPaths(currentMapping, currentTarget, spelling).localPath,
+          mode: 'write' as const
+        }));
       });
-      if (this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id) === session) {
-        this.remoteWatchSnapshots.set(key, currentState);
+      let watchResult: { deferredDeletes: string[]; relevantChanges: number; retryPaths: string[] } = { deferredDeletes: [], relevantChanges: 0, retryPaths: [] };
+      await this.runWithAutomaticPathProtection(currentMapping, session, affectedLocalPaths, async () => {
+        if (!isCurrent()) return;
+        watchResult = await this.handleRemoteWatchChangesForTarget(currentMapping, currentTarget, session, snapshot, changedPaths);
+      });
+      if (watchResult.relevantChanges > 0) {
+        this.ui.log(`Remote Watch detected ${watchResult.relevantChanges} remote change(s).`, 'info', `${currentMapping.name} / ${currentTarget.name}`);
+      }
+      const deferredWatchDeletes = watchResult.deferredDeletes;
+      if (deferredWatchDeletes.length && isCurrent()) {
+        this.ui.log(
+          `Re-evaluating deferred Remote Watch delete${deferredWatchDeletes.length > 1 ? 's' : ''} (1/${MAX_DEFERRED_DELETE_REEVALUATIONS})…`,
+          'info',
+          `${currentMapping.name} / ${currentTarget.name}`
+        );
+        const refreshedRuntime = await this.localRootOperations.runShared(currentMapping.localRoot, () =>
+          this.compareTargetScopesCore(currentMapping, currentTarget, deferredWatchDeletes));
+        const attemptCounts = Object.fromEntries(deferredWatchDeletes.map(relativePath => [relativePath, 1]));
+        await this.reconcileWatchRuntimeCore(
+          currentMapping, currentTarget, session, refreshedRuntime, this.watchRefreshGeneration,
+          undefined, 0, deferredWatchDeletes, attemptCounts
+        );
+      }
+      if (isCurrent()) {
+        this.remoteWatchSnapshots.set(key, { ...currentState, retryPaths: watchResult.retryPaths });
       }
       });
     } finally {
@@ -1841,12 +2527,13 @@ export class WorkspaceSyncController implements vscode.Disposable {
     session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
     remoteSnapshot: SyncSnapshot,
     changedPaths: string[]
-  ): Promise<void> {
+  ): Promise<{ deferredDeletes: string[]; relevantChanges: number; retryPaths: string[] }> {
     const sourceIsAuthoritative = isWatchSourceAuthoritative(mapping.options.direction, 'remote');
     const baselineState = await this.baselines.get(mapping.id, target.id);
     const operations: SyncOperation[] = [];
     const baselineUpdates: Record<string, import('./types').BaselineEntry | undefined> = {};
     let conflicts = 0;
+    let relevantChanges = 0;
 
     for (const relativePath of changedPaths) {
       const baseline = baselineState?.entries[relativePath];
@@ -1856,81 +2543,32 @@ export class WorkspaceSyncController implements vscode.Disposable {
       const remoteRelativePath = scannedRemoteEntry?.physicalRelativePath || baseline?.remoteRelativePath || relativePath;
       const { localPath, remotePath } = resolveSyncPaths(mapping, target, relativePath, { localRelativePath, remoteRelativePath });
 
-      if (!scannedRemote) {
-        let local = await readLocalFingerprint(localPath, Boolean(baseline?.local?.hash));
-        await this.refreshAutomaticPathsInView(mapping, target, session, [{
-          relativePath,
-          observation: {
-            localKnown: true,
-            local,
-            remoteKnown: true,
-            remote: undefined,
-            localRelativePath,
-            remoteRelativePath
-          }
-        }]).catch(() => undefined);
-        if (!mapping.options.propagateDeletes) continue;
-
-        if (!local) {
-          baselineUpdates[relativePath] = undefined;
-          continue;
-        }
-
-        if (sourceIsAuthoritative) {
-          operations.push({
-            id: `remote-watch-delete-${crypto.randomUUID()}`,
-            type: 'deleteLocal',
-            relativePath,
-            localRelativePath,
-            remoteRelativePath,
-            reason: 'Remote deletion detected by Workspace Sync Remote Watch.',
-            expectedLocal: local,
-            expectedRemote: undefined
-          });
-          continue;
-        }
-
-        if (!baseline?.remote) continue;
-
-        const localUnchanged = fingerprintsEqual(local, baseline.local, {
-          mtimeReliable: true,
-          requireHashWhenAvailable: true
-        });
-        if (!localUnchanged) {
-          conflicts += 1;
-          await this.reportAutomaticConflict(mapping, target, relativePath, 'Local changed before the remote deletion could be propagated.');
-          continue;
-        }
-
-        operations.push({
-          id: `remote-watch-delete-${crypto.randomUUID()}`,
-          type: 'deleteLocal',
-          relativePath,
-          localRelativePath,
-          remoteRelativePath,
-          reason: 'Remote deletion detected by Workspace Sync Remote Watch.',
-          expectedLocal: local,
-          expectedRemote: undefined
-        });
-        continue;
-      }
-
-      if (scannedRemote.kind === 'link' || scannedRemote.kind === 'unknown') {
+      if (scannedRemote?.kind === 'link' || scannedRemote?.kind === 'unknown') {
         await this.refreshAutomaticPathsInView(mapping, target, session, [{
           relativePath,
           observation: { remoteKnown: true, remote: scannedRemote, localRelativePath, remoteRelativePath }
         }]).catch(() => undefined);
         conflicts += 1;
+        relevantChanges += 1;
         await this.reportAutomaticConflict(mapping, target, relativePath, `Remote Watch does not automatically transfer ${scannedRemote.kind} entries.`);
         continue;
       }
 
-      const includeRemoteHash = scannedRemote.kind === 'file'
-        && (!session.capabilities.reliableMtime || Boolean(baseline?.remote?.hash));
-      const remote = scannedRemote.kind === 'file'
-        ? (await readRemoteFingerprint(session, remotePath, includeRemoteHash) || scannedRemote)
-        : scannedRemote;
-      let local = await readLocalFingerprint(localPath, Boolean(baseline?.local?.hash));
+      const classified = await readAndClassifyCurrentPath(session, {
+        relativePath,
+        localPath,
+        remotePath,
+        baseline,
+        baselineCapturedAt: baselineState?.capturedAt,
+        localRelativePath,
+        remoteRelativePath,
+        remoteKnown: true,
+        remote: scannedRemote,
+        // Same Remote endpoint: cross-server clock tolerance must not hide a real edit.
+        mtimeToleranceMs: 0
+      });
+      const { local, remote, diff } = classified;
+
       await this.refreshAutomaticPathsInView(mapping, target, session, [{
         relativePath,
         observation: {
@@ -1943,112 +2581,78 @@ export class WorkspaceSyncController implements vscode.Disposable {
         }
       }]).catch(() => undefined);
 
-      if (baseline?.remote) {
-        const remoteChangedFromBaseline = !fingerprintsEqual(remote, baseline.remote, {
-          mtimeReliable: session.capabilities.reliableMtime,
-          requireHashWhenAvailable: true,
-          mtimeToleranceMs: 2000
-        });
-        if (!remoteChangedFromBaseline) {
-          // The polling snapshot changed because of an operation already owned
-          // by Workspace Sync. The trusted baseline is authoritative here.
-          continue;
-        }
-      }
+      // A candidate can disappear after the Remote tree scan and before this
+      // per-path revalidation. If neither side nor the trusted baseline contains
+      // it anymore, the observation is stale and there is nothing to propagate.
+      // Do not let this benign race abort the rest of the Remote Watch batch.
+      if (!local && !remote && !baseline) continue;
 
-      if (remote.kind === 'directory') {
-        if (local && local.kind !== 'directory') {
-          conflicts += 1;
-          await this.reportAutomaticConflict(mapping, target, relativePath, `Remote is a directory while Local is ${local.kind}.`);
-          continue;
-        }
-        if (!sourceIsAuthoritative && baseline && local) {
-          const localUnchanged = fingerprintsEqual(local, baseline.local, { mtimeReliable: true, requireHashWhenAvailable: true });
-          if (!localUnchanged) {
-            conflicts += 1;
-            await this.reportAutomaticConflict(mapping, target, relativePath, 'Local changed while the remote directory changed.');
-            continue;
-          }
-        }
-        if (!local) {
-          operations.push({
-            id: `remote-watch-mkdir-${crypto.randomUUID()}`,
-            type: 'createLocalDirectory',
-            relativePath,
-            localRelativePath,
-            remoteRelativePath,
-            reason: 'Remote directory creation detected by Workspace Sync Remote Watch.',
-            expectedLocal: undefined,
-            expectedRemote: remote
-          });
-        } else {
-          baselineUpdates[relativePath] = { local, remote, localRelativePath, remoteRelativePath };
-        }
+      // The same classifier is used by Refresh, Local Watch and Remote Watch.
+      // If the polling snapshot merely noticed a Workspace Sync write already
+      // captured by the baseline, there is no new Remote change to propagate.
+      if (diff.status === 'same') {
+        baselineUpdates[relativePath] = local || remote
+          ? { local, remote, localRelativePath: local ? localRelativePath : undefined, remoteRelativePath: remote ? remoteRelativePath : undefined }
+          : undefined;
         continue;
       }
 
-      // Remote is a regular file from here on. For a path without a trusted
-      // baseline, compare content once before deciding whether it is safe to
-      // establish trust or whether the situation is a conflict.
-      if (!baseline) {
-        if (!local) {
-          operations.push({
-            id: `remote-watch-download-${crypto.randomUUID()}`,
-            type: 'download',
-            relativePath,
-            localRelativePath,
-            remoteRelativePath,
-            reason: 'New remote file detected by Workspace Sync Remote Watch.',
-            expectedLocal: undefined,
-            expectedRemote: remote
-          });
-          continue;
-        }
-        if (local.kind !== 'file') {
-          conflicts += 1;
-          await this.reportAutomaticConflict(mapping, target, relativePath, `Remote is a file while Local is ${local.kind}.`);
-          continue;
-        }
-
-        local = await readLocalFingerprint(localPath, true) || local;
-        const remoteWithHash = remote.hash ? remote : (await readRemoteFingerprint(session, remotePath, true) || remote);
-        if (fingerprintsEqual(local, remoteWithHash, { mtimeReliable: false, requireHashWhenAvailable: true })) {
-          baselineUpdates[relativePath] = { local, remote: remoteWithHash, localRelativePath, remoteRelativePath };
-          continue;
-        }
-        if (!sourceIsAuthoritative && mapping.options.conflictProtection) {
-          conflicts += 1;
-          await this.reportAutomaticConflict(mapping, target, relativePath, 'Remote file changed but there is no trusted sync baseline for an existing Local file.');
-          continue;
-        }
-      } else if (!sourceIsAuthoritative) {
-        const localUnchanged = fingerprintsEqual(local, baseline.local, {
-          mtimeReliable: true,
-          requireHashWhenAvailable: true
-        });
-        if (!localUnchanged) {
-          conflicts += 1;
-          await this.reportAutomaticConflict(mapping, target, relativePath, 'Local and Remote both changed since the last trusted sync state.');
-          continue;
-        }
-      }
-
-      if (local && local.kind !== 'file') {
+      if (diff.status === 'unknown') {
         conflicts += 1;
-        await this.reportAutomaticConflict(mapping, target, relativePath, `Remote is a file while Local is ${local.kind}.`);
+        relevantChanges += 1;
+        await this.reportAutomaticConflict(mapping, target, relativePath, diff.reason || 'Remote Watch could not classify this path safely.');
         continue;
       }
 
-      operations.push({
-        id: `remote-watch-download-${crypto.randomUUID()}`,
-        type: 'download',
-        relativePath,
-        localRelativePath,
-        remoteRelativePath,
-        reason: 'Remote file change detected by Workspace Sync Remote Watch.',
-        expectedLocal: local,
-        expectedRemote: remote
+      let planningDiff = diff;
+      if (sourceIsAuthoritative && (diff.status === 'conflict' || diff.status === 'different')) {
+        // In Remote -> Local mode the Remote side is explicitly authoritative
+        // for automatic Watch actions, even if both sides changed.
+        planningDiff = { ...diff, resolution: 'useRemote' };
+      } else if (!sourceIsAuthoritative && diff.status === 'different' && !mapping.options.conflictProtection) {
+        // With Unknown Change Protection disabled, the side that generated the
+        // Watch event wins for an unbaselined Different path.
+        planningDiff = { ...diff, resolution: 'useRemote' };
+      }
+
+      const scopedPlan = buildSyncPlan(mapping.id, target.id, [planningDiff], {
+        direction: mapping.options.direction,
+        propagateDeletes: mapping.options.propagateDeletes,
+        conflictProtection: mapping.options.conflictProtection,
+        localFilenameStyle: localFilenameStyle(),
+        remoteFilenameStyle: session.capabilities.filenameStyle
       });
+
+      if (scopedPlan.errors.length) {
+        conflicts += 1;
+        relevantChanges += 1;
+        const problem = scopedPlan.errors[0];
+        await this.reportAutomaticConflict(mapping, target, relativePath, problem.reason || 'Remote Watch cannot safely apply this path.');
+        continue;
+      }
+      if (scopedPlan.conflicts.length) {
+        conflicts += 1;
+        relevantChanges += 1;
+        const conflict = scopedPlan.conflicts[0];
+        await this.reportAutomaticConflict(mapping, target, relativePath,
+          conflict.reason || 'Local and Remote both changed since the last trusted sync state.');
+        continue;
+      }
+
+      const operation = scopedPlan.operations.find(item => item.type !== 'skip');
+      if (!operation) continue;
+
+      // Remote Watch may only execute operations whose source is Remote. If the
+      // shared classifier says the trusted change belongs to Local, leave it to
+      // Local Watch. This prevents the two watcher routes from racing to apply
+      // opposite interpretations of the same baseline state.
+      if (operation.type !== 'download'
+        && operation.type !== 'createLocalDirectory'
+        && operation.type !== 'deleteLocal') {
+        continue;
+      }
+      operations.push(operation);
+      relevantChanges += 1;
     }
 
     const baselineUpdatePaths = Object.keys(baselineUpdates);
@@ -2075,24 +2679,42 @@ export class WorkspaceSyncController implements vscode.Disposable {
     }
     if (!operations.length) {
       if (conflicts) this.log('WARN', `Remote Watch found ${conflicts} conflict(s): ${mapping.name} / ${target.name}.`);
-      return;
+      return { deferredDeletes: [], relevantChanges, retryPaths: [] };
     }
 
     const plan = singleOperationPlan(mapping, target, operations);
     const revalidated = await this.revalidatePlan(mapping, target, plan, session);
-    if (revalidated.stale.length) {
-      this.log('WARN', `Remote Watch stopped because ${revalidated.stale.length} path(s) changed during validation: ${mapping.name} / ${target.name}.`);
-      return;
+    const retryPaths = revalidated.stale.map(item => item.operation.relativePath);
+    if (retryPaths.length) {
+      this.log('WARN', `Remote Watch will re-evaluate ${retryPaths.length} path(s) that changed during validation: ${mapping.name} / ${target.name}.`);
     }
-
-    const result = await this.executePlan(mapping, target, plan, session, {
+    const validPlan = { ...plan, operations: revalidated.valid };
+    const result = await this.executePlan(mapping, target, validPlan, session, {
       atomicTransfer: mapping.options.atomicTransfer,
-      journal: this.journal
+      journal: this.journal,
+      watchActivity: true
     });
+    const completedIds = new Set(result.completed.map(operation => operation.id));
+    retryPaths.push(...validPlan.operations.filter(operation => operation.type !== 'skip' && !completedIds.has(operation.id)).map(operation => operation.relativePath));
     await this.updateBaselineForOperations(mapping, target, session, result.completed);
     await this.reflectAutomaticOperationsInView(mapping, target, session, result.completed);
-    const level = result.failed.length || conflicts ? 'WARN' : 'INFO';
-    this.log(level, `Remote Watch applied ${result.completed.length} change(s): ${mapping.name} / ${target.name}${result.failed.length ? `, ${result.failed.length} failed` : ''}${conflicts ? `, ${conflicts} conflict(s)` : ''}.`);
+    if (result.deferred.length) {
+      await this.refreshAutomaticPathsInView(
+        mapping,
+        target,
+        session,
+        result.deferred.map(item => ({ relativePath: item.operation.relativePath })),
+        undefined,
+        true
+      ).catch(() => undefined);
+    }
+    const level = result.failed.length || result.deferred.length || conflicts ? 'WARN' : 'INFO';
+    this.log(level, `Remote Watch applied ${result.completed.length} change(s): ${mapping.name} / ${target.name}${result.failed.length ? `, ${result.failed.length} failed` : ''}${result.deferred.length ? `, ${result.deferred.length} deferred for re-evaluation` : ''}${conflicts ? `, ${conflicts} conflict(s)` : ''}.`);
+    return {
+      deferredDeletes: [...new Set(result.deferred.map(item => item.operation.relativePath))],
+      retryPaths: [...new Set(retryPaths)],
+      relevantChanges
+    };
   }
 
   private async handleWatchedChange(change: WorkspaceLocalChange): Promise<void> {
@@ -2116,25 +2738,50 @@ export class WorkspaceSyncController implements vscode.Disposable {
     }
 
     try {
-      for (const target of mapping.targets.filter(item => item.enabled)) {
-      // Suppress only the echo back to the exact mapping/target that caused a
-      // Local filesystem mutation. Other mappings/targets sharing this Local
-      // Root must still observe and process the change.
-      if (change.source === 'watcher'
-        && this.journal.isLocalMutation(change.absolutePath, { mappingId: mapping.id, targetId: target.id })) continue;
-      try {
-        if (!this.getConnectedAutomaticSession(mapping.id, target.id)) continue;
-        await this.operations.run(this.runtimeKey(mapping.id, target.id), () =>
-          this.localRootOperations.run(mapping.localRoot, () =>
-            this.handleWatchedChangeForTarget(mapping, target, change)
-          )
-        );
-      } catch (error) {
-        this.log('WARN', `Workspace Sync automatic operation failed: ${mapping.name} / ${target.name} / ${change.relativePath}. ${error instanceof Error ? error.message : String(error)}`);
-      }
-      }
+      // Enqueue each target independently. Endpoint/path coordinators bound
+      // execution; waiting for the first targets here would starve later ones.
+      await Promise.all(mapping.targets.filter(item => item.enabled).map(async target => {
+        // Suppress only the echo back to the exact mapping/target that caused a
+        // Local filesystem mutation. Other mappings/targets sharing this Local
+        // Root must still observe and process the change.
+        if (change.source === 'watcher'
+          && this.journal.isLocalMutation(change.absolutePath, { mappingId: mapping.id, targetId: target.id })) return;
+        const session = this.getConnectedAutomaticSession(mapping.id, target.id);
+        if (session) await this.dispatchLocalWatchChange(mapping, target, change, session);
+      }));
     } finally {
       this.diagnostics.performance('Local Watch', `Local change processing completed in ${formatDuration(watchTimer())}.`, { Mapping: mapping.name, Path: change.relativePath, Source: change.source });
+    }
+  }
+
+  private isLocalWatchRetryCurrent(retry: LocalWatchRetry): boolean {
+    const mapping = this.mappings.get(retry.mapping.id);
+    const target = mapping?.targets.find(item => item.id === retry.target.id);
+    return !this.disposed && Boolean(mapping && target?.enabled
+      && mapping.updatedAt === retry.mapping.updatedAt && target.updatedAt === retry.target.updatedAt
+      && mapping.options.direction !== 'remoteToLocal' && isLocalChangeEnabled(retry.change.source, mapping.options)
+      && this.getConnectedAutomaticSession(mapping.id, target.id) === retry.session);
+  }
+
+  private scheduleLocalWatchRetry(mapping: WorkspaceSyncMapping, target: WorkspaceSyncTarget, change: WorkspaceLocalChange, session: WorkspaceSyncRemoteSession): void {
+    const retry = { mapping, target, change, session };
+    if (!this.isLocalWatchRetryCurrent(retry)) return;
+    this.localWatchRetries.schedule(`${this.runtimeKey(mapping.id, target.id)}:${change.relativePath}`, retry);
+  }
+
+  private async dispatchLocalWatchChange(mapping: WorkspaceSyncMapping, target: WorkspaceSyncTarget, change: WorkspaceLocalChange, session: WorkspaceSyncRemoteSession): Promise<void> {
+    try {
+      await this.operations.run(this.runtimeKey(mapping.id, target.id), async () => {
+        if (!this.isLocalWatchRetryCurrent({ mapping, target, change, session })) return;
+        await this.runWithAutomaticPathProtection(mapping, session,
+          [{ path: change.absolutePath, mode: 'read' }], async () => {
+            if (!this.isLocalWatchRetryCurrent({ mapping, target, change, session })) return;
+            await this.handleWatchedChangeForTarget(mapping, target, change);
+          });
+      });
+    } catch (error) {
+      this.scheduleLocalWatchRetry(mapping, target, change, session);
+      this.log('WARN', `Workspace Sync automatic operation failed: ${mapping.name} / ${target.name} / ${change.relativePath}. ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -2161,11 +2808,32 @@ export class WorkspaceSyncController implements vscode.Disposable {
     const remoteRelativePath = baseline?.remoteRelativePath || change.relativePath;
     const { localPath, remotePath } = resolveSyncPaths(mapping, target, change.relativePath, { localRelativePath, remoteRelativePath });
     // Watcher event sequences can collapse delete/create cycles in different
-    // orders (atomic saves are a common example). Re-read Local before any
-    // destructive action and only propagate a delete when the path is truly gone.
-    let local = await readLocalFingerprint(localPath);
+    // orders (atomic saves are a common example). Read both sides through the
+    // same one-path classifier used by incremental Refresh/Remote Watch so the
+    // changed-side decision can never drift between automatic routes.
+    let currentState = await readAndClassifyCurrentPath(session, {
+      relativePath: change.relativePath,
+      localPath,
+      remotePath,
+      baseline,
+      baselineCapturedAt: baselineState?.capturedAt,
+      localRelativePath,
+      remoteRelativePath,
+      mtimeToleranceMs: 2000
+    });
+    let local = currentState.local;
+    let remote = currentState.remote;
+    let currentDiff = currentState.diff;
 
-    if (change.kind === 'delete' && !local) {
+    // A queued Local Watch event can change meaning before it executes. For
+    // example, a create/change may prepare an upload, then the file can be
+    // deleted before fastPut opens it. Retries must follow the current Local
+    // filesystem state instead of the historical event kind, otherwise that
+    // path is left unreconciled after the failed upload. Keep save-only events
+    // upload-only: delete propagation belongs to the filesystem watcher.
+    const localDeletionObserved = !local && change.source !== 'save';
+
+    if (localDeletionObserved) {
       await this.refreshAutomaticPathsInView(mapping, target, session, [{
         relativePath: change.relativePath,
         observation: { localKnown: true, local: undefined, localRelativePath, remoteRelativePath }
@@ -2217,19 +2885,24 @@ export class WorkspaceSyncController implements vscode.Disposable {
         const plan = singleOperationPlan(mapping, target, operations);
         const revalidated = await this.revalidatePlan(mapping, target, plan, session);
         if (revalidated.stale.length) {
+          this.scheduleLocalWatchRetry(mapping, target, change, session);
           await this.reportAutomaticConflict(mapping, target, change.relativePath, 'Local or Remote changed while the delete plan was being prepared.');
           return;
         }
-        const result = await this.executePlan(mapping, target, plan, session, {
+        const result = await this.executePlan(mapping, target, { ...plan, operations: revalidated.valid }, session, {
           atomicTransfer: mapping.options.atomicTransfer,
-          journal: this.journal
+          journal: this.journal,
+          watchActivity: true
         });
         await this.updateBaselineForOperations(mapping, target, session, result.completed);
         await this.reflectAutomaticOperationsInView(mapping, target, session, result.completed);
-        if (!result.failed.length) {
+        if (result.completed.length < revalidated.valid.filter(operation => operation.type !== 'skip').length) {
+          this.scheduleLocalWatchRetry(mapping, target, change, session);
+        }
+        if (!result.failed.length && !result.deferred.length && !result.cancelled) {
           this.log('INFO', `Workspace Sync propagated local delete: ${mapping.name} / ${target.name} / ${change.relativePath}.`);
         } else {
-          this.log('WARN', `Workspace Sync local delete was only partially propagated: ${mapping.name} / ${target.name} / ${change.relativePath}. ${result.failed.length} of ${operations.length} remote delete operation(s) failed. Refresh to inspect the remaining Remote contents before retrying.`);
+          this.log('WARN', `Workspace Sync local delete was only partially propagated: ${mapping.name} / ${target.name} / ${change.relativePath}. ${result.failed.length} of ${revalidated.valid.length} remote delete operation(s) failed. Watch will re-evaluate the remaining Remote contents automatically.`);
         }
         return;
       }
@@ -2247,14 +2920,25 @@ export class WorkspaceSyncController implements vscode.Disposable {
           localRelativePath: baselineEntry.localRelativePath || (relativePath === change.relativePath ? localRelativePath : relativePath),
           remoteRelativePath: baselineEntry.remoteRelativePath || relativePath
         });
-        const currentRemote = await readRemoteFingerprint(session, paths.remotePath, !session.capabilities.reliableMtime);
-        if (!fingerprintsEqual(currentRemote, baselineEntry.remote, {
-          mtimeReliable: session.capabilities.reliableMtime,
-          requireHashWhenAvailable: true
-        })) {
-          await this.reportAutomaticConflict(mapping, target, relativePath, 'Remote changed before the local delete could be propagated.');
+        const classifiedDelete = await readAndClassifyCurrentPath(session, {
+          relativePath,
+          localPath: paths.localPath,
+          remotePath: paths.remotePath,
+          baseline: baselineEntry,
+          baselineCapturedAt: baselineState.capturedAt,
+          localRelativePath: paths.localRelativePath,
+          remoteRelativePath: paths.remoteRelativePath,
+          localKnown: true,
+          local: undefined,
+          mtimeToleranceMs: 2000
+        });
+        if (classifiedDelete.diff.status === 'conflict') {
+          await this.reportAutomaticConflict(mapping, target, relativePath,
+            classifiedDelete.diff.reason || 'Remote changed before the local delete could be propagated.');
           return;
         }
+        if (!classifiedDelete.remote) continue;
+        if (classifiedDelete.diff.status !== 'localDeleted') continue;
         operations.push({
           id: `watch-delete-${crypto.randomUUID()}`,
           type: 'deleteRemote',
@@ -2265,7 +2949,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
             ? 'Local deletion detected by Workspace Sync watcher.'
             : `Local directory deletion includes '${change.relativePath}'.`,
           expectedLocal: undefined,
-          expectedRemote: currentRemote
+          expectedRemote: classifiedDelete.remote
         });
       }
 
@@ -2273,19 +2957,24 @@ export class WorkspaceSyncController implements vscode.Disposable {
       const plan = singleOperationPlan(mapping, target, operations);
       const revalidated = await this.revalidatePlan(mapping, target, plan, session);
       if (revalidated.stale.length) {
+        this.scheduleLocalWatchRetry(mapping, target, change, session);
         await this.reportAutomaticConflict(mapping, target, change.relativePath, 'Local or Remote changed while the delete plan was being prepared.');
         return;
       }
-      const result = await this.executePlan(mapping, target, plan, session, {
+      const result = await this.executePlan(mapping, target, { ...plan, operations: revalidated.valid }, session, {
         atomicTransfer: mapping.options.atomicTransfer,
-        journal: this.journal
+        journal: this.journal,
+        watchActivity: true
       });
       await this.updateBaselineForOperations(mapping, target, session, result.completed);
       await this.reflectAutomaticOperationsInView(mapping, target, session, result.completed);
-      if (!result.failed.length) {
+      if (result.completed.length < revalidated.valid.filter(operation => operation.type !== 'skip').length) {
+        this.scheduleLocalWatchRetry(mapping, target, change, session);
+      }
+      if (!result.failed.length && !result.deferred.length && !result.cancelled) {
         this.log('INFO', `Workspace Sync propagated local delete: ${mapping.name} / ${target.name} / ${change.relativePath}.`);
       } else {
-        this.log('WARN', `Workspace Sync local delete was only partially propagated: ${mapping.name} / ${target.name} / ${change.relativePath}. ${result.failed.length} of ${operations.length} remote delete operation(s) failed. Refresh to inspect the remaining Remote contents before retrying.`);
+        this.log('WARN', `Workspace Sync local delete was only partially propagated: ${mapping.name} / ${target.name} / ${change.relativePath}. ${result.failed.length} of ${revalidated.valid.length} remote delete operation(s) failed. Watch will re-evaluate the remaining Remote contents automatically.`);
       }
       return;
     }
@@ -2299,7 +2988,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
       return;
     }
     if (local.kind === 'directory') {
-      const remoteDirectoryState = await readRemoteFingerprint(session, remotePath);
+      const remoteDirectoryState = remote;
       await this.refreshAutomaticPathsInView(mapping, target, session, [{
         relativePath: change.relativePath,
         observation: { localKnown: true, local, remoteKnown: true, remote: remoteDirectoryState, localRelativePath, remoteRelativePath }
@@ -2333,13 +3022,18 @@ export class WorkspaceSyncController implements vscode.Disposable {
       const plan = singleOperationPlan(mapping, target, [operation]);
       const revalidated = await this.revalidatePlan(mapping, target, plan, session);
       if (revalidated.stale.length) {
+        this.scheduleLocalWatchRetry(mapping, target, change, session);
         await this.reportAutomaticConflict(mapping, target, change.relativePath, 'Local or Remote changed while the directory-create plan was being prepared.');
         return;
       }
-      const result = await this.executePlan(mapping, target, plan, session, {
+      const result = await this.executePlan(mapping, target, { ...plan, operations: revalidated.valid }, session, {
         atomicTransfer: mapping.options.atomicTransfer,
-        journal: this.journal
+        journal: this.journal,
+        watchActivity: true
       });
+      if (result.completed.length < revalidated.valid.filter(operation => operation.type !== 'skip').length) {
+        this.scheduleLocalWatchRetry(mapping, target, change, session);
+      }
       if (result.failed.length) return;
       await this.updateBaselineForOperations(mapping, target, session, result.completed);
       await this.reflectAutomaticOperationsInView(mapping, target, session, result.completed);
@@ -2352,40 +3046,30 @@ export class WorkspaceSyncController implements vscode.Disposable {
       }]).catch(() => undefined);
       return;
     }
-    let remote = await readRemoteFingerprint(session, remotePath, !session.capabilities.reliableMtime);
-    if (!session.capabilities.reliableMtime && remote?.kind === 'file' && remote.size === local.size) {
-      local = await readLocalFingerprint(localPath, true) || local;
-    }
+    // currentState was read through the shared classifier above. Reuse that
+    // exact result for both the UI and the Watch decision; do not independently
+    // infer Local/Remote changes here.
     await this.refreshAutomaticPathsInView(mapping, target, session, [{
       relativePath: change.relativePath,
       observation: { localKnown: true, local, remoteKnown: true, remote, localRelativePath, remoteRelativePath }
     }]).catch(() => undefined);
 
-    if (!sourceIsAuthoritative && !baseline && mapping.options.conflictProtection && remote && !fingerprintsEqual(local, remote, {
-      mtimeReliable: session.capabilities.reliableMtime,
-      requireHashWhenAvailable: true
-    })) {
-      await this.reportAutomaticConflict(mapping, target, change.relativePath, 'Remote file already exists and there is no trusted sync baseline.');
-      return;
-    }
-    if (!sourceIsAuthoritative && baseline) {
-      const localChanged = !fingerprintsEqual(local, baseline.local, { mtimeReliable: true });
-      const remoteChanged = !fingerprintsEqual(remote, baseline.remote, {
-        mtimeReliable: session.capabilities.reliableMtime,
-        requireHashWhenAvailable: true
-      });
-      if (remoteChanged && localChanged) {
-        await this.reportAutomaticConflict(mapping, target, change.relativePath, 'Local and Remote both changed since the last sync.');
+    if (!sourceIsAuthoritative) {
+      if (currentDiff.status === 'conflict' || (currentDiff.status === 'different' && mapping.options.conflictProtection)) {
+        await this.reportAutomaticConflict(mapping, target, change.relativePath,
+          currentDiff.reason || 'Local and Remote both changed since the last trusted sync state.');
         return;
       }
-      if (remoteChanged && !localChanged) return;
+      // A Local watcher event can arrive while the only trusted change belongs
+      // to Remote (or while Remote deletion is pending). Leave those operations
+      // to Remote Watch rather than turning the Local event into an upload.
+      if (currentDiff.status === 'remoteChanged' || currentDiff.status === 'remoteOnly' || currentDiff.status === 'remoteDeleted') return;
     }
 
-    if (remote && fingerprintsEqual(local, remote, {
-      mtimeReliable: session.capabilities.reliableMtime,
-      requireHashWhenAvailable: true
-    })) {
-      await this.baselines.updatePath(mapping.id, target.id, change.relativePath, local, remote, { localRelativePath, remoteRelativePath });
+    if (currentDiff.status === 'same') {
+      if (local && remote) {
+        await this.baselines.updatePath(mapping.id, target.id, change.relativePath, local, remote, { localRelativePath, remoteRelativePath });
+      }
       await this.refreshAutomaticPathsInView(mapping, target, session, [{
         relativePath: change.relativePath,
         observation: { localKnown: true, local, remoteKnown: true, remote, localRelativePath, remoteRelativePath }
@@ -2406,18 +3090,21 @@ export class WorkspaceSyncController implements vscode.Disposable {
     };
     const plan = singleOperationPlan(mapping, target, [operation]);
     const revalidated = await this.revalidatePlan(mapping, target, plan, session);
-    if (revalidated.stale.length) return;
-    const result = await this.executePlan(mapping, target, plan, session, {
+    if (revalidated.stale.length) {
+      this.scheduleLocalWatchRetry(mapping, target, change, session);
+      return;
+    }
+    const result = await this.executePlan(mapping, target, { ...plan, operations: revalidated.valid }, session, {
       atomicTransfer: mapping.options.atomicTransfer,
-      journal: this.journal
+      journal: this.journal,
+      watchActivity: true
     });
+    if (result.completed.length < revalidated.valid.filter(operation => operation.type !== 'skip').length) {
+      this.scheduleLocalWatchRetry(mapping, target, change, session);
+    }
     if (result.failed.length) return;
 
-    const [nextLocal, nextRemote] = await Promise.all([
-      readLocalFingerprint(localPath, !session.capabilities.reliableMtime),
-      readRemoteFingerprint(session, remotePath, !session.capabilities.reliableMtime)
-    ]);
-    await this.baselines.updatePath(mapping.id, target.id, change.relativePath, nextLocal, nextRemote, { localRelativePath, remoteRelativePath });
+    await this.updateBaselineForOperations(mapping, target, session, result.completed);
     await this.reflectAutomaticOperationsInView(mapping, target, session, result.completed);
     this.log('INFO', `Workspace Sync automatic upload: ${mapping.name} / ${target.name} / ${change.relativePath}.`);
   }
@@ -2427,7 +3114,7 @@ export class WorkspaceSyncController implements vscode.Disposable {
     const stale = new Set(stalePaths);
     let invalidated = false;
     runtime.diffs = runtime.diffs.map(diff => {
-      if (!stale.has(diff.relativePath) || !diff.resolution || (diff.status !== 'conflict' && diff.status !== 'different')) return diff;
+      if (!stale.has(diff.relativePath) || !diff.resolution) return diff;
       const reset: DiffEntry = { ...diff };
       delete reset.resolution;
       invalidated = true;
@@ -2449,7 +3136,15 @@ export class WorkspaceSyncController implements vscode.Disposable {
   ) {
     const revalidateTimer = this.diagnostics.timer();
     this.diagnostics.debug('Planner', 'Plan revalidation started.', { Mapping: mapping.name, Target: target.name, Operations: plan.operations.length });
-    const result = await revalidateSyncPlan(mapping, target, plan, session, cancellationToken);
+    // Directory deletions are expanded against the complete current subtree,
+    // intentionally including hidden/ignored descendants. The planner has
+    // already approved deletion of the directory itself; explicit descendant
+    // operations let the normal revalidator/executor remove the complete tree
+    // deepest-first without ever using an unsafe recursive delete. Anything
+    // created after this manifest is captured remains outside the plan and the
+    // final rmdir/deleteDirectory fails closed instead of erasing new data.
+    const expandedPlan = await expandDirectoryDeletePlan(mapping, target, plan, session, cancellationToken);
+    const result = await revalidateSyncPlan(mapping, target, expandedPlan, session, cancellationToken);
     this.diagnostics.performance('Planner', `Plan revalidation completed in ${formatDuration(revalidateTimer())}.`, {
       Mapping: mapping.name,
       Target: target.name,
@@ -2460,6 +3155,118 @@ export class WorkspaceSyncController implements vscode.Disposable {
       this.log('WARN', `Workspace Sync validation blocked ${mapping.name} / ${target.name} / ${operation.relativePath} (${operation.type}): ${reason}`);
     }
     return result;
+  }
+
+  private localRootChangedAfter(root: string, epoch: number): boolean {
+    for (const [changedRoot, changedAt] of this.lastLocalMutationByRoot) {
+      if (changedAt > epoch && localRootsOverlap(root, changedRoot)) return true;
+    }
+    return false;
+  }
+
+  /** Reclassify Local changes against every other connected target's own
+   * baseline, including mappings without Local Watch. Never copy diff objects
+   * across mappings. When Local Watch is enabled for a peer, route the change
+   * through handleWatchedChangeForTarget() -- the exact same classifier,
+   * planner, revalidator, executor, baseline and journal path used by a real
+   * filesystem watcher event. This makes cross-target Local propagation
+   * deterministic without creating a second automatic-sync implementation. */
+  private scheduleSharedLocalReclassification(
+    originMapping: WorkspaceSyncMapping, originTarget: WorkspaceSyncTarget, completed: SyncOperation[]
+  ): void {
+    const changed = completed.filter(operation =>
+      ['download', 'deleteLocal', 'createLocalDirectory'].includes(operation.type));
+    if (!changed.length) return;
+    this.lastLocalMutationByRoot.set(originMapping.localRoot, ++this.localMutationEpoch);
+    for (const mapping of this.mappings.list()) {
+      for (const target of mapping.targets) {
+        if (!target.enabled || (mapping.id === originMapping.id && target.id === originTarget.id)) continue;
+        if (!this.sessions.getSession(this.sessionKey(mapping.id, target.id))) continue;
+        const key = this.runtimeKey(mapping.id, target.id);
+        let paths = this.pendingSharedLocalPaths.get(key);
+        if (!paths) this.pendingSharedLocalPaths.set(key, paths = new Map());
+        for (const operation of changed) {
+          const absolute = path.resolve(originMapping.localRoot, operation.localRelativePath || operation.relativePath);
+          const relative = path.relative(path.resolve(mapping.localRoot), absolute);
+          if (relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+            const physicalRelativePath = relative.split(path.sep).join('/');
+            const relativePath = physicalRelativePath.normalize('NFC');
+            // Last completed operation wins if a batch touched the same path
+            // more than once. Only a Local deletion needs special event
+            // semantics; create/change are both classified from current state.
+            paths.set(relativePath, {
+              kind: operation.type === 'deleteLocal' ? 'delete' : 'change',
+              physicalRelativePath
+            });
+          }
+        }
+        if (!paths.size) this.pendingSharedLocalPaths.delete(key);
+      }
+    }
+    if (this.sharedLocalRefreshTimer || !this.pendingSharedLocalPaths.size) return;
+    this.sharedLocalRefreshTimer = setTimeout(() => {
+      this.sharedLocalRefreshTimer = undefined;
+      const pending = [...this.pendingSharedLocalPaths];
+      this.pendingSharedLocalPaths.clear();
+      for (const [key, paths] of pending) {
+        const mapping = this.mappings.list().find(item => item.targets.some(target => this.runtimeKey(item.id, target.id) === key));
+        const target = mapping?.targets.find(item => this.runtimeKey(mapping.id, item.id) === key);
+        if (!mapping || !target || !paths.size) continue;
+        void this.operations.run(key, async () => {
+          const currentMapping = this.mappings.get(mapping.id);
+          const currentTarget = currentMapping?.targets.find(item => item.id === target.id);
+          if (!currentMapping || !currentTarget?.enabled) return;
+          const session = this.getConnectedAutomaticSession(mapping.id, target.id);
+          if (!session) return;
+          const ignore = new IgnoreMatcher(await loadEffectiveIgnorePatterns(currentMapping));
+
+          for (const [relativePath, pendingPath] of paths) {
+            if (ignore.ignores(relativePath, false)) continue;
+            const absolutePath = path.resolve(currentMapping.localRoot, pendingPath.physicalRelativePath.split('/').join(path.sep));
+            await this.runWithAutomaticPathProtection(
+              currentMapping,
+              session,
+              [{ path: absolutePath, mode: 'read' }],
+              async () => {
+                // Re-check the session after waiting for endpoint/path locks.
+                if (this.getConnectedAutomaticSession(currentMapping.id, currentTarget.id) !== session) return;
+
+                if (currentMapping.options.watchLocalChanges && currentMapping.options.direction !== 'remoteToLocal') {
+                  const change: WorkspaceLocalChange = {
+                    mappingId: currentMapping.id,
+                    relativePath,
+                    physicalRelativePath: pendingPath.physicalRelativePath,
+                    absolutePath,
+                    kind: pendingPath.kind,
+                    source: 'watcher'
+                  };
+                  try {
+                    await this.handleWatchedChangeForTarget(currentMapping, currentTarget, change);
+                  } catch (error) {
+                    this.scheduleLocalWatchRetry(currentMapping, currentTarget, change, session);
+                    this.log('WARN', `Shared Local change will be re-evaluated: ${currentMapping.name} / ${currentTarget.name} / ${relativePath}. ${error instanceof Error ? error.message : String(error)}`);
+                  }
+                  return;
+                }
+
+                // Watch Local may be disabled (or Direction may forbid Local ->
+                // Remote) but Changes must still reflect the shared Local write.
+                await this.refreshAutomaticPathsInView(
+                  currentMapping,
+                  currentTarget,
+                  session,
+                  [{ relativePath }],
+                  undefined,
+                  true
+                );
+              }
+            );
+          }
+        }).catch(error => {
+          this.log('WARN', `Shared Local change processing failed for ${mapping.name} / ${target.name}. ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+    }, 100);
   }
 
   private async executePlan(
@@ -2480,39 +3287,77 @@ export class WorkspaceSyncController implements vscode.Disposable {
       beginLocalMutation: (filePath: string) => this.journal.beginLocalMutation(filePath, mutationOrigin),
       markLocalMutation: (filePath: string) => this.journal.markLocalMutation(filePath, mutationOrigin)
     };
-    const result = await executeSyncPlan(mapping, target, plan, session, {
-      ...options,
-      // Always scope Local mutation suppression to the target executing this
-      // plan. This prevents one mapping from hiding filesystem changes from
-      // another mapping that intentionally shares the same Local Root.
-      journal: scopedJournal,
-      onOrphanedRemoteTemp: (tempRemotePath, operation) => {
-        this.recordOrphanedRemoteTemp(mapping, target, tempRemotePath, operation.relativePath);
-        options.onOrphanedRemoteTemp?.(tempRemotePath, operation);
-      },
-      onActivity: event => {
-        const level: SyncActivity['level'] = event.kind === 'failed' ? 'error' : event.kind === 'retry' ? 'warning' : event.kind === 'completed' ? 'success' : 'info';
-        const action = { upload: 'Upload', download: 'Download', createLocalDirectory: 'Create local directory', createRemoteDirectory: 'Create remote directory', deleteLocal: 'Delete local', deleteRemote: 'Delete remote', skip: 'Skip' }[event.operation.type];
-        const targetLabel = `${mapping.name} / ${target.name}`;
-        const inlineMessage = event.kind === 'failed' ? '' : event.message ? ` — ${event.message}` : '';
-        this.ui.log(`${action} ${event.kind}: ${event.operation.relativePath}${inlineMessage}`, level, targetLabel);
-        if (event.kind === 'failed' && event.message) {
-          if (event.errorOutput) this.ui.log(`Error output: ${event.errorOutput}`, 'error', targetLabel);
-          const guidance = describeSyncOperationFailure(event.operation, event.message);
-          if (guidance) this.ui.log(guidance, 'warning', targetLabel);
+    const watchKey = this.runtimeKey(mapping.id, target.id);
+    let watchProcessed = 0;
+    if (options.watchActivity) {
+      this.watchingTargets.add(watchKey);
+      this.backgroundActivityEmitter.fire({
+        active: true, kind: 'watch', label: 'Watch reconciliation...',
+        mappingId: mapping.id, targetId: target.id,
+        detail: `${target.name} · 0/${plan.operations.length}`, cancellable: false
+      });
+      this.viewStateChangedEmitter.fire();
+    }
+    let result: Awaited<ReturnType<typeof executeSyncPlan>>;
+    try {
+      result = await executeSyncPlan(mapping, target, plan, session, {
+        ...options,
+        // Scope Local mutation suppression to the executing mapping + target.
+        // Other mappings sharing the Local Root must still observe its writes.
+        journal: scopedJournal,
+        onOrphanedRemoteTemp: (tempRemotePath, operation) => {
+          this.recordOrphanedRemoteTemp(mapping, target, tempRemotePath, operation.relativePath);
+          options.onOrphanedRemoteTemp?.(tempRemotePath, operation);
+        },
+        onActivity: event => {
+          const level: SyncActivity['level'] = event.kind === 'failed' ? 'error' : (event.kind === 'retry' || event.kind === 'deferred') ? 'warning' : event.kind === 'completed' ? 'success' : 'info';
+          const action = { upload: 'Upload', download: 'Download', createLocalDirectory: 'Create local directory', createRemoteDirectory: 'Create remote directory', deleteLocal: 'Delete local', deleteRemote: 'Delete remote', skip: 'Skip' }[event.operation.type];
+          const targetLabel = `${mapping.name} / ${target.name}`;
+          const inlineMessage = event.kind === 'failed' ? '' : event.message ? ` — ${event.message}` : '';
+          const activityLabel = event.kind === 'skipped' && event.operation.type === 'skip'
+            ? `Skipped: ${event.operation.relativePath}${inlineMessage}`
+            : event.kind === 'deferred'
+              ? `${action} deferred: ${event.operation.relativePath}${inlineMessage}`
+              : `${action} ${event.kind}: ${event.operation.relativePath}${inlineMessage}`;
+          this.ui.log(activityLabel, level, targetLabel);
+          if (event.kind === 'failed' && event.message) {
+            if (event.errorOutput) this.ui.log(`Error output: ${event.errorOutput}`, 'error', targetLabel);
+            const guidance = describeSyncOperationFailure(event.operation, event.message);
+            if (guidance) this.ui.log(guidance, 'warning', targetLabel);
+          }
+          if (options.watchActivity && (event.kind === 'completed' || event.kind === 'failed' || event.kind === 'skipped' || event.kind === 'deferred')) {
+            watchProcessed += 1;
+            this.backgroundActivityEmitter.fire({
+              active: true, kind: 'watch', label: 'Watch reconciliation...',
+              mappingId: mapping.id, targetId: target.id,
+              detail: `${target.name} · ${watchProcessed}/${plan.operations.length} · ${event.operation.relativePath}`,
+              cancellable: false
+            });
+          }
+          options.onActivity?.(event);
         }
-        options.onActivity?.(event);
+      });
+    } finally {
+      if (options.watchActivity) {
+        this.watchingTargets.delete(watchKey);
+        this.backgroundActivityEmitter.fire({
+          active: false, kind: 'watch', label: 'Watch reconciliation...',
+          mappingId: mapping.id, targetId: target.id
+        });
+        this.viewStateChangedEmitter.fire();
       }
-    });
+    }
     this.markFailedTransfersForStrongVerification(mapping, target, plan, result);
+    this.scheduleSharedLocalReclassification(mapping, target, result.completed);
     await this.cleanupKnownOrphanedRemoteTemps(mapping, target, session);
-    this.ui.log(`${result.cancelled ? 'Cancelled' : 'Finished'}: ${result.completed.length} completed, ${result.failed.length} failed, ${result.skipped.length} skipped.`, result.failed.length ? 'error' : result.cancelled ? 'warning' : 'success', `${mapping.name} / ${target.name}`);
+    this.ui.log(`${result.cancelled ? 'Cancelled' : 'Finished'}: ${result.completed.length} completed, ${result.failed.length} failed, ${result.skipped.length} skipped${result.deferred.length ? `, ${result.deferred.length} deferred` : ''}.`, result.failed.length ? 'error' : (result.cancelled || result.deferred.length) ? 'warning' : 'success', `${mapping.name} / ${target.name}`);
     this.diagnostics.debug('Executor', 'Plan execution completed.', {
       Mapping: mapping.name,
       Target: target.name,
       Completed: result.completed.length,
       Failed: result.failed.length,
       Skipped: result.skipped.length,
+      Deferred: result.deferred.length,
       Cancelled: result.cancelled
     });
     this.diagnostics.performance('Executor', `Plan execution completed in ${formatDuration(executionTimer())}.`, {
@@ -2521,14 +3366,15 @@ export class WorkspaceSyncController implements vscode.Disposable {
       Operations: plan.operations.length,
       Completed: result.completed.length,
       Failed: result.failed.length,
-      Skipped: result.skipped.length
+      Skipped: result.skipped.length,
+      Deferred: result.deferred.length
     });
     return result;
   }
 
   private getConnectedAutomaticSession(mappingId: string, targetId: string) {
     const key = this.sessionKey(mappingId, targetId);
-    if (this.disconnectRequested.has(key)) return undefined;
+    if (this.disconnectRequested.has(key) || this.preparingTargets.has(this.runtimeKey(mappingId, targetId)) || this.suspendedTargets.has(this.runtimeKey(mappingId, targetId))) return undefined;
     if (this.sessions.getState(key).status !== 'connected') return undefined;
     return this.sessions.getSession(key);
   }
@@ -2590,16 +3436,27 @@ export class WorkspaceSyncController implements vscode.Disposable {
     session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession,
     operations: SyncOperation[]
   ): Promise<Array<{ relativePath: string; observation: AutomaticPathObservation }>> {
-    const states = await Promise.all(operations.map(async operation => {
+    const previousBaseline = await this.baselines.get(mapping.id, target.id);
+    const strongPaths = this.strongVerificationPaths.get(this.runtimeKey(mapping.id, target.id));
+    const states = await mapWithConcurrencyLimit(operations, session.capabilities.maxConcurrentMetadata, async operation => {
       if (operation.type === 'skip') return undefined;
       const { localPath, remotePath, localRelativePath, remoteRelativePath } = resolveSyncPaths(mapping, target, operation.relativePath, operation);
-      const includeHash = !session.capabilities.reliableMtime;
+      const previous = previousBaseline?.entries[operation.relativePath];
+      // A successful transfer must never weaken trusted history. If either side
+      // previously required content hashing (or a failed transfer requested a
+      // strong verification), capture hashes on both current files so the next
+      // Local/Remote Watch uses the same-strength baseline as Refresh.
+      const includeHash = baselineRequiresStrongFingerprint(
+        previous,
+        session.capabilities.reliableMtime,
+        Boolean(strongPaths?.has(operation.relativePath))
+      );
       const [local, remote] = await Promise.all([
         readLocalFingerprint(localPath, includeHash),
         readRemoteFingerprint(session, remotePath, includeHash)
       ]);
       return { operation, local, remote, localRelativePath, remoteRelativePath };
-    }));
+    });
 
     const updates: Record<string, BaselineEntry | undefined> = {};
     const observations: Array<{ relativePath: string; observation: AutomaticPathObservation }> = [];
@@ -2765,6 +3622,9 @@ export class WorkspaceSyncController implements vscode.Disposable {
   }
 
   private requireSession(mappingId: string, targetId: string) {
+    if (this.suspendedTargets.has(this.runtimeKey(mappingId, targetId))) {
+      throw new Error('This target was cancelled during initial preparation. Run Refresh to complete its initial Refresh.');
+    }
     const session = this.sessions.getSession(this.sessionKey(mappingId, targetId));
     if (!session) throw new Error('Connect Workspace Sync before running this operation.');
     return session;
@@ -2779,6 +3639,13 @@ export class WorkspaceSyncController implements vscode.Disposable {
   }
 }
 
+
+function formatWorkspaceSyncTargetNames(names: string[], maxVisible = 3): string {
+  const clean = names.map(name => String(name || '').trim()).filter(Boolean);
+  if (!clean.length) return '';
+  if (clean.length <= maxVisible) return clean.join(', ');
+  return `${clean.slice(0, maxVisible).join(', ')} +${clean.length - maxVisible}`;
+}
 
 function stringArraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
@@ -2834,6 +3701,8 @@ function initialWatchOperation(
     remoteRelativePath: diff.remoteRelativePath,
     reason: sourceFingerprint.kind === 'link'
       ? 'Symbolic links are not transferred automatically.'
+      : sourceFingerprint.kind === 'unknown'
+        ? `Unsupported ${useLocal ? 'Local' : 'Remote'} entry (not a regular file or directory, e.g. socket, FIFO or device). Watch does not transfer it.`
       : useLocal
         ? 'Initial Watch reconciliation is applying the Local version.'
         : 'Initial Watch reconciliation is applying the Remote version.',
@@ -2864,6 +3733,83 @@ function explicitTransferOperation(diff: DiffEntry, direction: 'upload' | 'downl
   };
 }
 
+
+function normalizeReconcileScopes(scopes: string[]): string[] {
+  return [...new Set(scopes
+    .map(scope => String(scope || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').normalize('NFC'))
+    .filter(Boolean))]
+    .sort((left, right) => left.length - right.length || left.localeCompare(right))
+    .filter((scope, index, all) => !all.slice(0, index).some(parent => scope === parent || scope.startsWith(`${parent}/`)));
+}
+
+function pathInScopes(relativePath: string, scopes: string[]): boolean {
+  return scopes.some(scope => relativePath === scope || relativePath.startsWith(`${scope}/`));
+}
+
+function combineSnapshots(parts: SyncSnapshot[]): SyncSnapshot {
+  const entries: SyncSnapshot['entries'] = {};
+  const incomplete = new Set<string>();
+  const errors: Record<string, string> = {};
+  for (const snapshot of parts) {
+    for (const [relativePath, entry] of Object.entries(snapshot.entries)) {
+      entries[relativePath] = {
+        ...entry,
+        fingerprint: { ...entry.fingerprint }
+      };
+    }
+    for (const relativePath of snapshot.incompletePaths) incomplete.add(relativePath);
+    Object.assign(errors, snapshot.incompleteErrors || {});
+  }
+  return {
+    capturedAt: Date.now(),
+    entries,
+    incompletePaths: [...incomplete],
+    ...(Object.keys(errors).length ? { incompleteErrors: errors } : {})
+  };
+}
+
+function replaceSnapshotScopes(base: SyncSnapshot, replacement: SyncSnapshot, scopes: string[]): SyncSnapshot {
+  const entries: SyncSnapshot['entries'] = {};
+  for (const [relativePath, entry] of Object.entries(base.entries)) {
+    if (pathInScopes(relativePath, scopes)) continue;
+    entries[relativePath] = { ...entry, fingerprint: { ...entry.fingerprint } };
+  }
+  for (const [relativePath, entry] of Object.entries(replacement.entries)) {
+    entries[relativePath] = { ...entry, fingerprint: { ...entry.fingerprint } };
+  }
+
+  const incompletePaths = [
+    ...base.incompletePaths.filter(relativePath => !pathInScopes(relativePath, scopes)),
+    ...replacement.incompletePaths
+  ];
+  const incompleteErrors: Record<string, string> = {};
+  for (const [relativePath, detail] of Object.entries(base.incompleteErrors || {})) {
+    if (!pathInScopes(relativePath, scopes)) incompleteErrors[relativePath] = detail;
+  }
+  Object.assign(incompleteErrors, replacement.incompleteErrors || {});
+  return {
+    capturedAt: Date.now(),
+    entries,
+    incompletePaths: [...new Set(incompletePaths)],
+    ...(Object.keys(incompleteErrors).length ? { incompleteErrors } : {})
+  };
+}
+
+function filterBaselineToScopes(baseline: SyncBaseline | undefined, scopes: string[]): SyncBaseline | undefined {
+  if (!baseline) return undefined;
+  const entries: SyncBaseline['entries'] = {};
+  for (const [relativePath, entry] of Object.entries(baseline.entries)) {
+    if (!pathInScopes(relativePath, scopes)) continue;
+    entries[relativePath] = {
+      local: entry.local ? { ...entry.local } : undefined,
+      remote: entry.remote ? { ...entry.remote } : undefined,
+      localRelativePath: entry.localRelativePath,
+      remoteRelativePath: entry.remoteRelativePath
+    };
+  }
+  return { ...baseline, entries };
+}
+
 function singleOperationPlan(
   mapping: WorkspaceSyncMapping,
   target: WorkspaceSyncTarget,
@@ -2880,12 +3826,36 @@ function singleOperationPlan(
   };
 }
 
-function planMutatesLocal(plan: SyncPlan): boolean {
-  return plan.operations.some(operation =>
-    operation.type === 'download'
-    || operation.type === 'createLocalDirectory'
-    || operation.type === 'deleteLocal'
-  );
+/** A plan reserves the complete set of concrete Local paths before revalidation.
+ * Directories cover descendants. Unknown footprints revert to whole-root
+ * serialization in the coordinator; no optimistic write is ever admitted.
+ */
+export function planLocalPathAccesses(
+  mapping: WorkspaceSyncMapping,
+  target: WorkspaceSyncTarget,
+  plan: SyncPlan
+): LocalPathAccess[] {
+  const accesses: LocalPathAccess[] = [];
+  for (const operation of plan.operations) {
+    if (operation.type === 'skip') continue;
+    const { localPath } = resolveSyncPaths(mapping, target, operation.relativePath, operation);
+    // mkdir({recursive:true}) can write unlisted ancestors: keep the broad
+    // lock until a more precise parent-directory acquisition is available.
+    if (operation.type === 'createLocalDirectory') {
+      return [{ path: mapping.localRoot, mode: 'write' }];
+    }
+    const mode: LocalPathAccess['mode'] = ['download', 'deleteLocal'].includes(operation.type)
+      ? 'write' : 'read';
+    accesses.push({ path: localPath, mode });
+  }
+  return accesses;
+}
+
+function remoteEndpointLockRoot(session: import('./connection/WorkspaceSyncSession').WorkspaceSyncRemoteSession): string {
+  // A stable private lock namespace, never a physical path. Remote path rules
+  // (Windows/SFTP/FTP/AIX) must not be interpreted with the Local path module.
+  // Until proven safe, two writers on the same endpoint serialize.
+  return path.resolve(path.sep, '__remoteedit_sync_endpoints__', session.connectionIdentity);
 }
 
 async function mapWithConcurrencyLimit<T, R>(
@@ -2980,6 +3950,15 @@ async function runWithConcurrency<T>(
     }
   };
   await Promise.all(Array.from({ length: limit }, () => runWorker()));
+}
+
+
+function decorateResolutionSuggestion(diff: DiffEntry, remoteTimestampAbsolute: boolean): DiffEntry {
+  const next: DiffEntry = { ...diff };
+  const suggestion = suggestConflictResolution(next, { remoteTimestampAbsolute, mtimeToleranceMs: 2000 });
+  if (suggestion) next.suggestedResolution = suggestion;
+  else delete next.suggestedResolution;
+  return next;
 }
 
 function formatDuration(milliseconds: number): string {

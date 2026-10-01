@@ -1,25 +1,15 @@
 import { Readable, Writable } from 'stream';
 import * as vscode from 'vscode';
-import { Client as FtpClient, FileInfo, FileType } from 'basic-ftp';
+import { Client as FtpClient, FileInfo } from 'basic-ftp';
 import { RemoteEditOperationCancelledError, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { assertTcpConnectionReachable, normalizeRemoteConnectError } from '../remote/ConnectionProbe';
 import { getBooleanSetting, getNumberSetting } from '../utils/settingsUtils';
 import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 import { normalizeConnectionType } from '../remote/RemoteConnectionTypes';
 import type { RemoteSessionManager, RemoteStat, RemoteListDirectoryOptions, RemoteChangeOwnerGroupOptions, RemoteChmodOptions, RemoteOwnerGroupSuggestions, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
-import type {
-  ActiveConnection,
-  ConnectOptions,
-  ConnectionCancellationToken,
-  RemoteArchiveFormat,
-  RemoteChecksumSummary,
-  RemoteCommandStreamingCallbacks,
-  RemoteCommandStreamingResult,
-  RemoteEntry,
-  RemoteEntryType
-} from '../remote/RemoteSessionTypes';
+import type { ActiveConnection, ConnectOptions, ConnectionCancellationToken, RemoteArchiveFormat, RemoteChecksumSummary, RemoteCommandStreamingCallbacks, RemoteCommandStreamingResult, RemoteEntry } from '../remote/RemoteSessionTypes';
 import { FtpKeepAliveController } from './FtpKeepAliveController';
-import { appendFtpListCommandContext, basenameRemotePath, buildFtpPermissionString, buildFtpsSecureOptions, cloneRemoteEntries, createUnsupportedError, dirnameRemotePath, getFtpModifyTime, getSelfListingEntry, hasUsableFtpListItems, isListAllCommand, isMlsdListCommand, joinRemotePath, mergeFtpMetadata, mapFtpEntryType, mapFtpFileInfo, mapFtpStatType, normalizeRemotePath, sortRemoteEntries, throwIfOperationCancelled } from './SessionUtils';
+import { appendFtpListCommandContext, basenameRemotePath, buildFtpsSecureOptions, cloneRemoteEntries, createUnsupportedError, dirnameRemotePath, getFtpModifyTime, getSelfListingEntry, hasUsableFtpListItems, isListAllCommand, isMlsdListCommand, joinRemotePath, mergeFtpMetadata, mapFtpEntryType, mapFtpFileInfo, mapFtpStatType, normalizeRemotePath, sortRemoteEntries, throwIfOperationCancelled } from './SessionUtils';
 
 interface CachedReadFile {
   content: Buffer;
@@ -1631,21 +1621,6 @@ export class FtpSessionManager implements RemoteSessionManager {
   }
 
   private closeConnectionAfterKeepAliveFailure(connectionId: string, client: FtpClient): void {
-    this.closeClient(client);
-    this.keepAlive.stop(connectionId);
-    this.sessions.delete(connectionId);
-    this.connections.delete(connectionId);
-    this.connectOptions.delete(connectionId);
-    this.reconnectRequired.delete(connectionId);
-    this.clearReadFileCache(connectionId);
-    this.clearModifiedTimeCache(connectionId);
-    this.clearModifiedTimeUpdateBuffer(connectionId);
-    this.cancelModifiedTimeLookup(connectionId);
-    this.clearInFlightDirectoryListings(connectionId);
-    this.operationQueues.delete(connectionId);
-  }
-
-  private closeConnectionAfterCancellation(connectionId: string, client: FtpClient): void {
     this.closeClient(client);
     this.keepAlive.stop(connectionId);
     this.sessions.delete(connectionId);

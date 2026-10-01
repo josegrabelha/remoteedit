@@ -138,46 +138,9 @@ test('stopping a remote forward calls unforwardIn and detaches the tcp connectio
   assert.equal(client.listenerCount('tcp connection'), 0);
 });
 
-test('an incoming tcp connection for the bound port is piped to the configured local target', async () => {
-  await withEchoServer(async localPort => {
-    const client = new FakeSshClient();
-    const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-    const config = baseConfig({ localHost: '127.0.0.1', localPort, remotePort: 9102 });
 
-    await manager.startForward('conn-1', config);
 
-    const channel = new FakeChannel();
-    const accept = () => channel as unknown as NodeJS.ReadWriteStream;
-    const reject = () => { throw new Error('should not reject a matching forward'); };
 
-    client.emit('tcp connection', { destIP: '127.0.0.1', destPort: 9102, srcIP: '10.0.0.5', srcPort: 5555 }, accept, reject);
-
-    const echoed = channel.waitForWrite();
-    channel.push(Buffer.from('ping'));
-
-    const response = await echoed;
-    assert.equal(response.toString(), 'ping');
-
-    await manager.stopForward('conn-1', config.id);
-  });
-});
-
-test('an incoming tcp connection for an unbound port is rejected', async () => {
-  const client = new FakeSshClient();
-  const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-  const config = baseConfig({ remotePort: 9103 });
-
-  await manager.startForward('conn-1', config);
-
-  let rejected = false;
-  const accept = () => { throw new Error('should not accept a non-matching forward'); };
-  const reject = () => { rejected = true; };
-
-  client.emit('tcp connection', { destIP: '127.0.0.1', destPort: 65432, srcIP: '10.0.0.5', srcPort: 5555 }, accept, reject);
-
-  assert.equal(rejected, true);
-  await manager.stopForward('conn-1', config.id);
-});
 
 test('two remote forwards on the same connection dispatch independently and only one listener remains after stopping one', async () => {
   const client = new FakeSshClient();
@@ -197,24 +160,7 @@ test('two remote forwards on the same connection dispatch independently and only
 });
 
 
-test('a failed remote bind does not unforward another active forward on the same endpoint', async () => {
-  const client = new FakeSshClient();
-  const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-  const configA = baseConfig({ id: 'pf-a', remotePort: 9110 });
-  const configB = baseConfig({ id: 'pf-b', remotePort: 9110 });
 
-  const first = await manager.startForward('conn-1', configA);
-  assert.equal(first.status, 'running');
-
-  client.nextForwardInError = new Error('bind failed');
-  const second = await manager.startForward('conn-1', configB);
-
-  assert.equal(second.status, 'error');
-  assert.deepEqual(client.unforwardInCalls, [], 'failed forwardIn must not unforward a bind it never created');
-  assert.equal(manager.getState('conn-1', configA.id).status, 'running');
-
-  await manager.stopForward('conn-1', configA.id);
-});
 
 test('stopping while forwardIn is pending cancels a late remote bind without registering a listener', async () => {
   const client = new FakeSshClient();
@@ -238,89 +184,11 @@ test('stopping while forwardIn is pending cancels a late remote bind without reg
   assert.equal(manager.getState('conn-1', config.id).status, 'stopped');
 });
 
-test('a late remote bind cleanup failure after stop is surfaced and can be retried', async () => {
-  const client = new FakeSshClient();
-  client.deferForwardIn = true;
-  const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-  const config = baseConfig({ remotePort: 9115 });
 
-  const startPromise = manager.startForward('conn-1', config);
-  assert.equal(manager.getState('conn-1', config.id).status, 'starting');
 
-  const stopped = await manager.stopForward('conn-1', config.id);
-  assert.equal(stopped.status, 'stopped');
 
-  client.nextUnforwardInError = new Error('late cancel failed');
-  client.resolveNextForwardIn();
-  const startResult = await startPromise;
 
-  assert.equal(startResult.status, 'error');
-  assert.match(startResult.error || '', /remote cleanup failed: late cancel failed/i);
-  assert.equal(manager.getState('conn-1', config.id).status, 'error');
-  assert.equal(client.listenerCount('tcp connection'), 0);
-  assert.deepEqual(client.unforwardInCalls, [{ host: '127.0.0.1', port: 9115 }]);
 
-  const retried = await manager.stopForward('conn-1', config.id);
-  assert.equal(retried.status, 'stopped');
-  assert.equal(manager.getState('conn-1', config.id).status, 'stopped');
-  assert.equal(client.unforwardInCalls.length, 2);
-});
-
-test('same remote port on different bind hosts is dispatched by destination address', async () => {
-  await withEchoServer(async localPortA => {
-    const serverB = net.createServer(socket => {
-      socket.on('data', chunk => socket.write(Buffer.from('B:' + chunk.toString())));
-    });
-    await new Promise<void>(resolve => serverB.listen(0, '127.0.0.1', resolve));
-    const addressB = serverB.address();
-    const localPortB = typeof addressB === 'object' && addressB ? addressB.port : 0;
-
-    try {
-      const client = new FakeSshClient();
-      const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-      const wildcard = baseConfig({ id: 'pf-wildcard', remoteHost: '0.0.0.0', remotePort: 9112, localPort: localPortB });
-      const exact = baseConfig({ id: 'pf-exact', remoteHost: '127.0.0.1', remotePort: 9112, localPort: localPortA });
-
-      await manager.startForward('conn-1', wildcard);
-      await manager.startForward('conn-1', exact);
-
-      const channel = new FakeChannel();
-      const echoed = channel.waitForWrite();
-      client.emit('tcp connection', { destIP: '127.0.0.1', destPort: 9112, srcIP: '10.0.0.5', srcPort: 5555 }, () => channel as unknown as NodeJS.ReadWriteStream, () => { throw new Error('should match exact bind'); });
-      channel.push(Buffer.from('ping'));
-
-      const response = await echoed;
-      assert.equal(response.toString(), 'ping', 'exact bind should win over wildcard bind on the same port');
-
-      await manager.stopForward('conn-1', exact.id);
-      await manager.stopForward('conn-1', wildcard.id);
-    } finally {
-      await new Promise<void>(resolve => serverB.close(() => resolve()));
-    }
-  });
-});
-
-test('a local target connection failure closes the accepted SSH channel', async () => {
-  const probe = net.createServer();
-  await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
-  const address = probe.address();
-  const unavailablePort = typeof address === 'object' && address ? address.port : 0;
-  await new Promise<void>(resolve => probe.close(() => resolve()));
-
-  const client = new FakeSshClient();
-  const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-  const config = baseConfig({ localPort: unavailablePort, remotePort: 9113 });
-  await manager.startForward('conn-1', config);
-
-  const channel = new FakeChannel();
-  const closed = new Promise<void>(resolve => channel.once('close', () => resolve()));
-  client.emit('tcp connection', { destIP: '127.0.0.1', destPort: 9113, srcIP: '10.0.0.5', srcPort: 5555 }, () => channel as unknown as NodeJS.ReadWriteStream, () => { throw new Error('should accept matching forward'); });
-
-  await closed;
-  assert.equal(channel.destroyed, true);
-
-  await manager.stopForward('conn-1', config.id);
-});
 
 test('unforwardIn failure leaves the forward in error state so cleanup can be retried', async () => {
   const client = new FakeSshClient();

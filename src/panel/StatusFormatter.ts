@@ -158,7 +158,7 @@ function compactStatusMessage(message: string): string {
   return compact.length <= 120 ? compact : `${compact.slice(0, 117).trimEnd()}...`;
 }
 
-export function shouldShowStatusOutputLink(messageType: string, rawMessage: string, detailedMessage: string, statusMessage: string): boolean {
+export function shouldShowStatusOutputLink(_messageType: string, rawMessage: string, detailedMessage: string, statusMessage: string): boolean {
   const raw = String(rawMessage || '').trim();
 
   if (!raw) {

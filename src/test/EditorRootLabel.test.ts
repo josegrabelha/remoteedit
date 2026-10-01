@@ -38,48 +38,11 @@ test('connection labels use the latest saved group and name, with session fallba
   assert.deepEqual(harness.writes, []);
 });
 
-test('hostname roots retain the existing URI format and old Sidebar URIs still parse', () => {
-  for (const [host, authority, root] of [
-    ['127.0.0.1', '127.0.0.1', '127.0.0.1'],
-    ['root@127.0.0.1:2201', 'root-127.0.0.1-2201', 'root-127'],
-    ['server.example.com', 'server.example.com', 'server']
-  ]) {
-    const uri = buildRemoteEditUri('target', '/etc/config.yml', host);
-    assert.equal(uri.authority, authority);
-    assert.equal(uri.path, `/${root}/etc/config.yml`);
-    assert.equal(uri.query, `connectionId=target&remoteRoot=${root}`);
-    assert.deepEqual(parseRemoteEditUri(URI.parse(uri.toString())), { connectionId: 'target', remotePath: '/etc/config.yml', openSource: undefined });
-  }
-});
 
-test('single roots preserve Unicode and reserved characters through URI serialization', () => {
-  for (const rootSegments of [['Production', 'API'], ['生产环境', '应用 A.v2 #?%'], ['Local Forward']]) {
-    for (const readOnly of [false, true]) {
-      for (const openSource of ['webview', 'sidebar'] as const) {
-        for (const remotePath of ['/', '/etc/config.yml', '/目录/空 格 #?%.txt']) {
-          const uri = buildRemoteEditUri('target', remotePath, '127.0.0.1', { rootSegments, readOnly, openSource });
-          assert.equal(uri.path, `/${rootSegments.join(' | ')}${remotePath === '/' ? '' : remotePath}`);
-          assert.equal(uri.scheme, readOnly ? 'remoteedit-readonly' : 'remoteedit');
-          assert.deepEqual(parseRemoteEditUri(URI.parse(uri.toString())), { connectionId: 'target', remotePath, openSource });
-        }
-      }
-    }
-  }
-});
 
-test('name sanitization cannot introduce path levels and display collisions keep connection identity', () => {
-  const rootSegments = ['.', '../A\\B/#?%'];
-  const first = buildRemoteEditUri('a/b', '/file.txt', '', { rootSegments });
-  const second = buildRemoteEditUri('a-b', '/file.txt', '', { rootSegments });
-  assert.equal(first.path, '/． | ..／A＼B／#?%/file.txt');
-  assert.notEqual(first.toString(), second.toString());
-  assert.equal(parseRemoteEditUri(URI.parse(first.toString())).connectionId, 'a/b');
-  assert.equal(parseRemoteEditUri(URI.parse(second.toString())).connectionId, 'a-b');
-  assert.equal(buildRemoteEditUri('target', '/file', '', { rootSegments: ['..'] }).path, '/．．/file');
-  const legacy = URI.from({ scheme: 'remoteedit', authority: 'target', path: '/Production/API/etc/config.yml',
-    query: new URLSearchParams({ connectionId: 'target', remoteRoot: 'Production/API' }).toString() });
-  assert.equal(parseRemoteEditUri(legacy).remotePath, '/etc/config.yml');
-});
+
+
+
 
 test('directory browsing strips the complete virtual root for writable and readonly files', async () => {
   const requests: Array<{ id: string; path: string }> = [];

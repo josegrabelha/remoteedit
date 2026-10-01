@@ -5,6 +5,8 @@ import { Client as FtpClient } from 'basic-ftp';
 import type { WorkspaceSyncConnectionSnapshot } from './WorkspaceSyncConnectionSnapshot';
 import type { WorkspaceSyncRemoteCapabilities, WorkspaceSyncRemoteEntry, WorkspaceSyncRemoteSession } from './WorkspaceSyncSession';
 import { findFtpEntryByName, splitFtpLookupPath } from './FtpPathLookup';
+import { classifyFtpEntry } from './FtpEntryKind';
+import { SessionLifetime } from './SessionLifetime';
 import { redactWorkspaceSyncDiagnosticText, type WorkspaceSyncDiagnostics } from '../WorkspaceSyncDiagnostics';
 
 export class FtpSyncSession implements WorkspaceSyncRemoteSession {
@@ -18,6 +20,9 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
     maxConcurrentTransfers: 1
   };
 
+  private readonly lifetime = new SessionLifetime();
+  get isDisconnected(): boolean { return this.lifetime.closed; }
+  private openingClient: FtpClient | undefined;
   private client: FtpClient | undefined;
   private keepAliveTimer: NodeJS.Timeout | undefined;
   private reconnectPromise: Promise<void> | undefined;
@@ -29,6 +34,8 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
    */
   private operationTail: Promise<void> = Promise.resolve();
   private queuedOperationCount = 0;
+  private activeReadCommands = 0;
+  private activeWriteCommands = 0;
 
   private constructor(
     readonly profileId: string,
@@ -37,7 +44,7 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
     private readonly diagnostics?: WorkspaceSyncDiagnostics
   ) {}
 
-  static async connect(snapshot: WorkspaceSyncConnectionSnapshot, diagnostics?: WorkspaceSyncDiagnostics): Promise<FtpSyncSession> {
+  static async connect(snapshot: WorkspaceSyncConnectionSnapshot, diagnostics?: WorkspaceSyncDiagnostics, signal?: AbortSignal): Promise<FtpSyncSession> {
     if (snapshot.authType !== 'password' || !snapshot.password) {
       throw new Error('Workspace Sync FTP/FTPS connections require password authentication.');
     }
@@ -45,24 +52,29 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
       ...snapshot,
       jumpChain: snapshot.jumpChain.map(item => ({ ...item }))
     }, diagnostics);
-    await session.reconnect();
-    return session;
+    const abort = (): void => { void session.disconnect(); };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      if (signal?.aborted) abort();
+      await session.reconnect();
+      return session;
+    } finally {
+      signal?.removeEventListener('abort', abort);
+    }
   }
 
   async reconnect(): Promise<void> {
+    this.lifetime.assertOpen();
     if (this.reconnectPromise) {
       this.diagnostics?.debug(this.protocolDiagnosticSource(), 'Joining in-flight reconnect.');
       return this.reconnectPromise;
     }
     const startedAt = Date.now();
     this.diagnostics?.debug(this.protocolDiagnosticSource(), 'Reconnect started.');
-    const promise = (async () => {
-      // Prevent a scheduled Keep Alive from starting while the client is being
-      // replaced, then wait for any already-running FTP command to finish.
-      this.stopKeepAlive();
-      await this.waitForOperations();
-      await this.openFreshConnection();
-    })();
+    // Reconnect is a turn in the same queue as commands. A command must never
+    // await reconnectPromise: that reconnect may itself be queued behind it.
+    this.stopKeepAlive();
+    const promise = this.enqueue(() => this.openFreshConnection());
     this.reconnectPromise = promise;
     try {
       await promise;
@@ -81,7 +93,7 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
       const entries = await this.listUnqueued(client, remotePath);
       return entries.map(entry => ({
         name: String(entry.name || ''),
-        kind: entry.isDirectory ? 'directory' : entry.isSymbolicLink ? 'link' : 'file',
+        kind: classifyFtpEntry(entry),
         size: Number(entry.size || 0),
         mtimeMs: entry.modifiedAt instanceof Date ? entry.modifiedAt.getTime() : 0
       }));
@@ -172,34 +184,49 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
     const startedAt = Date.now();
     this.diagnostics?.debug(this.protocolDiagnosticSource(), 'Disconnect started.');
     this.stopKeepAlive();
-    await this.waitForOperations();
+    this.lifetime.close();
+    const opening = this.openingClient;
+    this.openingClient = undefined;
+    opening?.close();
     const client = this.client;
     this.client = undefined;
     client?.close();
     this.diagnostics?.performance(this.protocolDiagnosticSource(), `Disconnect completed in ${Date.now() - startedAt} ms.`);
   }
 
+  interruptPendingReads(): boolean {
+    // Closing the FTP control socket makes an active LIST/RETR-for-hash reject.
+    // Never use this path while a write (including an atomic rename) is active.
+    if (!this.activeReadCommands || this.activeWriteCommands) return false;
+    const client = this.client;
+    void this.disconnect();
+    return Boolean(client);
+  }
+
   private async openFreshConnection(): Promise<void> {
+    this.lifetime.assertOpen();
     const previousClient = this.client;
     this.client = undefined;
     previousClient?.close();
 
     const client = new FtpClient(30000);
+    this.openingClient = client;
     try {
       const secureOptions = this.snapshot.connectionType === 'ftps'
         ? await buildSecureOptions(this.snapshot)
         : undefined;
-      await client.access({
+      this.lifetime.assertOpen();
+      await this.lifetime.run(() => client.access({
         host: this.snapshot.host,
         port: this.snapshot.port,
         user: this.snapshot.username,
         password: this.snapshot.password,
         secure: this.snapshot.connectionType === 'ftps',
         secureOptions
-      });
-      await client.send('TYPE I');
+      }));
+      await this.lifetime.run(() => client.send('TYPE I'));
       try {
-        const system = await client.send('SYST');
+        const system = await this.lifetime.run(() => client.send('SYST'));
         const description = String((system as any)?.message || system || '');
         if (/windows|win32|windows_nt|microsoft/i.test(description)) {
           this.capabilities.caseSensitive = false;
@@ -212,11 +239,14 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
         // SYST is optional. Unknown case-sensitivity is handled conservatively
         // by Workspace Sync only when case-only path collisions are present.
       }
+      this.lifetime.assertOpen();
       this.client = client;
       this.startKeepAlive();
     } catch (error) {
       client.close();
       throw error;
+    } finally {
+      if (this.openingClient === client) this.openingClient = undefined;
     }
   }
 
@@ -266,7 +296,7 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
       const entries = await this.listUnqueued(client, parent);
       const mapped = entries.map(entry => ({
         name: String(entry.name || ''),
-        kind: entry.isDirectory ? 'directory' as const : entry.isSymbolicLink ? 'link' as const : 'file' as const,
+        kind: classifyFtpEntry(entry),
         size: Number(entry.size || 0),
         mtimeMs: entry.modifiedAt instanceof Date ? entry.modifiedAt.getTime() : 0
       }));
@@ -277,7 +307,12 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
     }
   }
 
-  private async runQueued<T>(operation: (client: FtpClient) => Promise<T>): Promise<T> {
+  private runQueued<T>(operation: (client: FtpClient) => Promise<T>): Promise<T> {
+    return this.enqueue(() => operation(this.requireClient()));
+  }
+
+  private async enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    this.lifetime.assertOpen();
     const previous = this.operationTail;
     if (this.queuedOperationCount > 0) this.diagnostics?.debug(this.protocolDiagnosticSource(), 'FTP operation queued behind active work.', { QueuedOperations: this.queuedOperationCount });
     let release!: () => void;
@@ -285,28 +320,18 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
     this.operationTail = previous.catch(() => undefined).then(() => turn);
     this.queuedOperationCount += 1;
 
-    await previous.catch(() => undefined);
     try {
-      await this.waitForReconnect();
-      return await operation(this.requireClient());
+      await this.lifetime.run(() => previous.catch(() => undefined));
+      return await this.lifetime.run(operation);
     } finally {
       this.queuedOperationCount = Math.max(0, this.queuedOperationCount - 1);
       release();
     }
   }
 
-  private async waitForOperations(): Promise<void> {
-    await this.operationTail.catch(() => undefined);
-  }
-
-  private async waitForReconnect(): Promise<void> {
-    const reconnect = this.reconnectPromise;
-    if (reconnect) await reconnect;
-  }
-
   private startKeepAlive(): void {
     this.stopKeepAlive();
-    if (!this.snapshot.keepAlive) return;
+    if (this.lifetime.closed || !this.snapshot.keepAlive) return;
     this.keepAliveTimer = setInterval(() => {
       void this.sendKeepAliveIfIdle();
     }, 30000);
@@ -315,7 +340,7 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
 
   /** Keep Alive never queues behind user work; it simply waits for the next interval. */
   private async sendKeepAliveIfIdle(): Promise<void> {
-    if (this.queuedOperationCount > 0 || this.reconnectPromise) {
+    if (this.lifetime.closed || this.queuedOperationCount > 0 || this.reconnectPromise) {
       this.diagnostics?.debug(this.protocolDiagnosticSource(), 'Keep Alive skipped because the FTP client is busy.', { QueuedOperations: this.queuedOperationCount, Reconnecting: Boolean(this.reconnectPromise) });
       return;
     }
@@ -350,8 +375,12 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
   }
 
   private async runDiagnosed<T>(operation: string, remotePath: string, run: () => Promise<T>): Promise<T> {
+    this.lifetime.assertOpen();
     const startedAt = Date.now();
     const source = this.protocolDiagnosticSource();
+    const read = operation === 'List' || operation === 'Stat' || operation === 'Hash';
+    if (read) this.activeReadCommands += 1;
+    else this.activeWriteCommands += 1;
     this.diagnostics?.debug(source, `${operation} started.`, { Path: remotePath });
     try {
       const result = await run();
@@ -361,6 +390,9 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
       this.diagnostics?.debug(source, `${operation} failed.`, { Path: remotePath, Error: this.safeDiagnosticError(error) });
       this.diagnostics?.performance(source, `${operation} failed in ${Date.now() - startedAt} ms.`, { Path: remotePath });
       throw error;
+    } finally {
+      if (read) this.activeReadCommands -= 1;
+      else this.activeWriteCommands -= 1;
     }
   }
 
@@ -369,6 +401,7 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
   }
 
   private requireClient(): FtpClient {
+    this.lifetime.assertOpen();
     if (!this.client || this.client.closed) throw new Error('Workspace Sync FTP session is not connected.');
     return this.client;
   }

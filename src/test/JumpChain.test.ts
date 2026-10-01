@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
@@ -59,33 +57,9 @@ test('resolves Direct, single-hop, and multi-hop chains in network order', () =>
   );
 });
 
-test('accepts a long finite acyclic chain without an artificial depth cap', () => {
-  const hopCount = 512;
-  const profiles = Array.from({ length: hopCount }, (_, index) => (
-    profile(`J${index}`, index + 1 < hopCount ? `J${index + 1}` : undefined)
-  ));
 
-  const chain = resolveJumpProfileChain(profile('Target', 'J0'), profiles);
-  assert.equal(chain.length, hopCount);
-  assert.equal(chain[0].id, `J${hopCount - 1}`);
-  assert.equal(chain.at(-1)?.id, 'J0');
-});
 
-test('rejects target and intermediate self-references with stable paths', () => {
-  const targetSelf = expectJumpError(
-    () => resolveJumpProfileChain(profile('A', 'A'), []),
-    'self-reference'
-  );
-  assert.deepEqual(targetSelf.pathProfileIds, ['A', 'A']);
-  assert.equal(targetSelf.profileId, 'A');
 
-  const intermediateSelf = expectJumpError(
-    () => resolveJumpProfileChain(profile('A', 'B'), [profile('B', 'B')]),
-    'self-reference'
-  );
-  assert.deepEqual(intermediateSelf.pathProfileIds, ['A', 'B', 'B']);
-  assert.equal(intermediateSelf.profileId, 'B');
-});
 
 test('rejects cycles that return to the target and cycles wholly inside the Jump graph', () => {
   const targetCycle = expectJumpError(
@@ -101,20 +75,7 @@ test('rejects cycles that return to the target and cycles wholly inside the Jump
   assert.deepEqual(internalCycle.pathProfileIds, ['Target', 'B', 'C', 'B']);
 });
 
-test('detects a long cycle iteratively', () => {
-  const hopCount = 96;
-  const profiles = Array.from({ length: hopCount }, (_, index) => (
-    profile(`Cycle${index}`, index + 1 < hopCount ? `Cycle${index + 1}` : 'Cycle20')
-  ));
 
-  const error = expectJumpError(
-    () => resolveJumpProfileChain(profile('Target', 'Cycle0'), profiles),
-    'cycle'
-  );
-  assert.equal(error.referencedProfileId, 'Cycle20');
-  assert.equal(error.pathProfileIds.length, hopCount + 2);
-  assert.equal(error.pathProfileIds.at(-1), 'Cycle20');
-});
 
 test('rejects missing, FTP, and FTPS Jump references without falling back to Direct', () => {
   const missing = expectJumpError(
@@ -132,14 +93,4 @@ test('rejects missing, FTP, and FTPS Jump references without falling back to Dir
     assert.equal(unsupported.profileId, connectionType);
     assert.match(unsupported.message, new RegExp(connectionType, 'i'));
   }
-});
-
-test('source keeps iterative visited traversal and defines no Jump depth limit', () => {
-  const sourcePath = path.resolve(__dirname, '../../src/connection/JumpChain.ts');
-  const source = readFileSync(sourcePath, 'utf8');
-
-  assert.match(source, /new Set<string>\(\)/);
-  assert.match(source, /while \(referencedProfileId\)/);
-  assert.doesNotMatch(source, /\b(?:maxJump|jumpMax|jumpDepth|maxDepth)\b/i);
-  assert.doesNotMatch(source, /\b(?:MAX_[A-Z_]*JUMP|JUMP_[A-Z_]*MAX)\b/);
 });

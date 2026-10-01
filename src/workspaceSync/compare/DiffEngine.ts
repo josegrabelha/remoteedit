@@ -1,5 +1,6 @@
 import type { BaselineEntry, DiffEntry, FileFingerprint, SyncBaseline, SyncSnapshot } from '../types';
 import { fingerprintsEqual } from '../snapshot/FileFingerprint';
+import { buildClassificationEvidence } from './ClassificationEvidence';
 
 export interface DiffEngineOptions {
   mtimeToleranceMs?: number;
@@ -15,7 +16,9 @@ export function diffSnapshots(
   const paths = new Set([
     ...Object.keys(local.entries),
     ...Object.keys(remote.entries),
-    ...Object.keys(baseline?.entries || {})
+    ...Object.keys(baseline?.entries || {}),
+    ...local.incompletePaths.filter(Boolean),
+    ...remote.incompletePaths.filter(Boolean)
   ]);
 
   return [...paths]
@@ -27,6 +30,8 @@ export function diffSnapshots(
       baseline?.entries[relativePath],
       local.incompletePaths,
       remote.incompletePaths,
+      local.incompleteErrors,
+      remote.incompleteErrors,
       options,
       local.entries[relativePath]?.physicalRelativePath || baseline?.entries[relativePath]?.localRelativePath,
       remote.entries[relativePath]?.physicalRelativePath || baseline?.entries[relativePath]?.remoteRelativePath
@@ -40,13 +45,25 @@ function classifyPath(
   baseline: BaselineEntry | undefined,
   localIncomplete: string[],
   remoteIncomplete: string[],
+  localErrors: Record<string, string> | undefined,
+  remoteErrors: Record<string, string> | undefined,
   options: DiffEngineOptions,
   localRelativePath?: string,
   remoteRelativePath?: string
 ): DiffEntry {
   const paths = { localRelativePath, remoteRelativePath };
-  if (isUnderIncompletePath(relativePath, localIncomplete) || isUnderIncompletePath(relativePath, remoteIncomplete)) {
-    return { relativePath, ...paths, status: 'unknown', local, remote, baseline, reason: 'Scan incomplete for this path.' };
+  const localScanIncomplete = isUnderIncompletePath(relativePath, localIncomplete);
+  const remoteScanIncomplete = isUnderIncompletePath(relativePath, remoteIncomplete);
+  if (localScanIncomplete || remoteScanIncomplete) {
+    const side = localScanIncomplete && remoteScanIncomplete ? 'Local and Remote' : localScanIncomplete ? 'Local' : 'Remote';
+    const details = [
+      localScanIncomplete && localErrors?.[relativePath] ? `Local: ${localErrors[relativePath]}` : '',
+      remoteScanIncomplete && remoteErrors?.[relativePath] ? `Remote: ${remoteErrors[relativePath]}` : ''
+    ].filter(Boolean);
+    return {
+      relativePath, ...paths, status: 'unknown', local, remote, baseline,
+      reason: `${side} scan incomplete for this path${details.length ? ` (${details.join('; ')})` : ''}. It may have disappeared or become inaccessible during scanning. Retry Refresh after the path stabilizes, or exclude transient entries using Ignore Patterns.`
+    };
   }
 
   if (local && remote && local.kind !== remote.kind) {
@@ -73,10 +90,10 @@ function classifyPath(
       requireHashWhenAvailable: true
     });
     if (local && remote && equal) {
-      return { relativePath, ...paths, status: 'same', local, remote };
+      return { relativePath, ...paths, status: 'same', local, remote, classificationEvidence: { hasBaseline: false, currentContentEqual: true } };
     }
     if (local && remote) {
-      return { relativePath, ...paths, status: 'different', local, remote };
+      return { relativePath, ...paths, status: 'different', local, remote, classificationEvidence: { hasBaseline: false, currentContentEqual: false } };
     }
     if (local) {
       return { relativePath, ...paths, status: 'localOnly', local };
@@ -87,19 +104,14 @@ function classifyPath(
     return { relativePath, ...paths, status: 'unknown', reason: 'Path has no current or baseline state.' };
   }
 
-  // Local mtimes come from the local filesystem and can be compared exactly to
-  // their own baseline. The wider tolerance is only needed for Remote metadata,
-  // where protocols/servers may expose coarser timestamps.
-  const localChanged = !fingerprintsEqual(local, baseline.local, {
-    mtimeToleranceMs: 0,
-    mtimeReliable: true,
-    requireHashWhenAvailable: Boolean(baseline.local?.hash)
-  });
-  const remoteChanged = !fingerprintsEqual(remote, baseline.remote, {
+  // Local/Remote baseline evidence is produced once and is reused by both
+  // classification and advisory resolution suggestions.
+  const classificationEvidence = buildClassificationEvidence(local, remote, baseline, {
     mtimeToleranceMs: options.mtimeToleranceMs,
-    mtimeReliable: options.remoteMtimeReliable !== false,
-    requireHashWhenAvailable: Boolean(baseline.remote?.hash)
+    remoteMtimeReliable: options.remoteMtimeReliable !== false
   });
+  const localChanged = Boolean(classificationEvidence.localChanged);
+  const remoteChanged = Boolean(classificationEvidence.remoteChanged);
   const hadLocal = Boolean(baseline.local);
   const hadRemote = Boolean(baseline.remote);
 
@@ -107,32 +119,28 @@ function classifyPath(
     // Matching hashes are stronger evidence than metadata/baseline history. If
     // content verification proved the two current files equal, trust it even if
     // both sides independently changed since the previous baseline.
-    const contentProvesEqual = local.kind === 'file'
-      && remote.kind === 'file'
-      && Boolean(local.hash)
-      && Boolean(remote.hash)
-      && local.hash === remote.hash;
+    const contentProvesEqual = Boolean(classificationEvidence.currentContentEqual);
     if (contentProvesEqual) {
-      return { relativePath, ...paths, status: 'same', local, remote, baseline, reason: 'Local and Remote content hashes match.' };
+      return { relativePath, ...paths, status: 'same', local, remote, baseline, classificationEvidence: { ...classificationEvidence, currentContentEqual: true }, reason: 'Local and Remote content hashes match.' };
     }
     if (localChanged && remoteChanged) {
-      return { relativePath, ...paths, status: 'conflict', local, remote, baseline, reason: 'Local and remote both changed since the baseline.' };
+      return { relativePath, ...paths, status: 'conflict', local, remote, baseline, classificationEvidence, reason: 'Local and remote both changed since the baseline.' };
     }
     if (localChanged) {
-      return { relativePath, ...paths, status: 'localChanged', local, remote, baseline };
+      return { relativePath, ...paths, status: 'localChanged', local, remote, baseline, classificationEvidence };
     }
     if (remoteChanged) {
-      return { relativePath, ...paths, status: 'remoteChanged', local, remote, baseline };
+      return { relativePath, ...paths, status: 'remoteChanged', local, remote, baseline, classificationEvidence };
     }
-    return { relativePath, ...paths, status: 'same', local, remote, baseline, reason: 'Both sides still match their trusted baseline.' };
+    return { relativePath, ...paths, status: 'same', local, remote, baseline, classificationEvidence, reason: 'Both sides still match their trusted baseline.' };
   }
 
   if (local && !remote) {
     if (hadRemote) {
       if (localChanged) {
-        return { relativePath, ...paths, status: 'conflict', local, baseline, reason: 'Remote was deleted while local changed.' };
+        return { relativePath, ...paths, status: 'conflict', local, baseline, classificationEvidence, reason: 'Remote was deleted while local changed.' };
       }
-      return { relativePath, ...paths, status: 'remoteDeleted', local, baseline };
+      return { relativePath, ...paths, status: 'remoteDeleted', local, baseline, classificationEvidence };
     }
     return { relativePath, ...paths, status: 'localOnly', local, baseline };
   }
@@ -140,15 +148,15 @@ function classifyPath(
   if (!local && remote) {
     if (hadLocal) {
       if (remoteChanged) {
-        return { relativePath, ...paths, status: 'conflict', remote, baseline, reason: 'Local was deleted while remote changed.' };
+        return { relativePath, ...paths, status: 'conflict', remote, baseline, classificationEvidence, reason: 'Local was deleted while remote changed.' };
       }
-      return { relativePath, ...paths, status: 'localDeleted', remote, baseline };
+      return { relativePath, ...paths, status: 'localDeleted', remote, baseline, classificationEvidence };
     }
     return { relativePath, ...paths, status: 'remoteOnly', remote, baseline };
   }
 
   if ((hadLocal && !hadRemote) || (!hadLocal && hadRemote) || (hadLocal && hadRemote)) {
-    return { relativePath, ...paths, status: 'same', baseline };
+    return { relativePath, ...paths, status: 'same', baseline, classificationEvidence };
   }
 
   return { relativePath, ...paths, status: 'unknown', baseline, reason: 'Path has no current state.' };

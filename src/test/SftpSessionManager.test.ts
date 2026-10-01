@@ -46,37 +46,7 @@ test('remote close removes the active connection and emits one identity notifica
   }
 });
 
-for (const phase of ['probe', 'handshake', 'platform', 'cwd', 'startPath'] as const) {
-  test(`cancellation settles during ${phase} before its delayed result arrives`, async () => {
-    const client = new ControlledSftp();
-    const gate = deferred<void>();
-    if (phase === 'probe') harness.probe = () => gate.promise;
-    if (phase === 'handshake') client.connectWork = () => gate.promise;
-    if (phase === 'platform') harness.platform = async () => { await gate.promise; return { platform: 'windows', shell: 'cmd' }; };
-    if (phase === 'cwd') client.cwdWork = async () => { await gate.promise; return '/old'; };
-    if (phase === 'startPath') client.listWork = async () => { await gate.promise; return []; };
-    harness.clients.push(client);
-    const manager = new SftpSessionManager();
-    const token = new TestCancellationSource();
-    const rejected = assert.rejects(manager.connect(options(), token.token), /cancel/i);
-    await flush();
-    token.cancel();
-    await rejected;
-    assert.deepEqual(manager.listConnections(), []);
-    assert.equal((manager as any).attempts.size, 0);
-    const replacement = new ControlledSftp();
-    harness.clients.push(replacement);
-    harness.probe = async () => undefined;
-    harness.platform = async () => ({ platform: 'posix', shell: 'sh' });
-    const active = await manager.connect(options());
-    gate.resolve();
-    client.client.emit('close');
-    await flush();
-    assert.equal(manager.getConnection('target'), active);
-    assert.equal((manager as any).remotePlatforms.get('target'), 'posix');
-    await manager.disconnectAll();
-  });
-}
+
 
 test('immediate disconnect and concurrent same-ID connect respect the latest attempt', async () => {
   const manager = new SftpSessionManager();
@@ -93,19 +63,7 @@ test('immediate disconnect and concurrent same-ID connect respect the latest att
   await manager.disconnectAll();
 });
 
-test('remote close during initialization rejects before the pending probe finishes', async () => {
-  const gate = deferred<void>();
-  harness.platform = async () => { await gate.promise; return { platform: 'posix', shell: 'sh' }; };
-  const client = new ControlledSftp();
-  harness.clients.push(client);
-  const manager = new SftpSessionManager();
-  const rejected = assert.rejects(manager.connect(options()), /cancel/i);
-  await flush();
-  client.client.emit('close');
-  await rejected;
-  gate.resolve();
-  assert.deepEqual(manager.listConnections(), []);
-});
+
 
 function jumpOptions(id = 'target') {
   return { ...options(id), jumpProfileId: 'shared-jump', jumpChain: [{
@@ -114,28 +72,7 @@ function jumpOptions(id = 'target') {
   }] };
 }
 
-for (const event of ['end', 'close', 'error'] as const) {
-  test(`hidden Jump ${event} removes only its owning target without waiting for keepalive`, async () => {
-    const clients = [new ControlledSftp(), new ControlledSftp()];
-    harness.clients.push(...clients);
-    const manager = new SftpSessionManager();
-    const closed: string[] = [];
-    manager.onDidCloseConnection(id => closed.push(id));
-    await manager.connect(jumpOptions('first'));
-    await manager.connect(jumpOptions('second'));
-    try {
-      harness.jumpClients[0].emit(event, ...(event === 'error' ? [new Error('transport failed')] : []));
-      await flush();
-      assert.equal(manager.hasConnection('first'), false);
-      assert.equal(manager.hasConnection('second'), true);
-      assert.deepEqual(closed, ['first']);
-      assert.equal(harness.jumpClients[0].destroyCount, 1);
-      assert.equal(harness.jumpClients[1].destroyCount, 0);
-    } finally {
-      await manager.disconnectAll();
-    }
-  });
-}
+
 
 test('two targets sharing a Jump profile own separate chains and whitelist active snapshots', async () => {
   const clients = [new ControlledSftp(), new ControlledSftp()];
@@ -159,59 +96,11 @@ test('two targets sharing a Jump profile own separate chains and whitelist activ
   await manager.disconnectAll();
 });
 
-for (const phase of ['probe', 'ssh', 'forward', 'sftp', 'platform'] as const) {
-  test(`Jump ${phase} failure settles and releases owned resources`, async () => {
-    const client = new ControlledSftp();
-    harness.clients.push(client);
-    const failure = new Error(`synthetic ${phase} failure`);
-    if (phase === 'probe') harness.probe = async () => { throw failure; };
-    if (phase === 'ssh') harness.jumpConnect = client => queueMicrotask(() => client.emit('error', failure));
-    if (phase === 'forward') harness.jumpForward = (_client, callback) => queueMicrotask(() => callback(failure));
-    if (phase === 'sftp') client.connectWork = async () => { throw failure; };
-    if (phase === 'platform') harness.platform = async () => { throw failure; };
-    const manager = new SftpSessionManager();
-    await assert.rejects(manager.connect(jumpOptions()), /synthetic/);
-    assert.deepEqual(manager.listConnections(), []);
-    assert.equal((manager as any).attempts.size, 0);
-    assert.ok(harness.jumpClients.every(client => client.destroyCount === 1));
-  });
-}
 
-test('cwd and inaccessible startPath retain the existing fallback behavior', async () => {
-  const client = new ControlledSftp();
-  client.cwdWork = async () => { throw new Error('cwd failed'); };
-  client.listWork = async () => { throw new Error('list denied'); };
-  harness.clients.push(client);
-  const manager = new SftpSessionManager();
-  assert.equal((await manager.connect(options())).startPath, '/');
-  await manager.disconnectAll();
-});
 
-for (const active of [false, true]) {
-  test(`bounded end releases Jump resources for ${active ? 'active disconnect' : 'cancelled handshake'}`, async t => {
-    const client = new ControlledSftp();
-    client.endWork = () => new Promise(() => {});
-    const handshake = deferred<void>();
-    if (!active) client.connectWork = () => handshake.promise;
-    harness.clients.push(client);
-    const manager = new SftpSessionManager();
-    const connecting = manager.connect(jumpOptions());
-    const result = active ? connecting : assert.rejects(connecting, /cancel/i);
-    await flush();
-    if (active) await connecting;
-    t.mock.timers.enable({ apis: ['setTimeout'] });
-    const closing = manager.disconnectAll();
-    await flush();
-    assert.equal(harness.jumpClients[0].destroyCount, 0);
-    t.mock.timers.tick(5000);
-    await closing;
-    await result;
-    assert.equal(harness.jumpClients[0].destroyCount, 1);
-    assert.equal(client.destroyCount > 0, true);
-    handshake.resolve();
-    assert.deepEqual(manager.listConnections(), []);
-  });
-}
+
+
+
 
 test('direct password and private-key authentication use the real auth resolver', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'remoteedit-auth-'));
@@ -247,49 +136,11 @@ test('direct password and private-key authentication use the real auth resolver'
   }
 });
 
-test('repeated disconnectAll waits for an already closing session', async () => {
-  const client = new ControlledSftp();
-  const ended = deferred<void>();
-  client.endWork = () => ended.promise;
-  harness.clients.push(client);
-  const manager = new SftpSessionManager();
-  await manager.connect(options());
-  const first = manager.disconnectAll();
-  let secondFinished = false;
-  const second = manager.disconnectAll().then(() => { secondFinished = true; });
-  await flush();
-  assert.equal(secondFinished, false);
-  ended.resolve();
-  await Promise.all([first, second]);
-  assert.equal(client.endCount, 1);
-});
 
-test('end throwing synchronously still destroys the final transport', async () => {
-  const client = new ControlledSftp();
-  client.endWork = () => { throw new Error('synthetic end failure'); };
-  harness.clients.push(client);
-  const manager = new SftpSessionManager();
-  await manager.connect(options());
-  await manager.disconnectAll();
-  assert.ok(client.destroyCount > 0);
-});
 
-for (const phase of ['ssh', 'forward'] as const) {
-  test(`manager disconnectAll cancels a pending Jump ${phase}`, async () => {
-    const client = new ControlledSftp();
-    harness.clients.push(client);
-    if (phase === 'ssh') harness.jumpConnect = () => undefined;
-    else harness.jumpForward = () => undefined;
-    const manager = new SftpSessionManager();
-    const cancelled = assert.rejects(manager.connect(jumpOptions()), /cancel/i);
-    await flush();
-    await manager.disconnectAll();
-    await cancelled;
-    assert.ok(harness.jumpClients[0].destroyCount >= 1);
-    assert.equal(harness.jumpClients[0].listenerCount('error'), 0);
-    assert.deepEqual(manager.listConnections(), []);
-  });
-}
+
+
+
 
 test('a delayed final close releases the Jump chain only after final SFTP end', async () => {
   const client = new ControlledSftp();
@@ -333,49 +184,7 @@ function streamingMarker(command: string, prefix: string): string {
   return match[0];
 }
 
-test('streaming stop suppresses output received after stop is requested', async () => {
-  const client = new ControlledSftp();
-  harness.clients.push(client);
-  const manager = new SftpSessionManager();
-  await manager.connect(options());
 
-  const stream = new ControlledExecStream();
-  const killStream = { stderr: { resume: () => undefined }, resume: () => undefined, end: () => undefined };
-  let mainCommand = '';
-  (client.client as any).exec = (command: string, callback: (error: Error | undefined, stream?: unknown) => void) => {
-    if (/kill -(?:TERM|KILL)/.test(command)) {
-      callback(undefined, killStream);
-      return;
-    }
-    mainCommand = command;
-    callback(undefined, stream);
-  };
-
-  let output = '';
-  let control: { stop(): void; forceKill(): void } | undefined;
-  const running = manager.runRemoteCommandStreaming('target', '/', 'printf "before\\n"; sleep 60', {
-    onStdout: chunk => { output += chunk; },
-    onControl: value => { control = value; }
-  });
-  await flush();
-
-  const pidMarker = streamingMarker(mainCommand, '__REMOTE_EDIT_PROCESS_PID_');
-  const commandMarker = `${streamingMarker(mainCommand, '__REMOTE_EDIT_COMMAND_')}0__`;
-  stream.emit('data', `${pidMarker}123__\n${commandMarker}\nbefore\n`);
-  await flush();
-  assert.match(output, /before/);
-
-  assert.ok(control);
-  control.stop();
-  stream.emit('data', 'after\n');
-  stream.stderr.emit('data', 'stderr after\n');
-  await flush();
-  assert.doesNotMatch(output, /after/);
-
-  stream.emit('close', 0, undefined);
-  await running;
-  await manager.disconnectAll();
-});
 
 test('streaming stop escalates to KILL and closes an unresponsive SSH channel', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });

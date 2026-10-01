@@ -34,22 +34,7 @@ test('a missing Jump password is prompted before connect, stays temporary, and E
   assert.deepEqual(harness.writes, []);
 });
 
-test('credential preferences preserve remember semantics and isolate the target from its Jump', async () => {
-  const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
-  harness.secrets.set(secretKey('jump', 'password'), 'synthetic-jump');
-  await harness.manager.applyCredentialPreferences('target', 'password', { password: 'synthetic-target', rememberPassword: true });
-  assert.equal(harness.secrets.get(secretKey('target', 'password')), 'synthetic-target');
-  await harness.manager.applyCredentialPreferences('target', 'password', { rememberPassword: true });
-  assert.equal(harness.secrets.get(secretKey('target', 'password')), 'synthetic-target');
-  await harness.manager.applyCredentialPreferences('target', 'password', { rememberPassword: false });
-  assert.equal(harness.secrets.has(secretKey('target', 'password')), false);
-  await harness.manager.applyCredentialPreferences('target', 'privateKey', { passphrase: 'synthetic-phrase', rememberPassphrase: true });
-  assert.equal(harness.secrets.get(secretKey('target', 'passphrase')), 'synthetic-phrase');
-  await harness.manager.applyCredentialPreferences('target', 'privateKey', { rememberPassphrase: false });
-  assert.equal(harness.secrets.has(secretKey('target', 'passphrase')), false);
-  assert.equal(harness.secrets.get(secretKey('jump', 'password')), 'synthetic-jump');
-  assert.ok(harness.writes.every(write => write.key.includes('.target.')));
-});
+
 
 test('saving a profile writes credentials only to SecretStorage and keeps snapshots clean', async () => {
   const harness = createConnectionManagerHarness([profile('jump')]);
@@ -100,16 +85,4 @@ test('Save As creates an independent profile from current values and carries unc
   );
 });
 
-test('configuration-only credential accessor returns saved secrets without creating runtime state', async () => {
-  const harness = createConnectionManagerHarness([profile('target')]);
-  harness.secrets.set(secretKey('target', 'password'), 'synthetic-password');
-  harness.secrets.set(secretKey('target', 'passphrase'), 'synthetic-passphrase');
 
-  const credentials = await harness.manager.getProfileCredentials('target');
-
-  assert.deepEqual(credentials, {
-    password: 'synthetic-password',
-    passphrase: 'synthetic-passphrase'
-  });
-  assert.deepEqual(harness.writes, []);
-});

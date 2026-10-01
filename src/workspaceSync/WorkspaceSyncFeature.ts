@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { ConnectionManager } from '../connection/ConnectionManager';
 import { WorkspaceSyncController } from './WorkspaceSyncController';
 import { WorkspaceSyncPanel } from './webview/WorkspaceSyncPanel';
+import { getWorkspaceSyncPreferences, setWorkspaceSyncPreferences } from './mapping/WorkspaceMappingStore';
 
 export const COMMAND_OPEN_WORKSPACE_SYNC = 'remoteedit.workspaceSync.open';
 
@@ -37,10 +38,14 @@ export class WorkspaceSyncFeature implements vscode.Disposable {
         if (event.affectsConfiguration(CONFIG_SECTION)) {
           this.updateStatusBarButton();
         }
+        if (event.affectsConfiguration(`${CONFIG_SECTION}.defaultCompare`)) {
+          void this.mirrorDefaultCompareSetting();
+        }
       })
     );
 
     this.updateStatusBarButton();
+    void this.migrateDefaultCompareSetting();
 
     try {
       this.ensureController();
@@ -53,6 +58,27 @@ export class WorkspaceSyncFeature implements vscode.Disposable {
     this.disposeStatusBarButton();
     while (this.disposables.length) this.disposables.pop()?.dispose();
     this.controller = undefined;
+  }
+
+  private async migrateDefaultCompareSetting(): Promise<void> {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const inspection = config.inspect<'internal' | 'vscode'>('defaultCompare');
+    const explicit = inspection?.workspaceFolderValue ?? inspection?.workspaceValue ?? inspection?.globalValue;
+    if (explicit !== 'internal' && explicit !== 'vscode') {
+      const legacy = getWorkspaceSyncPreferences(this.context).defaultCompare;
+      if (legacy === 'vscode') {
+        await config.update('defaultCompare', 'vscode', vscode.ConfigurationTarget.Global);
+      }
+    }
+    await this.mirrorDefaultCompareSetting();
+  }
+
+  private async mirrorDefaultCompareSetting(): Promise<void> {
+    const value = vscode.workspace.getConfiguration(CONFIG_SECTION).get<'internal' | 'vscode'>('defaultCompare', 'internal') === 'vscode'
+      ? 'vscode'
+      : 'internal';
+    await setWorkspaceSyncPreferences(this.context, { defaultCompare: value });
+    this.controller?.notifyConfigurationChanged();
   }
 
   private updateStatusBarButton(): void {

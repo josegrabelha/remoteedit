@@ -11,26 +11,13 @@ import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
 import { isWindowsRemotePlatform, type RemotePlatform, type RemoteShell } from '../remote/RemotePlatform';
 import { getWindowsSftpPathCandidates, inferWindowsSftpPathStyle, joinRemotePathForPlatform, normalizeRemotePathForPlatform, toRemoteCommandPath, toWindowsSftpPath, type WindowsSftpPathStyle } from '../remote/RemotePathUtils';
 import { detectRemotePlatform } from './RemotePlatformProbe';
-import { buildOwnerGroupSuggestionCommand, buildPermissionString, buildPrincipalLookupCommand, cloneRemoteEntries, collectNumericIds, dirnameRemotePath, extractLinkTargetFromLongname, formatBytes, formatErrorMessage, formatMode, getGroupFromFileInfo, getOwnerFromFileInfo, getSudoTempDirectory, hasSpecialPermissionBitsChanged, inferLinkTargetType, joinRemotePath, mapEntryType, mapModeToEntryType, modeFromPermissionString, normalizeFileMode, normalizeNumericId, normalizeRemotePath, parseDfSpaceInfo, parseLongListing, parseLongListingLine, parseOwnerGroupSuggestionOutput, parsePrincipalLookupOutput, readRemoteFileToBuffer, shouldRestoreSpecialPermissionBits, sortRemoteEntries, statFlag, throwIfOperationCancelled, type RemoteSpaceInfo } from './SessionUtils';
+import { buildOwnerGroupSuggestionCommand, buildPermissionString, buildPrincipalLookupCommand, cloneRemoteEntries, collectNumericIds, dirnameRemotePath, extractLinkTargetFromLongname, formatBytes, formatErrorMessage, formatMode, getGroupFromFileInfo, getOwnerFromFileInfo, getSudoTempDirectory, hasSpecialPermissionBitsChanged, joinRemotePath, mapEntryType, mapModeToEntryType, modeFromPermissionString, normalizeFileMode, normalizeNumericId, normalizeRemotePath, parseDfSpaceInfo, parseLongListing, parseLongListingLine, parseOwnerGroupSuggestionOutput, parsePrincipalLookupOutput, readRemoteFileToBuffer, shouldRestoreSpecialPermissionBits, sortRemoteEntries, statFlag, throwIfOperationCancelled, type RemoteSpaceInfo } from './SessionUtils';
 import { buildControlledRemoteCommandScript, buildRemoteCommandDisplayScript, createRemoteCommandDisplayCallbacks, getPotentialRemoteProcessPidMarkerSuffixLength, escapeRegExp } from './RemoteCommandDisplay';
 import { buildSftpCopyFileCommand, buildSftpCreateArchiveCommand, buildSftpMd5ChecksumAttempts, buildSftpSha256ChecksumAttempts, extractSftpChecksum, type SftpChecksumCommandAttempt } from './ArchiveChecksumUtils';
 import { buildWindowsChecksumCommand, buildWindowsPowerShellCommand, buildWindowsSetLocationScript, createPowerShellCliXmlStreamSanitizer, isWindowsPowerShellCommand, quotePowerShellLiteral, sanitizePowerShellCliXml } from './WindowsPowerShellUtils';
 import { resolveSshAuthentication, SshJumpChain, type SshAuthenticationTarget, type SshJumpRuntimeSettings } from './SshJumpChain';
-import type { RemoteSessionManager, RemoteListDirectoryOptions, RemoteOwnerGroupSuggestions, RemotePrincipalSuggestion } from '../remote/RemoteSessionManager';
-import type {
-  ActiveConnection,
-  AuthType,
-  ConnectOptions,
-  ConnectionCancellationToken,
-  RemoteArchiveFormat,
-  RemoteChecksumSummary,
-  RemoteChecksumValue,
-  RemoteCommandStreamingCallbacks,
-  RemoteCommandStreamingControl,
-  RemoteCommandStreamingResult,
-  RemoteEntry,
-  RemoteEntryType
-} from '../remote/RemoteSessionTypes';
+import type { RemoteSessionManager, RemoteListDirectoryOptions, RemoteOwnerGroupSuggestions } from '../remote/RemoteSessionManager';
+import type { ActiveConnection, ConnectOptions, ConnectionCancellationToken, RemoteArchiveFormat, RemoteChecksumSummary, RemoteChecksumValue, RemoteCommandStreamingCallbacks, RemoteCommandStreamingResult, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionTypes';
 
 export { dirnameRemotePath, joinRemotePath, normalizeRemotePath } from './SessionUtils';
 
@@ -1156,26 +1143,6 @@ export class SftpSessionManager implements RemoteSessionManager {
         error: /access denied|permission denied/i.test(message) ? 'Permission denied.' : (message.trim() || 'Checksum calculation failed.')
       };
     }
-  }
-
-  private buildSha256ChecksumAttempts(): SftpChecksumCommandAttempt[] {
-    return [
-      { label: 'sha256sum', command: quotedPath => `sha256sum ${quotedPath}`, length: 64 },
-      { label: 'shasum -a 256', command: quotedPath => `shasum -a 256 ${quotedPath}`, length: 64 },
-      { label: 'csum -h SHA256', command: quotedPath => `csum -h SHA256 ${quotedPath}`, length: 64 },
-      { label: 'digest -a sha256', command: quotedPath => `digest -a sha256 ${quotedPath}`, length: 64 },
-      { label: 'openssl dgst -sha256', command: quotedPath => `openssl dgst -sha256 ${quotedPath}`, length: 64 }
-    ];
-  }
-
-  private buildMd5ChecksumAttempts(): SftpChecksumCommandAttempt[] {
-    return [
-      { label: 'md5sum', command: quotedPath => `md5sum ${quotedPath}`, length: 32 },
-      { label: 'md5', command: quotedPath => `md5 ${quotedPath}`, length: 32 },
-      { label: 'csum -h MD5', command: quotedPath => `csum -h MD5 ${quotedPath}`, length: 32 },
-      { label: 'digest -a md5', command: quotedPath => `digest -a md5 ${quotedPath}`, length: 32 },
-      { label: 'openssl dgst -md5', command: quotedPath => `openssl dgst -md5 ${quotedPath}`, length: 32 }
-    ];
   }
 
   private async calculateChecksum(

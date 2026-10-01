@@ -1,6 +1,10 @@
 import type { SnapshotEntry, SyncSnapshot } from '../types';
 
-export function createSyncSnapshot(entries: Iterable<SnapshotEntry>, incompletePaths: string[] = []): SyncSnapshot {
+export function createSyncSnapshot(
+  entries: Iterable<SnapshotEntry>,
+  incompletePaths: string[] = [],
+  incompleteErrors: Record<string, string> = {}
+): SyncSnapshot {
   const byPath: Record<string, SnapshotEntry> = {};
   const physicalByCanonical = new Map<string, string>();
 
@@ -23,7 +27,10 @@ export function createSyncSnapshot(entries: Iterable<SnapshotEntry>, incompleteP
   return {
     capturedAt: Date.now(),
     entries: byPath,
-    incompletePaths: [...new Set(incompletePaths.map(canonicalRelativePath))]
+    incompletePaths: [...new Set(incompletePaths.map(canonicalRelativePath))],
+    ...(Object.keys(incompleteErrors).length
+      ? { incompleteErrors: Object.fromEntries(Object.entries(incompleteErrors).map(([key, detail]) => [canonicalRelativePath(key), detail])) }
+      : {})
   };
 }
 

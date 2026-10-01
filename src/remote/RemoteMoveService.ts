@@ -20,10 +20,6 @@ function isAncestorOrSelf(ancestorPath: string, targetPath: string): boolean {
   return ancestor === target || target.startsWith(`${ancestor}/`);
 }
 
-function describeItem(item: RemoteClipboardItem): string {
-  return item.type === 'directory' ? 'folder' : item.type === 'file' ? 'file' : 'item';
-}
-
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message || String(error);

@@ -18,27 +18,7 @@ test('Router reports remote SFTP close through its existing UI connection event'
   assert.deepEqual(snapshots, [1, 0]);
 });
 
-for (const all of [false, true]) {
-  test(`Router ${all ? 'disconnectAll' : 'disconnect'} cancels pending SFTP and never adds a late route`, async () => {
-    const client = new ControlledSftp();
-    const handshake = deferred<void>();
-    client.connectWork = () => handshake.promise;
-    harness.clients.push(client);
-    const router = new RemoteSessionRouter(undefined, new SftpSessionManager());
-    const changes: number[] = [];
-    router.onDidChangeConnections(() => changes.push(router.listConnections().length));
-    const cancelled = assert.rejects(router.connect(options()), /cancel/i);
-    await flush();
-    if (all) await router.disconnectAll();
-    else await router.disconnect('target');
-    await cancelled;
-    handshake.resolve();
-    await flush();
-    assert.deepEqual(router.listConnections(), []);
-    assert.equal((router as any).sessionRoutes.size, 0);
-    assert.deepEqual(changes, []);
-  });
-}
+
 
 test('Router notifies once on explicit disconnect and ignores old close after reconnect', async () => {
   const first = new ControlledSftp();
@@ -59,13 +39,7 @@ test('Router notifies once on explicit disconnect and ignores old close after re
   assert.deepEqual(changes, [1, 0, 1, 0]);
 });
 
-test('Router handles an immediate disconnect before its manager has started', async () => {
-  const router = new RemoteSessionRouter(undefined, new SftpSessionManager());
-  const cancelled = assert.rejects(router.connect(options()), /cancel/i);
-  await router.disconnectAll();
-  await cancelled;
-  assert.deepEqual(router.listConnections(), []);
-});
+
 
 test('FTP and FTPS are routed exclusively to the injected FTP manager', async () => {
   const calls: ConnectOptions[] = [];

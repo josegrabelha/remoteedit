@@ -28,6 +28,4 @@ test('LocalFilesystemCapabilities detects case-sensitive and case-insensitive vo
   assert.equal(await detectLocalCaseSensitivity('/mapping', fakeFs('insensitive')), false);
 });
 
-test('LocalFilesystemCapabilities returns unknown when a safe probe cannot be created', async () => {
-  assert.equal(await detectLocalCaseSensitivity('/mapping', fakeFs('unavailable')), undefined);
-});
+

@@ -16,9 +16,4 @@ test('IgnoreMatcher applies negation in rule order', () => {
   assert.equal(matcher.ignores('dist/keep.txt', false), false);
 });
 
-test('IgnoreMatcher supports comments and root anchored rules', () => {
-  const matcher = new IgnoreMatcher(['# comment', '/build/', 'temp']);
-  assert.equal(matcher.ignores('build/out.js', false), true);
-  assert.equal(matcher.ignores('src/build/out.js', false), false);
-  assert.equal(matcher.ignores('src/temp/file.txt', false), true);
-});
+

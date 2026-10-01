@@ -35,7 +35,7 @@ export class BaselineStore implements vscode.Disposable {
   private readonly writeTimers = new Map<string, NodeJS.Timeout>();
   private readonly writeChains = new Map<string, Promise<void>>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  constructor(context: vscode.ExtensionContext) {
     this.root = path.join(context.globalStorageUri.fsPath, 'workspace-sync', 'baselines');
   }
 

@@ -42,6 +42,13 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   } | undefined;
   private operationSequence = 0;
   private stateRequestSequence = 0;
+  /** Refresh and baseline maintenance must not monopolize navigation or the
+   * whole panel: work is scoped to a mapping and coordinated by the controller.
+   */
+  private readonly maintenanceOperations = new Map<string, {
+    id: number;
+    source: vscode.CancellationTokenSource;
+  }>();
 
   static open(
     context: vscode.ExtensionContext,
@@ -94,6 +101,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
     this.disposed = true;
     this.detachUi?.();
     this.activeOperation?.source.cancel();
+    for (const maintenance of this.maintenanceOperations.values()) maintenance.source.cancel();
     void this.cancelConnect?.();
     this.activeOperation?.source.dispose();
     this.activeOperation = undefined;
@@ -125,6 +133,10 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
     }
     if (message?.type === 'setConflictResolution') {
       await this.handleConflictResolutionMessage(message);
+      return;
+    }
+    if (message?.type === 'previewPlan') {
+      await this.handlePreviewPlanMessage(message);
       return;
     }
     if (message?.type === 'ready') {
@@ -174,6 +186,36 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
       }
       return;
     }
+    if (message?.type === 'cancelMaintenance') {
+      const mappingId = String(message.mappingId || '');
+      const maintenance = this.maintenanceOperations.get(mappingId);
+      if (maintenance && Number(message.maintenanceId) === maintenance.id) maintenance.source.cancel();
+      return;
+    }
+    if (message?.type === 'cancelInitialRefresh') {
+      this.controller.cancelInitialRefresh(String(message.mappingId || ''));
+      return;
+    }
+    if (message?.type === 'setHideUnsupportedFiles') {
+      await this.controller.setHideUnsupportedFiles(Boolean(message.value));
+      await this.postState();
+      return;
+    }
+    if (message?.type === 'setShowModifiedTimes') {
+      await this.controller.setShowModifiedTimes(Boolean(message.value));
+      await this.postState();
+      return;
+    }
+    if (message?.type === 'setDefaultCompare') {
+      await this.controller.setDefaultCompare(message.value === 'vscode' ? 'vscode' : 'internal');
+      await this.postState();
+      return;
+    }
+    if (message?.type === 'clientActivity') {
+      const text = String(message.message || '').trim();
+      if (text) this.controller.ui.log(text, message.level === 'warning' ? 'warning' : 'info');
+      return;
+    }
     if (this.handling) return;
     this.handling = true;
     await this.post({ type: 'interactionState', active: true });
@@ -189,17 +231,42 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
           await this.controller.selectTarget(mappingId, targetId);
           await this.postState();
           return;
+        case 'setConflictResolutionsBulk': {
+          const requestedTargets = Array.isArray(message.targets)
+            ? message.targets.map((item: any) => ({
+              targetId: String(item?.targetId || ''),
+              resolutions: this.parseConflictResolutionChanges(item?.resolutions)
+            })).filter((item: { targetId: string; resolutions: Record<string, 'useLocal' | 'useRemote' | 'skip' | undefined> }) => item.targetId && Object.keys(item.resolutions).length)
+            : [];
+          if (!requestedTargets.length) return;
+          // Validate every target before mutating any runtime plan so a stale
+          // row cannot produce a partial bulk application.
+          for (const item of requestedTargets) {
+            await this.controller.previewPlanWithResolutions(mappingId, item.targetId, item.resolutions);
+          }
+          for (const item of requestedTargets) {
+            await this.controller.setConflictResolutions(mappingId, item.targetId, item.resolutions, false);
+          }
+          await this.postState();
+          return;
+        }
         case 'pickLocalRoot': {
           const selected = await this.controller.ui.request({ kind: 'folder', title: 'Select Local Root', value: String(message.current || '') });
           if (selected) await this.post({ type: 'localRootPicked', value: selected });
           return;
         }
         case 'saveMapping':
+          if (this.maintenanceOperations.has(String(message.mapping?.id || ''))) {
+            throw new Error('Wait until Refresh or Reset Baseline finishes before changing this mapping.');
+          }
           await this.controller.saveMapping(message.mapping || {});
           await this.post({ type: 'mappingSaved' });
           await this.postState();
           return;
         case 'deleteMapping': {
+          if (this.maintenanceOperations.has(mappingId)) {
+            throw new Error('Wait until Refresh or Reset Baseline finishes before deleting this mapping.');
+          }
           const confirmed = await this.confirm('Delete this Workspace Sync mapping and its saved baselines?', { modal: true }, 'Delete');
           if (confirmed !== 'Delete') return;
           await this.withProgressOperation(
@@ -227,6 +294,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
           await this.postState();
           return;
         case 'disconnect':
+          this.maintenanceOperations.get(mappingId)?.source.cancel();
           await this.withProgressOperation(
             'Disconnecting...',
             () => this.controller.disconnect(mappingId, targetId),
@@ -235,6 +303,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
           await this.postState();
           return;
         case 'disconnectEnabled':
+          this.maintenanceOperations.get(mappingId)?.source.cancel();
           await this.withProgressOperation(
             'Disconnecting targets...',
             progress => this.controller.disconnectEnabledTargets(mappingId, progress),
@@ -249,24 +318,37 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
           await this.postState();
           return;
         case 'compare':
-          await this.withProgressOperation('Refreshing...', (progress, token) => this.controller.compare(mappingId, targetId, progress, token), { kind: 'refresh' });
+          this.startMaintenance(mappingId, 'Refreshing...', (progress, token) => this.controller.compare(mappingId, targetId, progress, token));
           await this.post({ type: 'clearSelection' });
           await this.postState();
           return;
         case 'compareEnabled':
-          await this.withProgressOperation('Refreshing targets...', (progress, token) =>
-            this.controller.compareEnabledTargets(mappingId, progress, token),
-            { kind: 'refresh' }
-          );
+          this.startMaintenance(mappingId, 'Refreshing targets...', (progress, token) =>
+            this.controller.compareEnabledTargets(mappingId, progress, token));
           await this.post({ type: 'clearSelection' });
           await this.postState();
           return;
         case 'resetBaseline': {
           const mapping = this.controller.mappings.get(mappingId);
-          const target = mapping?.targets.find(item => item.id === targetId);
-          if (!mapping || !target) throw new Error('The selected Workspace Sync mapping target no longer exists.');
+          const allEnabled = targetId === '__all_enabled__';
+          const targets = allEnabled ? mapping?.targets.filter(item => item.enabled) || []
+            : mapping?.targets.filter(item => item.id === targetId && item.enabled) || [];
+          if (!mapping || !targets.length) throw new Error('The selected Workspace Sync mapping target no longer exists or is disabled.');
+          // Validate the complete selection before displaying a destructive
+          // history-maintenance confirmation or clearing any baseline.
+          if (allEnabled) {
+            for (const target of targets) {
+              const key = `mapping:${mapping.id}:target:${target.id}`;
+              if (this.controller.sessions.getState(key).status !== 'connected'
+                || !this.controller.sessions.getSession(key)) {
+                throw new Error(`Connect all enabled targets before resetting their baselines (${target.name} is not connected).`);
+              }
+            }
+          }
           const confirmed = await this.confirm(
-            `Reset the synchronization baseline for '${mapping.name} / ${target.name}'?`,
+            allEnabled
+              ? `Reset the synchronization baselines for all ${targets.length} enabled targets of '${mapping.name}'?`
+              : `Reset the synchronization baseline for '${mapping.name} / ${targets[0].name}'?`,
             {
               modal: true,
               detail: 'Local and Remote files will not be modified. Workspace Sync will no longer know which side changed for differing paths until a new baseline is established.'
@@ -274,16 +356,16 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
             'Reset Baseline'
           );
           if (confirmed !== 'Reset Baseline') return;
-          await this.withProgressOperation('Resetting baseline...', (progress, token) =>
-            this.controller.resetBaseline(mappingId, targetId, progress, token),
-            { kind: 'resetBaseline' }
-          );
+          this.startMaintenance(mappingId, 'Resetting baseline...', (progress, token) =>
+            allEnabled
+              ? this.controller.resetBaselineEnabledTargets(mappingId, progress, token)
+              : this.controller.resetBaseline(mappingId, targetId, progress, token));
           await this.post({ type: 'clearSelection' });
           await this.postState();
           return;
         }
         case 'sync': {
-          const resolutions = this.parseConflictResolutions(message.resolutions);
+          const resolutions = this.parseConflictResolutionChanges(message.resolutions);
           if (Object.keys(resolutions).length) {
             await this.controller.setConflictResolutions(mappingId, targetId, resolutions);
           }
@@ -297,7 +379,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
             ? message.targets
               .map((item: any) => ({
                 targetId: String(item?.targetId || ''),
-                resolutions: this.parseConflictResolutions(item?.resolutions)
+                resolutions: this.parseConflictResolutionChanges(item?.resolutions)
               }))
               .filter((item: { targetId: string }) => Boolean(item.targetId))
             : [];
@@ -352,6 +434,11 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
             await this.post({ type: 'comparison', comparison });
           });
           return;
+        case 'openDiffInVsCode':
+          await this.withBusy('Opening VS Code comparison...', async () => {
+            await this.controller.openDiffInVsCode(mappingId, targetId, String(message.relativePath || ''));
+          });
+          return;
       }
     } catch (error) {
       const text = this.controller.ui.sanitize(error instanceof Error ? error.message : String(error));
@@ -368,6 +455,38 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
       this.handling = false;
       this.cancelConnect = undefined;
       await this.post({ type: 'interactionState', active: false });
+    }
+  }
+
+  private async handlePreviewPlanMessage(message: any): Promise<void> {
+    const mappingId = String(message?.mappingId || '');
+    const requestId = Number(message?.requestId || 0);
+    const requestedTargets = Array.isArray(message?.targets)
+      ? message.targets
+        .map((item: any) => ({
+          targetId: String(item?.targetId || ''),
+          resolutions: this.parseConflictResolutionChanges(item?.resolutions)
+        }))
+        .filter((item: { targetId: string }) => Boolean(item.targetId))
+      : [];
+    if (!requestedTargets.length) {
+      await this.post({ type: 'previewPlanResult', requestId, mappingId, plans: [], error: 'No Workspace Sync target is available for Sync Review.' });
+      return;
+    }
+    try {
+      const plans = [];
+      for (const item of requestedTargets) {
+        plans.push({
+          targetId: item.targetId,
+          plan: await this.controller.previewPlanWithResolutions(mappingId, item.targetId, item.resolutions)
+        });
+      }
+      await this.post({ type: 'previewPlanResult', requestId, mappingId, plans });
+    } catch (error) {
+      await this.post({
+        type: 'previewPlanResult', requestId, mappingId, plans: [],
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -398,14 +517,15 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
     }
   }
 
-  private parseConflictResolutions(value: unknown): Record<string, 'useLocal' | 'useRemote' | 'skip'> {
+  private parseConflictResolutionChanges(value: unknown): Record<string, 'useLocal' | 'useRemote' | 'skip' | undefined> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    const result: Record<string, 'useLocal' | 'useRemote' | 'skip'> = {};
+    const result: Record<string, 'useLocal' | 'useRemote' | 'skip' | undefined> = {};
     for (const [relativePath, resolution] of Object.entries(value as Record<string, unknown>)) {
-      if (!relativePath || (resolution !== 'useLocal' && resolution !== 'useRemote' && resolution !== 'skip')) {
+      if (!relativePath || (resolution !== null && resolution !== undefined
+        && resolution !== 'useLocal' && resolution !== 'useRemote' && resolution !== 'skip')) {
         throw new Error('Invalid Workspace Sync conflict resolution.');
       }
-      result[relativePath] = resolution;
+      result[relativePath] = resolution === null || resolution === undefined ? undefined : resolution;
     }
     return result;
   }
@@ -425,6 +545,43 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
 
   private async withBusy<T>(label: string, action: () => Promise<T>): Promise<T> {
     return this.withProgressOperation(label, () => action(), { cancellable: false, kind: 'comparison' });
+  }
+
+  private startMaintenance(
+    mappingId: string,
+    label: string,
+    action: (
+      progress: (progress: import('../types').WorkspaceSyncProgress) => void,
+      token: vscode.CancellationToken
+    ) => Promise<unknown>
+  ): void {
+    if (this.maintenanceOperations.has(mappingId)) {
+      throw new Error('Refresh or Reset Baseline is already running for this mapping.');
+    }
+    const source = new vscode.CancellationTokenSource();
+    const id = ++this.operationSequence;
+    this.maintenanceOperations.set(mappingId, { id, source });
+    void this.post({ type: 'maintenanceState', mappingId, maintenanceId: id, active: true, label });
+    this.controller.ui.log(label);
+    // Deliberately detached: the mapping/target selectors, Connect, New and
+    // Manage remain responsive while the operation queues do the actual work.
+    void Promise.resolve().then(() => action(progress => {
+      void this.post({ type: 'maintenanceProgress', mappingId, maintenanceId: id, progress });
+    }, source.token)).catch(error => {
+      const detail = this.controller.ui.sanitize(error instanceof Error ? error.message : String(error));
+      if (source.token.isCancellationRequested || /cancelled/i.test(detail)) {
+        this.controller.ui.notify('Workspace Sync maintenance cancelled.', 'warning');
+      } else {
+        this.output.appendLine(`[Workspace Sync] ${detail}`);
+        this.controller.ui.notify(detail, 'error');
+      }
+    }).finally(async () => {
+      // A previous task must never remove a newer one's status.
+      if (this.maintenanceOperations.get(mappingId)?.id === id) this.maintenanceOperations.delete(mappingId);
+      source.dispose();
+      await this.post({ type: 'maintenanceState', mappingId, maintenanceId: id, active: false });
+      await this.postState();
+    });
   }
 
   private async withProgressOperation<T>(

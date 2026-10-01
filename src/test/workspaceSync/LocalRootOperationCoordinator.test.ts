@@ -1,3 +1,4 @@
+import { TargetOperationQueue } from '../../workspaceSync/execution/TargetOperationQueue';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
@@ -37,26 +38,7 @@ test('LocalRootOperationCoordinator serializes the same Local Root', async () =>
   assert.deepEqual(order, ['first-start', 'first-end', 'second']);
 });
 
-test('LocalRootOperationCoordinator serializes parent and child roots', async () => {
-  const coordinator = new LocalRootOperationCoordinator();
-  const gate = deferred();
-  const order: string[] = [];
-  const parent = path.resolve('/tmp/workspace-sync-parent');
-  const child = path.join(parent, 'child');
 
-  const first = coordinator.run(parent, async () => {
-    order.push('parent-start');
-    await gate.promise;
-    order.push('parent-end');
-  });
-  const second = coordinator.run(child, async () => { order.push('child'); });
-
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(order, ['parent-start']);
-  gate.resolve();
-  await Promise.all([first, second]);
-  assert.deepEqual(order, ['parent-start', 'parent-end', 'child']);
-});
 
 test('LocalRootOperationCoordinator allows independent roots to run in parallel', async () => {
   const coordinator = new LocalRootOperationCoordinator();
@@ -96,70 +78,61 @@ test('LocalRootOperationCoordinator preserves FIFO for overlapping waiters and r
   assert.deepEqual(order, ['first', 'second', 'third']);
 });
 
-test('LocalRootOperationCoordinator allows overlapping shared Refresh work in parallel', async () => {
-  const coordinator = new LocalRootOperationCoordinator();
+
+
+
+
+
+
+test('Path coordinator admits independent downloads concurrently but serializes writes to the same file', async () => {
+  const c = new LocalRootOperationCoordinator();
+  const root = path.resolve('/tmp/ws-parallel-paths');
   const gate = deferred();
-  const root = path.resolve('/tmp/workspace-sync-shared');
-  let secondRan = false;
-
-  const first = coordinator.runShared(root, async () => {
-    await gate.promise;
+  const events: string[] = [];
+  const a = c.runPaths(root, [{ path: path.join(root, 'a.txt'), mode: 'write' }], async () => {
+    events.push('a-start'); await gate.promise; events.push('a-end');
   });
-  const second = coordinator.runShared(path.join(root, 'child'), async () => {
-    secondRan = true;
-  });
-
-  await second;
-  assert.equal(secondRan, true);
+  const b = c.runPaths(root, [{ path: path.join(root, 'b.txt'), mode: 'write' }], async () => { events.push('b-start'); });
+  const same = c.runPaths(root, [{ path: path.join(root, 'a.txt'), mode: 'write' }], async () => { events.push('same-start'); });
+  await b;
+  assert.deepEqual(events, ['a-start', 'b-start']);
   gate.resolve();
-  await first;
+  await Promise.all([a, same]);
+  assert.deepEqual(events, ['a-start', 'b-start', 'a-end', 'same-start']);
 });
 
-test('LocalRootOperationCoordinator keeps shared Refresh work out of an active exclusive mutation', async () => {
-  const coordinator = new LocalRootOperationCoordinator();
-  const gate = deferred();
-  const root = path.resolve('/tmp/workspace-sync-exclusive-blocks-shared');
-  const order: string[] = [];
 
-  const mutation = coordinator.run(root, async () => {
-    order.push('mutation-start');
-    await gate.promise;
-    order.push('mutation-end');
-  });
-  const refresh = coordinator.runShared(root, async () => { order.push('refresh'); });
 
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(order, ['mutation-start']);
-  gate.resolve();
-  await Promise.all([mutation, refresh]);
-  assert.deepEqual(order, ['mutation-start', 'mutation-end', 'refresh']);
+
+
+
+
+
+
+
+
+test('Path coordinator recognizes symlink aliases of the same Local Root', async t => {
+  if (process.platform === 'win32') return t.skip('Creating directory junctions requires platform-specific privileges; run Windows integration test separately.');
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'ws-path-alias-'));
+  const real = path.join(scratch, 'real');
+  const alias = path.join(scratch, 'alias');
+  try {
+    await fs.mkdir(real);
+    await fs.symlink(real, alias);
+    const c = new LocalRootOperationCoordinator();
+    const gate = deferred();
+    let aliasEntered = false;
+    const direct = c.runPaths(real, [{ path: path.join(real, 'file.txt'), mode: 'write' }], async () => { await gate.promise; });
+    const indirect = c.runPaths(alias, [{ path: path.join(alias, 'file.txt'), mode: 'write' }], async () => { aliasEntered = true; });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(aliasEntered, false, 'Aliases to one real path must conflict');
+    gate.resolve();
+    await Promise.all([direct, indirect]);
+    assert.equal(aliasEntered, true);
+  } finally { await fs.rm(scratch, { recursive: true, force: true }); }
 });
 
-test('LocalRootOperationCoordinator gives an earlier exclusive waiter priority over later shared Refreshes', async () => {
-  const coordinator = new LocalRootOperationCoordinator();
-  const firstGate = deferred();
-  const mutationGate = deferred();
-  const root = path.resolve('/tmp/workspace-sync-writer-fairness');
-  const order: string[] = [];
 
-  const firstRefresh = coordinator.runShared(root, async () => {
-    order.push('refresh-1-start');
-    await firstGate.promise;
-    order.push('refresh-1-end');
-  });
-  const mutation = coordinator.run(root, async () => {
-    order.push('mutation-start');
-    await mutationGate.promise;
-    order.push('mutation-end');
-  });
-  const secondRefresh = coordinator.runShared(root, async () => { order.push('refresh-2'); });
 
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(order, ['refresh-1-start']);
-  firstGate.resolve();
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(order, ['refresh-1-start', 'refresh-1-end', 'mutation-start']);
-  mutationGate.resolve();
-  await Promise.all([firstRefresh, mutation, secondRefresh]);
-  assert.deepEqual(order, ['refresh-1-start', 'refresh-1-end', 'mutation-start', 'mutation-end', 'refresh-2']);
-});

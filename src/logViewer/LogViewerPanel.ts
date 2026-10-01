@@ -16,7 +16,6 @@ interface ConnectionChangeNotifier {
 }
 
 type LogViewerStatus = 'opening' | 'following' | 'paused' | 'stopped' | 'failed' | 'disconnected';
-type JsonLogMode = 'auto' | 'on' | 'off';
 
 const LOG_VIEWER_FAVORITES_KEY = 'remoteedit.logViewer.favorites.v1';
 

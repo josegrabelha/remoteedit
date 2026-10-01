@@ -75,7 +75,7 @@ export function buildServerDashboardSnapshot(connectionId: string, requestId: st
   };
 }
 
-export function buildFallbackServerSystemInfo(connection: any, capabilities: string[], refreshedAt: number, sudoEnabled: boolean): ServerDashboardSystemInfoItem[] {
+export function buildFallbackServerSystemInfo(connection: any, _capabilities: string[], refreshedAt: number, sudoEnabled: boolean): ServerDashboardSystemInfoItem[] {
   const identity = parseServerIdentity('', String(connection?.username || '').trim());
   return [
     { label: 'OS', value: '—' },

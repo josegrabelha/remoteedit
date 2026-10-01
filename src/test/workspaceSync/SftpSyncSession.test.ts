@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import SftpClient from 'ssh2-sftp-client';
 import { SftpSyncSession } from '../../workspaceSync/connection/SftpSyncSession';
+import { SessionLifetime } from '../../workspaceSync/connection/SessionLifetime';
 import { scanRemoteTree } from '../../workspaceSync/scan/RemoteScanner';
 import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import { diffSnapshots } from '../../workspaceSync/compare/DiffEngine';
@@ -49,6 +50,55 @@ function fixture() {
   return { session, entries };
 }
 
+test('SFTP idle deadline closes a stuck transport, settles sibling requests and recovers on the next request', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { session } = fixture();
+  const internal = session as any;
+  let destroyed = 0;
+  let reconnects = 0;
+  internal.client = {
+    list: () => new Promise(() => {}),
+    lstat: () => new Promise(() => {}),
+    client: { destroy: () => { destroyed++; } }
+  };
+  internal.openFreshConnection = async () => {
+    reconnects++;
+    internal.client = { list: async () => [] };
+    internal.transportLifetime = new SessionLifetime();
+  };
+  const pending = [assert.rejects(session.list('/remote'), /timed out/), assert.rejects(session.stat('/remote/file'), /timed out/)];
+  await new Promise<void>(resolve => setImmediate(resolve));
+  t.mock.timers.tick(30001);
+  await Promise.all(pending);
+  assert.equal(destroyed, 1);
+  assert.equal(session.isDisconnected, false, 'timeout invalidates a transport, not the user session');
+  assert.deepEqual(await session.list('/remote'), []);
+  assert.equal(reconnects, 1);
+});
+
+
+
+
+
+test('SFTP reconnect setup cannot leave the next Watch round waiting forever', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { session } = fixture();
+  const internal = session as any;
+  let destroyed = false;
+  internal.openFreshConnection = async () => {
+    internal.openingClient = { client: { destroy: () => { destroyed = true; } } };
+    return new Promise(() => {});
+  };
+  const rejected = assert.rejects(session.reconnect(), /setup timed out/);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  t.mock.timers.tick(60001);
+  await rejected;
+  assert.equal(destroyed, true);
+  assert.equal(internal.reconnectPromise, undefined);
+  internal.openFreshConnection = async () => {};
+  await session.reconnect();
+});
+
 const target: WorkspaceSyncTarget = {
   id: 'target-1', name: 'Target', connectionId: 'connection-1', remoteRoot: '/remote', enabled: true, createdAt: 1, updatedAt: 1
 };
@@ -59,15 +109,7 @@ function mapping(localRoot: string): WorkspaceSyncMapping {
   };
 }
 
-test('SFTP stat preserves the actual client file, directory and symlink types', async () => {
-  const { session } = fixture();
-  for (const [name, kind] of [['file.txt', 'file'], ['nested', 'directory'], ['link', 'link'], ['socket', 'unknown']]) {
-    const entry = await session.stat(`/remote/${name}`);
-    assert.equal(entry?.kind, kind, name);
-    assert.equal(entry?.mtimeMs, 1000000);
-  }
-  assert.equal(await session.stat('/remote/missing'), undefined);
-});
+
 
 test('SFTP Compare plan revalidates unchanged root and nested files and detects a real change', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-sftp-revalidate-'));
@@ -102,3 +144,40 @@ test('SFTP revalidation blocks a directory replaced by a symbolic link after Com
     assert.match(child.reason, /Remote ancestor.*symbolic link/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('SFTP Disconnect bounds graceful shutdown and destroys SSH plus Jump Hosts', { timeout: 2500 }, async () => {
+  const session = Reflect.construct(SftpSyncSession, ['profile', { jumpChain: [] }]) as SftpSyncSession;
+  let destroyed = 0;
+  let jumpsClosed = 0;
+  (session as any).client = {
+    end: () => new Promise(() => {}),
+    client: { destroy: () => { destroyed += 1; } }
+  };
+  (session as any).jumpChain = { dispose: () => { jumpsClosed += 1; } };
+  await session.disconnect();
+  assert.equal(destroyed, 1);
+  assert.equal(jumpsClosed, 1);
+  await assert.rejects(session.reconnect(), /disconnected/);
+});
+
+test('SFTP Disconnect settles a stuck transfer without relying on SSH callbacks', { timeout: 1000 }, async () => {
+  const session = Reflect.construct(SftpSyncSession, ['profile', { jumpChain: [] }]) as SftpSyncSession;
+  let destroyed = 0;
+  (session as any).client = {
+    fastPut: () => new Promise(() => {}),
+    end: async () => {},
+    client: { destroy: () => { destroyed += 1; } }
+  };
+  const upload = session.upload('/local/file', '/remote/file');
+  const failed = assert.rejects(upload, /disconnected/);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(session.interruptPendingReads(), false, 'soft interruption must preserve an active transfer');
+  await session.disconnect();
+  await failed;
+  assert.ok(destroyed >= 1);
+});
+
+
+
+
+

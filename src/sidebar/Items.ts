@@ -1,7 +1,7 @@
-import * as path from 'path';
+
 import * as vscode from 'vscode';
-import type { AuthType, ConnectionGroup, ConnectionProfile } from '../connection/ConnectionManager';
-import type { ActiveConnection, RemoteEntry, RemoteEntryType } from '../remote/RemoteSessionManager';
+import type { ConnectionGroup, ConnectionProfile } from '../connection/ConnectionManager';
+import type { ActiveConnection, RemoteEntry } from '../remote/RemoteSessionManager';
 import type { TransferQueueItemSnapshot } from '../panel/RemoteEditPanel';
 import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 import { buildConnectionDetail, buildGoParentTooltipOrEmpty, buildMarkdownTooltip, buildRemoteBrowseTooltipOrEmpty, buildRemoteEntryDescription, buildRemoteEntryTooltipOrEmpty, buildRemotePathTooltipOrEmpty, buildSidebarFullPathTreeNodeDisplay, buildSidebarPathDisplay, buildTransferItemTooltipContent, formatActiveConnectionJumpVia, formatCredentialStatus, formatOpenConnectionLabel, formatTooltipPlainText, formatTransferItemDescription, formatTransferItemLabel, getConnectionDetailContextValue, getParentRemotePath, getRemoteEntryIcon, getRemoteEntryResourceUri, getSavedConnectionIcon, getSidebarOpenConnectionsPathView, getSidebarDecorationResourceUri, isPathAncestorOrSelf, isSftpConnection, normalizeRemotePath, normalizeRemoteRootStartPath, resolveRemoteEntryType, type ConnectionDetailField } from './ItemHelpers';

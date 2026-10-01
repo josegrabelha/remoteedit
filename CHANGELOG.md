@@ -4,7 +4,7 @@
 
 ### Added
 
-* Added **Workspace Sync** for synchronizing local workspaces with saved Remote Edit connections, including multi-target and automatic synchronization support.
+* Added **Workspace Sync** for synchronizing local workspaces with saved Remote Edit connections, including multi-target support, bidirectional synchronization, conflict handling, automatic Watch synchronization, Compare, Sync Review, and configurable safety options.
 * Added the Editor Root Label setting to show saved connection names, with an optional group prefix, as a single virtual root in remote file editor breadcrumbs and tab descriptions. Existing editors retain their labels until reopened. Thanks to @tzraeq.
 
 ### Fixed

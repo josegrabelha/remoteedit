@@ -18,22 +18,44 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   let operationCancelling = false;
   let operationCancellable = false;
   let interactionActive = false;
-  let backgroundOperation = null;
+  const backgroundOperations = new Map();
+  // Per-target Watch work is not tied to the currently selected combobox item.
+  const watchOperations = new Map();
+  const maintenanceOperations = new Map();
   const persistedUiState = vscode.getState() || {};
+  let hideUnsupportedFiles = Boolean(persistedUiState.hideUnsupportedFiles);
+  let showModifiedTimes = Boolean(persistedUiState.showModifiedTimes);
+  const suggestedResolutionKeys = new Set();
+  const previewSuggestedResolutionKeys = new Set();
+  let visibleResolutionEntries = [];
+  let compareMenuContext = null;
+  let currentDiffContext = null;
   const ALL_ENABLED_TARGETS = '__all_enabled__';
   const persistedAllEnabledMappings = Array.isArray(persistedUiState.allEnabledMappingIds)
     ? persistedUiState.allEnabledMappingIds.map(String)
     : (typeof persistedUiState.allEnabledMappingId === 'string' ? [persistedUiState.allEnabledMappingId] : []);
   let allEnabledMappingIds = new Set(persistedAllEnabledMappings);
+  const initializedTargetSelectionMappings = new Set();
   let visibleChangeKeys = [];
   let previewResolutions = {};
+  let previewPlans = {};
+  let previewPlanRequestSerial = 0;
+  let pendingPreviewPlanRequest = 0;
+  let previewPlanError = '';
   let resolutionRequestSerial = 0;
   let syncPreviewRequested = false;
   const pendingResolutionRequests = new Map();
   const persistedChangesSort = persistedUiState.changesSort;
-  let changesSort = persistedChangesSort && ['target', 'path', 'status'].includes(persistedChangesSort.key) && ['asc', 'desc'].includes(persistedChangesSort.direction)
+  let changesSort = persistedChangesSort && ['target', 'path', 'status', 'localModified', 'remoteModified'].includes(persistedChangesSort.key) && ['asc', 'desc'].includes(persistedChangesSort.direction)
     ? { key: persistedChangesSort.key, direction: persistedChangesSort.direction }
     : { key: '', direction: '' };
+  const CHANGE_COLUMN_DEFAULT_WIDTHS = Object.freeze({
+    select: 26, marker: 24, target: 132, status: 118, localModified: 168, remoteModified: 168, actions: 280
+  });
+  const CHANGE_COLUMN_MIN_WIDTHS = Object.freeze({
+    target: 80, path: 160, status: 88, localModified: 140, remoteModified: 140, actions: 220
+  });
+  const changeColumnWidths = Object.assign({}, CHANGE_COLUMN_DEFAULT_WIDTHS);
   let optionHelpAnchor;
   const optionHelp = {
     unknownChangeProtection: {
@@ -46,7 +68,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     },
     propagateDeletes: {
       title: 'Propagate Deletes',
-      text: 'Allows deletions on one side to be propagated to the other side according to the selected sync direction.'
+      text: 'Allows deletions on one side to be propagated to the other side according to the selected sync direction. When a directory deletion is propagated, Workspace Sync removes its complete destination subtree, including hidden and ignored descendants. Ignore rules do not preserve files inside a directory whose deletion is being propagated. New or changed content detected after validation causes the delete to be deferred and re-evaluated.'
     },
     uploadOnSave: {
       title: 'Upload on Save',
@@ -171,6 +193,32 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     return day + ' ' + time;
   }
 
+
+  function formatTimestampWithOffset(value) {
+    if (!Number(value)) return '—';
+    const date = new Date(value);
+    const offsetMinutes = -date.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absolute = Math.abs(offsetMinutes);
+    const pad = part => String(part).padStart(2, '0');
+    return formatTimestamp(value) + ' ' + sign + pad(Math.floor(absolute / 60)) + ':' + pad(absolute % 60);
+  }
+
+  function remoteTimestampIsAbsolute(entry) {
+    const mapping = activeMapping();
+    const target = targetForId(entry?.targetId, mapping) || activeTarget();
+    const connection = target ? state.connections.find(item => item.id === target.connectionId) : undefined;
+    return connection?.connectionType === 'sftp';
+  }
+
+  function formatModifiedTime(entry, side) {
+    const fingerprint = side === 'local' ? entry?.local : entry?.remote;
+    const value = Number(fingerprint?.mtimeMs || 0);
+    if (!value) return '—';
+    if (side === 'remote' && !remoteTimestampIsAbsolute(entry)) return formatTimestamp(value) + ' server';
+    return formatTimestampWithOffset(value);
+  }
+
   function activeMapping() {
     return state.mappings.find(mapping => mapping.id === state.activeMappingId);
   }
@@ -181,6 +229,32 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
 
   function enabledTargets(mapping = activeMapping()) {
     return mapping?.targets?.filter(target => target.enabled) || [];
+  }
+
+  function activeMaintenance() {
+    return maintenanceOperations.get(String(state.activeMappingId || '')) || null;
+  }
+
+  function watchOperationKey(mappingId, targetId) {
+    return JSON.stringify([String(mappingId || ''), String(targetId || '')]);
+  }
+
+  function visibleWatchOperation() {
+    const mapping = activeMapping();
+    if (!mapping) return null;
+    if (!isAllEnabledSelected(mapping)) {
+      const target = activeTarget();
+      return target ? watchOperations.get(watchOperationKey(mapping.id, target.id)) || null : null;
+    }
+    const active = enabledTargets(mapping)
+      .map(target => watchOperations.get(watchOperationKey(mapping.id, target.id)))
+      .filter(Boolean);
+    if (!active.length) return null;
+    return {
+      label: 'Watch reconciliation...',
+      detail: active.length + ' target(s) working · ' + (active[active.length - 1].detail || ''),
+      active: true
+    };
   }
 
   function enabledTargetStates(mapping = activeMapping()) {
@@ -238,6 +312,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const targetView = targetViewForId(entry?.targetId);
     return Boolean(target?.enabled
       && targetState?.status === 'connected'
+      && !state.mappingInitializing
+      && !targetState?.preparing
+      && !targetState?.watching
+      && !targetState?.connectionConfigChanged
+      && !activeMaintenance()
+      && !visibleBackgroundOperation()
+      && !watchOperations.has(watchOperationKey(state.activeMappingId, entry.targetId))
       && !targetView?.showingLastKnownState);
   }
 
@@ -290,9 +371,24 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const pendingSelections = new Map();
     for (const key of pendingResolutionRequests.keys()) pendingSelections.set(key, currentByKey.get(key)?.resolution);
     state = nextState;
+    if (typeof nextState.hideUnsupportedFiles === 'boolean') hideUnsupportedFiles = nextState.hideUnsupportedFiles;
+    if (typeof nextState.showModifiedTimes === 'boolean') showModifiedTimes = nextState.showModifiedTimes;
+    for (const mapping of (nextState.mappings || [])) {
+      if (initializedTargetSelectionMappings.has(mapping.id)) continue;
+      initializedTargetSelectionMappings.add(mapping.id);
+      const targetCount = (mapping.targets || []).length;
+      if (targetCount > 1) allEnabledMappingIds.add(mapping.id);
+      else allEnabledMappingIds.delete(mapping.id);
+    }
+    persistAllEnabledSelection();
     for (const [key, resolution] of pendingSelections) {
       const pair = JSON.parse(key);
       applyResolutionToState(String(pair[0] || ''), String(pair[1] || ''), resolution);
+    }
+    const nextByKey = new Map(currentChangeEntries().map(entry => [changeKey(entry.targetId, entry.relativePath), entry]));
+    for (const key of [...suggestedResolutionKeys]) {
+      const entry = nextByKey.get(key);
+      if (!entry?.resolution || entry.resolution !== entry.suggestedResolution) suggestedResolutionKeys.delete(key);
     }
   }
 
@@ -320,7 +416,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   function updateSyncAvailability() {
     const mapping = activeMapping();
     const previewTargets = syncPreviewTargetViews(mapping);
-    $('sync').disabled = operationActive || interactionActive || !mapping || previewTargets.length === 0;
+    const preparing = state.mappingInitializing || Boolean(visibleBackgroundOperation())
+      || (state.targetStates || []).some(item => item.preparing);
+    const watchBusy = previewTargets.some(target =>
+      watchOperations.has(watchOperationKey(state.activeMappingId, target.targetId))
+      || targetStateForId(target.targetId)?.watching);
+    $('sync').disabled = operationActive || interactionActive || Boolean(activeMaintenance()) || preparing
+      || watchBusy || !mapping || previewTargets.length === 0;
   }
 
   function statusLabel(status) {
@@ -395,12 +497,16 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const targetId = String(entry?.targetId || state.activeTargetId || '');
     const previewKey = changeKey(targetId, entry.relativePath);
     const selectedResolution = source === 'preview' ? previewResolutions[previewKey] : entry.resolution;
+    const suggestionSet = source === 'preview' ? previewSuggestedResolutionKeys : suggestedResolutionKeys;
+    const suggested = selectedResolution === resolution && suggestionSet.has(previewKey);
     const selectedClass = selectedResolution === resolution ? ' resolution-selected' : '';
+    const suggestedClass = suggested ? ' resolution-suggested' : '';
     const structuralDisabled = resolution !== 'skip' && isStructuralConflict(entry);
     const disabled = structuralDisabled ? ' disabled' : '';
     const attribute = source === 'preview' ? 'data-preview-resolve' : 'data-resolve';
     const targetAttribute = ' data-target-id="' + esc(targetId) + '"';
-    return \`<button class="ghost resolution-choice\${selectedClass}" \${attribute}="\${resolution}" data-path="\${esc(entry.relativePath)}"\${targetAttribute} aria-pressed="\${selectedResolution === resolution ? 'true' : 'false'}"\${disabled}>\${label}</button>\`;
+    const marker = suggested ? '<span class="suggested-resolution-marker" aria-label="Suggested">✦</span>' : '';
+    return \`<button class="ghost resolution-choice\${selectedClass}\${suggestedClass}" \${attribute}="\${resolution}" data-path="\${esc(entry.relativePath)}"\${targetAttribute} aria-pressed="\${selectedResolution === resolution ? 'true' : 'false'}"\${disabled}>\${label}\${marker}</button>\`;
   }
 
   function compareButtonHtml(entry, source = 'changes') {
@@ -408,8 +514,9 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     if (!bothFiles) return '';
     const targetId = String(entry?.targetId || state.activeTargetId || '');
     const attribute = source === 'preview' ? 'data-preview-diff' : 'data-diff';
+    const menuAttribute = source === 'preview' ? 'data-preview-diff-menu' : 'data-diff-menu';
     const targetAttribute = ' data-target-id="' + esc(targetId) + '"';
-    return \`<button class="ghost icon-action compare-action" \${attribute}="\${esc(entry.relativePath)}"\${targetAttribute} aria-label="Compare Local and Remote" data-tooltip="Compare Local and Remote" data-tooltip-delay="\${ROW_ACTION_TOOLTIP_SHOW_DELAY_MS}" data-tooltip-hover-only>\${compareIconMarkup}</button>\`;
+    return \`<span class="compare-split"><button class="ghost icon-action compare-action" \${attribute}="\${esc(entry.relativePath)}"\${targetAttribute} aria-label="Compare Local and Remote" data-tooltip="Compare Local and Remote" data-tooltip-delay="\${ROW_ACTION_TOOLTIP_SHOW_DELAY_MS}" data-tooltip-hover-only>\${compareIconMarkup}</button><button class="ghost compare-menu-action" \${menuAttribute}="\${esc(entry.relativePath)}"\${targetAttribute} aria-label="Compare options" data-tooltip="Compare options" data-tooltip-delay="\${ROW_ACTION_TOOLTIP_SHOW_DELAY_MS}" data-tooltip-hover-only>▾</button></span>\`;
   }
 
   function updateResolutionControls(targetId, relativePath) {
@@ -432,12 +539,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
 
   function setLocalResolution(targetId, relativePath, resolution) {
     applyResolutionToState(targetId, relativePath, resolution);
-    updateResolutionControls(targetId, relativePath);
+    renderChanges();
   }
 
   function chooseResolution(targetId, relativePath, requestedResolution) {
     const entry = findCurrentChange(targetId, relativePath);
     if (!entry || !requiresResolution(entry) || !entryCanOperate(entry)) return;
+    suggestedResolutionKeys.delete(changeKey(targetId, relativePath));
     const nextResolution = entry.resolution === requestedResolution ? undefined : requestedResolution;
     setLocalResolution(targetId, relativePath, nextResolution);
     const requestId = ++resolutionRequestSerial;
@@ -718,10 +826,41 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const targetId = activeChangeContextTargetId;
     if (!relativePath || !targetId) return;
     closeChangesContextMenu();
-    if (action === 'compare') post('openDiff', { mappingId: state.activeMappingId, targetId, relativePath });
+    if (action === 'compare') openDefaultComparison(targetId, relativePath);
     else if (action === 'upload') post('uploadSelected', { mappingId: state.activeMappingId, targetId, paths: [relativePath] });
     else if (action === 'download') post('downloadSelected', { mappingId: state.activeMappingId, targetId, paths: [relativePath] });
     else if (['useLocal', 'useRemote', 'skip'].includes(action)) chooseResolution(targetId, relativePath, action);
+  }
+
+  function openComparisonHere(targetId, relativePath) {
+    currentDiffContext = { mappingId: state.activeMappingId, targetId: String(targetId || ''), relativePath: String(relativePath || '') };
+    post('openDiff', currentDiffContext);
+  }
+
+  function openComparisonInVsCode(targetId, relativePath) {
+    post('openDiffInVsCode', { mappingId: state.activeMappingId, targetId: String(targetId || ''), relativePath: String(relativePath || '') });
+  }
+
+  function openDefaultComparison(targetId, relativePath) {
+    if (state.defaultCompare === 'vscode') openComparisonInVsCode(targetId, relativePath);
+    else openComparisonHere(targetId, relativePath);
+  }
+
+  function closeCompareMenu() {
+    compareMenuContext = null;
+    $('compareMenu')?.classList.remove('visible');
+  }
+
+  function showCompareMenu(anchor, targetId, relativePath) {
+    const menu = $('compareMenu');
+    if (!menu || !anchor) return;
+    closeChangesContextMenu();
+    closeActivityContextMenu();
+    closeChangesMenu();
+    hideWebviewTooltip();
+    compareMenuContext = { targetId: String(targetId || ''), relativePath: String(relativePath || '') };
+    const rect = anchor.getBoundingClientRect();
+    positionContextMenu(menu, rect.right - 4, rect.bottom + 2);
   }
 
   function closeChangesMenu() {
@@ -760,6 +899,9 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     }
 
     $('localRoot').textContent = mapping?.localRoot || '—';
+    const hoveredTarget = !allEnabled && target ? state.connections.find(connection => connection.id === target.connectionId) : undefined;
+    setTooltip($('target'), hoveredTarget
+      ? (hoveredTarget.username ? hoveredTarget.username + '@' : '') + hoveredTarget.host + ':' + hoveredTarget.port : '');
 
     let status;
     if (allEnabled) {
@@ -807,18 +949,25 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const aggregateRefreshDisabled = allEnabled
       ? (!mapping || !allEnabledConnectionState(mapping).allConnected || Boolean(allEnabledConnectionState(mapping).reconnectRequired))
       : (!mapping || !target || !target.enabled || status !== 'connected');
-    $('compare').disabled = (operationActive || interactionActive) || aggregateRefreshDisabled;
+    const preparing = allEnabled
+      ? (state.targetStates || []).some(item => item.preparing)
+      : Boolean((state.targetStates || []).find(item => item.targetId === target?.id)?.preparing);
+    const maintenanceBusy = Boolean(activeMaintenance());
+    $('compare').disabled = (operationActive || interactionActive || maintenanceBusy) || aggregateRefreshDisabled || preparing;
     updateSyncAvailability();
     $('manage').disabled = (operationActive || interactionActive) || !mapping;
     $('newMapping').disabled = (operationActive || interactionActive) || !state.connections.length;
-    $('changesMore').disabled = (operationActive || interactionActive) || allEnabled || !mapping || !target || !target.enabled || status !== 'connected';
-    $('resetBaseline').disabled = $('changesMore').disabled;
+    $('changesMore').disabled = (operationActive || interactionActive) || !mapping;
+    $('resetBaseline').disabled = (operationActive || interactionActive || maintenanceBusy) || preparing || !mapping
+      || (allEnabled ? !allEnabledConnectionState(mapping).allConnected || allEnabledConnectionState(mapping).reconnectRequired
+        : !target || !target.enabled || status !== 'connected');
     if ($('changesMore').disabled) closeChangesMenu();
 
     renderChanges();
     renderSnapshotStatus();
     renderOptions();
     renderTargetStates();
+    if (!$('mappingDialog').hidden) updateMappingValidation();
     $('mapping').disabled = operationActive || interactionActive;
     $('target').disabled = operationActive || interactionActive;
     controls.refresh();
@@ -842,12 +991,162 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     vscode.setState(Object.assign({}, vscode.getState() || {}, { changesSort }));
   }
 
+  function changeColumnElement(key) {
+    return document.querySelector('col[data-change-column="' + key + '"]');
+  }
+
+  function changeColumnHeader(key) {
+    return document.querySelector('th[data-change-column-header="' + key + '"]');
+  }
+
+  function visibleChangeColumnKeys() {
+    const keys = ['select', 'marker', 'target', 'path', 'status'];
+    if (showModifiedTimes) keys.push('localModified', 'remoteModified');
+    keys.push('actions');
+    return keys;
+  }
+
+  function syncHiddenModifiedColumns() {
+    for (const key of ['localModified', 'remoteModified']) {
+      const col = changeColumnElement(key);
+      if (!col) continue;
+      col.style.width = showModifiedTimes
+        ? ((Number(changeColumnWidths[key]) || CHANGE_COLUMN_DEFAULT_WIDTHS[key]) + 'px')
+        : '0px';
+    }
+  }
+
+  // Keep the Changes table responsive to the webview width while preserving explicit
+  // widths for the utility columns. Path is the elastic column: it absorbs all spare
+  // room and shrinks down to its minimum before horizontal scrolling is introduced.
+  function syncFrozenChangesTableWidth() {
+    const table = $('changesTable');
+    const panel = $('changesPanel');
+    if (!table || !panel) return;
+
+    syncHiddenModifiedColumns();
+    const fixedKeys = ['select', 'marker', 'target', 'status'];
+    if (showModifiedTimes) fixedKeys.push('localModified', 'remoteModified');
+    fixedKeys.push('actions');
+
+    let fixedTotal = 0;
+    for (const key of fixedKeys) {
+      const col = changeColumnElement(key);
+      if (!col) continue;
+      let width = Number(changeColumnWidths[key]);
+      if (!Number.isFinite(width) || width <= 0) width = Number(CHANGE_COLUMN_DEFAULT_WIDTHS[key]) || 0;
+      if (!width) continue;
+      changeColumnWidths[key] = width;
+      col.style.width = width + 'px';
+      fixedTotal += width;
+    }
+
+    const pathCol = changeColumnElement('path');
+    const pathMin = Number(CHANGE_COLUMN_MIN_WIDTHS.path) || 160;
+    const availableWidth = Math.max(0, Math.floor(panel.clientWidth));
+    const pathWidth = Math.max(pathMin, availableWidth - fixedTotal);
+    const tableWidth = fixedTotal + pathWidth;
+
+    if (pathCol) pathCol.style.width = pathWidth + 'px';
+    table.style.width = tableWidth + 'px';
+    table.style.minWidth = tableWidth + 'px';
+  }
+
+  function installChangesTableResizeTracking() {
+    const panel = $('changesPanel');
+    if (!panel) return;
+    let scheduled = false;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        syncFrozenChangesTableWidth();
+      });
+    };
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(schedule);
+      observer.observe(panel);
+    } else {
+      window.addEventListener('resize', schedule);
+    }
+    schedule();
+  }
+
+  function nextVisibleChangeColumnKey(key) {
+    const keys = visibleChangeColumnKeys();
+    const index = keys.indexOf(key);
+    return index >= 0 && index + 1 < keys.length ? keys[index + 1] : '';
+  }
+
+  function changeColumnMinWidth(key) {
+    return Number(CHANGE_COLUMN_MIN_WIDTHS[key]) || Number(CHANGE_COLUMN_DEFAULT_WIDTHS[key]) || 24;
+  }
+
+  function installChangesColumnResizers() {
+    document.querySelectorAll('[data-change-resize]').forEach(handle => {
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        const key = handle.dataset.changeResize;
+        const nextKey = nextVisibleChangeColumnKey(key);
+        if (!key || !nextKey) return;
+
+        const header = changeColumnHeader(key);
+        const nextHeader = changeColumnHeader(nextKey);
+        if (!header || !nextHeader) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const startX = event.clientX;
+        const startWidth = Math.round(header.getBoundingClientRect().width);
+        const startNextWidth = Math.round(nextHeader.getBoundingClientRect().width);
+        const minWidth = changeColumnMinWidth(key);
+        const minNextWidth = changeColumnMinWidth(nextKey);
+        const minDelta = minWidth - startWidth;
+        const maxDelta = startNextWidth - minNextWidth;
+        const pointerId = event.pointerId;
+        document.body.classList.add('changes-column-resizing');
+        handle.setPointerCapture?.(pointerId);
+
+        const onPointerMove = moveEvent => {
+          if (moveEvent.pointerId !== pointerId) return;
+          const rawDelta = Math.round(moveEvent.clientX - startX);
+          const delta = Math.max(minDelta, Math.min(maxDelta, rawDelta));
+          const nextWidth = startWidth + delta;
+          const nextNeighborWidth = startNextWidth - delta;
+
+          // Path is the elastic column, so its width is derived from the remaining
+          // table space. Moving either boundary around Path updates the adjacent
+          // fixed column and the responsive layout derives Path automatically.
+          if (key !== 'path') changeColumnWidths[key] = nextWidth;
+          if (nextKey !== 'path') changeColumnWidths[nextKey] = nextNeighborWidth;
+          syncFrozenChangesTableWidth();
+        };
+        const finishResize = endEvent => {
+          if (endEvent.pointerId !== pointerId) return;
+          handle.removeEventListener('pointermove', onPointerMove);
+          handle.removeEventListener('pointerup', finishResize);
+          handle.removeEventListener('pointercancel', finishResize);
+          document.body.classList.remove('changes-column-resizing');
+          try { handle.releasePointerCapture?.(pointerId); } catch {}
+        };
+
+        handle.addEventListener('pointermove', onPointerMove);
+        handle.addEventListener('pointerup', finishResize);
+        handle.addEventListener('pointercancel', finishResize);
+      });
+    });
+  }
+
   function changeSortLabel(key) {
-    return key === 'target' ? 'Target' : key === 'path' ? 'Path' : 'Status';
+    return key === 'target' ? 'Target'
+      : key === 'path' ? 'Path'
+        : key === 'localModified' ? 'Local Modified'
+          : key === 'remoteModified' ? 'Remote Modified' : 'Status';
   }
 
   function cycleChangesSort(key) {
-    if (!['target', 'path', 'status'].includes(key)) return;
+    if (!['target', 'path', 'status', 'localModified', 'remoteModified'].includes(key)) return;
     if (changesSort.key !== key) changesSort = { key, direction: 'asc' };
     else if (changesSort.direction === 'asc') changesSort = { key, direction: 'desc' };
     else changesSort = { key: '', direction: '' };
@@ -863,13 +1162,20 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     if (!changesSort.key || !changesSort.direction) return entries;
     const direction = changesSort.direction === 'desc' ? -1 : 1;
     return entries.map((entry, index) => ({ entry, index })).sort((left, right) => {
+      const modifiedValue = (entry, key) => Number((key === 'localModified' ? entry.local : entry.remote)?.mtimeMs || 0);
       const leftValue = changesSort.key === 'target'
         ? left.entry.targetName
-        : changesSort.key === 'status' ? statusLabel(left.entry.status) : left.entry.relativePath;
+        : changesSort.key === 'status' ? statusLabel(left.entry.status)
+          : changesSort.key === 'localModified' || changesSort.key === 'remoteModified' ? modifiedValue(left.entry, changesSort.key)
+            : left.entry.relativePath;
       const rightValue = changesSort.key === 'target'
         ? right.entry.targetName
-        : changesSort.key === 'status' ? statusLabel(right.entry.status) : right.entry.relativePath;
-      const comparison = compareChangeText(leftValue, rightValue);
+        : changesSort.key === 'status' ? statusLabel(right.entry.status)
+          : changesSort.key === 'localModified' || changesSort.key === 'remoteModified' ? modifiedValue(right.entry, changesSort.key)
+            : right.entry.relativePath;
+      const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : compareChangeText(leftValue, rightValue);
       return comparison !== 0 ? comparison * direction : left.index - right.index;
     }).map(item => item.entry);
   }
@@ -922,14 +1228,93 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     checkbox.setAttribute('aria-label', selectTooltip);
   }
 
+  function resolutionApplicable(entry, resolution) {
+    if (!entry || !requiresResolution(entry) || !entryCanOperate(entry)) return false;
+    return resolution === 'skip' || !isStructuralConflict(entry);
+  }
+
+  function updateChangesResolutionToolbar() {
+    const toolbar = $('changesResolutionToolbar');
+    if (!toolbar) return;
+    const entries = visibleResolutionEntries.filter(entry => requiresResolution(entry) && entryCanOperate(entry));
+    toolbar.hidden = entries.length === 0;
+    if (!entries.length) return;
+    const busy = operationActive || interactionActive || Boolean(activeMaintenance()) || Boolean(state.mappingInitializing);
+    $('allUseLocal').disabled = busy || !entries.some(entry => resolutionApplicable(entry, 'useLocal'));
+    $('allUseRemote').disabled = busy || !entries.some(entry => resolutionApplicable(entry, 'useRemote'));
+    $('allSkip').disabled = busy || !entries.some(entry => resolutionApplicable(entry, 'skip'));
+    $('applySuggestions').disabled = busy;
+  }
+
+  function applyBulkChangesResolution(requestedResolution, suggestionsOnly = false) {
+    const candidates = visibleResolutionEntries.filter(entry =>
+      requiresResolution(entry) && entryCanOperate(entry)
+      && (suggestionsOnly || resolutionApplicable(entry, requestedResolution))
+    );
+    const pending = candidates.filter(entry => !entry.resolution);
+    const clearAll = !suggestionsOnly && Boolean(requestedResolution) && candidates.length > 0
+      && candidates.every(entry => entry.resolution === requestedResolution);
+    const byTarget = new Map();
+    let changed = 0;
+    let noSafeSuggestion = 0;
+
+    for (const entry of candidates) {
+      const key = changeKey(entry.targetId, entry.relativePath);
+      let resolution = clearAll ? undefined : requestedResolution;
+      if (suggestionsOnly) {
+        if (entry.resolution) continue;
+        if (!entry.suggestedResolution || !resolutionApplicable(entry, entry.suggestedResolution)) {
+          noSafeSuggestion += 1;
+          continue;
+        }
+        resolution = entry.suggestedResolution;
+      }
+      if (!suggestionsOnly && requestedResolution && !resolutionApplicable(entry, requestedResolution)) continue;
+      applyResolutionToState(entry.targetId, entry.relativePath, resolution);
+      if (suggestionsOnly && resolution) suggestedResolutionKeys.add(key);
+      else suggestedResolutionKeys.delete(key);
+      const resolutions = byTarget.get(entry.targetId) || {};
+      resolutions[entry.relativePath] = resolution || null;
+      byTarget.set(entry.targetId, resolutions);
+      changed += 1;
+    }
+
+    if (suggestionsOnly) {
+      if (!pending.length) {
+        post('clientActivity', { message: 'No pending conflicts to suggest.' });
+      } else if (!changed) {
+        post('clientActivity', { message: 'No safe suggestions are available for ' + noSafeSuggestion + ' pending conflict(s).' });
+      } else {
+        post('clientActivity', {
+          message: 'Suggestions applied: ' + changed + '. ' + (noSafeSuggestion ? 'No safe suggestion for ' + noSafeSuggestion + ' pending conflict(s).' : 'All pending conflicts with safe suggestions were marked.')
+        });
+      }
+    }
+
+    if (!changed) return;
+    renderChanges();
+    updateSyncAvailability();
+    post('setConflictResolutionsBulk', {
+      mappingId: state.activeMappingId,
+      targets: [...byTarget].map(([targetId, resolutions]) => ({ targetId, resolutions }))
+    });
+  }
+
   function renderChanges() {
     closeChangesContextMenu();
     updateSearchClearButton();
     const query = $('search').value.trim().toLowerCase();
     const allEntries = currentChangeEntries();
     updateFilterCounts(allEntries);
+    $('hideUnsupportedCheck').textContent = hideUnsupportedFiles ? '✓' : '';
+    $('hideUnsupported').setAttribute('aria-checked', hideUnsupportedFiles ? 'true' : 'false');
+    $('showModifiedTimesCheck').textContent = showModifiedTimes ? '✓' : '';
+    $('showModifiedTimes').setAttribute('aria-checked', showModifiedTimes ? 'true' : 'false');
+    $('changesPanel').classList.toggle('show-modified-times', showModifiedTimes);
+    syncFrozenChangesTableWidth();
     const entries = sortChangeEntries(allEntries
       .filter(matchesFilter)
+      .filter(entry => !hideUnsupportedFiles || !isUnsupportedEntry(entry))
       .filter(entry => !query || changeSearchText(entry).includes(query)));
 
     document.querySelectorAll('[data-filter]').forEach(button => {
@@ -938,11 +1323,14 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     });
     updateChangesSortHeaders();
     visibleChangeKeys = entries.filter(entryCanOperate).map(entry => changeKey(entry.targetId, entry.relativePath));
+    visibleResolutionEntries = entries.filter(entry => requiresResolution(entry) && entryCanOperate(entry));
+    updateChangesResolutionToolbar();
 
     if (!entries.length) {
-      $('changes').innerHTML = '<div class="empty">' + esc(emptyChangesMessage(allEntries, query)) + '</div>';
+      $('changes').innerHTML = '<tr class="empty-row"><td class="empty" colspan="8">' + esc(emptyChangesMessage(allEntries, query)) + '</td></tr>';
       updateSelected();
       updateSelectVisibleState();
+      requestAnimationFrame(syncFrozenChangesTableWidth);
       return;
     }
 
@@ -966,25 +1354,36 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
         const downloadButton = canDownload ? '<button class="ghost icon-action" data-down="' + esc(entry.relativePath) + '" data-target-id="' + esc(entry.targetId) + '" aria-label="Download to Local" data-tooltip="Download to Local" data-tooltip-delay="' + ROW_ACTION_TOOLTIP_SHOW_DELAY_MS + '" data-tooltip-hover-only>↓</button>' : '';
         actionButtons = diffButton + uploadButton + downloadButton;
       }
-      const label = statusLabel(entry.status);
+      const unsupported = isUnsupportedEntry(entry);
+      const label = unsupported ? 'Protected · ' + protectedType(entry) : statusLabel(entry.status);
+      const statusReason = unsupported
+        ? 'Protected, non-transferable entry (' + protectedType(entry) + '). This is not a regular file or directory. ' + (entry.reason || 'No automatic transfer is permitted.')
+        : entry.reason || '';
       const displayedPath = entry.relativePath;
-      return '<div class="row" role="row" data-change-key="' + esc(key) + '" data-change-path="' + esc(entry.relativePath) + '" data-target-id="' + esc(entry.targetId) + '">' +
-        '<input class="sel" data-key="' + esc(key) + '" data-path="' + esc(entry.relativePath) + '" data-target-id="' + esc(entry.targetId) + '" type="checkbox" aria-label="Select ' + esc(entry.targetName) + ' / ' + esc(entry.relativePath) + '" ' + checked + rowDisabled + '>' +
-        '<div class="' + cssClass + '">' + marker(entry.status) + '</div>' +
-        '<div class="target-cell" role="cell" data-tooltip="' + esc(entry.targetName) + '">' + esc(entry.targetName) + '</div>' +
-        '<div class="path" role="cell">' + esc(displayedPath) + '</div>' +
-        '<div class="kind ' + cssClass + '" role="cell">' + esc(label) + '</div>' +
-        '<div class="actions" role="cell">' + actionButtons + '</div></div>';
+      return '<tr class="row" data-change-key="' + esc(key) + '" data-change-path="' + esc(entry.relativePath) + '" data-target-id="' + esc(entry.targetId) + '">' +
+        '<td class="changes-select-cell"><input class="sel" data-key="' + esc(key) + '" data-path="' + esc(entry.relativePath) + '" data-target-id="' + esc(entry.targetId) + '" type="checkbox" aria-label="Select ' + esc(entry.targetName) + ' / ' + esc(entry.relativePath) + '" ' + checked + rowDisabled + '></td>' +
+        '<td class="changes-marker-cell ' + cssClass + '">' + marker(entry.status) + '</td>' +
+        '<td class="target-cell" data-tooltip="' + esc(entry.targetName) + '">' + esc(entry.targetName) + '</td>' +
+        '<td class="path">' + esc(displayedPath) + '</td>' +
+        '<td class="kind ' + cssClass + '"' + (statusReason ? ' data-tooltip="' + esc(statusReason) + '"' : '') + '>' + (unsupported ? '<span class="protected-entry-icon" aria-hidden="true">♢</span> ' : '') + esc(label) + '</td>' +
+        '<td class="modified-time-cell">' + esc(formatModifiedTime(entry, 'local')) + '</td>' +
+        '<td class="modified-time-cell">' + esc(formatModifiedTime(entry, 'remote')) + '</td>' +
+        '<td class="actions-cell"><div class="actions">' + actionButtons + '</div></td></tr>';
     }).join('');
+    requestAnimationFrame(syncFrozenChangesTableWidth);
 
     document.querySelectorAll('.sel').forEach(element => element.addEventListener('change', () => {
       element.checked ? selected.add(element.dataset.key) : selected.delete(element.dataset.key);
       updateSelected();
       updateSelectVisibleState();
     }));
-    document.querySelectorAll('[data-diff]').forEach(element => element.addEventListener('click', () => post('openDiff', {
-      mappingId: state.activeMappingId, targetId: element.dataset.targetId, relativePath: element.dataset.diff
-    })));
+    document.querySelectorAll('[data-diff]').forEach(element => element.addEventListener('click', () =>
+      openDefaultComparison(element.dataset.targetId, element.dataset.diff)));
+    document.querySelectorAll('[data-diff-menu]').forEach(element => element.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      showCompareMenu(element, element.dataset.targetId, element.dataset.diffMenu);
+    }));
     document.querySelectorAll('[data-up]').forEach(element => element.addEventListener('click', () => post('uploadSelected', {
       mappingId: state.activeMappingId, targetId: element.dataset.targetId, paths: [element.dataset.up]
     })));
@@ -996,7 +1395,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     }));
     document.querySelectorAll('.row').forEach(row => {
       const entry = findCurrentChange(String(row.dataset.targetId || ''), String(row.dataset.changePath || ''));
-      const disabled = (operationActive || interactionActive) || !entry || !entryCanOperate(entry);
+      const disabled = (operationActive || interactionActive || Boolean(activeMaintenance()) || Boolean(state.mappingInitializing)) || !entry || !entryCanOperate(entry);
       row.querySelectorAll('.actions button, input').forEach(button => { button.disabled = disabled || button.disabled; });
     });
     updateSelected();
@@ -1025,6 +1424,24 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
 
   function matchesFilter(entry) {
     return matchesNamedFilter(entry, filter);
+  }
+
+  function isUnsupportedEntry(entry) {
+    // An Unknown comparison is NOT proof of an unsupported filesystem object.
+    // In particular, an FTP listing may omit its type or a remote scan may be
+    // incomplete. Do not hide that diagnostic without an actual special-type
+    // fingerprint or a confirmed symlink.
+    if (entry?.status === 'unknown'
+      && !entry?.local?.specialType && !entry?.remote?.specialType
+      && entry?.local?.kind !== 'link' && entry?.remote?.kind !== 'link') return false;
+    return ['unknown', 'link'].includes(entry?.local?.kind) || ['unknown', 'link'].includes(entry?.remote?.kind);
+  }
+
+  function protectedType(entry) {
+    const special = entry?.local?.specialType || entry?.remote?.specialType;
+    if (special) return ({ fifo: 'FIFO', socket: 'Socket', device: 'Device', other: 'Special entry' })[special] || 'Special entry';
+    if (entry?.local?.kind === 'link' || entry?.remote?.kind === 'link') return 'Symlink';
+    return 'Unsupported type';
   }
 
   function formatFilterCount(count) {
@@ -1257,10 +1674,10 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       const item = targetStates.find(targetState => targetState.targetId === target.id);
       const rawStatus = target.enabled ? (item?.status || 'disconnected') : 'disabled';
       const displayStatus = rawStatus ? rawStatus[0].toUpperCase() + rawStatus.slice(1) : 'Disconnected';
-      const extra = target.enabled
-        ? (item?.connectionConfigChanged ? ' — reconnect required' : '') + (item?.message ? ' — ' + esc(item.message) : '')
-        : '';
-      return esc(target.name) + ': <span class="target-status ' + esc(rawStatus) + '">' + esc(displayStatus) + '</span>' + extra;
+      const profile = state.connections.find(connection => connection.id === target.connectionId);
+      const address = profile ? (profile.username ? profile.username + '@' : '') + profile.host + ':' + profile.port : 'Missing connection';
+      return '<span tabindex="0" data-tooltip="' + esc(address) + '">' + esc(target.name)
+        + '</span>: <span class="target-status ' + esc(rawStatus) + '">' + esc(displayStatus) + '</span>';
     }).join(' &nbsp; · &nbsp; ');
     const label = (mapping.targets || []).length === 1 ? 'Target' : 'Targets';
     element.innerHTML = \`<span class="metadata-targets-label">\${label}:</span><span>\${details || '—'}</span>\`;
@@ -1271,7 +1688,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const selectedEntries = selectedCurrentEntries();
     $('selectedCount').textContent = \`\${selectedEntries.length} selected\`;
     const groups = selectedGroups();
-    const transferDisabled = (operationActive || interactionActive) || !groups.length;
+    const transferDisabled = (operationActive || interactionActive || Boolean(activeMaintenance())) || !groups.length;
     $('uploadSelected').disabled = transferDisabled;
     $('downloadSelected').disabled = transferDisabled;
   }
@@ -1305,6 +1722,8 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       if (aggregate.reconnectRequired) return { label: 'Reconnect required.', detail, active: false };
       if (aggregate.connected === 0 && aggregate.errors) return { label: 'Connection error.', detail, active: false };
       if (aggregate.connected === 0) return { label: 'Disconnected.', detail, active: false };
+      const cancelled = (state.targetStates || []).filter(item => aggregate.targets.some(target => target.id === item.targetId) && item.preparationCancelled).length;
+      if (cancelled) return { label: 'Refresh cancelled.', detail: detail + ' · ' + cancelled + ' target(s) need Refresh', active: false };
       return { label: 'Ready.', detail, active: false };
     }
 
@@ -1315,23 +1734,35 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const status = state.connectionStatus || 'disconnected';
     if (status === 'connecting') return { label: 'Connecting...', detail: target.name || '', active: true };
     if (status === 'connected' && state.connectionConfigChanged) return { label: 'Reconnect required.', detail: target.name || '', active: false };
-    if (status === 'connected') return { label: 'Ready.', detail: target.name || '', active: false };
+    if (status === 'connected') {
+      if (targetStateForId(target.id)?.preparing) return { label: 'Refreshing target...', detail: target.name || '', active: true };
+      if (targetStateForId(target.id)?.watching) return { label: 'Watch reconciliation...', detail: target.name || '', active: true };
+      if (targetStateForId(target.id)?.preparationCancelled) return { label: 'Refresh cancelled.', detail: 'Connected · Run Refresh to prepare Watch.', active: false };
+      return { label: 'Ready.', detail: target.name || '', active: false };
+    }
     if (status === 'error') return { label: 'Connection error.', detail: state.connectionMessage || target.name || '', active: false };
     return { label: 'Disconnected.', detail: target.name || '', active: false };
   }
 
   function visibleBackgroundOperation() {
-    if (!backgroundOperation?.active) return null;
-    if (backgroundOperation.mappingId && String(backgroundOperation.mappingId) !== String(state.activeMappingId || '')) return null;
-    return backgroundOperation;
+    const background = backgroundOperations.get(String(state.activeMappingId || '')) || null;
+    if (!background || isAllEnabledSelected()) return background;
+    const target = activeTarget();
+    return target && targetStateForId(target.id)?.preparing ? background : null;
   }
 
   function renderOperationStatus() {
+    const maintenance = activeMaintenance();
+    const watch = visibleWatchOperation();
     const background = visibleBackgroundOperation();
     const idle = idleOperationStatus();
     const foreground = operationActive;
     const shown = foreground
       ? { label: activeOperationLabel || 'Workspace Sync operation', detail: $('operationDetail').dataset.foregroundDetail || '', active: true }
+      : maintenance
+        ? { label: maintenance.label || 'Refreshing...', detail: maintenance.detail || '', active: true }
+      : watch
+        ? { label: watch.label, detail: watch.detail || '', active: true }
       : background
         ? { label: background.label || 'Working...', detail: background.detail || '', active: true }
         : idle;
@@ -1339,9 +1770,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     $('operationBar').classList.toggle('active', Boolean(shown.active));
     $('operationLabel').textContent = shown.label;
     if (!foreground) $('operationDetail').textContent = shown.detail || '';
-    $('cancelOperation').disabled = !operationCancellable;
-    $('cancelOperation').hidden = !operationCancellable;
-    $('compare').textContent = foreground && activeOperationStageKind === 'refresh' ? 'Refreshing...' : 'Refresh';
+    const cancellable = foreground ? operationCancellable : maintenance
+      ? !maintenance.cancelling : Boolean(background && background.cancellable);
+    $('cancelOperation').disabled = !cancellable;
+    $('cancelOperation').hidden = !cancellable;
+    $('compare').textContent = (foreground && activeOperationStageKind === 'refresh') || Boolean(maintenance)
+      ? 'Refreshing...'
+      : 'Refresh';
   }
 
   function setForegroundOperationDetail(detail) {
@@ -1461,16 +1896,27 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
         targetId: view.targetId,
         targetName: view.targetName
       }));
+      const effectivePlan = previewPlans[view.targetId] || view.plan;
       const targetDecisions = targetDiffs.filter(requiresResolution);
-      const decisionPaths = new Set(targetDecisions.map(entry => entry.relativePath));
-      decisions.push(...targetDecisions);
-      ordinaryOperations.push(...(view.plan.operations || [])
+      const decisionByPath = new Map(targetDecisions.map(entry => [entry.relativePath, entry]));
+      // Plan-level directory-delete protection can promote an otherwise normal
+      // diff (for example Remote deleted) into a blocking decision. Surface
+      // that path in the same decision UI so the modal is self-contained.
+      for (const conflict of (effectivePlan.conflicts || [])) {
+        if (decisionByPath.has(conflict.relativePath)) continue;
+        const sourceDiff = targetDiffs.find(entry => entry.relativePath === conflict.relativePath);
+        if (sourceDiff) decisionByPath.set(conflict.relativePath, { ...sourceDiff, reason: conflict.reason, previewPlanConflict: true });
+      }
+      const effectiveDecisions = [...decisionByPath.values()];
+      const decisionPaths = new Set(effectiveDecisions.map(entry => entry.relativePath));
+      decisions.push(...effectiveDecisions);
+      ordinaryOperations.push(...(effectivePlan.operations || [])
         .filter(operation => !decisionPaths.has(operation.relativePath))
         .map(operation => ({ ...operation, targetId: view.targetId, targetName: view.targetName })));
-      unresolvedPlanConflicts.push(...(view.plan.conflicts || [])
+      unresolvedPlanConflicts.push(...(effectivePlan.conflicts || [])
         .filter(entry => !decisionPaths.has(entry.relativePath))
         .map(entry => ({ ...entry, targetId: view.targetId, targetName: view.targetName })));
-      compareErrors.push(...(view.plan.errors || [])
+      compareErrors.push(...(effectivePlan.errors || [])
         .map(entry => ({ ...entry, targetId: view.targetId, targetName: view.targetName })));
     }
 
@@ -1494,7 +1940,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const previewPath = entry => aggregate ? entry.targetName + ' / ' + entry.relativePath : entry.relativePath;
 
     const operations = ordinaryOperations.map(operation =>
-      \`<div class="previewRow"><span>\${esc(operationLabel[operation.type] || operation.type)}</span><span class="path">\${esc(previewPath(operation))}</span></div>\`
+      \`<div class="previewRow"\${operation.reason ? ' data-tooltip="' + esc(operation.reason) + '"' : ''}><span>\${esc(operationLabel[operation.type] || operation.type)}</span><span class="path">\${esc(previewPath(operation))}</span></div>\`
     ).join('');
     const decisionRows = decisions.map(entry => {
       const resolution = previewResolutions[changeKey(entry.targetId, entry.relativePath)];
@@ -1505,13 +1951,16 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       </div>\`;
     }).join('');
     const conflicts = unresolvedPlanConflicts.map(entry => \`<div class="previewRow conflict"><span>Conflict</span><span class="path">\${esc(previewPath(entry))}</span></div>\`).join('');
-    const errors = compareErrors.map(entry => \`<div class="previewRow conflict"><span>Error</span><span class="path">\${esc(previewPath(entry))}</span></div>\`).join('');
+    const errors = compareErrors.map(entry => \`<div class="previewRow conflict"\${entry.reason ? ' data-tooltip="' + esc(entry.reason) + '"' : ''}><span>Error</span><span class="path">\${esc(previewPath(entry))}</span></div>\`).join('');
     const pending = decisions.filter(entry => !previewResolutions[changeKey(entry.targetId, entry.relativePath)]).length;
-    const operationSection = operations || conflicts || errors
-      ? \`<div class="previewSectionTitle">Planned operations</div><div class="previewList">\${operations}\${conflicts}\${errors}</div>\`
+    const previewErrorRow = previewPlanError
+      ? \`<div class="previewRow conflict" data-tooltip="\${esc(previewPlanError)}"><span>Error</span><span class="path">\${esc(previewPlanError)}</span></div>\`
+      : '';
+    const operationSection = operations || conflicts || errors || previewErrorRow
+      ? \`<div class="previewSectionTitle">Planned operations</div><div class="previewList">\${operations}\${conflicts}\${errors}\${previewErrorRow}</div>\`
       : '';
     const decisionSection = decisionRows
-      ? \`<div class="previewSectionTitle">Different and Conflict decisions</div><div class="previewDecisionList">\${decisionRows}</div>\`
+      ? \`<div class="previewSectionTitle">Different and Conflict decisions</div><div class="previewDecisionToolbar"><span class="changes-resolution-label">Resolve:</span><button id="previewAllUseLocal" class="ghost">All Local</button><button id="previewAllUseRemote" class="ghost">All Remote</button><button id="previewAllSkip" class="ghost">All Skip</button><button id="previewApplySuggestions" class="ghost">Apply Suggestions</button></div><div class="previewDecisionList">\${decisionRows}</div>\`
       : '';
 
     const plural = (count, singular, pluralForm = singular + 's') => count === 1 ? singular : pluralForm;
@@ -1529,25 +1978,107 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       <div class="previewPlanFooter">
         <div class="previewPlanStatus">
           <span class="previewPlanStatusItem"><span class="previewPlanStatusCount">\${pending}</span> \${plural(pending, 'decision pending', 'decisions pending')}</span>
-          <span class="previewPlanStatusItem"><span class="previewPlanStatusCount">\${unresolvedPlanConflicts.length}</span> \${plural(unresolvedPlanConflicts.length, 'structural conflict', 'structural conflicts')}</span>
+          <span class="previewPlanStatusItem"><span class="previewPlanStatusCount">\${unresolvedPlanConflicts.length}</span> \${plural(unresolvedPlanConflicts.length, 'blocking plan conflict', 'blocking plan conflicts')}</span>
           <span class="previewPlanStatusItem"><span class="previewPlanStatusCount">\${compareErrors.length}</span> \${plural(compareErrors.length, 'compare error', 'compare errors')}</span>
         </div>
         <div class="previewRevalidation">Plan will be revalidated before execution.</div>
       </div>\`;
 
-    document.querySelectorAll('[data-preview-diff]').forEach(element => element.addEventListener('click', () => post('openDiff', {
-      mappingId: state.activeMappingId, targetId: element.dataset.targetId, relativePath: element.dataset.previewDiff
-    })));
+    document.querySelectorAll('[data-preview-diff]').forEach(element => element.addEventListener('click', () =>
+      openDefaultComparison(element.dataset.targetId, element.dataset.previewDiff)));
+    document.querySelectorAll('[data-preview-diff-menu]').forEach(element => element.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      showCompareMenu(element, element.dataset.targetId, element.dataset.previewDiffMenu);
+    }));
     document.querySelectorAll('[data-preview-resolve]').forEach(element => element.addEventListener('click', () => {
       const relativePath = element.dataset.path;
       const targetId = element.dataset.targetId;
       const key = changeKey(targetId, relativePath);
       const resolution = element.dataset.previewResolve;
-      if (previewResolutions[key] === resolution) delete previewResolutions[key];
+      previewSuggestedResolutionKeys.delete(key);
+      if (previewResolutions[key] === resolution) previewResolutions[key] = null;
       else previewResolutions[key] = resolution;
+      requestPreviewPlan();
       renderPreview();
     }));
-    $('startPreviewSync').disabled = Boolean(pending) || Boolean(unresolvedPlanConflicts.length) || Boolean(compareErrors.length);
+    const applyPreviewBulk = (requestedResolution, suggestionsOnly = false) => {
+      const applicable = decisions.filter(entry => suggestionsOnly || resolutionApplicable(entry, requestedResolution));
+      const currentResolution = entry => {
+        const key = changeKey(entry.targetId, entry.relativePath);
+        return Object.prototype.hasOwnProperty.call(previewResolutions, key) ? previewResolutions[key] : entry.resolution;
+      };
+      const pendingEntries = applicable.filter(entry => !currentResolution(entry));
+      const clearAll = !suggestionsOnly && Boolean(requestedResolution) && applicable.length > 0
+        && applicable.every(entry => currentResolution(entry) === requestedResolution);
+      let changed = 0;
+      let noSafeSuggestion = 0;
+      for (const entry of applicable) {
+        const key = changeKey(entry.targetId, entry.relativePath);
+        let resolution = clearAll ? null : requestedResolution;
+        if (suggestionsOnly) {
+          if (currentResolution(entry)) continue;
+          if (!entry.suggestedResolution || !resolutionApplicable(entry, entry.suggestedResolution)) {
+            noSafeSuggestion += 1;
+            continue;
+          }
+          resolution = entry.suggestedResolution;
+        }
+        previewResolutions[key] = resolution;
+        if (suggestionsOnly && resolution) previewSuggestedResolutionKeys.add(key);
+        else previewSuggestedResolutionKeys.delete(key);
+        changed += 1;
+      }
+      if (suggestionsOnly) {
+        if (!pendingEntries.length) post('clientActivity', { message: 'No pending conflicts to suggest.' });
+        else if (!changed) post('clientActivity', { message: 'No safe suggestions are available for ' + noSafeSuggestion + ' pending conflict(s).' });
+        else post('clientActivity', {
+          message: 'Suggestions applied: ' + changed + '. ' + (noSafeSuggestion ? 'No safe suggestion for ' + noSafeSuggestion + ' pending conflict(s).' : 'All pending conflicts with safe suggestions were marked.')
+        });
+      }
+      if (!changed) return;
+      requestPreviewPlan();
+      renderPreview();
+    };
+    if ($('previewAllUseLocal')) $('previewAllUseLocal').onclick = () => applyPreviewBulk('useLocal');
+    if ($('previewAllUseRemote')) $('previewAllUseRemote').onclick = () => applyPreviewBulk('useRemote');
+    if ($('previewAllSkip')) $('previewAllSkip').onclick = () => applyPreviewBulk('skip');
+    if ($('previewApplySuggestions')) {
+      $('previewApplySuggestions').disabled = false;
+      $('previewApplySuggestions').onclick = () => applyPreviewBulk(undefined, true);
+    }
+    if ($('previewAllUseLocal')) $('previewAllUseLocal').disabled = !decisions.some(entry => resolutionApplicable(entry, 'useLocal'));
+    if ($('previewAllUseRemote')) $('previewAllUseRemote').disabled = !decisions.some(entry => resolutionApplicable(entry, 'useRemote'));
+    $('startPreviewSync').disabled = Boolean(pendingPreviewPlanRequest) || Boolean(previewPlanError) || Boolean(pending) || Boolean(unresolvedPlanConflicts.length) || Boolean(compareErrors.length);
+  }
+
+  function previewResolutionsForTarget(targetId) {
+    const resolutions = {};
+    for (const [key, resolution] of Object.entries(previewResolutions)) {
+      if (resolution === undefined) continue;
+      try {
+        const pair = JSON.parse(key);
+        if (String(pair[0] || '') === String(targetId || '')) resolutions[String(pair[1] || '')] = resolution;
+      } catch { /* ignore malformed UI state */ }
+    }
+    return resolutions;
+  }
+
+  function requestPreviewPlan() {
+    const mapping = activeMapping();
+    const targets = syncPreviewTargetViews(mapping);
+    if (!mapping || !targets.length) return;
+    const requestId = ++previewPlanRequestSerial;
+    pendingPreviewPlanRequest = requestId;
+    previewPlanError = '';
+    post('previewPlan', {
+      requestId,
+      mappingId: mapping.id,
+      targets: targets.map(view => ({
+        targetId: view.targetId,
+        resolutions: previewResolutionsForTarget(view.targetId)
+      }))
+    });
   }
 
   function openPreview() {
@@ -1557,15 +2088,27 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     }
     syncPreviewRequested = false;
     previewResolutions = {};
+    previewSuggestedResolutionKeys.clear();
+    previewPlans = {};
+    pendingPreviewPlanRequest = 0;
+    previewPlanError = '';
     for (const view of syncPreviewTargetViews()) {
       for (const entry of (view.diffs || []).filter(requiresResolution)) {
-        if (entry.resolution) previewResolutions[changeKey(view.targetId, entry.relativePath)] = entry.resolution;
+        const key = changeKey(view.targetId, entry.relativePath);
+        if (entry.resolution) {
+          previewResolutions[key] = entry.resolution;
+          // Carry the advisory origin from Changes into Sync Review. The
+          // resolution itself is persisted by the controller; this client-side
+          // marker only records whether Apply Suggestions selected it.
+          if (suggestedResolutionKeys.has(key)) previewSuggestedResolutionKeys.add(key);
+        }
       }
     }
     $('previewDialogTitle').textContent = isAllEnabledSelected() ? 'Sync Review · All Enabled' : 'Sync Review';
     hideWebviewTooltip();
     renderPreview();
     openDialog('previewDialog');
+    requestPreviewPlan();
   }
 
   function normalizeRemoteDirectoryForIdentity(value) {
@@ -1644,7 +2187,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       error.textContent = '';
       mappingClientValidationMessage = '';
     }
-    $('saveMapping').disabled = interactionActive || Boolean(message);
+    const busyMapping = Boolean(editingMappingId && (
+      (state.mappingInitializing && editingMappingId === state.activeMappingId)
+      || maintenanceOperations.has(editingMappingId)
+    ));
+    $('saveMapping').disabled = interactionActive || Boolean(message) || busyMapping;
+    $('deleteMapping').disabled = interactionActive || busyMapping;
+    setTooltip($('saveMapping'), busyMapping ? 'Wait until Refresh or Reset Baseline finishes before editing this mapping.' : '');
     return !message;
   }
 
@@ -1696,6 +2245,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     refreshDirectionalOptionAvailability();
     $('deleteMapping').style.display = mapping ? 'inline-block' : 'none';
     renderTargetEditor();
+    updateMappingValidation();
     $('mappingDialogBody').scrollTop = 0;
     controls.refresh();
     openDialog('mappingDialog');
@@ -1847,7 +2397,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       for (let i=0; i<remove; i++) log.firstChild?.remove();
       if (!following) log.scrollTop = Math.max(0, oldTop - (oldHeight - log.scrollHeight));
     }
-    $('activityCount').textContent = \`\${activity.length} events\`;
+    $('activityCount').textContent = activity.length >= 1000 ? 'Last 1000 events' : \`\${activity.length} events\`;
     if (following) log.scrollTop = log.scrollHeight;
     $('activityFollow').hidden = following;
   }
@@ -1875,6 +2425,10 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   $('activityClear').onclick = () => post('clearActivity');
   $('activityCopy').onclick = () => post('copyActivity');
   $('closeDiff').onclick = () => { closeDialog('diffDialog'); $('diffLines').replaceChildren(); };
+  $('openDiffInVsCode').onclick = () => {
+    if (!currentDiffContext) return;
+    openComparisonInVsCode(currentDiffContext.targetId, currentDiffContext.relativePath);
+  };
   function showComparison(comparison) {
     $('diffTitle').textContent = comparison.relativePath;
     $('diffSummary').textContent = comparison.identical ? 'Local and Remote are identical.' : \`Local ↔ \${comparison.targetName} · red: Local only · green: Remote only\`;
@@ -1904,7 +2458,19 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     } else if (message.type === 'copiedActivity') { $('activityCopy').textContent = 'Copied'; setTimeout(() => { $('activityCopy').textContent = 'Copy'; }, 1500); }
   });
 
-  $('cancelOperation').onclick = () => post('cancelOperation', { operationId: activeOperationId });
+  $('cancelOperation').onclick = () => {
+    if (operationActive) post('cancelOperation', { operationId: activeOperationId });
+    else {
+      const maintenance = activeMaintenance();
+      if (maintenance && !maintenance.cancelling) {
+        maintenance.cancelling = true;
+        post('cancelMaintenance', { mappingId: state.activeMappingId, maintenanceId: maintenance.id });
+        renderOperationStatus();
+      } else if (visibleBackgroundOperation()?.cancellable) {
+        post('cancelInitialRefresh', { mappingId: state.activeMappingId });
+      }
+    }
+  };
   $('mapping').onchange = event => {
     selected.clear();
     post('selectMapping', { mappingId: event.target.value });
@@ -1961,30 +2527,43 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     if (!previewTargets.length) return;
     closeDialog('previewDialog');
     if (isAllEnabledSelected(mapping)) {
-      const targets = previewTargets.map(view => {
-        const resolutions = {};
-        for (const entry of (view.diffs || []).filter(requiresResolution)) {
-          const resolution = previewResolutions[changeKey(view.targetId, entry.relativePath)];
-          if (resolution) resolutions[entry.relativePath] = resolution;
-        }
-        return { targetId: view.targetId, resolutions };
-      });
+      const targets = previewTargets.map(view => ({
+        targetId: view.targetId,
+        resolutions: previewResolutionsForTarget(view.targetId)
+      }));
       post('syncEnabled', { mappingId: mapping.id, targets });
       return;
     }
     const target = previewTargets[0];
-    const resolutions = {};
-    for (const entry of (target.diffs || []).filter(requiresResolution)) {
-      const resolution = previewResolutions[changeKey(target.targetId, entry.relativePath)];
-      if (resolution) resolutions[entry.relativePath] = resolution;
-    }
-    post('sync', { mappingId: mapping.id, targetId: target.targetId, resolutions });
+    post('sync', {
+      mappingId: mapping.id,
+      targetId: target.targetId,
+      resolutions: previewResolutionsForTarget(target.targetId)
+    });
   };
   $('changesMore').onclick = event => { event.preventDefault(); event.stopPropagation(); toggleChangesMenu(); };
+  $('hideUnsupported').onclick = () => {
+    hideUnsupportedFiles = !hideUnsupportedFiles;
+    post('setHideUnsupportedFiles', { value: hideUnsupportedFiles });
+    closeChangesMenu();
+    renderChanges();
+  };
+  $('showModifiedTimes').onclick = () => {
+    showModifiedTimes = !showModifiedTimes;
+    post('setShowModifiedTimes', { value: showModifiedTimes });
+    closeChangesMenu();
+    renderChanges();
+  };
+  $('allUseLocal').onclick = () => applyBulkChangesResolution('useLocal');
+  $('allUseRemote').onclick = () => applyBulkChangesResolution('useRemote');
+  $('allSkip').onclick = () => applyBulkChangesResolution('skip');
+  $('applySuggestions').onclick = () => applyBulkChangesResolution(undefined, true);
   $('resetBaseline').onclick = () => {
     const mapping = activeMapping(); const target = activeTarget();
     closeChangesMenu();
-    if (mapping && target) post('resetBaseline', { mappingId: mapping.id, targetId: target.id });
+    if (mapping && isAllEnabledSelected(mapping)) {
+      post('resetBaseline', { mappingId: mapping.id, targetId: ALL_ENABLED_TARGETS });
+    } else if (mapping && target) post('resetBaseline', { mappingId: mapping.id, targetId: target.id });
   };
   $('search').oninput = () => { updateSearchClearButton(); renderChanges(); };
   $('search').onkeydown = event => {
@@ -2003,6 +2582,9 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   document.querySelectorAll('[data-change-sort]').forEach(button => {
     button.onclick = () => cycleChangesSort(button.dataset.changeSort);
   });
+  syncHiddenModifiedColumns();
+  installChangesColumnResizers();
+  installChangesTableResizeTracking();
   $('selectVisible').onchange = () => {
     const checkbox = $('selectVisible');
     if (checkbox.disabled || !visibleChangeKeys.length) return;
@@ -2033,6 +2615,17 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   };
   $('activityContextCopyAll').onclick = () => { closeActivityContextMenu(); post('copyActivity'); };
   $('activityContextClear').onclick = () => { closeActivityContextMenu(); post('clearActivity'); };
+
+  $('compareHere').onclick = () => {
+    const context = compareMenuContext;
+    closeCompareMenu();
+    if (context) openComparisonHere(context.targetId, context.relativePath);
+  };
+  $('compareVsCode').onclick = () => {
+    const context = compareMenuContext;
+    closeCompareMenu();
+    if (context) openComparisonInVsCode(context.targetId, context.relativePath);
+  };
 
   document.addEventListener('contextmenu', event => {
     const editable = getTextEditableTarget(event.target);
@@ -2073,9 +2666,11 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const textMenu = $('textEditContextMenu');
     const changesContextMenu = $('changesContextMenu');
     const activityContextMenu = $('activityContextMenu');
+    const compareMenu = $('compareMenu');
     if (textMenu?.classList.contains('visible') && !textMenu.contains(event.target)) hideTextEditContextMenu();
     if (changesContextMenu?.classList.contains('visible') && !changesContextMenu.contains(event.target)) closeChangesContextMenu();
     if (activityContextMenu?.classList.contains('visible') && !activityContextMenu.contains(event.target)) closeActivityContextMenu();
+    if (compareMenu?.classList.contains('visible') && !compareMenu.contains(event.target)) closeCompareMenu();
   });
 
   document.addEventListener('keydown', event => {
@@ -2083,13 +2678,15 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     const textVisible = $('textEditContextMenu')?.classList.contains('visible');
     const changesVisible = $('changesContextMenu')?.classList.contains('visible');
     const activityVisible = $('activityContextMenu')?.classList.contains('visible');
-    if (!textVisible && !changesVisible && !activityVisible) return;
+    const compareVisible = $('compareMenu')?.classList.contains('visible');
+    if (!textVisible && !changesVisible && !activityVisible && !compareVisible) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
     hideTextEditContextMenu();
     closeChangesContextMenu();
     closeActivityContextMenu();
+    closeCompareMenu();
   }, true);
 
   window.addEventListener('scroll', () => {
@@ -2097,12 +2694,14 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     hideTextEditContextMenu();
     closeChangesContextMenu();
     closeActivityContextMenu();
+    closeCompareMenu();
   }, true);
   window.addEventListener('resize', () => {
     hideWebviewTooltip();
     hideTextEditContextMenu();
     closeChangesContextMenu();
     closeActivityContextMenu();
+    closeCompareMenu();
   });
   document.addEventListener('pointerdown', event => {
     if ($('changesMenu').hidden) return;
@@ -2224,6 +2823,17 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
         updateSyncAvailability();
       }
       if (!pendingResolutionRequests.size && syncPreviewRequested && belongsToActiveView) openPreview();
+    } else if (message.type === 'previewPlanResult') {
+      const requestId = Number(message.requestId || 0);
+      if (!requestId || requestId !== pendingPreviewPlanRequest) return;
+      if (String(message.mappingId || '') !== String(state.activeMappingId || '')) return;
+      pendingPreviewPlanRequest = 0;
+      previewPlanError = String(message.error || '');
+      previewPlans = {};
+      for (const item of (message.plans || [])) {
+        if (item && item.targetId && item.plan) previewPlans[String(item.targetId)] = item.plan;
+      }
+      renderPreview();
     } else if (message.type === 'clearSelection') {
       selected.clear();
       renderChanges();
@@ -2243,14 +2853,45 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     } else if (message.type === 'operationState') {
       updateOperationState(message.active, message.label, message.kind, message.operationId, message.cancelling, message.cancellable);
     } else if (message.type === 'backgroundOperationState') {
-      backgroundOperation = message.active ? {
-        active: true,
-        kind: String(message.kind || ''),
-        label: String(message.label || 'Working...'),
-        detail: String(message.detail || ''),
-        mappingId: String(message.mappingId || '')
-      } : null;
-      renderOperationStatus();
+      const mappingId = String(message.mappingId || '');
+      const targetId = String(message.targetId || '');
+      if (message.kind === 'watch' && targetId) {
+        const key = watchOperationKey(mappingId, targetId);
+        if (message.active) watchOperations.set(key, {
+          label: String(message.label || 'Watch reconciliation...'),
+          detail: String(message.detail || ''),
+          active: true
+        });
+        else watchOperations.delete(key);
+      } else if (message.active) backgroundOperations.set(mappingId, {
+          active: true,
+          kind: String(message.kind || ''),
+          label: String(message.label || 'Working...'),
+          detail: String(message.detail || ''),
+          mappingId,
+          cancellable: message.cancellable !== false
+        });
+      else backgroundOperations.delete(mappingId);
+      render();
+    } else if (message.type === 'maintenanceState') {
+      const mappingId = String(message.mappingId || '');
+      const id = Number(message.maintenanceId || 0);
+      const previous = maintenanceOperations.get(mappingId);
+      if (message.active) {
+        if (!previous || id >= previous.id) maintenanceOperations.set(mappingId, {
+          id, label: String(message.label || 'Refreshing...'), detail: '', cancelling: false
+        });
+      } else if (previous && previous.id === id) maintenanceOperations.delete(mappingId);
+      render();
+    } else if (message.type === 'maintenanceProgress') {
+      const maintenance = maintenanceOperations.get(String(message.mappingId || ''));
+      if (maintenance && maintenance.id === Number(message.maintenanceId || 0)) {
+        const progress = message.progress || {};
+        const stage = progressStageLabel(progress.phase);
+        if (stage) maintenance.label = stage;
+        maintenance.detail = [progress.phase, progress.currentPath].filter(Boolean).map(String).join(' · ');
+        renderOperationStatus();
+      }
     } else if (message.type === 'operationProgress') {
       updateOperationProgress(message.progress, message.operationId);
     }

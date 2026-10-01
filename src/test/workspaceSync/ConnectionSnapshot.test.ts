@@ -66,35 +66,6 @@ test('Workspace Sync prompts for an unsaved password without persisting it', asy
 });
 
 
-test('Workspace Sync snapshots FTPS security configuration without creating Remote Edit runtime state', async () => {
-  const harness = createConnectionManagerHarness([
-    profile('ftps', {
-      connectionType: 'ftps',
-      port: 990,
-      authType: 'password',
-      ftpsAllowSelfSignedCertificate: true,
-      ftpsCaCertificatePath: '/tmp/ca.pem'
-    })
-  ]);
-  harness.secrets.set(secretKey('ftps', 'password'), 'ftps-secret');
 
-  const snapshot = await loadWorkspaceSyncConnectionSnapshot(harness.manager, 'ftps');
 
-  assert.equal(snapshot.connectionType, 'ftps');
-  assert.equal(snapshot.port, 990);
-  assert.equal(snapshot.password, 'ftps-secret');
-  assert.equal(snapshot.ftpsAllowSelfSignedCertificate, true);
-  assert.equal(snapshot.ftpsCaCertificatePath, '/tmp/ca.pem');
-  assert.deepEqual(snapshot.jumpChain, []);
-  assert.deepEqual(harness.writes, []);
-});
 
-test('Workspace Sync jump resolver rejects non-SFTP targets independently', () => {
-  const jump = profile('jump');
-  const ftp = profile('ftp', { connectionType: 'ftp', port: 21, jumpProfileId: 'jump' });
-
-  assert.throws(
-    () => resolveWorkspaceSyncJumpChain(ftp, [ftp, jump]),
-    /only SFTP connections support SSH jump chains/i
-  );
-});

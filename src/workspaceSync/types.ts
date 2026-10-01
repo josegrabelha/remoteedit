@@ -35,6 +35,8 @@ export interface WorkspaceSyncMapping {
 
 export interface FileFingerprint {
   kind: WorkspaceSyncEntryKind;
+  /** UI-only subtype for a known non-transferable filesystem entry. */
+  specialType?: 'socket' | 'fifo' | 'device' | 'other';
   size: number;
   mtimeMs: number;
   hash?: string;
@@ -52,6 +54,8 @@ export interface SyncSnapshot {
   capturedAt: number;
   entries: Record<string, SnapshotEntry>;
   incompletePaths: string[];
+  /** Failure codes for incomplete paths; missing transient entries are omitted. */
+  incompleteErrors?: Record<string, string>;
 }
 
 export interface BaselineEntry {
@@ -82,6 +86,17 @@ export type DiffStatus =
 
 export type WorkspaceSyncConflictResolution = 'useLocal' | 'useRemote' | 'skip';
 
+export interface DiffClassificationEvidence {
+  /** Whether the current Local side differs from its trusted baseline. */
+  localChanged?: boolean;
+  /** Whether the current Remote side differs from its trusted baseline. */
+  remoteChanged?: boolean;
+  /** Strong current-content equality, normally proven by hashes. */
+  currentContentEqual?: boolean;
+  /** True when the classifier had a trusted baseline for this path. */
+  hasBaseline?: boolean;
+}
+
 export interface DiffEntry {
   /** Canonical NFC path displayed to the user and used as the logical key. */
   relativePath: string;
@@ -94,6 +109,10 @@ export interface DiffEntry {
   baseline?: BaselineEntry;
   reason?: string;
   resolution?: WorkspaceSyncConflictResolution;
+  /** Evidence emitted by the common classifier and reused by advisory UI features. */
+  classificationEvidence?: DiffClassificationEvidence;
+  /** Advisory UI-only resolution. Never executed until the user applies it. */
+  suggestedResolution?: WorkspaceSyncConflictResolution;
 }
 
 export type SyncOperationType =
@@ -148,6 +167,9 @@ export interface WorkspaceSyncTargetSummary {
   targetId: string;
   targetName: string;
   connectionName: string;
+  preparing?: boolean;
+  watching?: boolean;
+  preparationCancelled?: boolean;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   message?: string;
   connectionConfigChanged?: boolean;

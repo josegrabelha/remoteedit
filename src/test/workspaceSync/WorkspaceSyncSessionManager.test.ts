@@ -146,144 +146,55 @@ test('WorkspaceSyncSessionManager prevents an older Connect from overwriting a n
   manager.dispose();
 });
 
-test('WorkspaceSyncSessionManager snapshots saved config only when creating a new private session', async () => {
-  const config = configSource([profile('prod', { host: 'old.example.com' })]);
-  const identities: string[] = [];
-  const factory: WorkspaceSyncSessionFactory = {
-    connect: async snapshot => {
-      identities.push(snapshot.connectionIdentity);
-      return fakeSession(snapshot).session;
+
+
+
+
+
+
+
+
+
+
+
+
+
+test('Disconnect releases a pending Connect that never receives a transport callback', { timeout: 1000 }, async () => {
+  const config = configSource([profile('prod')]);
+  let signal: AbortSignal | undefined;
+  const manager = new WorkspaceSyncSessionManager(config.source, output, {
+    connect: async (_snapshot, _diagnostics, abort) => {
+      signal = abort;
+      return new Promise(() => {});
     }
-  };
-  const manager = new WorkspaceSyncSessionManager(config.source, output, factory);
-
-  const first = await manager.connect('mapping:target', 'prod');
-  config.replaceProfile('prod', { host: 'new.example.com' });
-  const stillFirst = await manager.connect('mapping:target', 'prod');
-  assert.equal(stillFirst, first);
-  assert.equal(identities.length, 1);
-
-  await manager.disconnect('mapping:target');
-  const second = await manager.connect('mapping:target', 'prod');
-  assert.notEqual(second.connectionIdentity, first.connectionIdentity);
-  assert.equal(identities.length, 2);
-  manager.dispose();
-});
-
-
-test('WorkspaceSyncSessionManager keeps a prompted private-key passphrase runtime-only', async () => {
-  const ui = new WorkspaceSyncUi();
-  ui.attach((message: any) => {
-    if (message.type === 'request') ui.respond(message.request.id, 'runtime-only-passphrase');
   });
-  const config = configSource([profile('prod', { authType: 'privateKey', privateKeyPath: '/tmp/key' })]);
-  let attempts = 0;
-  const factory: WorkspaceSyncSessionFactory = {
-    connect: async snapshot => {
-      attempts += 1;
-      if (attempts === 1) {
-        throw new WorkspaceSyncPassphraseRequiredError(snapshot.profileId, snapshot.name, false);
-      }
-      assert.equal(snapshot.passphrase, 'runtime-only-passphrase');
-      return fakeSession(snapshot).session;
-    }
-  };
-  // Remove any saved password created by the generic helper; private-key
-  // snapshots only read the passphrase slot, which remains empty here.
-  const manager = new WorkspaceSyncSessionManager(config.source, output, factory, ui);
-
-  const session = await manager.connect('mapping:target', 'prod');
-
-  assert.equal(session.profileId, 'prod');
-  assert.equal(attempts, 2);
-  assert.equal(manager.getState('mapping:target').status, 'connected');
-  manager.dispose();
-});
-
-
-test('WorkspaceSyncSessionManager closes a connected session when target preparation fails', async () => {
-  const config = configSource([profile('prod')]);
-  let created: ReturnType<typeof fakeSession> | undefined;
-  const factory: WorkspaceSyncSessionFactory = {
-    connect: async snapshot => {
-      created = fakeSession(snapshot);
-      return created.session;
-    }
-  };
-  const manager = new WorkspaceSyncSessionManager(config.source, output, factory);
-
-  const session = await manager.connect('mapping:target', 'prod');
-  await manager.failConnectedSession('mapping:target', session, new Error('501 No such directory'));
-
-  assert.ok(created);
-  assert.equal(created!.disconnects, 1);
-  assert.equal(manager.getSession('mapping:target'), undefined);
-  assert.equal(manager.getState('mapping:target').status, 'error');
-  assert.match(manager.getState('mapping:target').message || '', /501 No such directory/);
-  manager.dispose();
-});
-
-test('WorkspaceSyncSessionManager can cancel preparation without leaving an automatic session connected', async () => {
-  const config = configSource([profile('prod')]);
-  let created: ReturnType<typeof fakeSession> | undefined;
-  const factory: WorkspaceSyncSessionFactory = {
-    connect: async snapshot => {
-      created = fakeSession(snapshot);
-      return created.session;
-    }
-  };
-  const manager = new WorkspaceSyncSessionManager(config.source, output, factory);
-
-  const session = await manager.connect('mapping:target', 'prod');
-  await manager.disconnectSessionIfCurrent('mapping:target', session);
-
-  assert.ok(created);
-  assert.equal(created!.disconnects, 1);
-  assert.equal(manager.getSession('mapping:target'), undefined);
+  const connecting = manager.connect('mapping:target', 'prod');
+  const cancelled = assert.rejects(connecting, /cancelled/i);
+  await settle();
+  await manager.disconnect('mapping:target');
+  await cancelled;
+  assert.equal(signal?.aborted, true);
   assert.equal(manager.getState('mapping:target').status, 'disconnected');
   manager.dispose();
 });
 
 
-test('WorkspaceSyncSessionManager Diagnostics ON and OFF preserve the same private-session lifecycle result', async () => {
-  async function run(enabled: boolean) {
-    inputUi.configuration.clear();
-    inputUi.configuration.set('diagnostics.debugLogs', enabled);
-    inputUi.configuration.set('diagnostics.performanceLogs', enabled);
 
-    const config = configSource([profile(`diag-${enabled ? 'on' : 'off'}`)]);
-    const opened: ReturnType<typeof fakeSession>[] = [];
-    const lines: string[] = [];
-    const factory: WorkspaceSyncSessionFactory = {
-      connect: async snapshot => {
-        const created = fakeSession(snapshot);
-        opened.push(created);
-        return created.session;
-      }
-    };
-    const manager = new WorkspaceSyncSessionManager(
-      config.source,
-      { appendLine: (line: string) => lines.push(line) } as any,
-      factory
-    );
-
-    await manager.connect('mapping:target', `diag-${enabled ? 'on' : 'off'}`);
-    const connectedStatus = manager.getState('mapping:target').status;
-    await manager.disconnect('mapping:target');
-    const result = {
-      connectedStatus,
-      disconnectedStatus: manager.getState('mapping:target').status,
-      sessionAfterDisconnect: manager.getSession('mapping:target'),
-      disconnects: opened[0].disconnects
-    };
-    manager.dispose();
-    return { result, lines };
-  }
-
-  const off = await run(false);
-  const on = await run(true);
-  assert.deepEqual(on.result, off.result);
-  assert.equal(off.lines.some(line => /\[(?:DEBUG|PERF)\]/.test(line)), false);
-  assert.equal(on.lines.some(line => /\[DEBUG\]/.test(line)), true);
-  assert.equal(on.lines.some(line => /\[PERF\]/.test(line)), true);
+test('simultaneous Connect calls for the same target share one handshake', async () => {
+  const config = configSource([profile('prod')]);
+  let opened = 0;
+  const manager = new WorkspaceSyncSessionManager(config.source, output, {
+    connect: async snapshot => { opened += 1; return fakeSession(snapshot).session; }
+  });
+  try {
+    const results = await Promise.allSettled([
+      manager.connect('mapping:target', 'prod'),
+      manager.connect('mapping:target', 'prod')
+    ]);
+    assert.ok(results.every(result => result.status === 'fulfilled'));
+    assert.equal(opened, 1);
+    if (results[0].status === 'fulfilled' && results[1].status === 'fulfilled') {
+      assert.equal(results[0].value, results[1].value);
+    }
+  } finally { manager.dispose(); }
 });

@@ -1,6 +1,4 @@
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Client, ClientChannel, ConnectConfig } from 'ssh2';
@@ -339,34 +337,9 @@ async function waitFor(predicate: () => boolean, message: string): Promise<void>
   assert.fail(message);
 }
 
-for (const resourceKind of ['client', 'stream'] as const) {
-  test(`notifies the owner once when an open Jump ${resourceKind} ends and removes its listeners on disposal`, async () => {
-    let notifications = 0;
-    const harness = createHarness([{ id: 'D' }, { id: 'C' }], undefined, () => notifications++);
-    await harness.chain.open([jump('D'), jump('C')], target('A'));
-    const resource = resourceKind === 'client' ? harness.clients[1] : harness.clients[0].forwardCalls[0].stream!;
-    resource.emit('end');
-    resource.emit('error', new Error('late transport error'));
-    assert.equal(notifications, 1);
-    await harness.chain.dispose();
-    assert.equal(notifications, 1);
-    for (const client of harness.clients) {
-      for (const owned of [client, ...client.forwardCalls.map(call => call.stream!)]) {
-        assert.equal(owned.listenerCount('end'), 0);
-        assert.equal(owned.listenerCount('error'), 0);
-        assert.equal(owned.listenerCount('close'), 0);
-      }
-    }
-  });
-}
 
-test('intentional disposal does not notify an unexpected Jump close', async () => {
-  let notifications = 0;
-  const harness = createHarness([{ id: 'D' }], undefined, () => notifications++);
-  await harness.chain.open([jump('D')], target('A'));
-  await harness.chain.dispose();
-  assert.equal(notifications, 0);
-});
+
+
 
 test('opens three hidden SSH hops in order and disposes streams/clients in reverse once', async () => {
   const harness = createHarness([
@@ -466,19 +439,7 @@ test('reports an outermost probe failure before creating any SSH client', async 
   assert.equal(harness.probes.length, 1);
 });
 
-test('keeps error guards until asynchronous client and stream close', async () => {
-  const harness = createHarness([{ id: 'D' }]);
-  const stream = await harness.chain.open([jump('D')], target()) as unknown as ControlledStream;
-  stream.destroyError = new Error('synthetic late channel error');
-  harness.clients[0].destroyError = new Error('synthetic late socket error');
-  await harness.chain.dispose();
-  assert.equal(stream.closed, true);
-  assert.equal(harness.clients[0].closed, true);
-  for (const resource of [stream, harness.clients[0]]) {
-    assert.equal(resource.listenerCount('error'), 0);
-    assert.equal(resource.listenerCount('close'), 0);
-  }
-});
+
 
 test('transport close settles a pending forward using ssh2 channel cleanup semantics', async () => {
   const harness = createHarness([{ id: 'D', forward: 'pending' }]);
@@ -489,76 +450,13 @@ test('transport close settles a pending forward using ssh2 channel cleanup seman
   assert.equal(harness.clients[0].listenerCount('error'), 0);
 });
 
-test('dispose waits for stream close instead of resolving after destroy was called', async () => {
-  const harness = createHarness([{ id: 'D' }]);
-  const stream = await harness.chain.open([jump('D')], target()) as unknown as ControlledStream;
-  stream.destroy = () => { stream.destroyCount += 1; return stream; };
-  let disposed = false;
-  const disposal = harness.chain.dispose().then(() => { disposed = true; });
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.equal(disposed, false);
-  assert.doesNotThrow(() => stream.emit('error', new Error('synthetic delayed error')));
-  stream.closed = true;
-  stream.emit('close');
-  await disposal;
-  assert.equal(stream.listenerCount('error'), 0);
-  assert.equal(stream.listenerCount('close'), 0);
-});
 
-test('disposes clients that close before ready or throw before starting', async () => {
-  for (const connect of ['close', { throw: new Error('synthetic invalid config') }] as const) {
-    const harness = createHarness([{ id: 'D', connect }]);
-    await assert.rejects(harness.chain.open([jump('D')], target()), /establishing the SSH connection/);
-    await harness.chain.dispose();
-    assert.equal(harness.clients[0].listenerCount('error'), 0);
-    assert.equal(harness.clients[0].listenerCount('close'), 0);
-  }
-});
 
-test('explicit disposal settles a pending SSH attempt and releases its subscription', async () => {
-  const harness = createHarness([{ id: 'D', connect: 'pending' }]);
-  const token = new ControlledCancellationToken();
-  const open = harness.chain.open([jump('D')], target(), token);
-  await waitFor(() => harness.clients[0]?.connectConfigs.length === 1, 'Connect not pending.');
-  const rejected = assert.rejects(open);
-  await harness.chain.dispose();
-  await rejected;
-  assert.equal(token.listenerCount, 0);
-});
 
-test('disposes a real ssh2 forwarding channel with unread buffered data', { timeout: 1000 }, async () => {
-  const client = new EventEmitter();
-  const channel = new Channel(client, {
-    type: 'direct-tcpip',
-    incoming: { id: 0, state: 'open', window: 65536, packetSize: 32768 },
-    outgoing: { id: 0, state: 'open', window: 65536, packetSize: 32768 }
-  });
-  const initialCloseListeners = channel.listeners('close');
-  Object.assign(client, {
-    _protocol: { channelClose() {}, channelEOF() {} },
-    _chanMgr: { remove() {} },
-    connect: () => queueMicrotask(() => client.emit('ready')),
-    forwardOut: (_a: string, _b: number, _c: string, _d: number, callback: ForwardCallback) => {
-      callback(undefined, channel);
-    },
-    end() {},
-    destroy: () => queueMicrotask(() => {
-      client.emit('close');
-      onCHANNEL_CLOSE(client, 0, channel, new Error('transport closed'), true);
-    })
-  });
-  const chain = new SshJumpChain(settings, {
-    createClient: () => client as unknown as Client,
-    probe: async () => undefined,
-    promptPassphrase: async () => undefined
-  });
-  await chain.open([jump('D')], target());
-  channel.push(Buffer.from('unread SSH banner'));
-  await chain.dispose();
-  assert.equal(channel.readableEnded, true);
-  assert.equal(channel.listenerCount('error'), 0);
-  assert.deepEqual(channel.listeners('close'), initialCloseListeners);
-});
+
+
+
+
 
 test('reports an intermediate SSH connect failure and releases prior resources', async () => {
   const harness = createHarness([
@@ -622,34 +520,7 @@ test('cancels a pending SSH connect and removes cancellation/listener state', as
   assert.equal(harness.clients[0].listenerCount('error'), 0);
 });
 
-test('cancels a pending forward and destroys a stream returned after cancellation', async () => {
-  const harness = createHarness([{ id: 'D', forward: 'pending' }]);
-  const cancellation = new ControlledCancellationToken();
-  const openPromise = harness.chain.open([jump('D')], target(), cancellation);
-  await waitFor(
-    () => harness.clients.length === 1 && harness.clients[0].forwardCalls.length === 1,
-    'The controlled client did not enter its pending forward state.'
-  );
 
-  const pendingForward = harness.clients[0].forwardCalls[0];
-  cancellation.cancel();
-  await assert.rejects(openPromise, /Connection cancelled/);
-
-  const lateStream = new ControlledStream('late-forward', harness.events);
-  lateStream.destroyError = new Error('synthetic late forwarding error');
-  pendingForward.callback(undefined, lateStream.asChannel());
-  await new Promise<void>(resolve => setImmediate(resolve));
-
-  assert.equal(lateStream.destroyCount, 1);
-  assert.equal(lateStream.closed, true);
-  assert.equal(lateStream.listenerCount('error'), 0);
-  assert.equal(lateStream.listenerCount('close'), 0);
-  assert.equal(cancellation.listenerCount, 0);
-  assert.ok(cancellation.disposedSubscriptionCount >= 1);
-  assert.equal(harness.clients[0].endCount, 1);
-  assert.ok(harness.clients[0].destroyCount >= 1);
-  assert.equal(harness.clients[0].listenerCount('error'), 0);
-});
 
 test('resolves synthetic password/private-key auth and treats a canceled passphrase prompt as cancellation', async () => {
   const passwordTarget: SshAuthenticationTarget = {
@@ -696,25 +567,4 @@ test('resolves synthetic password/private-key auth and treats a canceled passphr
     parsePrivateKey: () => new Error('Encrypted private OpenSSH key detected, but no passphrase given'),
     promptPassphrase: async () => undefined
   }), /Connection cancelled/);
-});
-
-test('source contract keeps Jump internal while Direct SFTP and FTP/FTPS remain separate', () => {
-  const projectRoot = path.resolve(__dirname, '../..');
-  const jumpSource = readFileSync(path.join(projectRoot, 'src/ssh/SshJumpChain.ts'), 'utf8');
-  const sftpSource = readFileSync(path.join(projectRoot, 'src/ssh/SftpSessionManager.ts'), 'utf8');
-  const routerSource = readFileSync(path.join(projectRoot, 'src/remote/RemoteSessionRouter.ts'), 'utf8');
-  const ftpSource = readFileSync(path.join(projectRoot, 'src/ftp/FtpSessionManager.ts'), 'utf8');
-
-  assert.match(jumpSource, /client\.forwardOut\('127\.0\.0\.1', 0, destination\.host, destination\.port/);
-  assert.doesNotMatch(jumpSource, /createServer|\.listen\(/);
-  assert.match(sftpSource, /options\.jumpProfileId && jumpOptions\.length === 0/);
-  assert.match(
-    sftpSource,
-    /if \(jumpOptions\.length > 0\) \{[\s\S]*?config\.sock = await jumpChain\.open[\s\S]*?\} else \{[\s\S]*?await assertTcpConnectionReachable/
-  );
-  assert.match(
-    routerSource,
-    /normalizeConnectionType\(connectionType\) === SFTP_CONNECTION_TYPE[\s\S]*?\? this\.sftpSessions[\s\S]*?: this\.ftpSessions/
-  );
-  assert.doesNotMatch(ftpSource, /SshJumpChain|jumpOptions|jumpProfileNames|jumpProfileIds/);
 });

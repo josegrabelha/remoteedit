@@ -192,6 +192,7 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   statusBarButtonPosition: 'left',
   statusBarButtonStyle: 'iconAndText',
   statusBarButtonPriority: 1000,
+  'workspaceSync.defaultCompare': 'internal',
   'workspaceSync.editorTitleButtonPosition': 'hidden',
   'workspaceSync.statusBarButtonPosition': 'left',
   'workspaceSync.statusBarButtonStyle': 'iconAndText',
@@ -969,7 +970,8 @@ export class ConnectionManager {
         result.settingsImported = true;
       }
       if (preparedWorkspaceSyncImport) {
-        await writeWorkspaceSyncMappings(this.context, preparedWorkspaceSyncImport.mappings);
+        await writeWorkspaceSyncMappings(this.context, preparedWorkspaceSyncImport.mappings, preparedWorkspaceSyncImport.preferences);
+        await this.applyWorkspaceSyncPreferenceSettings(preparedWorkspaceSyncImport.preferences);
         result.workspaceSyncMappingsImported = preparedWorkspaceSyncImport.result.mappingsImported;
         result.workspaceSyncTargetsImported = preparedWorkspaceSyncImport.result.targetsImported;
       }
@@ -1095,7 +1097,8 @@ export class ConnectionManager {
     result.logViewerFavoritesImported = persistentResult.logViewerFavoritesImported;
 
     if (preparedWorkspaceSyncImport) {
-      await writeWorkspaceSyncMappings(this.context, preparedWorkspaceSyncImport.mappings);
+      await writeWorkspaceSyncMappings(this.context, preparedWorkspaceSyncImport.mappings, preparedWorkspaceSyncImport.preferences);
+      await this.applyWorkspaceSyncPreferenceSettings(preparedWorkspaceSyncImport.preferences);
       result.workspaceSyncMappingsImported = preparedWorkspaceSyncImport.result.mappingsImported;
       result.workspaceSyncTargetsImported = preparedWorkspaceSyncImport.result.targetsImported;
     }
@@ -1157,6 +1160,16 @@ export class ConnectionManager {
       createdAt: group.createdAt,
       updatedAt: group.updatedAt
     };
+  }
+
+  private async applyWorkspaceSyncPreferenceSettings(preferences: { defaultCompare?: unknown } | undefined): Promise<void> {
+    if (!preferences) return;
+    const defaultCompare = preferences.defaultCompare === 'vscode' ? 'vscode' : 'internal';
+    await vscode.workspace.getConfiguration(CONFIG_SECTION).update(
+      'workspaceSync.defaultCompare',
+      defaultCompare,
+      vscode.ConfigurationTarget.Global
+    );
   }
 
   private exportSettings(): Record<string, unknown> {

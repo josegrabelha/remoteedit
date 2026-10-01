@@ -7,13 +7,17 @@ import { resolveSyncPaths, remoteParentDirectory } from './SyncPathUtils';
 import { assertLocalPathAncestorsSafe, assertLocalRegularFile, assertRemotePathAncestorsSafe } from './PathSafety';
 import { localFilenameStyle, validateRelativePathForDestination } from '../planning/PathCompatibility';
 import { errorMessage, formatSyncErrorOutput } from './OperationFailureDetails';
+import { SessionDisconnectedError } from '../connection/SessionLifetime';
+import { currentTargetOperationSignal } from './TargetOperationQueue';
 
 export interface SyncExecutionOptions {
   atomicTransfer: boolean;
+  /** Controller UI only: this plan was started automatically by a Watch. */
+  watchActivity?: boolean;
   concurrency?: number;
   retries?: number;
   cancellationToken?: { readonly isCancellationRequested: boolean };
-  onActivity?: (event: { kind: 'started' | 'completed' | 'failed' | 'retry' | 'skipped'; operation: SyncOperation; message?: string; errorOutput?: string }) => void;
+  onActivity?: (event: { kind: 'started' | 'completed' | 'failed' | 'retry' | 'skipped' | 'deferred'; operation: SyncOperation; message?: string; errorOutput?: string }) => void;
   onProgress?: (progress: WorkspaceSyncProgress) => void;
   /** Called when an atomic upload temp file could not be removed after a failed transfer. */
   onOrphanedRemoteTemp?: (tempRemotePath: string, operation: SyncOperation) => void;
@@ -27,6 +31,7 @@ export interface SyncExecutionResult {
   completed: SyncOperation[];
   failed: Array<{ operation: SyncOperation; error: string; errorOutput?: string }>;
   skipped: SyncOperation[];
+  deferred: Array<{ operation: SyncOperation; reason: string }>;
   cancelled: boolean;
 }
 
@@ -42,11 +47,17 @@ export async function executeSyncPlan(
   session: WorkspaceSyncRemoteSession,
   options: SyncExecutionOptions
 ): Promise<SyncExecutionResult> {
+  const signal = currentTargetOperationSignal();
+  const originalCancellation = options.cancellationToken;
+  options = { ...options, cancellationToken: {
+    get isCancellationRequested() { return Boolean(originalCancellation?.isCancellationRequested || signal?.aborted); }
+  } };
   const skipped = plan.operations.filter(operation => operation.type === 'skip');
   for (const operation of skipped) options.onActivity?.({ kind: 'skipped', operation, message: operation.reason });
   const actionable = plan.operations.filter(operation => operation.type !== 'skip');
   const completed: SyncOperation[] = [];
   const failed: Array<{ operation: SyncOperation; error: string; errorOutput?: string }> = [];
+  const deferred: Array<{ operation: SyncOperation; reason: string }> = [];
   const concurrency = Math.max(1, Math.min(
     session.capabilities.maxConcurrentTransfers,
     Math.floor(options.concurrency || session.capabilities.maxConcurrentTransfers)
@@ -56,20 +67,24 @@ export async function executeSyncPlan(
 
   const phases = buildExecutionPhases(actionable);
   for (const phase of phases) {
-    if (options.cancellationToken?.isCancellationRequested) break;
+    if (options.cancellationToken?.isCancellationRequested || session.isDisconnected) break;
     const destructivePhase = phase.every(operation => operation.type === 'deleteLocal' || operation.type === 'deleteRemote');
-    if (destructivePhase && failed.length) {
-      // Never continue into destructive deletes after a partial create/transfer
-      // failure. The user should review the failed plan before anything else is
-      // removed from either side.
+    if (destructivePhase && (failed.length || deferred.length)) {
+      // Never continue into later destructive phases after a partial failure or
+      // a directory delete that became stale. An ancestor delete can depend on
+      // the path that was deferred, so continuing would recreate the classic
+      // parent-before-child ENOTEMPTY race or, worse, remove newly-created data.
       skipped.push(...phase);
-      for (const operation of phase) options.onActivity?.({ kind: 'skipped', operation, message: 'An earlier transfer failed.' });
+      const message = deferred.length
+        ? 'An earlier directory delete was deferred because its contents changed.'
+        : 'An earlier transfer failed.';
+      for (const operation of phase) options.onActivity?.({ kind: 'skipped', operation, message });
       break;
     }
     let nextIndex = 0;
     const worker = async (): Promise<void> => {
       while (true) {
-        if (options.cancellationToken?.isCancellationRequested) return;
+        if (options.cancellationToken?.isCancellationRequested || session.isDisconnected) return;
         const index = nextIndex++;
         if (index >= phase.length) return;
         const operation = phase[index];
@@ -86,10 +101,16 @@ export async function executeSyncPlan(
           completed.push(operation);
           options.onActivity?.({ kind: 'completed', operation });
         } catch (error) {
-          const message = errorMessage(error);
-          const errorOutput = formatSyncErrorOutput(error);
-          failed.push({ operation, error: message, errorOutput });
-          options.onActivity?.({ kind: 'failed', operation, message, errorOutput });
+          if (isDirectoryDeleteDeferred(error, operation)) {
+            const reason = 'Directory still contains content outside the validated delete manifest. The delete was deferred and the affected subtree must be re-evaluated.';
+            deferred.push({ operation, reason });
+            options.onActivity?.({ kind: 'deferred', operation, message: reason });
+          } else {
+            const message = errorMessage(error);
+            const errorOutput = formatSyncErrorOutput(error);
+            failed.push({ operation, error: message, errorOutput });
+            options.onActivity?.({ kind: 'failed', operation, message, errorOutput });
+          }
         } finally {
           processed += 1;
           options.onProgress?.({ completed: processed, total: actionable.length, currentPath: operation.relativePath, phase: operation.type });
@@ -100,9 +121,9 @@ export async function executeSyncPlan(
     await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, phase.length)) }, () => worker()));
   }
 
-  const cancelled = Boolean(options.cancellationToken?.isCancellationRequested);
+  const cancelled = Boolean(options.cancellationToken?.isCancellationRequested || session.isDisconnected);
   options.onProgress?.({ completed: processed, total: actionable.length, phase: cancelled ? 'cancelled' : 'complete' });
-  return { completed, failed, skipped, cancelled };
+  return { completed, failed, skipped, deferred, cancelled };
 }
 
 function buildExecutionPhases(operations: SyncOperation[]): SyncOperation[][] {
@@ -243,8 +264,10 @@ async function executeOperation(
         const current = await localEntryKind(localPath);
         if (!current) return;
         if (current === 'directory') {
-          // Deliberately non-recursive. A directory that acquired unexpected
-          // local content after Preview must fail instead of deleting it.
+          // Deliberately non-recursive. Directory-delete plans are expanded
+          // into explicit descendant operations before revalidation. If new
+          // content appears after that validated manifest, rmdir fails closed
+          // instead of recursively erasing the new entry.
           await fs.rmdir(localPath);
         } else {
           await fs.rm(localPath, { force: true });
@@ -295,15 +318,17 @@ async function withRetries(
 ): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (session.isDisconnected) throw new SessionDisconnectedError();
     if (cancellationToken?.isCancellationRequested) throw new Error('Workspace Sync operation cancelled.');
     try {
       await operation();
       return;
     } catch (error) {
       lastError = error;
-      if (attempt >= retries || !isRetryable(error)) break;
+      if (session.isDisconnected || attempt >= retries || !isRetryable(error)) break;
       onRetry?.(attempt + 1);
       await delay(Math.min(2000, 250 * (2 ** attempt)));
+      if (session.isDisconnected) throw new SessionDisconnectedError();
       if (cancellationToken?.isCancellationRequested) throw new Error('Workspace Sync operation cancelled.');
       try {
         await session.reconnect();
@@ -313,6 +338,13 @@ async function withRetries(
     }
   }
   throw lastError;
+}
+
+
+function isDirectoryDeleteDeferred(error: unknown, operation: SyncOperation): boolean {
+  if (operation.type !== 'deleteLocal' || operation.expectedLocal?.kind !== 'directory') return false;
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'ENOTEMPTY' || code === 'EEXIST';
 }
 
 function isRetryable(error: unknown): boolean {

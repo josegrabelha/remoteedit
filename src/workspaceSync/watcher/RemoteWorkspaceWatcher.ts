@@ -18,7 +18,7 @@ const DEFAULT_REMOTE_WATCH_INTERVAL_MS = 5000;
 export class RemoteWorkspaceWatcher implements vscode.Disposable {
   private mappings: WorkspaceSyncMapping[] = [];
   private timer: NodeJS.Timeout | undefined;
-  private ticking = false;
+  private readonly polling = new Set<string>();
   private disposed = false;
   private readonly lastErrors = new Map<string, string>();
   private readonly diagnostics: WorkspaceSyncDiagnostics;
@@ -26,13 +26,14 @@ export class RemoteWorkspaceWatcher implements vscode.Disposable {
   constructor(
     private readonly onPoll: (request: WorkspaceRemoteWatchPoll) => Promise<void>,
     private readonly output: vscode.OutputChannel,
-    private readonly onError?: (request: WorkspaceRemoteWatchPoll, message: string) => void,
+    private readonly onError?: (request: WorkspaceRemoteWatchPoll, message: string) => boolean | void,
     private readonly intervalMs = DEFAULT_REMOTE_WATCH_INTERVAL_MS
   ) {
     this.diagnostics = createWorkspaceSyncDiagnostics(output);
   }
 
   refresh(mappings: WorkspaceSyncMapping[]): void {
+    if (this.disposed) return;
     this.mappings = mappings;
     const enabled = mappings.some(mapping =>
       mapping.options.watchRemoteChanges
@@ -61,36 +62,39 @@ export class RemoteWorkspaceWatcher implements vscode.Disposable {
 
   private async tick(): Promise<void> {
     if (this.disposed) return;
-    if (this.ticking) {
-      this.diagnostics.debug('Remote Watch', 'Polling tick skipped because the previous tick is still running.');
-      return;
-    }
-    const tickTimer = this.diagnostics.timer();
-    this.ticking = true;
-    try {
-      // Process all watched targets sequentially. Different mappings may intentionally
-      // share or overlap Local Roots, so concurrent Remote -> Local writes would
-      // be unsafe and could hide a real cross-mapping/target conflict.
-      for (const mapping of this.mappings) {
-        if (!mapping.options.watchRemoteChanges || mapping.options.direction === 'localToRemote') continue;
-        for (const target of mapping.targets) {
-          if (!target.enabled) continue;
-          const key = `${mapping.id}::${target.id}`;
-          try {
-            await this.onPoll({ mappingId: mapping.id, targetId: target.id });
-            this.lastErrors.delete(key);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            if (this.lastErrors.get(key) === message) continue;
-            this.lastErrors.set(key, message);
-            this.output.appendLine(`[Workspace Sync] Remote Watch failed for ${mapping.name} / ${target.name}: ${message}`);
-            this.onError?.({ mappingId: mapping.id, targetId: target.id }, message);
-          }
-        }
+    const polls: Promise<void>[] = [];
+    for (const mapping of this.mappings) {
+      if (!mapping.options.watchRemoteChanges || mapping.options.direction === 'localToRemote') continue;
+      for (const target of mapping.targets) {
+        if (this.disposed) return;
+        if (!target.enabled) continue;
+        const key = `${mapping.id}::${target.id}`;
+        // One outstanding poll per target, including time in its operation
+        // queue. A slow target must not hold the scheduler for every mapping.
+        // The controller's endpoint/path locks still protect shared roots.
+        if (this.polling.has(key)) continue;
+        this.polling.add(key);
+        polls.push(this.poll(mapping, target, key));
       }
+    }
+    await Promise.all(polls);
+  }
+
+  private async poll(mapping: WorkspaceSyncMapping, target: WorkspaceSyncMapping['targets'][number], key: string): Promise<void> {
+    const timer = this.diagnostics.timer();
+    try {
+      await this.onPoll({ mappingId: mapping.id, targetId: target.id });
+      this.lastErrors.delete(key);
+    } catch (error) {
+      if (this.disposed) return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (this.lastErrors.get(key) === message) return;
+      this.lastErrors.set(key, message);
+      const handled = this.onError?.({ mappingId: mapping.id, targetId: target.id }, message) === true;
+      if (!handled) this.output.appendLine(`[Workspace Sync] Remote Watch failed for ${mapping.name} / ${target.name}: ${message}`);
     } finally {
-      this.ticking = false;
-      this.diagnostics.performance('Remote Watch', `Polling scheduler tick completed in ${tickTimer()} ms.`, { Mappings: this.mappings.length });
+      this.polling.delete(key);
+      this.diagnostics.performance('Remote Watch', `Target poll completed in ${timer()} ms.`, { Mapping: mapping.name, Target: target.name });
     }
   }
 

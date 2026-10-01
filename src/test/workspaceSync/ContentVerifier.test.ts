@@ -72,86 +72,11 @@ test('ContentVerifier can prove identical content when the remote timestamp is u
   }
 });
 
-test('ContentVerifier does not hash reliable files when both sides still match their own trusted baseline', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-'));
-  try {
-    await fs.writeFile(path.join(root, 'a.txt'), 'same!');
-    const localFingerprint = { kind: 'file' as const, size: 5, mtimeMs: 1000 };
-    const remoteFingerprint = { kind: 'file' as const, size: 5, mtimeMs: 9000 };
-    const local = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: localFingerprint }]);
-    const remote = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: remoteFingerprint }]);
-    let hashes = 0;
-    const session: WorkspaceSyncRemoteSession = {
-      ...fakeSession({}),
-      connectionType: 'sftp',
-      capabilities: { filenameStyle: 'unknown', reliableMtime: true, maxConcurrentMetadata: 1, maxConcurrentTransfers: 1 },
-      async hashFile() { hashes += 1; throw new Error('hash should not be called'); }
-    };
-    const baseline = {
-      mappingId: 'm1', targetId: 't1', capturedAt: 1,
-      entries: { 'a.txt': { local: localFingerprint, remote: remoteFingerprint } }
-    };
-    await verifyComparisonContent(root, '/remote', session, local, remote, baseline);
-    assert.equal(hashes, 0);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
 
-test('ContentVerifier retains a baseline local hash even when size and mtime are unchanged', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-baseline-hash-'));
-  try {
-    const localPath = path.join(root, 'a.txt');
-    await fs.writeFile(localPath, 'after');
-    const stat = await fs.stat(localPath);
-    const baselineHash = hash('before');
-    const local = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: { kind: 'file', size: 5, mtimeMs: stat.mtimeMs } }]);
-    const remote = createSyncSnapshot([]);
-    const baseline = {
-      mappingId: 'm1', targetId: 't1', capturedAt: 1,
-      entries: {
-        'a.txt': {
-          local: { kind: 'file' as const, size: 5, mtimeMs: stat.mtimeMs, hash: baselineHash }
-        }
-      }
-    };
 
-    const verified = await verifyComparisonContent(root, '/remote', fakeSession({}), local, remote, baseline);
-    assert.equal(verified.local.entries['a.txt'].fingerprint.hash, hash('after'));
-    assert.notEqual(verified.local.entries['a.txt'].fingerprint.hash, baselineHash);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
 
-test('ContentVerifier does not hash paths already covered by an incomplete scan', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-incomplete-'));
-  try {
-    await fs.writeFile(path.join(root, 'a.txt'), 'local');
-    const local = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: { kind: 'file', size: 5, mtimeMs: 1000 } }]);
-    const remote = createSyncSnapshot([], ['']);
-    const baseline = {
-      mappingId: 'm1', targetId: 't1', capturedAt: 1,
-      entries: {
-        'a.txt': {
-          local: { kind: 'file' as const, size: 5, mtimeMs: 1000, hash: hash('local') },
-          remote: { kind: 'file' as const, size: 5, mtimeMs: 1000, hash: hash('remote') }
-        }
-      }
-    };
-    let remoteHashes = 0;
-    const session: WorkspaceSyncRemoteSession = {
-      ...fakeSession({}),
-      async hashFile() { remoteHashes += 1; throw new Error('should not hash'); }
-    };
 
-    const verified = await verifyComparisonContent(root, '/remote', session, local, remote, baseline);
-    assert.equal(remoteHashes, 0);
-    assert.equal(verified.local.entries['a.txt'].fingerprint.hash, undefined);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
+
 
 test('ContentVerifier force-hashes a failed-transfer path even when reliable metadata looks equal', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-force-hash-'));

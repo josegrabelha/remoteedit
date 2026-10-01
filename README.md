@@ -135,16 +135,21 @@ Create a **mapping** with a Local Root and one or more remote targets. Each targ
 
 ### Refresh and Changes
 
-Connecting a target automatically performs a **Refresh** of the Local and Remote state. Use **Refresh** at any time to reconcile the current state again.
+Connecting a target automatically performs a **Refresh** of the Local and Remote state. With **All Enabled**, Workspace Sync establishes target connections concurrently before starting the initial comparisons and Watch reconciliation. You can switch mappings and targets while this work runs; individual transfers stay unavailable until the corresponding target has finished preparing. Use **Refresh** at any time to reconcile the current state again.
+
+When multiple connected targets share a Local Root, Workspace Sync can reconcile independent files concurrently. Operations affecting the same file or related directories wait for each other and revalidate their plan before execution. Directory-structure changes and potentially overlapping remote destinations retain broader protection. This also applies to Watch Local, Watch Remote, and manual Sync; switching the visible mapping or target does not redirect in-flight operations.
 
 The **Changes** view provides:
 
 - Changes, Modified, Local, Remote, Conflicts, Same, and All filters
 - Path filtering and sortable Target, Path, and Status columns
+- Optional sortable **Local Modified** and **Remote Modified** columns through **Show Modified Times**; local timestamps include their UTC offset, while FTP/FTPS remote timestamps that are server-local are labeled `server`
+- Optional **Hide Unsupported Files** filtering for confirmed symlinks and unsupported filesystem entry types
 - Multi-selection with Upload and Download actions
-- Local/Remote comparison for supported text files
-- Conflict choices such as **Use Local**, **Use Remote**, or **Skip**
-- A **Sync Review** before planned synchronization is applied
+- Local/Remote comparison with the Workspace Sync internal text viewer or **Open in VS Code**; **Default Compare** chooses which viewer the primary Compare action opens, while both remain available explicitly
+- Conflict choices with **Use Local**, **Use Remote**, and **Skip**
+- Bulk conflict controls with **All Local**, **All Remote**, **All Skip**, and advisory **Apply Suggestions**; these controls only select resolutions and never start Sync automatically
+- A **Sync Review** before planned synchronization is applied; resolution decisions recalculate the temporary plan, including parent/child structural dependencies, before **Start Sync**
 - **Reset Baseline…** to clear synchronization history without modifying Local or Remote files
 - A read-only last known state while disconnected, until the next successful Refresh
 
@@ -159,7 +164,7 @@ Workspace Sync can automate selected workflows while a target is connected:
 - **Watch Remote Changes** — monitors changes on the remote target
 - **Unknown Change Protection** — prevents automatic decisions when there is not enough trusted history to determine the safe side
 - **Atomic Transfer when supported** — avoids replacing the destination until a transfer completes successfully
-- **Propagate Deletes** — allows deletions to flow according to the selected sync direction
+- **Propagate Deletes** — allows deletions to flow according to the selected sync direction; propagated directory deletes remove the complete destination subtree, including hidden and ignored descendants. Ignore rules do not preserve files inside a directory whose deletion is being propagated, and new or changed content detected after validation causes the delete to be deferred and re-evaluated
 
 Watch and Upload on Save never establish a connection by themselves. Automatic resources are active only for targets that the user has explicitly connected.
 
@@ -175,7 +180,7 @@ Activity also provides **Follow latest**, **Copy**, and **Clear** controls. Cred
 
 ### Workspace Sync backup behavior
 
-Import/Export can include Workspace Sync mappings, targets, and options. Operational state such as Activity history, active sessions, comparison snapshots, current selection, and synchronization baselines stays local and is not exported.
+Import/Export can include Workspace Sync mappings, targets, options, and saved Workspace Sync preferences such as **Hide Unsupported Files**, **Show Modified Times**, and **Default Compare**. Operational state such as Activity history, active sessions, comparison snapshots, current selection, and synchronization baselines stays local and is not exported.
 
 ## Supported Protocols
 
@@ -443,6 +448,7 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 ### Workspace Sync UI
 
+- `remoteedit.workspaceSync.defaultCompare` — controls which viewer opens from the primary Compare action: `internal` for the Workspace Sync text comparison viewer or `vscode` for the VS Code diff editor. Both viewers remain available from explicit Compare options. Default: `internal`.
 - `remoteedit.workspaceSync.editorTitleButtonPosition` — controls whether the Workspace Sync button appears in the Editor Title area. Default: `hidden`.
 - `remoteedit.workspaceSync.statusBarButtonPosition` — controls where the Workspace Sync Status Bar button appears: `left`, `right`, or `hidden`. Default: `left`.
 - `remoteedit.workspaceSync.statusBarButtonStyle` — controls whether the Status Bar button shows the icon and text, icon only, or text only. Default: `iconAndText`.

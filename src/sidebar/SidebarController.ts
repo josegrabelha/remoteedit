@@ -9,7 +9,7 @@ import { buildCopyFileName } from '../panel/FileNameUtils';
 import { buildArchiveBaseName, normalizeArchiveName } from '../panel/ArchiveUtils';
 import { getDefaultPortForConnectionType, normalizeConnectionType, type RemoteConnectionType } from '../remote/RemoteConnectionTypes';
 import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
-import type { RemoteArchiveFormat, RemoteEntry, RemoteEntryType, RemoteSessionManager } from '../remote/RemoteSessionManager';
+import type { RemoteArchiveFormat, RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { SshTerminalService } from '../ssh/SshTerminalService';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
 import {
@@ -3264,34 +3264,6 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     return undefined;
-  }
-
-  private async saveConnectionDetailValue(profileId: string, field: ConnectionDetailField, value: string): Promise<void> {
-    switch (field) {
-      case 'host':
-        await this.connectionManager.saveProfile({ id: profileId, host: value });
-        break;
-      case 'port':
-        await this.connectionManager.saveProfile({ id: profileId, port: value });
-        break;
-      case 'username':
-        await this.connectionManager.saveProfile({ id: profileId, username: value });
-        break;
-      case 'startPath':
-        await this.connectionManager.saveProfile({ id: profileId, startPath: value });
-        break;
-      case 'privateKeyPath':
-        await this.connectionManager.saveProfile({ id: profileId, privateKeyPath: value });
-        break;
-      case 'ftpsCaCertificatePath':
-        await this.connectionManager.saveProfile({ id: profileId, ftpsCaCertificatePath: value });
-        break;
-      case 'jumpProfileId':
-        await this.connectionManager.saveProfile({ id: profileId, jumpProfileId: value });
-        break;
-      default:
-        break;
-    }
   }
 
   private openTransferQueue(): void {

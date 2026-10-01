@@ -178,6 +178,7 @@ function cloneSnapshot(snapshot: SyncSnapshot): SyncSnapshot {
   return {
     capturedAt: snapshot.capturedAt,
     incompletePaths: [...snapshot.incompletePaths],
+    ...(snapshot.incompleteErrors ? { incompleteErrors: { ...snapshot.incompleteErrors } } : {}),
     entries
   };
 }

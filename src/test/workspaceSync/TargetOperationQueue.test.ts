@@ -36,3 +36,25 @@ test('TargetOperationQueue allows unrelated targets to run independently', async
   gate.resolve();
   await first;
 });
+
+test('Disconnect cancels queued work but keeps active work serialized before reconnect', async () => {
+  const queue = new TargetOperationQueue();
+  const gate = deferred();
+  const calls: string[] = [];
+  const active = queue.run('target', async () => { calls.push('active'); await gate.promise; });
+  await new Promise(resolve => setImmediate(resolve));
+  const waiting = queue.run('target', async () => { calls.push('stale'); });
+  const cancelled = assert.rejects(waiting, /cancelled/);
+  queue.cancelPending('target');
+  await cancelled;
+  const reconnect = queue.run('target', async () => { calls.push('reconnect'); });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, ['active']);
+  gate.resolve();
+  await Promise.all([active, reconnect, queue.waitForIdle('target')]);
+  assert.deepEqual(calls, ['active', 'reconnect']);
+});
+
+
+
+

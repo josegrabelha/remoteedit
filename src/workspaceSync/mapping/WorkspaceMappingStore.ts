@@ -5,9 +5,19 @@ import type { WorkspaceSyncMapping, WorkspaceSyncTarget } from '../types';
 export const WORKSPACE_SYNC_MAPPINGS_KEY = 'remoteedit.workspaceSync.mappings.v1';
 export const WORKSPACE_SYNC_ACTIVE_MAPPING_KEY = 'remoteedit.workspaceSync.activeMapping.v1';
 export const WORKSPACE_SYNC_ACTIVE_TARGETS_KEY = 'remoteedit.workspaceSync.activeTargets.v1';
+export const WORKSPACE_SYNC_PREFERENCES_KEY = 'remoteedit.workspaceSync.preferences.v1';
+
+export type WorkspaceSyncDefaultCompare = 'internal' | 'vscode';
+
+export interface WorkspaceSyncPreferences {
+  hideUnsupportedFiles: boolean;
+  showModifiedTimes: boolean;
+  defaultCompare: WorkspaceSyncDefaultCompare;
+}
 
 export interface WorkspaceSyncBackupState {
   mappings: WorkspaceSyncMapping[];
+  preferences?: WorkspaceSyncPreferences;
 }
 
 export class WorkspaceMappingStore {
@@ -122,15 +132,37 @@ export class WorkspaceMappingStore {
 }
 
 export function getWorkspaceSyncBackupState(context: vscode.ExtensionContext): WorkspaceSyncBackupState {
-  return { mappings: normalizeWorkspaceSyncMappings(readWorkspaceSyncMappings(context)) };
+  return {
+    mappings: normalizeWorkspaceSyncMappings(readWorkspaceSyncMappings(context)),
+    preferences: readWorkspaceSyncPreferences(context)
+  };
+}
+
+export function getWorkspaceSyncPreferences(context: vscode.ExtensionContext): WorkspaceSyncPreferences {
+  return readWorkspaceSyncPreferences(context);
+}
+
+export async function setWorkspaceSyncPreferences(
+  context: vscode.ExtensionContext,
+  preferences: Partial<WorkspaceSyncPreferences>
+): Promise<WorkspaceSyncPreferences> {
+  const next = normalizeWorkspaceSyncPreferences({
+    ...readWorkspaceSyncPreferences(context),
+    ...preferences
+  });
+  await context.globalState.update(WORKSPACE_SYNC_PREFERENCES_KEY, next);
+  return next;
 }
 
 export function prepareWorkspaceSyncBackupImport(
   context: vscode.ExtensionContext,
   incoming: WorkspaceSyncBackupState,
   mode: 'merge' | 'replace'
-): { mappings: WorkspaceSyncMapping[]; result: { mappingsImported: number; targetsImported: number } } {
+): { mappings: WorkspaceSyncMapping[]; preferences: WorkspaceSyncPreferences; result: { mappingsImported: number; targetsImported: number } } {
   const importedMappings = normalizeWorkspaceSyncMappings(incoming?.mappings);
+  const preferences = incoming?.preferences && typeof incoming.preferences === 'object'
+    ? normalizeWorkspaceSyncPreferences(incoming.preferences)
+    : readWorkspaceSyncPreferences(context);
   for (const mapping of importedMappings) validateUniqueTargetDestinations(mapping.targets);
   let mappings: WorkspaceSyncMapping[];
 
@@ -161,6 +193,7 @@ export function prepareWorkspaceSyncBackupImport(
 
   return {
     mappings,
+    preferences,
     result: {
       mappingsImported: importedMappings.length,
       targetsImported: importedMappings.reduce((count, mapping) => count + mapping.targets.length, 0)
@@ -170,7 +203,8 @@ export function prepareWorkspaceSyncBackupImport(
 
 export async function writeWorkspaceSyncMappings(
   context: vscode.ExtensionContext,
-  mappings: WorkspaceSyncMapping[]
+  mappings: WorkspaceSyncMapping[],
+  preferences?: WorkspaceSyncPreferences
 ): Promise<void> {
   const normalized = normalizeWorkspaceSyncMappings(mappings);
   await context.globalState.update(WORKSPACE_SYNC_MAPPINGS_KEY, normalized);
@@ -190,6 +224,20 @@ export async function writeWorkspaceSyncMappings(
     if (mapping?.targets.some(target => target.id === targetId)) activeTargetIds[mappingId] = targetId;
   }
   await context.globalState.update(WORKSPACE_SYNC_ACTIVE_TARGETS_KEY, activeTargetIds);
+  if (preferences) await context.globalState.update(WORKSPACE_SYNC_PREFERENCES_KEY, normalizeWorkspaceSyncPreferences(preferences));
+}
+
+function normalizeWorkspaceSyncPreferences(value: Partial<WorkspaceSyncPreferences> | undefined): WorkspaceSyncPreferences {
+  return {
+    hideUnsupportedFiles: Boolean(value?.hideUnsupportedFiles),
+    showModifiedTimes: Boolean(value?.showModifiedTimes),
+    defaultCompare: value?.defaultCompare === 'vscode' ? 'vscode' : 'internal'
+  };
+}
+
+function readWorkspaceSyncPreferences(context: vscode.ExtensionContext): WorkspaceSyncPreferences {
+  const stored = context.globalState.get<Partial<WorkspaceSyncPreferences>>(WORKSPACE_SYNC_PREFERENCES_KEY, {});
+  return normalizeWorkspaceSyncPreferences(stored && typeof stored === 'object' ? stored : {});
 }
 
 function normalizeWorkspaceSyncMappings(value: WorkspaceSyncMapping[] | undefined): WorkspaceSyncMapping[] {

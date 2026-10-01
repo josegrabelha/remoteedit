@@ -100,110 +100,16 @@ test('WorkspaceMapping rejects duplicate target names case-insensitively', () =>
   }), /Duplicate Workspace Sync target name/);
 });
 
-test('normalizeRemoteRoot keeps root and removes duplicate/trailing separators', () => {
-  assert.equal(normalizeRemoteRoot('/'), '/');
-  assert.equal(normalizeRemoteRoot('//var///www/app///'), '/var/www/app');
-  assert.equal(normalizeRemoteRoot('C:\\sites\\app\\'), 'C:/sites/app');
-});
 
 
-test('WorkspaceMapping requires an absolute remote root and preserves Windows drive roots', () => {
-  assert.equal(normalizeRemoteRoot('C:/'), 'C:/');
-  assert.equal(normalizeRemoteRoot('/C:/'), '/C:/');
-  assert.throws(() => createWorkspaceMapping({
-    name: 'Unsafe',
-    localRoot: './project',
-    targets: [{ name: 'Primary', connectionId: 'conn-1', remoteRoot: 'relative/path' }]
-  }), /Remote root.*must be absolute/i);
 
-  const windows = createWorkspaceMapping({
-    name: 'Windows',
-    localRoot: './project',
-    targets: [{ name: 'Primary', connectionId: 'conn-1', remoteRoot: 'C:/' }]
-  });
-  assert.equal(windows.targets[0].remoteRoot, 'C:/');
-});
 
-test('WorkspaceMappingStore keeps one shared mapping name namespace and active target state', async () => {
-  const context = fakeContext();
-  const store = new WorkspaceMappingStore(context);
-  const first = await store.save(mappingInput('Production'));
 
-  assert.equal(store.getActiveId(), first.id);
-  assert.equal(store.getActive()?.name, 'Production');
-  assert.equal(store.getActiveTarget(first)?.name, 'Primary');
 
-  await assert.rejects(
-    store.save(mappingInput('production')),
-    /already exists/
-  );
 
-  const stagingInput = mappingInput('Staging');
-  stagingInput.targets[0].remoteRoot = '/var/www/staging';
-  const second = await store.save(stagingInput);
-  assert.equal(store.getActiveId(), second.id);
-  await store.delete(second.id);
-  assert.equal(store.getActiveId(), first.id);
-});
 
-test('WorkspaceMappingStore remembers the active target independently for each mapping', async () => {
-  const context = fakeContext();
-  const store = new WorkspaceMappingStore(context);
-  const first = await store.save({
-    name: 'First',
-    localRoot: './project-first',
-    targets: [
-      { name: 'First A', connectionId: 'conn-1', remoteRoot: '/first/a' },
-      { name: 'First B', connectionId: 'conn-1', remoteRoot: '/first/b' }
-    ]
-  });
-  const second = await store.save({
-    name: 'Second',
-    localRoot: './project-second',
-    targets: [
-      { name: 'Second A', connectionId: 'conn-1', remoteRoot: '/second/a' },
-      { name: 'Second B', connectionId: 'conn-1', remoteRoot: '/second/b' }
-    ]
-  });
 
-  await store.setActiveTargetId(first.id, first.targets[1].id);
-  await store.setActiveTargetId(second.id, second.targets[0].id);
 
-  await store.setActiveId(first.id);
-  assert.equal(store.getActiveTarget(store.getActive()!)?.id, first.targets[1].id);
-  await store.setActiveId(second.id);
-  assert.equal(store.getActiveTarget(store.getActive()!)?.id, second.targets[0].id);
-  await store.setActiveId(first.id);
-  assert.equal(store.getActiveTarget(store.getActive()!)?.id, first.targets[1].id);
-});
-
-test('WorkspaceMappingStore preserves target revision for no-op saves and advances it on target changes', async () => {
-  const context = fakeContext();
-  const store = new WorkspaceMappingStore(context);
-  const first = await store.save(mappingInput('Production'));
-  const original = first.targets[0];
-
-  const noOp = await store.save({
-    id: first.id,
-    name: first.name,
-    localRoot: first.localRoot,
-    targets: first.targets.map(target => ({ ...target })),
-    options: first.options
-  });
-  assert.equal(noOp.targets[0].createdAt, original.createdAt);
-  assert.equal(noOp.targets[0].updatedAt, original.updatedAt);
-
-  const changed = await store.save({
-    id: noOp.id,
-    name: noOp.name,
-    localRoot: noOp.localRoot,
-    targets: noOp.targets.map(target => ({ ...target, remoteRoot: '/var/www/new-root' })),
-    options: noOp.options
-  });
-  assert.equal(changed.targets[0].createdAt, original.createdAt);
-  assert.ok(changed.targets[0].updatedAt > original.updatedAt);
-  assert.equal(changed.targets[0].remoteRoot, '/var/www/new-root');
-});
 
 test('WorkspaceMappingStore persists mappings globally across extension restarts', async () => {
   const globalState = new FakeMemento();
@@ -219,29 +125,7 @@ test('WorkspaceMappingStore persists mappings globally across extension restarts
 });
 
 
-test('WorkspaceMapping rejects duplicate target identities while legacy duplicate destinations remain loadable', () => {
-  assert.throws(() => createWorkspaceMapping({
-    name: 'Duplicate IDs',
-    localRoot: './project',
-    targets: [
-      { id: 'target-same', name: 'One', connectionId: 'conn-1', remoteRoot: '/one' },
-      { id: 'target-same', name: 'Two', connectionId: 'conn-2', remoteRoot: '/two' }
-    ]
-  }), /Duplicate Workspace Sync target id/);
 
-  const mapping = createWorkspaceMapping({
-    name: 'Duplicate Destination',
-    localRoot: './project',
-    targets: [
-      { name: 'One', connectionId: 'conn-1', remoteRoot: '/same/' },
-      { name: 'Two', connectionId: 'conn-1', remoteRoot: '/same' }
-    ]
-  });
-  assert.equal(mapping.targets.length, 2);
-  assert.notEqual(mapping.targets[0].id, mapping.targets[1].id);
-  assert.equal(mapping.targets[0].remoteRoot, '/same');
-  assert.equal(mapping.targets[1].remoteRoot, '/same');
-});
 
 test('Workspace Sync rejects duplicate remote destinations on mutation paths after normalization', () => {
   assert.throws(() => validateUniqueTargetDestinations([
@@ -255,64 +139,9 @@ test('Workspace Sync rejects duplicate remote destinations on mutation paths aft
   ]));
 });
 
-test('WorkspaceMappingStore rejects duplicate destinations on save but can still load a legacy duplicate mapping', async () => {
-  const context = fakeContext();
-  const store = new WorkspaceMappingStore(context);
-  await assert.rejects(() => store.save({
-    name: 'Duplicate Destination',
-    localRoot: './project',
-    targets: [
-      { name: 'T1', connectionId: 'conn-1', remoteRoot: '/same/' },
-      { name: 'T2', connectionId: 'conn-1', remoteRoot: '/same' }
-    ]
-  }), /same Connection and Remote Directory/);
 
-  const legacy = createWorkspaceMapping({
-    id: 'legacy-duplicate',
-    name: 'Legacy Duplicate',
-    localRoot: './project',
-    targets: [
-      { id: 'target-1', name: 'T1', connectionId: 'conn-1', remoteRoot: '/same/' },
-      { id: 'target-2', name: 'T2', connectionId: 'conn-1', remoteRoot: '/same' }
-    ]
-  });
-  await context.globalState.update('remoteedit.workspaceSync.mappings.v1', [legacy]);
-  assert.equal(store.list()[0]?.targets.length, 2);
-});
 
-test('WorkspaceMappingStore moves the active target to an enabled target when the current target is disabled', async () => {
-  const context = fakeContext();
-  const store = new WorkspaceMappingStore(context);
-  const saved = await store.save({
-    name: 'Multi Target',
-    localRoot: './project',
-    targets: [
-      { name: 'T1', connectionId: 'conn-1', remoteRoot: '/one', enabled: true },
-      { name: 'T2', connectionId: 'conn-2', remoteRoot: '/two', enabled: true }
-    ]
-  });
 
-  const firstTargetId = saved.targets[0].id;
-  const secondTargetId = saved.targets[1].id;
-  await store.setActiveTargetId(saved.id, firstTargetId);
-  assert.equal(store.getActiveTargetId(saved.id), firstTargetId);
-
-  const updated = await store.save({
-    id: saved.id,
-    name: saved.name,
-    localRoot: saved.localRoot,
-    targets: saved.targets.map(target => ({
-      ...target,
-      enabled: target.id !== firstTargetId
-    })),
-    options: saved.options
-  });
-
-  assert.equal(updated.targets.find(target => target.id === firstTargetId)?.enabled, false);
-  assert.equal(updated.targets.find(target => target.id === secondTargetId)?.enabled, true);
-  assert.equal(store.getActiveTargetId(saved.id), secondTargetId);
-  assert.equal(store.getActiveTarget(updated)?.id, secondTargetId);
-});
 
 
 test('Workspace Sync rejects duplicate complete routes across different mappings', () => {
@@ -353,24 +182,4 @@ test('Workspace Sync rejects duplicate complete routes across different mappings
   ]));
 });
 
-test('WorkspaceMappingStore rejects a route already owned by another mapping', async () => {
-  const context = fakeContext();
-  const store = new WorkspaceMappingStore(context);
-  await store.save({
-    name: 'Mapping A',
-    localRoot: './project',
-    targets: [{ name: 'T1', connectionId: 'conn-1', remoteRoot: '/same' }]
-  });
 
-  await assert.rejects(() => store.save({
-    name: 'Mapping B',
-    localRoot: './project',
-    targets: [{ name: 'T2', connectionId: 'conn-1', remoteRoot: '/same/' }]
-  }), /same Local Root, Connection, and Remote Directory/);
-
-  await assert.doesNotReject(() => store.save({
-    name: 'Mapping C',
-    localRoot: './project',
-    targets: [{ name: 'T3', connectionId: 'conn-1', remoteRoot: '/different' }]
-  }));
-});

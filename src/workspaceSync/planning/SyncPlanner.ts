@@ -23,7 +23,11 @@ export function buildSyncPlan(mappingId: string, targetId: string, diffs: DiffEn
       errors.push(diff);
       continue;
     }
-    if ((diff.status === 'conflict' || diff.status === 'different') && diff.resolution) {
+    // Explicit review decisions also resolve plan-level directory-delete
+    // conflicts (for example, preserving a Local subtree after the Remote
+    // parent was deleted). Keep the decision semantics in one planner path
+    // instead of implementing a separate modal-only plan.
+    if (diff.resolution) {
       const operation = planResolution(diff, diff.resolution);
       const compatibilityError = operationDestinationCompatibilityError(operation, options);
       if (compatibilityError) {

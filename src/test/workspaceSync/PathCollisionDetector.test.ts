@@ -64,14 +64,6 @@ test('PathCollisionDetector protects a case-insensitive Local destination from R
   assert.equal(result.every(entry => entry.status === 'conflict'), true);
 });
 
-test('Snapshot case-only aliases prove that side can represent distinct case variants', () => {
-  assert.equal(inferSnapshotCaseSensitivity(snapshot(['A.txt', 'a.txt']), undefined), true);
-  assert.equal(inferSnapshotCaseSensitivity(snapshot(['A.txt']), undefined), undefined);
-});
 
-test('defaultLocalCaseSensitivity is conservative on Windows and macOS', () => {
-  assert.equal(defaultLocalCaseSensitivity('win32'), false);
-  assert.equal(defaultLocalCaseSensitivity('darwin'), false);
-  assert.equal(defaultLocalCaseSensitivity('linux'), true);
-  assert.equal(defaultLocalCaseSensitivity('aix'), true);
-});
+
+

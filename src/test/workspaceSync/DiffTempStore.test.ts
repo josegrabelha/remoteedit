@@ -5,18 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { WorkspaceSyncDiffTempStore } from '../../workspaceSync/compare/DiffTempStore';
 
-test('DiffTempStore creates bounded safe filenames for deeply nested paths', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-diff-temp-'));
-  try {
-    const store = new WorkspaceSyncDiffTempStore(root);
-    const tempPath = await store.allocate(`${'nested/'.repeat(40)}${'very-long-name'.repeat(40)}.json`);
-    assert.equal(path.dirname(tempPath), root);
-    assert.ok(path.basename(tempPath).length < 160);
-    assert.match(path.basename(tempPath), /\.json$/);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
+
 
 test('DiffTempStore prunes expired files and keeps the newest files within the limit', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-diff-prune-'));

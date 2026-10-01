@@ -21,6 +21,8 @@ export interface WorkspaceSyncRemoteSession {
   readonly connectionIdentity: string;
   readonly connectionType: 'sftp' | 'ftp' | 'ftps';
   readonly capabilities: WorkspaceSyncRemoteCapabilities;
+  /** Terminal close: old operations must not retry or mutate Local after Disconnect. */
+  readonly isDisconnected?: boolean;
   list(remotePath: string): Promise<WorkspaceSyncRemoteEntry[]>;
   stat(remotePath: string): Promise<WorkspaceSyncRemoteEntry | undefined>;
   ensureDirectory(remotePath: string): Promise<void>;
@@ -33,4 +35,7 @@ export interface WorkspaceSyncRemoteSession {
   replaceFile(tempPath: string, targetPath: string): Promise<void>;
   reconnect(): Promise<void>;
   disconnect(): Promise<void>;
+  /** Interrupt read-only network commands to unblock Disconnect. Never interrupts active writes. */
+  /** True when closing a blocked read invalidated this private connection. */
+  interruptPendingReads?(): boolean;
 }

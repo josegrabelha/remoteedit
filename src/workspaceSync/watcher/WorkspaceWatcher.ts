@@ -20,9 +20,10 @@ export interface WorkspaceLocalChange {
 }
 
 export class WorkspaceWatcher implements vscode.Disposable {
-  private readonly mappingWatchers: vscode.Disposable[] = [];
+  private readonly mappingWatchers = new Map<string, { root: string; subscriptions: vscode.Disposable[] }>();
   private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
   private readonly pendingChanges = new Map<string, WorkspaceLocalChange>();
+  private disposed = false;
   private mappings: WorkspaceSyncMapping[] = [];
   private saveSubscription: vscode.Disposable | undefined;
   private readonly diagnostics: WorkspaceSyncDiagnostics;
@@ -35,31 +36,45 @@ export class WorkspaceWatcher implements vscode.Disposable {
   }
 
   refresh(mappings: WorkspaceSyncMapping[]): void {
-    this.disposeWatchers();
-    // A mapping can change Local Root while a debounced event from the old
-    // root is still pending. Never let that stale relative path execute
-    // against the new mapping context.
-    this.clearScheduledChanges();
+    if (this.disposed) return;
+    // Preserve live subscriptions and pending debounce events for unchanged
+    // mappings. Opening a different mapping must not discard filesystem changes.
+    const desired = new Map(mappings
+      .filter(mapping => mapping.options.watchLocalChanges)
+      .map(mapping => [mapping.id, mapping]));
+    for (const [mappingId, registration] of this.mappingWatchers) {
+      const mapping = desired.get(mappingId);
+      if (mapping && mapping.localRoot === registration.root) continue;
+      registration.subscriptions.forEach(item => item.dispose());
+      this.mappingWatchers.delete(mappingId);
+      this.clearScheduledChanges(mappingId);
+    }
     this.mappings = mappings;
+    this.refreshSaveSubscription();
+    for (const mapping of desired.values()) {
+      if (this.mappingWatchers.has(mapping.id)) continue;
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(mapping.localRoot, '**/*'));
+      this.mappingWatchers.set(mapping.id, {
+        root: mapping.localRoot,
+        subscriptions: [
+          watcher,
+          watcher.onDidCreate(uri => this.schedule(mapping, uri.fsPath, 'create', 'watcher')),
+          watcher.onDidChange(uri => this.schedule(mapping, uri.fsPath, 'change', 'watcher')),
+          watcher.onDidDelete(uri => this.schedule(mapping, uri.fsPath, 'delete', 'watcher'))
+        ]
+      });
+    }
     this.diagnostics.debug('Local Watch', 'Filesystem watcher registrations refreshed.', {
       Mappings: mappings.length,
-      WatchLocalMappings: mappings.filter(mapping => mapping.options.watchLocalChanges).length,
+      WatchLocalMappings: desired.size,
       UploadOnSaveMappings: mappings.filter(mapping => mapping.options.uploadOnSave).length
     });
-    this.refreshSaveSubscription();
-    for (const mapping of mappings) {
-      if (!mapping.options.watchLocalChanges) continue;
-      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(mapping.localRoot, '**/*'));
-      this.mappingWatchers.push(
-        watcher,
-        watcher.onDidCreate(uri => this.schedule(mapping, uri.fsPath, 'create', 'watcher')),
-        watcher.onDidChange(uri => this.schedule(mapping, uri.fsPath, 'change', 'watcher')),
-        watcher.onDidDelete(uri => this.schedule(mapping, uri.fsPath, 'delete', 'watcher'))
-      );
-    }
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.mappings = [];
     this.disposeWatchers();
     this.saveSubscription?.dispose();
     this.saveSubscription = undefined;
@@ -89,7 +104,7 @@ export class WorkspaceWatcher implements vscode.Disposable {
     kind: WorkspaceLocalChangeKind,
     source: Exclude<WorkspaceLocalChangeSource, 'both'>
   ): void {
-    if (!isWithinRoot(mapping.localRoot, absolutePath)) return;
+    if (this.disposed || !isWithinRoot(mapping.localRoot, absolutePath)) return;
     if (/\.remoteedit-[^/\\]+\.tmp$/i.test(absolutePath)) return;
 
     const physicalRelativePath = normalizeRelativePath(path.relative(mapping.localRoot, absolutePath));
@@ -129,15 +144,22 @@ export class WorkspaceWatcher implements vscode.Disposable {
   }
 
 
-  private clearScheduledChanges(): void {
-    for (const timer of this.debounceTimers.values()) clearTimeout(timer);
-    this.debounceTimers.clear();
-    this.pendingChanges.clear();
+  private clearScheduledChanges(mappingId?: string): void {
+    for (const [key, timer] of this.debounceTimers) {
+      if (mappingId && !key.startsWith(`${mappingId}:`)) continue;
+      clearTimeout(timer);
+      this.debounceTimers.delete(key);
+      this.pendingChanges.delete(key);
+    }
   }
 
   private disposeWatchers(): void {
-    while (this.mappingWatchers.length) this.mappingWatchers.pop()?.dispose();
+    for (const registration of this.mappingWatchers.values()) {
+      registration.subscriptions.forEach(item => item.dispose());
+    }
+    this.mappingWatchers.clear();
   }
+
 }
 
 function isWithinRoot(root: string, filePath: string): boolean {

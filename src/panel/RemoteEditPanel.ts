@@ -1,24 +1,22 @@
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AsyncLocalStorage } from 'async_hooks';
 import { ConnectionManager, type RemoteEditPersistentWebviewStorage } from '../connection/ConnectionManager';
 import { buildRemoteEditUri, preferOpenRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { resolveEditorRootSegments } from '../filesystem/EditorRootLabel';
-import type { ActiveConnection, ConnectOptions, RemoteSessionManager, RemoteEntryMetadataNotifier, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
+import type { ConnectOptions, RemoteSessionManager, RemoteEntryMetadataNotifier, RemoteEntryMetadataUpdate } from '../remote/RemoteSessionManager';
 import { getRemoteConnectOriginalMessage, getRemoteConnectStatusMessage } from '../remote/ConnectionProbe';
 import { getRemoteCapabilities } from '../remote/RemoteCapabilities';
 import { dirnameRemotePath, joinRemotePath, normalizeRemotePath, type RemoteEntry, type RemoteChecksumSummary } from '../ssh/SftpSessionManager';
 import { SshTerminalService } from '../ssh/SshTerminalService';
-import { PortForwardManager, type SavedPortForwardConfig, type PortForwardRuntimeState } from '../ssh/PortForwardManager';
+import { PortForwardManager, type PortForwardRuntimeState } from '../ssh/PortForwardManager';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
-import { RemoteSearchService, type RemoteSearchSnapshot, type RemoteSearchResult, type RemoteSearchOptions, type RemoteSearchResultMeta } from '../search/RemoteSearchService';
+import { RemoteSearchService, type RemoteSearchSnapshot, type RemoteSearchOptions } from '../search/RemoteSearchService';
 import { LogViewerPanel } from '../logViewer/LogViewerPanel';
 import { buildDeleteEntriesConfirmationDetail } from '../utils/deleteConfirmationUtils';
 import { RemoteEditOperationCancelledError, formatBytes, isRemoteEditOperationCancelled, throwIfCancelled, withRemoteEditProgress, type RemoteEditProgressReporter } from '../utils/progressUtils';
 import { appendDebugLog, appendOutputLog, appendPerformanceLog, createPerformanceTimer, type OutputLogDetails } from '../utils/outputLogger';
-import { shellQuote } from '../utils/shellUtils';
 import { isWindowsRemotePlatform } from '../remote/RemotePlatform';
 import { dirnameRemotePathForPlatform, normalizeRemotePathForPlatform } from '../remote/RemotePathUtils';
 import { normalizePermissionDisplayMode } from '../utils/permissionFormatUtils';
@@ -29,7 +27,7 @@ import { RemoteEditIncomingMessageType, RemoteEditOutboundMessageType, type Remo
 import { RemoteEditPanelState } from './PanelState';
 import { calculateModeFromPermissionState, parsePermissionString, type SetPermissionsDialogResult, type SetPermissionsPanelOptions } from './Permissions';
 import { formatOwnerGroupOperationError, formatOwnerGroupTargetLabel, formatPermissionOperationError, normalizePermissionEntries, validateOwnerGroupName } from './PermissionUtils';
-import type { ActiveRemoteCommandState, ActiveTransferState, AggregateTransferState, ArchiveFormat, ConfirmDialogOptions, DownloadTransferItem, LocalUploadEntry, PendingConnectionSnapshot, PendingTransferConflict, QueuedTransferJob, TransferCompletionStatus, TransferConflictChoice, TransferConflictDecision, TransferConflictKind, TransferConflictState, TransferQueueItemSnapshot, TransferQueueStateSnapshot, TransferSkipState, TransferSummary, UploadTransferItem } from './PanelTypes';
+import type { ActiveRemoteCommandState, ActiveTransferState, AggregateTransferState, ArchiveFormat, ConfirmDialogOptions, DownloadTransferItem, LocalUploadEntry, PendingConnectionSnapshot, PendingTransferConflict, QueuedTransferJob, TransferCompletionStatus, TransferConflictChoice, TransferConflictDecision, TransferConflictState, TransferQueueItemSnapshot, TransferQueueStateSnapshot, TransferSkipState, TransferSummary, UploadTransferItem } from './PanelTypes';
 import { buildCopyFileName } from './FileNameUtils';
 import { buildArchiveBaseName, normalizeArchiveFormat, normalizeArchiveName } from './ArchiveUtils';
 import { formatFailureStatus, formatStatusError, normalizeMessageForComparison, shouldShowStatusOutputLink } from './StatusFormatter';
@@ -37,8 +35,7 @@ import { formatRemoteEditError } from './ErrorFormatter';
 import { extractConnectionIdFromError, formatBackupImportError, formatMissingRemoteConnectionMessage, isConnectionStateOperation, isMissingRemoteConnectionError } from './ConnectionErrors';
 import { addCanceledTransferItem, buildDownloadQueueSourceLabel, buildDownloadQueueTargetLabel, buildSelectedLocalItemsLabel, buildSelectedRemoteItemsLabel, buildTransferCompletionStatusText, buildTransferProgressDetail, buildTransferResultProgress, buildTransferStatusMessage, buildUploadQueueSourceLabel, buildUploadQueueTargetLabel, createTransferSkipState, formatCount, formatLocalDateTime, formatQueuedTransferCount, formatTransferError, formatTransferProgressMessage, getTransferCompletionStatus, isTransferCancellationError, joinRemoteRelativePath, toPosixRelativePath, markTransferPathSkipped, markTransferTreeSkipped, shouldSkipTransferItem } from './TransferUtils';
 import { readLocalFileWithCancellation, writeLocalFileSafely } from './TransferFileIO';
-import { buildNativeTransferConflictDetail, buildNativeTransferConflictMessage, buildTransferConflictChoices, buildTransferConflictDialogPayload, buildTypeMismatchConflictMessage, isValidTransferConflictChoice } from './TransferConflicts';
-import { buildFallbackServerSystemInfo, buildServerDashboardSnapshot, buildServerDashboardSnapshotCommand, createUnavailableServerOverview, parseServerDashboardSnapshotOutput, type ServerDashboardProcessItem, type ServerDashboardScheduledJobItem, type ServerDashboardServiceItem } from './server/ServerDashboardModel';
+import { buildNativeTransferConflictDetail, buildNativeTransferConflictMessage, buildTransferConflictChoices, buildTransferConflictDialogPayload, isValidTransferConflictChoice } from './TransferConflicts';
 import { buildChecksumsDialogPayload, formatTimestampForDialog } from './ChecksumUtils';
 import { formatRemoteFileOpenFailureReason } from './RemoteFileOpenErrors';
 import { RemoteEditDialogManager, type InputDialogOptions } from './DialogManager';
@@ -349,7 +346,7 @@ export class RemoteEditPanel {
   static openLogViewerForConnection(
     context: vscode.ExtensionContext,
     sessions: RemoteSessionManager,
-    connectionManager: ConnectionManager,
+    _connectionManager: ConnectionManager,
     output: vscode.OutputChannel,
     connectionId: string
   ): void {
@@ -359,7 +356,7 @@ export class RemoteEditPanel {
   static openLogViewerForFile(
     context: vscode.ExtensionContext,
     sessions: RemoteSessionManager,
-    connectionManager: ConnectionManager,
+    _connectionManager: ConnectionManager,
     output: vscode.OutputChannel,
     connectionId: string,
     remotePath: string
@@ -1534,8 +1531,6 @@ export class RemoteEditPanel {
       await this.cancelConnection({ connectionId });
       return;
     }
-
-    const connection = this.sessions.getConnection(connectionId);
     const removedQueuedTransfers = this.clearQueuedTransfersForConnection(connectionId);
 
     this.cancelActiveTransfersForConnection(connectionId);
@@ -4341,50 +4336,9 @@ export class RemoteEditPanel {
     }
   }
 
-  private clearCompletedTransfersForConnection(connectionId: string): void {
-    for (let index = this.completedTransfers.length - 1; index >= 0; index -= 1) {
-      if (this.completedTransfers[index].connectionId === connectionId) {
-        this.completedTransfers.splice(index, 1);
-      }
-    }
-
-    this.postTransferQueueState();
-  }
-
   private clearAllCompletedTransfers(): void {
     this.completedTransfers.splice(0, this.completedTransfers.length);
     this.postTransferQueueState();
-  }
-
-  private beginManualTransfer(operation: 'Upload' | 'Download', connectionId: string): vscode.CancellationTokenSource {
-    const source = new vscode.CancellationTokenSource();
-    const job: QueuedTransferJob = {
-      id: this.createTransferJobId(),
-      operation,
-      source: 'webview',
-      connectionId,
-      connectionLabel: this.buildTransferConnectionLabel(connectionId),
-      title: `${operation} transfer`,
-      from: '',
-      to: '',
-      progress: 'Preparing...',
-      queuedAt: formatLocalDateTime(new Date()),
-      startedAt: formatLocalDateTime(new Date()),
-      run: async () => 'Canceled'
-    };
-
-    this.activeTransfers.set(job.id, {
-      job,
-      cancellationSource: source,
-      connectionId,
-      canceling: false,
-      status: 'Preparing'
-    });
-    this.transferExecutionContext.enterWith(job.id);
-    this.updateActiveTransferStatusBarItem();
-    this.postTransferQueueState();
-
-    return source;
   }
 
   private endManualTransfer(source?: vscode.CancellationTokenSource): void {

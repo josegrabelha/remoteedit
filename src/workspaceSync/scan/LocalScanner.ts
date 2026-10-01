@@ -4,6 +4,7 @@ import type { SnapshotEntry, SyncSnapshot } from '../types';
 import { canonicalRelativePath, createSyncSnapshot, normalizeRelativePath } from '../snapshot/SyncSnapshot';
 import { IgnoreMatcher } from '../ignore/IgnoreMatcher';
 import { assertSafeSyncPathSegment } from './PathSegment';
+import { classifyLocalStat } from './LocalEntryKind';
 
 export interface LocalScanOptions {
   ignorePatterns?: string[];
@@ -19,6 +20,7 @@ export async function scanLocalTree(root: string, options: LocalScanOptions = {}
   const queue: string[] = [''];
   const entries: SnapshotEntry[] = [];
   const incompletePaths: string[] = [];
+  const incompleteErrors: Record<string, string> = {};
   let scanned = 0;
   const concurrency = Math.max(1, Math.min(32, Math.floor(options.concurrency || 8)));
 
@@ -36,7 +38,45 @@ export async function scanLocalTree(root: string, options: LocalScanOptions = {}
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(`Workspace Sync cannot scan Local root '${absoluteRoot}': ${message}`);
         }
+        // A directory listed by its parent may disappear before traversal.
+        // Confirm that it is really gone instead of keeping a permanent
+        // Unknown result for an ephemeral entry. Other errors fail closed.
+        if (isMissingPath(error)) {
+          throwIfCancelled(options.cancellationToken);
+          // The name may now refer to a regular file, symlink or special
+          // entry instead of the directory previously returned by readdir.
+          // Keep its current type, but never descend into the replacement.
+          try {
+            const replacement = await fs.lstat(absoluteDir);
+            const { kind, specialType } = classifyLocalStat(replacement);
+            if (kind !== 'directory') {
+              const canonical = canonicalRelativePath(relativeDir);
+              const previous = entries.find(entry => entry.relativePath === canonical);
+              if (previous) {
+                previous.fingerprint = {
+                  kind,
+                  ...(specialType ? { specialType } : {}),
+                  size: replacement.size,
+                  mtimeMs: replacement.mtimeMs
+                };
+              }
+              return childDirectories;
+            }
+          } catch {
+            // Only a confirmed disappearance can be omitted. Any other
+            // failure remains visible as an incomplete scan below.
+          }
+          const absent = await confirmMissingChild(path.dirname(absoluteDir), path.basename(absoluteDir), absoluteDir);
+          throwIfCancelled(options.cancellationToken);
+          if (absent) {
+            const canonical = canonicalRelativePath(relativeDir);
+            const previousIndex = entries.findIndex(entry => entry.relativePath === canonical);
+            if (previousIndex !== -1) entries.splice(previousIndex, 1);
+            return childDirectories;
+          }
+        }
         incompletePaths.push(relativeDir);
+        incompleteErrors[canonicalRelativePath(relativeDir)] = scanErrorDetail(error);
         return childDirectories;
       }
 
@@ -51,14 +91,41 @@ export async function scanLocalTree(root: string, options: LocalScanOptions = {}
         }
 
         const absolutePath = safeLocalPath(absoluteRoot, physicalRelativePath);
+        let stat: import('fs').Stats;
         try {
-          const stat = await fs.lstat(absolutePath);
-          const kind = stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : stat.isSymbolicLink() ? 'link' : 'unknown';
+          stat = await fs.lstat(absolutePath);
+        } catch (error) {
+          if (isMissingPath(error)) {
+            // Recheck the entry, then confirm it is absent from its parent.
+            // A missing entry is not an incomplete scan; a permission or
+            // other I/O failure is still an Unknown and must stay visible.
+            throwIfCancelled(options.cancellationToken);
+            try {
+              stat = await fs.lstat(absolutePath);
+            } catch (retryError) {
+              if (isMissingPath(retryError)) {
+                const absent = await confirmMissingChild(absoluteDir, child.name, absolutePath);
+                throwIfCancelled(options.cancellationToken);
+                if (absent) continue;
+              }
+              incompletePaths.push(relativePath);
+              incompleteErrors[relativePath] = scanErrorDetail(retryError);
+              continue;
+            }
+          } else {
+            incompletePaths.push(relativePath);
+            incompleteErrors[relativePath] = scanErrorDetail(error);
+            continue;
+          }
+        }
+        try {
+          const { kind, specialType } = classifyLocalStat(stat);
           entries.push({
             relativePath,
             physicalRelativePath,
             fingerprint: {
               kind,
+              ...(specialType ? { specialType } : {}),
               size: stat.size,
               mtimeMs: stat.mtimeMs
             }
@@ -68,8 +135,9 @@ export async function scanLocalTree(root: string, options: LocalScanOptions = {}
           if (kind === 'directory') {
             childDirectories.push(physicalRelativePath);
           }
-        } catch {
+        } catch (error) {
           incompletePaths.push(relativePath);
+          incompleteErrors[relativePath] = scanErrorDetail(error);
         }
       }
       return childDirectories;
@@ -79,7 +147,34 @@ export async function scanLocalTree(root: string, options: LocalScanOptions = {}
     }
   }
 
-  return createSyncSnapshot(entries, incompletePaths);
+  return createSyncSnapshot(entries, incompletePaths, incompleteErrors);
+}
+
+function isMissingPath(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+/** An extra lstat + parent listing guards against a transient ENOENT race. */
+async function confirmMissingChild(parent: string, childName: string, absolutePath: string): Promise<boolean> {
+  try {
+    await fs.lstat(absolutePath);
+    return false;
+  } catch (error) {
+    if (!isMissingPath(error)) return false;
+  }
+  try {
+    const names = await fs.readdir(parent);
+    return !names.includes(childName);
+  } catch {
+    // An inaccessible parent cannot be mistaken for a confirmed deletion.
+    return false;
+  }
+}
+
+function scanErrorDetail(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return typeof code === 'string' && code ? code : error instanceof Error ? error.message : String(error);
 }
 
 export function safeLocalPath(root: string, relativePath: string): string {

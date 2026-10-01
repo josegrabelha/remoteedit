@@ -59,5 +59,76 @@ export async function revalidateSyncPlan(
     }
     valid.push(operation);
   }
+
+  // Directory deletes have an explicit dependency on every descendant delete
+  // in the same plan. If a child becomes stale during revalidation, keeping an
+  // ancestor rmdir valid is unsafe: the parent may now contain data that was
+  // not removed by this execution. Cascade the stale state upward so the
+  // executor never attempts the parent based on a partially-invalidated plan.
+  cascadeStaleDirectoryDeletes(valid, stale);
+  cascadeStaleDirectoryDeleteDescendants(valid, stale);
   return { valid, stale };
+}
+
+function cascadeStaleDirectoryDeletes(
+  valid: SyncOperation[],
+  stale: Array<{ operation: SyncOperation; reason: string }>
+): void {
+  if (!valid.length || !stale.length) return;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let index = valid.length - 1; index >= 0; index -= 1) {
+      const operation = valid[index];
+      const localDirectoryDelete = operation.type === 'deleteLocal' && operation.expectedLocal?.kind === 'directory';
+      const remoteDirectoryDelete = operation.type === 'deleteRemote' && operation.expectedRemote?.kind === 'directory';
+      if (!localDirectoryDelete && !remoteDirectoryDelete) continue;
+
+      const prefix = `${operation.relativePath.replace(/\/+$/, '')}/`;
+      const dependent = stale.find(item =>
+        item.operation.type === operation.type
+        && item.operation.relativePath.startsWith(prefix)
+      );
+      if (!dependent) continue;
+
+      valid.splice(index, 1);
+      stale.push({
+        operation,
+        reason: `Directory delete deferred because descendant '${dependent.operation.relativePath}' changed after the sync plan was created.`
+      });
+      changed = true;
+    }
+  }
+}
+
+
+/** If the directory root itself changed, none of the descendant deletes that
+ * were expanded from that root may continue. This is the inverse dependency of
+ * cascadeStaleDirectoryDeletes(): stale children block the parent, and a stale
+ * parent blocks every generated child. */
+function cascadeStaleDirectoryDeleteDescendants(
+  valid: SyncOperation[],
+  stale: Array<{ operation: SyncOperation; reason: string }>
+): void {
+  if (!valid.length || !stale.length) return;
+  const staleDirectories = stale
+    .map(item => item.operation)
+    .filter(operation => (operation.type === 'deleteLocal' && operation.expectedLocal?.kind === 'directory')
+      || (operation.type === 'deleteRemote' && operation.expectedRemote?.kind === 'directory'));
+  if (!staleDirectories.length) return;
+
+  for (let index = valid.length - 1; index >= 0; index -= 1) {
+    const operation = valid[index];
+    const ancestor = staleDirectories.find(directory =>
+      directory.type === operation.type
+      && operation.relativePath.startsWith(`${directory.relativePath.replace(/\/+$/, '')}/`)
+    );
+    if (!ancestor) continue;
+    valid.splice(index, 1);
+    stale.push({
+      operation,
+      reason: `Delete deferred because ancestor directory '${ancestor.relativePath}' changed after the sync plan was created.`
+    });
+  }
 }

@@ -961,7 +961,7 @@ export function renderTransferContextActions(): string {
 
   exportBackupCancelButton.addEventListener('click', hideExportBackupDialog);
   exportBackupApplyButton.addEventListener('click', applyExportBackupDialog);
-  for (const input of [exportIncludeSettings, exportIncludeWorkspaceSync, exportIncludeConnections, exportIncludeFavorites, exportIncludeUsernames, exportIncludeCredentials]) {
+  for (const input of [exportIncludeSettings, exportIncludeWorkspaceSync, exportIncludeMultiTarget, exportIncludeConnections, exportIncludeFavorites, exportIncludeUsernames, exportIncludeCredentials]) {
     input.addEventListener('change', updateExportBackupDialogState);
   }
 
@@ -981,7 +981,7 @@ export function renderTransferContextActions(): string {
 
   importBackupCancelButton.addEventListener('click', hideImportBackupDialog);
   importBackupApplyButton.addEventListener('click', applyImportBackupDialog);
-  for (const input of [importIncludeSettings, importIncludeWorkspaceSync, importIncludeConnections, importIncludeFavorites, importIncludeUsernames, importRestoreCredentials, importModeMerge, importModeReplace]) {
+  for (const input of [importIncludeSettings, importIncludeWorkspaceSync, importIncludeMultiTarget, importIncludeConnections, importIncludeFavorites, importIncludeUsernames, importRestoreCredentials, importModeMerge, importModeReplace]) {
     input.addEventListener('change', updateImportBackupDialogState);
   }
 

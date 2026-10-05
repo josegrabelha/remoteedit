@@ -462,7 +462,7 @@ export class SftpSessionManager implements RemoteSessionManager {
     }
 
     const client = this.getClient(connectionId);
-    const normalizedWorkingDirectory = this.normalizeRemotePathForConnection(connectionId, workingDirectory || '/');
+    const normalizedWorkingDirectory = callbacks.useSessionWorkingDirectory ? '' : this.normalizeRemotePathForConnection(connectionId, workingDirectory || '/');
     const displayScript = buildRemoteCommandDisplayScript(trimmedCommand);
     const streamingCallbacks = createRemoteCommandDisplayCallbacks(displayScript, callbacks);
     const sudoPassword = this.sudoPasswords.get(connectionId);
@@ -472,7 +472,8 @@ export class SftpSessionManager implements RemoteSessionManager {
       normalizedWorkingDirectory,
       displayScript.script,
       remoteProcessPidMarkerPrefix,
-      Boolean(sudoPassword)
+      Boolean(sudoPassword),
+      Boolean(callbacks.useSessionWorkingDirectory)
     );
 
     try {
@@ -500,9 +501,9 @@ export class SftpSessionManager implements RemoteSessionManager {
     cancellationToken?: ConnectionCancellationToken
   ): Promise<RemoteCommandStreamingResult> {
     const client = this.getClient(connectionId);
-    const normalizedWorkingDirectory = this.normalizeRemotePathForConnection(connectionId, workingDirectory || '/');
+    const normalizedWorkingDirectory = callbacks.useSessionWorkingDirectory ? '' : this.normalizeRemotePathForConnection(connectionId, workingDirectory || '/');
     const commandWorkingDirectory = toRemoteCommandPath(normalizedWorkingDirectory, 'windows');
-    const setLocationScript = buildWindowsSetLocationScript(commandWorkingDirectory);
+    const setLocationScript = callbacks.useSessionWorkingDirectory ? '' : buildWindowsSetLocationScript(commandWorkingDirectory);
     const script = [setLocationScript, command].filter(Boolean).join('\r\n');
     const commandToExecute = isWindowsPowerShellCommand(command)
       ? command

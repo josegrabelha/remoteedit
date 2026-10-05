@@ -19,6 +19,7 @@ export function parseExportOptions(payload: any): ConnectionBackupExportOptions 
   const includeSettings = Boolean(payload.includeSettings);
   const includeConnections = Boolean(payload.includeConnections);
   const includeWorkspaceSync = Boolean(payload.includeWorkspaceSync);
+  const includeMultiTarget = Boolean(payload.includeMultiTarget);
   const includeUsernames = includeConnections && Boolean(payload.includeUsernames);
   const includeCredentials = includeConnections && includeUsernames && Boolean(payload.includeCredentials);
 
@@ -26,6 +27,7 @@ export function parseExportOptions(payload: any): ConnectionBackupExportOptions 
     includeSettings,
     includeConnections,
     includeWorkspaceSync,
+    includeMultiTarget,
     includeFavorites: includeConnections && Boolean(payload.includeFavorites),
     includeUsernames,
     includeCredentials,
@@ -37,6 +39,7 @@ export function parseImportOptions(payload: any): ConnectionBackupImportOptions 
   const includeSettings = Boolean(payload.includeSettings);
   const includeConnections = Boolean(payload.includeConnections);
   const includeWorkspaceSync = Boolean(payload.includeWorkspaceSync);
+  const includeMultiTarget = Boolean(payload.includeMultiTarget);
   const includeUsernames = includeConnections && Boolean(payload.includeUsernames);
   const restoreCredentials = includeConnections && includeUsernames && Boolean(payload.restoreCredentials);
   const importMode = payload.importMode === 'replace' ? 'replace' : 'merge';
@@ -45,6 +48,7 @@ export function parseImportOptions(payload: any): ConnectionBackupImportOptions 
     includeSettings,
     includeConnections,
     includeWorkspaceSync,
+    includeMultiTarget,
     includeFavorites: includeConnections && Boolean(payload.includeFavorites),
     includeUsernames,
     restoreCredentials,

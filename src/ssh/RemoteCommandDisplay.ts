@@ -14,11 +14,12 @@ export function buildControlledRemoteCommandScript(
   workingDirectory: string,
   commandScript: string,
   pidMarkerPrefix: string,
-  redirectInputFromNull: boolean
+  redirectInputFromNull: boolean,
+  useSessionWorkingDirectory = false
 ): string {
   const inputRedirectLine = redirectInputFromNull ? 'exec </dev/null' : '';
   const scriptLines = [
-    `cd ${shellQuote(workingDirectory)} || exit $?`,
+    useSessionWorkingDirectory ? '' : `cd ${shellQuote(workingDirectory)} || exit $?`,
     inputRedirectLine,
     'if command -v setsid >/dev/null 2>&1; then',
     `  setsid sh -c ${shellQuote(commandScript)} &`,

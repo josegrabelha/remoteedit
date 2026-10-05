@@ -928,11 +928,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       $('remoteRoot').textContent = target?.remoteRoot || '—';
       const targetEnabled = Boolean(target?.enabled);
       status = targetEnabled ? (state.connectionStatus || 'disconnected') : 'disabled';
-      $('connect').textContent = !targetEnabled
-        ? 'Disabled'
-        : status === 'connected'
-          ? (state.connectionConfigChanged ? 'Reconnect' : 'Disconnect')
-          : status === 'connecting' ? 'Connecting...' : 'Connect';
+      $('connect').textContent = !mapping || !target
+        ? 'Connect'
+        : !targetEnabled
+          ? 'Disabled'
+          : status === 'connected'
+            ? (state.connectionConfigChanged ? 'Reconnect' : 'Disconnect')
+            : status === 'connecting' ? 'Connecting...' : 'Connect';
       $('connect').disabled = (operationActive || interactionActive) || !mapping || !target || !targetEnabled || status === 'connecting';
       if (operationActive && ['connect', 'reconnect'].includes(activeOperationKind)) {
         if (status === 'connecting' && activeOperationStageKind !== activeOperationKind) {
@@ -1664,13 +1666,9 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   function renderTargetStates() {
     const mapping = activeMapping();
     const element = $('targetStates');
-    if (!mapping) {
-      element.innerHTML = '';
-      element.hidden = true;
-      return;
-    }
+    const targets = mapping?.targets || [];
     const targetStates = state.targetStates || [];
-    const details = (mapping.targets || []).map(target => {
+    const details = targets.map(target => {
       const item = targetStates.find(targetState => targetState.targetId === target.id);
       const rawStatus = target.enabled ? (item?.status || 'disconnected') : 'disabled';
       const displayStatus = rawStatus ? rawStatus[0].toUpperCase() + rawStatus.slice(1) : 'Disconnected';
@@ -1679,7 +1677,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
       return '<span tabindex="0" data-tooltip="' + esc(address) + '">' + esc(target.name)
         + '</span>: <span class="target-status ' + esc(rawStatus) + '">' + esc(displayStatus) + '</span>';
     }).join(' &nbsp; · &nbsp; ');
-    const label = (mapping.targets || []).length === 1 ? 'Target' : 'Targets';
+    const label = targets.length > 1 ? 'Targets' : 'Target';
     element.innerHTML = \`<span class="metadata-targets-label">\${label}:</span><span>\${details || '—'}</span>\`;
     element.hidden = false;
   }

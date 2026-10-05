@@ -1,6 +1,6 @@
 import { renderProfileDropdownStyles } from '../../../panel/webview/styles/ProfileDropdownStyles';
 export function renderSyncStyles(): string {
-  return renderProfileDropdownStyles() + `:root { color-scheme: light dark; --workspace-section-padding-y: 12px; --workspace-section-padding-x: 12px; }
+  return renderProfileDropdownStyles() + `:root { color-scheme: light dark; --workspace-section-padding-y: 12px; --workspace-section-padding-x: 12px; --workspace-sync-control-height: 27px; }
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -78,6 +78,16 @@ input, select, textarea {
 .toolbar-spacer { flex: 1; }
 #compare { width: 112px; min-width: 112px; flex: 0 0 112px; }
 #connect { width: 100%; min-width: 0; }
+#mapping, #target, #mappingActions button, #connectionAction button {
+  height: var(--workspace-sync-control-height);
+  min-height: var(--workspace-sync-control-height);
+}
+#mapping, #target {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  line-height: 21px;
+}
+#mappingActions button, #connectionAction button { padding-top: 3px; padding-bottom: 3px; font-size: 11px; font-family: var(--vscode-font-family); font-weight: 400; }
 .card { border: 1px solid var(--vscode-panel-border); padding: var(--workspace-section-padding-y) var(--workspace-section-padding-x); margin-bottom: 8px; }
 .grid { display: grid; grid-template-columns: 58px minmax(220px, 1fr) auto; gap: 6px 4px; align-items: center; }
 .label { color: var(--vscode-descriptionForeground); }
@@ -177,7 +187,7 @@ input, select, textarea {
 .filters button.filterActive .filter-count { opacity: .88; }
 .filters .filter-box { position: relative; flex: 0 1 260px; min-width: 160px; max-width: 260px; margin-left: auto; }
 .changes-primary-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; margin-left: 2px; padding-left: 8px; border-left: 1px solid var(--vscode-panel-border); }
-.changes-primary-actions button { height: 27px; min-height: 27px; padding: 3px 10px; font-size: 11px; }
+.changes-primary-actions button { height: var(--workspace-sync-control-height); min-height: var(--workspace-sync-control-height); padding: 3px 10px; font-size: 11px; }
 .changes-primary-actions #compare { width: 112px; min-width: 112px; flex: 0 0 112px; }
 .changes-more-wrap {
   position: relative;
@@ -684,6 +694,18 @@ button.resolution-choice.resolution-selected:hover:not(:disabled),
 .profile-select-native { display: none !important; }
 .sync-combo-menu { display: block !important; position: fixed; z-index: 10040; right: auto; }
 .sync-combo-menu .profile-dropdown-item { grid-template-columns: minmax(0,1fr); }
+.profile-picker[data-for="mapping"], .profile-picker[data-for="target"] { height: var(--workspace-sync-control-height); min-height: var(--workspace-sync-control-height); }
+.profile-picker[data-for="mapping"] .profile-dropdown-button, .profile-picker[data-for="target"] .profile-dropdown-button { height: var(--workspace-sync-control-height); min-height: var(--workspace-sync-control-height); padding: 2px 7px 2px 8px; line-height: 21px; font-size: 11px; }
+.profile-picker[data-for="mapping"] .profile-dropdown-label, .profile-picker[data-for="target"] .profile-dropdown-label { line-height: 21px; font-size: 11px; }
+.sync-combo-menu .profile-dropdown-filter input { height: var(--workspace-sync-control-height); min-height: var(--workspace-sync-control-height); padding-top: 2px; padding-bottom: 2px; line-height: 21px; }
+.sync-combo-menu[data-for="mapping"] .profile-dropdown-filter input,
+.sync-combo-menu[data-for="target"] .profile-dropdown-filter input,
+.sync-combo-menu[data-for="mapping"] .profile-dropdown-item,
+.sync-combo-menu[data-for="target"] .profile-dropdown-item,
+.sync-combo-menu[data-for="mapping"] .profile-dropdown-name,
+.sync-combo-menu[data-for="target"] .profile-dropdown-name,
+.sync-combo-menu[data-for="mapping"] .profile-dropdown-empty,
+.sync-combo-menu[data-for="target"] .profile-dropdown-empty { font-size: 11px; }
 .sync-dialog-backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(0,0,0,.45); }
 .sync-dialog { box-sizing: border-box; width: min(880px,100%); max-height: calc(100vh - 48px); overflow: auto; resize: none; border: 1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border)); border-radius: 6px; background: var(--vscode-editorWidget-background,var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground,var(--vscode-foreground)); box-shadow: 0 12px 36px rgba(0,0,0,.4); padding: 18px; }
 .sync-dialog textarea { resize: none; }
@@ -851,6 +873,33 @@ input[type=checkbox]:focus-visible { outline: 1px solid var(--vscode-focusBorder
 
 .diff-dialog-title-row { display: flex; align-items: center; gap: 12px; }
 .diff-dialog-title-row .dialog-title { min-width: 0; flex: 1 1 auto; margin-bottom: 0; }
-.diff-native-button { flex: 0 0 auto; min-height: 25px; padding: 3px 8px; font-size: 11px; }
+.diff-native-button { flex: 0 0 auto; }
+
+/* Keep ordinary Workspace Sync modal actions aligned with Multi-Target dialogs.
+   Specialized icon/help/table controls intentionally keep their own compact sizing. */
+.sync-dialog .dialog-actions > button,
+.sync-dialog .mapping-dialog-action-buttons > button,
+#addTarget,
+#folderGo,
+.folder-shortcuts button,
+.diff-native-button {
+  height: 27px;
+  min-height: 27px;
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-family: var(--vscode-font-family);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sync-dialog .dialog-actions > button:disabled,
+.sync-dialog .mapping-dialog-action-buttons > button:disabled,
+#addTarget:disabled,
+#folderGo:disabled,
+.folder-shortcuts button:disabled,
+.diff-native-button:disabled { opacity: .55; }
 `;
 }

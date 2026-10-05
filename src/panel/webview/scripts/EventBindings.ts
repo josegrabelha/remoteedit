@@ -1035,6 +1035,12 @@ export function renderEventBindings(): string {
   });
   if (remoteSearchButton) remoteSearchButton.addEventListener('click', showRemoteSearchDialog);
   if (remoteSearchPrimaryButton) remoteSearchPrimaryButton.addEventListener('click', startOrCancelRemoteSearch);
+  if (remoteSearchBackdrop) remoteSearchBackdrop.addEventListener('keydown', event => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && remoteSearchState.status !== 'running') {
+      event.preventDefault();
+      startOrCancelRemoteSearch();
+    }
+  });
   if (remoteSearchCopyButton) remoteSearchCopyButton.addEventListener('click', copyRemoteSearchResults);
   if (remoteSearchClearButton) remoteSearchClearButton.addEventListener('click', clearRemoteSearch);
   if (remoteSearchCloseButton) remoteSearchCloseButton.addEventListener('click', hideRemoteSearchDialog);

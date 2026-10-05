@@ -31,7 +31,8 @@ export class SidebarBackupController {
         return;
       }
 
-      if (!exportOptions.includeSettings && !exportOptions.includeConnections && !exportOptions.includeWorkspaceSync) {
+      if (!exportOptions.includeSettings && !exportOptions.includeConnections && !exportOptions.includeWorkspaceSync
+        && !exportOptions.includeMultiTarget) {
         void vscode.window.showWarningMessage('Remote Edit: Select at least one export option.');
         return;
       }
@@ -104,7 +105,8 @@ export class SidebarBackupController {
         return;
       }
 
-      if (!importOptions.includeSettings && !importOptions.includeConnections && !importOptions.includeWorkspaceSync) {
+      if (!importOptions.includeSettings && !importOptions.includeConnections && !importOptions.includeWorkspaceSync
+        && !importOptions.includeMultiTarget) {
         void vscode.window.showWarningMessage('Remote Edit: Select at least one import option.');
         return;
       }
@@ -114,6 +116,9 @@ export class SidebarBackupController {
       if (importOptions.includeWorkspaceSync) {
         RemoteEditSharedState.fireWorkspaceSyncChanged('sidebar', 'importBackup');
       }
+      if (importOptions.includeMultiTarget) {
+        RemoteEditSharedState.fireMultiTargetChanged('sidebar', 'importBackup');
+      }
       this.options.output.appendLine(`[Sidebar] Imported Remote Edit backup: ${selectedPath}`);
       void vscode.window.showInformationMessage(this.buildImportResultMessage(result));
     } catch (error) {
@@ -122,10 +127,11 @@ export class SidebarBackupController {
   }
 
   private async pickBackupExportOptions(): Promise<ConnectionBackupExportOptions | undefined> {
-    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'favorites' | 'usernames' | 'credentials' }> = [
+    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'multiTarget' | 'favorites' | 'usernames' | 'credentials' }> = [
       { label: 'Remote Edit settings', description: 'Export Remote Edit settings', option: 'settings', picked: true },
       { label: 'Saved connections', description: 'Export saved connection profiles', option: 'connections', picked: true },
       { label: 'Workspace Sync mappings', description: 'Export Workspace Sync mappings, targets, and sync options', option: 'workspaceSync', picked: true },
+      { label: 'Multi-Target Commands & Search', description: 'Export saved commands and target sets', option: 'multiTarget', picked: true },
       { label: 'Remote path favorites', description: 'Export favorites stored with saved connections', option: 'favorites', picked: true },
       { label: 'Include usernames', description: 'Include saved usernames in exported connections', option: 'usernames', picked: true },
       { label: 'Include encrypted saved passwords/passphrases', description: 'Requires an export password', option: 'credentials' }
@@ -160,6 +166,7 @@ export class SidebarBackupController {
       includeSettings: selectedOptions.has('settings'),
       includeConnections,
       includeWorkspaceSync: selectedOptions.has('workspaceSync'),
+      includeMultiTarget: selectedOptions.has('multiTarget'),
       includeFavorites: includeConnections && selectedOptions.has('favorites'),
       includeUsernames,
       includeCredentials,
@@ -168,10 +175,11 @@ export class SidebarBackupController {
   }
 
   private async pickBackupImportOptions(summary: RemoteEditBackupSummary): Promise<ConnectionBackupImportOptions | undefined> {
-    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'favorites' | 'usernames' | 'credentials' }> = [
+    const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'multiTarget' | 'favorites' | 'usernames' | 'credentials' }> = [
       { label: 'Remote Edit settings', description: summary.hasSettings ? 'Import Remote Edit settings' : 'Not available in this backup', option: 'settings', picked: summary.hasSettings },
       { label: 'Saved connections', description: `${summary.supportedConnectionCount} supported connection(s)`, option: 'connections', picked: summary.supportedConnectionCount > 0 },
       { label: 'Workspace Sync mappings', description: summary.hasWorkspaceSync ? `${summary.workspaceSyncMappingCount} mapping(s), ${summary.workspaceSyncTargetCount} target(s)` : 'Not available in this backup', option: 'workspaceSync', picked: summary.hasWorkspaceSync },
+      { label: 'Multi-Target Commands & Search', description: `${summary.multiTargetSavedCommandCount} command(s), ${summary.multiTargetTargetSetCount} target set(s)`, option: 'multiTarget', picked: summary.multiTargetSavedCommandCount > 0 || summary.multiTargetTargetSetCount > 0 },
       { label: 'Remote path favorites', description: `${summary.remotePathFavoriteCount} favorite path(s)`, option: 'favorites', picked: summary.remotePathFavoriteCount > 0 },
       { label: 'Include usernames', description: summary.usernamesIncluded ? 'Restore usernames from backup' : 'No usernames found in this backup', option: 'usernames', picked: summary.usernamesIncluded },
       { label: 'Restore encrypted saved passwords/passphrases', description: summary.hasEncryptedCredentials ? 'Requires the export password' : 'No encrypted credentials found', option: 'credentials' }
@@ -191,11 +199,13 @@ export class SidebarBackupController {
     const selectedOptions = new Set(selected.map(item => item.option));
     const includeConnections = selectedOptions.has('connections') && summary.supportedConnectionCount > 0;
     const includeWorkspaceSync = selectedOptions.has('workspaceSync') && summary.hasWorkspaceSync;
+    const includeMultiTarget = selectedOptions.has('multiTarget')
+      && (summary.multiTargetSavedCommandCount > 0 || summary.multiTargetTargetSetCount > 0);
     const includeUsernames = includeConnections && selectedOptions.has('usernames');
     const restoreCredentials = includeConnections && includeUsernames && summary.hasEncryptedCredentials && selectedOptions.has('credentials');
     let credentialPassword = '';
 
-    const mode = includeConnections || includeWorkspaceSync
+    const mode = includeConnections || includeWorkspaceSync || includeMultiTarget
       ? await vscode.window.showQuickPick([
         { label: 'Merge', description: 'Add new items and update matching saved configuration', value: 'merge' as const },
         { label: 'Replace', description: 'Replace the selected saved configuration with the backup content', value: 'replace' as const }
@@ -222,6 +232,7 @@ export class SidebarBackupController {
       includeSettings: selectedOptions.has('settings') && summary.hasSettings,
       includeConnections,
       includeWorkspaceSync,
+      includeMultiTarget,
       includeFavorites: includeConnections && selectedOptions.has('favorites'),
       includeUsernames,
       restoreCredentials,
@@ -276,6 +287,7 @@ export class SidebarBackupController {
       `Usernames: ${summary.usernamesIncluded ? 'Yes' : 'No'}`,
       `Encrypted credentials: ${summary.hasEncryptedCredentials ? 'Yes' : 'No'}`,
       `Saved commands: ${summary.savedCommandCount}`,
+      `Multi-Target Commands & Search: ${summary.multiTargetSavedCommandCount} command(s), ${summary.multiTargetTargetSetCount} target set(s)`,
       `Port forwards: ${summary.portForwardCount}`,
       `Server log shortcuts: ${summary.serverLogShortcutCount}`,
       `Log Viewer favorites: ${summary.logViewerFavoriteCount}`
@@ -321,6 +333,10 @@ export class SidebarBackupController {
 
     if (result.logViewerFavoritesImported) {
       parts.push(`Log Viewer favorites imported: ${result.logViewerFavoritesImported}.`);
+    }
+
+    if (result.multiTargetSavedCommandsImported || result.multiTargetTargetSetsImported) {
+      parts.push(`Multi-Target Commands & Search imported: ${result.multiTargetSavedCommandsImported} command(s), ${result.multiTargetTargetSetsImported} target set(s).`);
     }
 
     if (result.workspaceSyncMappingsImported) {

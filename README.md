@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Remote%20Targets-Linux%20%7C%20Unix%20%7C%20AIX%20%7C%20Windows-6E7681" alt="Remote Targets">
 </p>
 
-**Remote Edit** is a VS Code extension for browsing, editing, transferring, searching, and synchronizing files over SSH/SFTP, FTP, and FTPS. It combines a full visual remote file browser, a native VS Code Sidebar, **Workspace Sync**, and SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
+**Remote Edit** is a VS Code extension for browsing, editing, transferring, searching, and synchronizing files over SSH/SFTP, FTP, and FTPS. It combines a full visual remote file browser, a native VS Code Sidebar, **Workspace Sync**, **Multi-Target Commands & Search**, and SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
 
 Remote Edit supports Linux, Unix, AIX, and Windows OpenSSH targets, with protocol-specific features available depending on the remote server.
 
@@ -24,6 +24,7 @@ Remote Edit is available on the [Visual Studio Code Marketplace](https://marketp
 - Full-featured Remote Edit Webview
 - Native VS Code Sidebar
 - Workspace Sync with multi-target and automatic synchronization support
+- Multi-Target Commands & Search with shared targets, connections, and Target Sets
 - Remote file browsing and direct editing in VS Code
 - Multiple active connections
 - Multiple simultaneous transfers and Transfer Queue
@@ -66,6 +67,7 @@ Use the Sidebar to access:
 
 - **Remote Edit (Advanced View)**
 - **Workspace Sync**
+- **Multi-Target Commands & Search**
 - **Log Viewer**
 - Saved connections and Quick Connect
 - Open Connections
@@ -95,6 +97,7 @@ Changes apply to subsequent file opens. Close and reopen existing editors to use
 | Full Visual Webview | ✓ |
 | Native VS Code Sidebar | ✓ |
 | Workspace Sync | ✓ |
+| Multi-Target Commands & Search | ✓ |
 | Multiple Active Connections | ✓ |
 | Favorites | ✓ |
 | Transfer Queue | ✓ |
@@ -182,16 +185,69 @@ Activity also provides **Follow latest**, **Copy**, and **Clear** controls. Cred
 
 Import/Export can include Workspace Sync mappings, targets, options, and saved Workspace Sync preferences such as **Hide Unsupported Files**, **Show Modified Times**, and **Default Compare**. Operational state such as Activity history, active sessions, comparison snapshots, current selection, and synchronization baselines stays local and is not exported.
 
+## Multi-Target Commands & Search
+
+Open **Multi-Target Commands & Search** from the Remote Edit Sidebar. The **Commands** and **Search** tabs share targets, Working Directories, open connections, and Target Sets while keeping their own inputs, results, selection, scroll, and two-line status. Switching modes does not cancel active work; **Stop All** and **Clear** apply to the active mode. Commands and Search can run concurrently, including on the same target. Sudo preparation and launch are coordinated so each operation keeps its own permission context.
+
+![Multi-Target Commands & Search](images/remoteedit-multi-target.png)
+
+### Targets and Target Sets
+
+- Choose saved SSH/SFTP connections using connection search and an optional Connection Group filter
+- Set an optional Working Directory per target; Default uses the SSH session directory
+- Connect explicitly with the global or per-target controls; operations use connected targets only
+- Use shared **Target Sets** across Commands and Search
+- Save each Target Set with its connection membership and per-target Working Directory
+- Edit a saved Target Set without changing the original saved connection
+- Update the currently loaded Target Set with **Save**, or create a separate set with **Save New**
+- Keep saved Target Sets available across VS Code restarts
+
+The live Multi-Target workspace is session-only. Closing and reopening the view during the same VS Code session restores the current targets, loaded Target Set, Working Directories, inputs, connections, results, selection, scroll, status, and divider position. Restarting or reloading VS Code starts **Multi-Target Commands & Search** with a clean runtime state; saved Target Sets and Saved Commands remain available.
+
+### Commands
+
+- Run the same command or multiline script across targets, with up to five executions in parallel
+- Reuse Saved Commands without changing target Working Directories
+- Run with Sudo on supported SSH/SFTP targets
+- Follow live status, exit code, duration, and separate output for each target
+- Filter results, copy selected output, stop one target, or stop all active executions
+- Resize Commands and Results with the divider; Targets stays fixed with internal scrolling
+- Keep the latest 512K characters of output per target, with truncation clearly marked
+
+Files, Workspace Sync, and Run Remote Command keep their existing independent connection and execution flows.
+
+### Search
+
+Select the **Search** tab in the same view.
+
+- Use the same targets, Working Directories, Target Sets, connections, custom tooltips, and menus as Commands
+- Search filenames with wildcard patterns, or enable **Search inside file** to reveal **Text to find**
+- Set **Include subdirectories**, **Include hidden files**, and **Case sensitive**
+- Run with Sudo on supported SSH/SFTP targets
+- Search connected SSH/SFTP targets with up to five searches in parallel using the existing Remote Search engine
+- Follow status, result count, and duration per target
+- Inspect grouped files, matching lines, and highlighted snippets
+- Copy results, stop individual targets or all searches, and clear finished results
+- Use the same resizable Results area and independent Search status as Commands
+
+Search never connects or reconnects targets. A failed target does not interrupt the others. There are no Saved Searches.
+
+### Backup behavior
+
+Backup/Restore exposes one **Multi-Target Commands & Search** category for the feature's saved data, including shared Target Sets and Multi-Target Saved Commands. Per-target Working Directories stored in Target Sets are included. Runtime-only state such as the currently loaded Target Set, selected targets, current Working Directories outside saved sets, command/search fields, live connections, results, output, status, selection, scroll position, and divider position is not exported.
+
 ## Supported Protocols
 
-| Protocol | Browse / Edit | Upload / Download | File Search | Content Search | Workspace Sync | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode | Jump Hosts |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | ✓ |
-| FTP | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - |
-| FTPS | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - |
+| Protocol | Browse / Edit | Upload / Download | File Search | Content Search | Workspace Sync | Multi-Target | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode | Jump Hosts |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | ✓ |
+| FTP | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - | - |
+| FTPS | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - | - |
 
-FTP and FTPS Remote Search supports file-name/path search. Content search requires SSH/SFTP.
+**Multi-Target** refers to **Multi-Target Commands & Search** and requires saved SSH/SFTP connections. FTP and FTPS are not supported in Multi-Target.
+
+FTP and FTPS Remote Search support file-name/path search. Content search requires SSH/SFTP.
 
 ## Server View
 
@@ -414,10 +470,11 @@ Create password-protected backups of Remote Edit data, including selected catego
 - Server Log Shortcuts
 - Log Viewer favorite files
 - Workspace Sync mappings, targets, and options
+- Multi-Target Saved Commands and Target Sets
 
 Import supports **Merge** and **Replace** modes and shows a summary before changes are applied. Webview and Sidebar import/export actions use the same backend data source.
 
-Operational and session-only state is not included in backups. Examples include open tabs, active connections, running transfers, Sudo Mode state, Log Viewer buffers, command history, Workspace Sync Activity history, sessions, comparison snapshots, and synchronization baselines. Workspace Sync Activity is retained locally across VS Code reloads and restarts, but it is not transferred through Import/Export.
+Operational and session-only state is not included in backups. Examples include open tabs, active connections, running transfers, Sudo Mode state, Log Viewer buffers, command history, Multi-Target runtime state, Workspace Sync Activity history, sessions, comparison snapshots, and synchronization baselines. Workspace Sync Activity is retained locally across VS Code reloads and restarts, but it is not transferred through Import/Export.
 
 ## Quick Access
 
@@ -428,7 +485,7 @@ Open Remote Edit from:
 - Editor Title Bar Button
 - Status Bar Button
 
-The Sidebar provides direct access to the Advanced View, Workspace Sync, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, transfers, and backup actions.
+The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, transfers, and backup actions.
 
 Open Connections uses a breadcrumb path tree by default. Users who prefer a shorter or more expanded layout can use `remoteedit.sidebar.openConnections.pathView`.
 
@@ -505,7 +562,7 @@ Diagnostic logging automatically turns off when VS Code is restarted or reloaded
 ## Security
 
 - Saved credentials use VS Code Secret Storage
-- Prompted Workspace Sync credentials remain session-only unless already stored with the saved connection
+- Prompted Workspace Sync and Multi-Target connection credentials remain session-only unless already stored with the saved connection
 - FTPS supports certificate validation
 - Sudo passwords are never saved
 - Optional credential export uses password-protected encrypted backup data

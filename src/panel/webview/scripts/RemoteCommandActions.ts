@@ -1562,6 +1562,7 @@ export function renderRemoteCommandActions(): string {
     exportBackupDialogOpen = true;
     exportIncludeSettings.checked = true;
     exportIncludeWorkspaceSync.checked = true;
+    exportIncludeMultiTarget.checked = true;
     exportIncludeConnections.checked = true;
     exportIncludeFavorites.checked = true;
     exportIncludeUsernames.checked = true;
@@ -1638,7 +1639,8 @@ export function renderRemoteCommandActions(): string {
     const credentialPassword = String(exportCredentialPassword.value || '');
     const credentialConfirmPassword = String(exportCredentialConfirmPassword.value || '');
 
-    if (!exportIncludeSettings.checked && !exportIncludeWorkspaceSync.checked && !exportIncludeConnections.checked) {
+    if (!exportIncludeSettings.checked && !exportIncludeWorkspaceSync.checked && !exportIncludeConnections.checked
+      && !exportIncludeMultiTarget.checked) {
       showBackupResult(exportBackupResult, 'Select at least one export option.', true);
       return;
     }
@@ -1672,6 +1674,7 @@ export function renderRemoteCommandActions(): string {
       payload: {
         includeSettings: Boolean(exportIncludeSettings.checked),
         includeWorkspaceSync: Boolean(exportIncludeWorkspaceSync.checked),
+        includeMultiTarget: Boolean(exportIncludeMultiTarget.checked),
         includeConnections: Boolean(exportIncludeConnections.checked),
         includeFavorites: Boolean(exportIncludeFavorites.checked) && !exportIncludeFavorites.disabled,
         includeUsernames: Boolean(exportIncludeUsernames.checked) && !exportIncludeUsernames.disabled,
@@ -1689,6 +1692,8 @@ export function renderRemoteCommandActions(): string {
       hasWorkspaceSync: false,
       workspaceSyncMappingCount: 0,
       workspaceSyncTargetCount: 0,
+      multiTargetSavedCommandCount: 0,
+      multiTargetTargetSetCount: 0,
       connectionCount: 0,
       connectionGroupCount: 0,
       supportedConnectionCount: 0,
@@ -1702,6 +1707,8 @@ export function renderRemoteCommandActions(): string {
     renderImportBackupSummary(importBackupSummaryState);
     importIncludeSettings.checked = Boolean(importBackupSummaryState.hasSettings);
     importIncludeWorkspaceSync.checked = Boolean(importBackupSummaryState.hasWorkspaceSync);
+    importIncludeMultiTarget.checked = Number(importBackupSummaryState.multiTargetSavedCommandCount || 0) > 0
+      || Number(importBackupSummaryState.multiTargetTargetSetCount || 0) > 0;
     importIncludeConnections.checked = Number(importBackupSummaryState.supportedConnectionCount || 0) > 0;
     importIncludeFavorites.checked = Number(importBackupSummaryState.remotePathFavoriteCount || 0) > 0;
     importIncludeUsernames.checked = Boolean(importBackupSummaryState.usernamesIncluded);

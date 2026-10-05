@@ -61,7 +61,7 @@ export function renderComboboxControls(): string {
       button.setAttribute('aria-label', select.getAttribute('aria-label') || ({mapping:'Mapping',target:'Target',mapDirection:'Direction'})[select.id] || 'Connection');
       const label = document.createElement('span'); label.className = 'profile-dropdown-label';
       button.append(label); button.insertAdjacentHTML('beforeend', '<svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>'); wrapper.append(button);
-      const menu = document.createElement('div'); menu.className = 'profile-dropdown-menu sync-combo-menu';
+      const menu = document.createElement('div'); menu.className = 'profile-dropdown-menu sync-combo-menu'; menu.dataset.for = select.id;
       const searchWrap = document.createElement('div'); searchWrap.className = 'profile-dropdown-filter';
       const search = document.createElement('input'); search.placeholder = 'Filter…'; search.setAttribute('aria-label', 'Filter options'); searchWrap.append(search);
       const list = document.createElement('div'); list.id = \`sync-options-\${++serial}\`; list.setAttribute('role','listbox'); list.setAttribute('aria-label',button.getAttribute('aria-label')); button.setAttribute('aria-controls',list.id);

@@ -104,6 +104,8 @@ export interface RemoteCommandStreamingControl {
 }
 
 export interface RemoteCommandStreamingCallbacks {
+  /** Opt-in for independent command sessions; existing callers retain their path behavior. */
+  useSessionWorkingDirectory?: boolean;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
   onCommand?: (command: string) => void;

@@ -1,3 +1,4 @@
+import { MultiTargetFeature } from './multiTarget/MultiTargetPanel';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from './connection/ConnectionManager';
@@ -92,6 +93,7 @@ export function activate(context: vscode.ExtensionContext): void {
     remoteClipboardService,
     sidebarController,
     workspaceSync,
+    new MultiTargetFeature(context, connectionManager, output),
     fileSystemProvider,
     readOnlyFileSystemProvider,
     vscode.workspace.registerFileSystemProvider('remoteedit', fileSystemProvider, {

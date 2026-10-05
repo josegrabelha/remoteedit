@@ -12,6 +12,15 @@ import {
   writeWorkspaceSyncMappings,
   type WorkspaceSyncBackupState
 } from '../workspaceSync/mapping/WorkspaceMappingStore';
+import {
+  MULTI_TARGET_SAVED_COMMANDS_STORAGE_KEY,
+  MULTI_TARGET_TARGET_SETS_STORAGE_KEY,
+  mergeSavedMultiTargetItems,
+  normalizeSavedMultiTargetCommands,
+  normalizeSavedMultiTargetSets,
+  updateSharedTargetSets,
+  type MultiTargetBackupState
+} from '../multiTarget/MultiTargetStorage';
 
 export type AuthType = 'password' | 'privateKey';
 
@@ -57,6 +66,7 @@ export interface ConnectionBackupExportOptions {
   includeSettings: boolean;
   includeConnections: boolean;
   includeWorkspaceSync?: boolean;
+  includeMultiTarget?: boolean;
   includeFavorites: boolean;
   includeUsernames: boolean;
   includeCredentials: boolean;
@@ -68,6 +78,7 @@ export interface ConnectionBackupImportOptions {
   includeSettings: boolean;
   includeConnections: boolean;
   includeWorkspaceSync?: boolean;
+  includeMultiTarget?: boolean;
   includeFavorites: boolean;
   includeUsernames: boolean;
   restoreCredentials: boolean;
@@ -139,6 +150,7 @@ export interface RemoteEditBackupFile {
   portForwards?: Record<string, unknown[]>;
   logViewerFavorites?: Record<string, string[]>;
   workspaceSync?: WorkspaceSyncBackupState;
+  multiTarget?: MultiTargetBackupState;
 }
 
 export interface RemoteEditBackupSummary {
@@ -157,6 +169,8 @@ export interface RemoteEditBackupSummary {
   logViewerFavoriteCount: number;
   workspaceSyncMappingCount: number;
   workspaceSyncTargetCount: number;
+  multiTargetSavedCommandCount: number;
+  multiTargetTargetSetCount: number;
 }
 
 export interface RemoteEditBackupImportResult {
@@ -175,6 +189,8 @@ export interface RemoteEditBackupImportResult {
   logViewerFavoritesImported: number;
   workspaceSyncMappingsImported: number;
   workspaceSyncTargetsImported: number;
+  multiTargetSavedCommandsImported: number;
+  multiTargetTargetSetsImported: number;
 }
 
 interface StoredCredentialMap {
@@ -860,6 +876,13 @@ export class ConnectionManager {
       : [];
 
     const persistentStorage = includeConnections ? this.getPersistentWebviewStorageSnapshot() : undefined;
+    const includeMultiTarget = Boolean(options.includeMultiTarget);
+    const multiTarget = includeMultiTarget
+      ? {
+        savedCommands: normalizeSavedMultiTargetCommands(this.context.globalState.get<unknown>(MULTI_TARGET_SAVED_COMMANDS_STORAGE_KEY, [])),
+        targetSets: normalizeSavedMultiTargetSets(this.context.globalState.get<unknown>(MULTI_TARGET_TARGET_SETS_STORAGE_KEY, []))
+      }
+      : undefined;
 
     const backup: RemoteEditBackupFile = {
       remoteEditExportVersion: SUPPORTED_BACKUP_VERSION,
@@ -874,7 +897,8 @@ export class ConnectionManager {
       serverLogShortcuts: persistentStorage?.serverLogShortcuts,
       portForwards: persistentStorage?.portForwards,
       logViewerFavorites: includeConnections ? this.getLogViewerFavoritesSnapshot() : undefined,
-      workspaceSync: options.includeWorkspaceSync ? getWorkspaceSyncBackupState(this.context) : undefined
+      workspaceSync: options.includeWorkspaceSync ? getWorkspaceSyncBackupState(this.context) : undefined,
+      multiTarget
     };
 
     if (includeCredentials) {
@@ -894,6 +918,8 @@ export class ConnectionManager {
       Profiles: backup.connections?.length || 0,
       Groups: backup.connectionGroups?.length || 0,
       WorkspaceSyncMappings: backup.workspaceSync?.mappings.length || 0,
+      MultiTargetCommands: backup.multiTarget?.savedCommands?.length || 0,
+      MultiTargetTargetSets: backup.multiTarget?.targetSets?.length || 0,
       Credentials: Boolean(backup.encryptedCredentials)
     });
     this.logPerformance('Built Remote Edit backup file', timer(), {
@@ -930,7 +956,9 @@ export class ConnectionManager {
       portForwardCount: countCollectionItems(backup.portForwards),
       logViewerFavoriteCount: countCollectionItems(backup.logViewerFavorites),
       workspaceSyncMappingCount: workspaceSyncMappings.length,
-      workspaceSyncTargetCount: workspaceSyncMappings.reduce((count, mapping) => count + (Array.isArray(mapping?.targets) ? mapping.targets.length : 0), 0)
+      workspaceSyncTargetCount: workspaceSyncMappings.reduce((count, mapping) => count + (Array.isArray(mapping?.targets) ? mapping.targets.length : 0), 0),
+      multiTargetSavedCommandCount: normalizeSavedMultiTargetCommands(backup.multiTarget?.savedCommands).length,
+      multiTargetTargetSetCount: normalizeSavedMultiTargetSets(backup.multiTarget?.targetSets).length
     };
   }
 
@@ -938,7 +966,8 @@ export class ConnectionManager {
     const timer = createPerformanceTimer();
     const backupVersion = validateBackupVersion(backup);
 
-    if (!options.includeSettings && !options.includeConnections && !options.includeWorkspaceSync) {
+    if (!options.includeSettings && !options.includeConnections && !options.includeWorkspaceSync
+      && !options.includeMultiTarget) {
       throw new Error('Select at least one import option.');
     }
 
@@ -961,7 +990,9 @@ export class ConnectionManager {
       portForwardsImported: 0,
       logViewerFavoritesImported: 0,
       workspaceSyncMappingsImported: 0,
-      workspaceSyncTargetsImported: 0
+      workspaceSyncTargetsImported: 0,
+      multiTargetSavedCommandsImported: 0,
+      multiTargetTargetSetsImported: 0
     };
 
     if (!options.includeConnections) {
@@ -975,6 +1006,9 @@ export class ConnectionManager {
         result.workspaceSyncMappingsImported = preparedWorkspaceSyncImport.result.mappingsImported;
         result.workspaceSyncTargetsImported = preparedWorkspaceSyncImport.result.targetsImported;
       }
+      const multiTargetResult = await this.importMultiTargetBackupData(backup, options);
+      result.multiTargetSavedCommandsImported = multiTargetResult.savedCommandsImported;
+      result.multiTargetTargetSetsImported = multiTargetResult.targetSetsImported;
       return result;
     }
 
@@ -1102,6 +1136,10 @@ export class ConnectionManager {
       result.workspaceSyncMappingsImported = preparedWorkspaceSyncImport.result.mappingsImported;
       result.workspaceSyncTargetsImported = preparedWorkspaceSyncImport.result.targetsImported;
     }
+
+    const multiTargetResult = await this.importMultiTargetBackupData(backup, options);
+    result.multiTargetSavedCommandsImported = multiTargetResult.savedCommandsImported;
+    result.multiTargetTargetSetsImported = multiTargetResult.targetSetsImported;
 
     this.logDebug('Imported Remote Edit backup file.', {
       Mode: options.importMode,
@@ -1265,6 +1303,32 @@ export class ConnectionManager {
     }
 
     await this.context.globalState.update(key, normalizedIncoming);
+  }
+
+  private async importMultiTargetBackupData(
+    backup: RemoteEditBackupFile,
+    options: ConnectionBackupImportOptions
+  ): Promise<{ savedCommandsImported: number; targetSetsImported: number }> {
+    let savedCommandsImported = 0;
+    let targetSetsImported = 0;
+    const source = backup.multiTarget;
+
+    if (options.includeMultiTarget && source && Object.prototype.hasOwnProperty.call(source, 'savedCommands')) {
+      const incoming = normalizeSavedMultiTargetCommands(source.savedCommands);
+      const existing = normalizeSavedMultiTargetCommands(this.context.globalState.get<unknown>(MULTI_TARGET_SAVED_COMMANDS_STORAGE_KEY, []));
+      const next = options.importMode === 'replace' ? incoming : mergeSavedMultiTargetItems(existing, incoming);
+      await this.context.globalState.update(MULTI_TARGET_SAVED_COMMANDS_STORAGE_KEY, next);
+      savedCommandsImported = incoming.length;
+    }
+
+    if (options.includeMultiTarget && source && Object.prototype.hasOwnProperty.call(source, 'targetSets')) {
+      const incoming = normalizeSavedMultiTargetSets(source.targetSets);
+      await updateSharedTargetSets(this.context.globalState, existing =>
+        options.importMode === 'replace' ? incoming : mergeSavedMultiTargetItems(existing, incoming));
+      targetSetsImported = incoming.length;
+    }
+
+    return { savedCommandsImported, targetSetsImported };
   }
 
   private getLogViewerFavoritesSnapshot(): Record<string, string[]> {

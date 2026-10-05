@@ -192,3 +192,82 @@ test('Workspace Sync merge rejects a same-name mapping with a different identity
 
 
 
+
+test('Multi-Target Commands reusable commands and target sets survive backup/restore without runtime state', async () => {
+  const source = createConnectionManagerHarness();
+  const commands = [{ id: 'multi-command-1', title: 'Check uptime', command: 'uptime' }];
+  const targetSets = [{
+    id: 'multi-target-set-1',
+    title: 'Web servers',
+    targets: [
+      { connectionId: 'web-1', workingDirectory: '/srv/web-1' },
+      { connectionId: 'web-2', workingDirectory: '/srv/web-2' }
+    ]
+  }];
+  source.state.set('remoteedit.multiTargetCommands.savedCommands', commands);
+  source.state.set('remoteedit.multiTarget.targetSets', targetSets);
+  source.state.set('remoteedit.multiTargetCommands', {
+    targets: [{ connectionId: 'runtime-only', workingDirectory: '/tmp' }],
+    ratio: 0.42,
+    command: 'runtime draft',
+    useSudo: true,
+    filter: 'Failed',
+    selectedCommandId: 'runtime-result'
+  });
+
+  const exported = await source.manager.buildBackupFile({
+    includeSettings: false,
+    includeConnections: false,
+    includeWorkspaceSync: false,
+    includeMultiTarget: true,
+    includeFavorites: false,
+    includeUsernames: false,
+    includeCredentials: false
+  });
+
+  assert.deepEqual(exported.multiTarget?.savedCommands, commands);
+  assert.deepEqual(exported.multiTarget?.targetSets, targetSets);
+  assert.equal(JSON.stringify(exported).includes('runtime draft'), false);
+  assert.equal(JSON.stringify(exported).includes('runtime-only'), false);
+  const summary = source.manager.summarizeBackupFile(exported);
+  assert.equal(summary.multiTargetSavedCommandCount, 1);
+  assert.equal(summary.multiTargetTargetSetCount, 1);
+
+  const destination = createConnectionManagerHarness();
+  destination.state.set('remoteedit.multiTargetCommands', { command: 'keep local runtime' });
+  const result = await destination.manager.importBackupFile(exported, {
+    includeSettings: false,
+    includeConnections: false,
+    includeWorkspaceSync: false,
+    includeMultiTarget: true,
+    includeFavorites: false,
+    includeUsernames: false,
+    restoreCredentials: false,
+    importMode: 'replace'
+  });
+
+  assert.equal(result.multiTargetSavedCommandsImported, 1);
+  assert.equal(result.multiTargetTargetSetsImported, 1);
+  assert.deepEqual(destination.state.get('remoteedit.multiTargetCommands.savedCommands'), commands);
+  assert.deepEqual(destination.state.get('remoteedit.multiTarget.targetSets'), targetSets);
+  assert.deepEqual(destination.state.get('remoteedit.multiTargetCommands'), { command: 'keep local runtime' });
+});
+
+test('Multi-Target backup includes saved target directories, excludes runtime state, and respects the unchecked option', async () => {
+  const source = createConnectionManagerHarness();
+  source.state.set('remoteedit.multiTargetCommands.savedCommands', [{ id: 'c', title: 'Command', command: 'pwd' }]);
+  source.state.set('remoteedit.multiTarget.targetSets', [{ id: 's', title: 'Shared', targets: [{ connectionId: 'dev', workingDirectory: '/saved-target-directory' }] }]);
+  source.state.set('remoteedit.multiTargetSearch', { query: { textToFind: 'private-search-draft' }, targets: [{ connectionId: 'dev', workingDirectory: '/not-in-backup' }], results: ['runtime-only-result'] });
+  const included = await source.manager.buildBackupFile({ ...exportOptions, includeMultiTarget: true });
+  const serialized = JSON.stringify(included);
+  assert.equal(serialized.includes('private-search-draft'), false);
+  assert.equal(serialized.includes('/not-in-backup'), false);
+  assert.equal(serialized.includes('/saved-target-directory'), true);
+  assert.deepEqual(included.multiTarget?.targetSets?.[0].targets, [{ connectionId: 'dev', workingDirectory: '/saved-target-directory' }]);
+  const excluded = await source.manager.buildBackupFile({ ...exportOptions, includeMultiTarget: false });
+  assert.equal(excluded.multiTarget, undefined);
+  const destination = createConnectionManagerHarness();
+  await destination.manager.importBackupFile(included, { ...importOptions, includeMultiTarget: false });
+  assert.equal(destination.state.has('remoteedit.multiTarget.targetSets'), false);
+  assert.equal(destination.state.has('remoteedit.multiTargetCommands.savedCommands'), false);
+});

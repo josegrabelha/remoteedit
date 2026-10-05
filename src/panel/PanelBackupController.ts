@@ -65,7 +65,8 @@ export class PanelBackupController {
   async exportConnectionsSettings(payload: any): Promise<void> {
     const exportOptions = parseExportOptions(payload || {});
 
-    if (!exportOptions.includeSettings && !exportOptions.includeConnections && !exportOptions.includeWorkspaceSync) {
+    if (!exportOptions.includeSettings && !exportOptions.includeConnections && !exportOptions.includeWorkspaceSync
+      && !exportOptions.includeMultiTarget) {
       throw new Error('Select at least one export option.');
     }
 
@@ -94,6 +95,8 @@ export class PanelBackupController {
       Settings: backup.settings ? 'Yes' : 'No',
       Connections: String(backup.connections?.length || 0),
       WorkspaceSyncMappings: String(backup.workspaceSync?.mappings.length || 0),
+      MultiTargetCommands: String(backup.multiTarget?.savedCommands?.length || 0),
+      MultiTargetTargetSets: String(backup.multiTarget?.targetSets?.length || 0),
       Favorites: String(countBackupFavorites(backup)),
       Usernames: exportOptions.includeUsernames ? 'Yes' : 'No',
       EncryptedCredentials: backup.encryptedCredentials ? 'Yes' : 'No'
@@ -107,7 +110,8 @@ export class PanelBackupController {
 
     const importOptions = parseImportOptions(payload || {});
 
-    if (!importOptions.includeSettings && !importOptions.includeConnections && !importOptions.includeWorkspaceSync) {
+    if (!importOptions.includeSettings && !importOptions.includeConnections && !importOptions.includeWorkspaceSync
+      && !importOptions.includeMultiTarget) {
       throw new Error('Select at least one import option.');
     }
 
@@ -117,6 +121,9 @@ export class PanelBackupController {
     RemoteEditSharedState.fireProfilesChanged(undefined, 'webview', 'importBackup');
     if (importOptions.includeWorkspaceSync) {
       RemoteEditSharedState.fireWorkspaceSyncChanged('webview', 'importBackup');
+    }
+    if (importOptions.includeMultiTarget) {
+      RemoteEditSharedState.fireMultiTargetChanged('webview', 'importBackup');
     }
     this.options.postPersistentStorageSnapshot();
 
@@ -136,7 +143,9 @@ export class PanelBackupController {
       FavoritesImported: String(result.favoritesImported),
       UsernamesImported: String(result.usernamesImported),
       CredentialsRestored: String(result.credentialsRestored),
-      WorkspaceSyncMappingsImported: String(result.workspaceSyncMappingsImported)
+      WorkspaceSyncMappingsImported: String(result.workspaceSyncMappingsImported),
+      MultiTargetCommandsImported: String(result.multiTargetSavedCommandsImported),
+      MultiTargetTargetSetsImported: String(result.multiTargetTargetSetsImported)
     });
   }
 }

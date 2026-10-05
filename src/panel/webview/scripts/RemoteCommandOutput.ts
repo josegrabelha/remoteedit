@@ -5,7 +5,7 @@ export function renderRemoteCommandOutput(): string {
     importBackupBackdrop.setAttribute('aria-hidden', 'false');
     setTimeout(() => (importBackupSummaryState.importError
       ? importBackupCancelButton
-      : (!importIncludeSettings.disabled ? importIncludeSettings : (!importIncludeWorkspaceSync.disabled ? importIncludeWorkspaceSync : importIncludeConnections))).focus(), 0);
+      : (!importIncludeSettings.disabled ? importIncludeSettings : (!importIncludeWorkspaceSync.disabled ? importIncludeWorkspaceSync : (!importIncludeMultiTarget.disabled ? importIncludeMultiTarget : importIncludeConnections)))).focus(), 0);
   }
 
   function hideImportBackupDialog() {
@@ -35,6 +35,8 @@ export function renderRemoteCommandOutput(): string {
     const logViewerFavoriteCount = Number(summary.logViewerFavoriteCount || 0);
     const workspaceSyncMappingCount = Number(summary.workspaceSyncMappingCount || 0);
     const workspaceSyncTargetCount = Number(summary.workspaceSyncTargetCount || 0);
+    const multiTargetSavedCommandCount = Number(summary.multiTargetSavedCommandCount || 0);
+    const multiTargetTargetSetCount = Number(summary.multiTargetTargetSetCount || 0);
     const parts = [
       summary.hasSettings ? 'Settings included' : 'Settings not included',
       summary.hasWorkspaceSync ? 'Workspace Sync included' : 'Workspace Sync not included',
@@ -51,6 +53,9 @@ export function renderRemoteCommandOutput(): string {
     if (logViewerFavoriteCount) parts.push(logViewerFavoriteCount === 1 ? '1 log favorite' : logViewerFavoriteCount + ' log favorites');
     if (workspaceSyncMappingCount) parts.push(workspaceSyncMappingCount === 1 ? '1 Workspace Sync mapping' : workspaceSyncMappingCount + ' Workspace Sync mappings');
     if (workspaceSyncTargetCount) parts.push(workspaceSyncTargetCount === 1 ? '1 Workspace Sync target' : workspaceSyncTargetCount + ' Workspace Sync targets');
+    if (multiTargetSavedCommandCount || multiTargetTargetSetCount) {
+      parts.push('Multi-Target Commands & Search: ' + multiTargetSavedCommandCount + ' command(s), ' + multiTargetTargetSetCount + ' target set(s)');
+    }
 
     if (unsupportedCount) {
       parts.splice(2, 0, unsupportedCount === 1 ? '1 unsupported' : unsupportedCount + ' unsupported');
@@ -65,6 +70,8 @@ export function renderRemoteCommandOutput(): string {
     const hasSettings = !hasImportError && Boolean(summary.hasSettings);
     const hasConnections = !hasImportError && Number(summary.supportedConnectionCount || 0) > 0;
     const hasWorkspaceSync = !hasImportError && Boolean(summary.hasWorkspaceSync);
+    const hasMultiTarget = !hasImportError && (Number(summary.multiTargetSavedCommandCount || 0) > 0
+      || Number(summary.multiTargetTargetSetCount || 0) > 0);
     const hasFavorites = !hasImportError && Number(summary.remotePathFavoriteCount || 0) > 0;
     const hasUsernames = !hasImportError && Boolean(summary.usernamesIncluded);
     const hasCredentials = !hasImportError && Boolean(summary.hasEncryptedCredentials);
@@ -77,6 +84,9 @@ export function renderRemoteCommandOutput(): string {
 
     importIncludeWorkspaceSync.disabled = !hasWorkspaceSync;
     if (!hasWorkspaceSync) importIncludeWorkspaceSync.checked = false;
+
+    importIncludeMultiTarget.disabled = !hasMultiTarget;
+    if (!hasMultiTarget) importIncludeMultiTarget.checked = false;
 
     const includeConnections = hasConnections && Boolean(importIncludeConnections.checked);
     importIncludeFavorites.disabled = !includeConnections || !hasFavorites;
@@ -103,7 +113,8 @@ export function renderRemoteCommandOutput(): string {
         : (includeConnections && !importIncludeUsernames.checked ? 'Enable usernames to restore encrypted passwords/passphrases.' : ''));
 
     const includeWorkspaceSync = hasWorkspaceSync && Boolean(importIncludeWorkspaceSync.checked);
-    const enableImportMode = includeConnections || includeWorkspaceSync;
+    const includeMultiTarget = hasMultiTarget && Boolean(importIncludeMultiTarget.checked);
+    const enableImportMode = includeConnections || includeWorkspaceSync || includeMultiTarget;
     importModeBlock.style.opacity = enableImportMode ? '1' : '0.6';
     importModeMerge.disabled = !enableImportMode;
     importModeReplace.disabled = !enableImportMode;
@@ -127,7 +138,8 @@ export function renderRemoteCommandOutput(): string {
     const restoreCredentials = Boolean(importRestoreCredentials.checked) && !importRestoreCredentials.disabled;
     const credentialPassword = String(importCredentialPassword.value || '');
 
-    if (!importIncludeSettings.checked && !importIncludeWorkspaceSync.checked && !importIncludeConnections.checked) {
+    if (!importIncludeSettings.checked && !importIncludeWorkspaceSync.checked && !importIncludeConnections.checked
+      && !importIncludeMultiTarget.checked) {
       showBackupResult(importBackupResult, 'Select at least one import option.', true);
       return;
     }
@@ -144,6 +156,7 @@ export function renderRemoteCommandOutput(): string {
       payload: {
         includeSettings: Boolean(importIncludeSettings.checked) && !importIncludeSettings.disabled,
         includeWorkspaceSync: Boolean(importIncludeWorkspaceSync.checked) && !importIncludeWorkspaceSync.disabled,
+        includeMultiTarget: Boolean(importIncludeMultiTarget.checked) && !importIncludeMultiTarget.disabled,
         includeConnections: Boolean(importIncludeConnections.checked) && !importIncludeConnections.disabled,
         includeFavorites: Boolean(importIncludeFavorites.checked) && !importIncludeFavorites.disabled,
         includeUsernames: Boolean(importIncludeUsernames.checked) && !importIncludeUsernames.disabled,

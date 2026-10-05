@@ -69,6 +69,12 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
         contextValue: 'remoteedit.action.workspaceSync'
       }),
       new RemoteEditSidebarItem({
+        label: 'Multi-Target Commands & Search', kind: 'action', id: 'action:multiTarget',
+        icon: new vscode.ThemeIcon('terminal'), tooltip: 'Run commands and search across multiple saved connections.',
+        command: { command: 'remoteedit.multiTarget.open', title: 'Multi-Target Commands & Search' },
+        contextValue: 'remoteedit.action.multiTarget'
+      }),
+      new RemoteEditSidebarItem({
         label: 'Log Viewer',
         kind: 'action',
         id: 'action:logViewer',

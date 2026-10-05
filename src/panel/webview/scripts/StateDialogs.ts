@@ -467,6 +467,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const exportBackupBackdrop = document.getElementById('exportBackupBackdrop');
   const exportIncludeSettings = document.getElementById('exportIncludeSettings');
   const exportIncludeWorkspaceSync = document.getElementById('exportIncludeWorkspaceSync');
+  const exportIncludeMultiTarget = document.getElementById('exportIncludeMultiTarget');
   const exportIncludeConnections = document.getElementById('exportIncludeConnections');
   const exportIncludeFavorites = document.getElementById('exportIncludeFavorites');
   const exportIncludeUsernames = document.getElementById('exportIncludeUsernames');
@@ -487,6 +488,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const importBackupSummary = document.getElementById('importBackupSummary');
   const importIncludeSettings = document.getElementById('importIncludeSettings');
   const importIncludeWorkspaceSync = document.getElementById('importIncludeWorkspaceSync');
+  const importIncludeMultiTarget = document.getElementById('importIncludeMultiTarget');
   const importIncludeConnections = document.getElementById('importIncludeConnections');
   const importIncludeFavorites = document.getElementById('importIncludeFavorites');
   const importIncludeUsernames = document.getElementById('importIncludeUsernames');

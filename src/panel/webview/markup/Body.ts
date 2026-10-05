@@ -625,6 +625,7 @@ export function renderBody(): string {
           <div class="backup-checkbox-list">
             <label class="modal-checkbox-line"><input id="exportIncludeSettings" class="dialog-checkbox" type="checkbox" checked> Remote Edit settings</label>
             <label class="modal-checkbox-line"><input id="exportIncludeWorkspaceSync" class="dialog-checkbox" type="checkbox" checked> Workspace Sync mappings</label>
+            <label class="modal-checkbox-line"><input id="exportIncludeMultiTarget" class="dialog-checkbox" type="checkbox" checked> Multi-Target Commands &amp; Search</label>
             <div class="modal-checkbox-block">
               <label class="modal-checkbox-line"><input id="exportIncludeConnections" class="dialog-checkbox" type="checkbox" checked> Saved connections</label>
               <div class="backup-child-options">
@@ -685,6 +686,7 @@ export function renderBody(): string {
           <div class="backup-checkbox-list">
             <label class="modal-checkbox-line"><input id="importIncludeSettings" class="dialog-checkbox" type="checkbox" checked> Remote Edit settings</label>
             <label class="modal-checkbox-line"><input id="importIncludeWorkspaceSync" class="dialog-checkbox" type="checkbox" checked> Workspace Sync mappings</label>
+            <label class="modal-checkbox-line"><input id="importIncludeMultiTarget" class="dialog-checkbox" type="checkbox" checked> Multi-Target Commands &amp; Search</label>
             <div class="modal-checkbox-block">
               <label class="modal-checkbox-line"><input id="importIncludeConnections" class="dialog-checkbox" type="checkbox" checked> Saved connections</label>
               <div class="backup-child-options">
@@ -797,14 +799,16 @@ export function renderBody(): string {
             <label class="modal-checkbox-line"><input id="remoteSearchSubdirectories" class="dialog-checkbox" type="checkbox" checked><span>Include subdirectories</span></label>
             <label class="modal-checkbox-line"><input id="remoteSearchHiddenFiles" class="dialog-checkbox" type="checkbox"><span>Include hidden files</span></label>
             <label class="modal-checkbox-line"><input id="remoteSearchCaseSensitive" class="dialog-checkbox" type="checkbox"><span>Case sensitive</span></label>
-            <label id="remoteSearchSudoRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchUseSudo" class="dialog-checkbox" type="checkbox"><span>Use Sudo Mode</span><span id="remoteSearchSudoNote" class="remote-command-sudo-note"></span></label>
+            <label id="remoteSearchInsideRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchInsideFiles" class="dialog-checkbox" type="checkbox"><span>Search inside files</span></label>
+            <label id="remoteSearchSudoRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchUseSudo" class="dialog-checkbox" type="checkbox"><span>Run with Sudo</span><span id="remoteSearchSudoNote" class="remote-command-sudo-note"></span></label>
           </div>
           <div class="remote-search-field">
-            <label for="remoteSearchFileName">File name</label>
+            <div class="remote-search-field-heading">
+              <label for="remoteSearchFileName">File name</label>
+              <span class="modal-helper-text remote-search-field-hint">Use wildcards: *, ?, [abc]. Separate multiple patterns with commas.</span>
+            </div>
             <input id="remoteSearchFileName" type="text" value="*" placeholder="*.conf" spellcheck="false" autocomplete="off" />
-            <div class="modal-helper-text">Use wildcards: *, ?, [abc]. Separate multiple patterns with commas.</div>
           </div>
-          <label id="remoteSearchInsideRow" class="modal-checkbox-line remote-search-ssh-only"><input id="remoteSearchInsideFiles" class="dialog-checkbox" type="checkbox"><span>Search inside files</span></label>
           <div id="remoteSearchTextField" class="remote-search-field remote-search-text-field hidden">
             <label for="remoteSearchTextToFind">Text to Find</label>
             <input id="remoteSearchTextToFind" type="text" spellcheck="false" autocomplete="off" />

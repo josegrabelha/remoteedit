@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* Added **Multi-Target Commands & Search**, a unified view with shared targets and connections, Target Sets, saved commands, dedicated Commands and Search tabs, multiline commands, filename/content search, live results, Sudo support, and cancellation controls.
+
+### Changed
+
+* Improved the **Workspace Sync** UI with more consistent control sizing, compact mapping and target selectors, standardized modal controls, and better alignment across connection and sync actions.
+
 ## [1.10.0] - 2026-10-01
 
 ### Added

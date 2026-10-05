@@ -476,6 +476,12 @@ export function renderFileBrowser(): string {
     hideContextMenu();
 
     if (isParentEntry(entry)) {
+      if (event.metaKey || event.ctrlKey) {
+        if (selectedEntryPaths.size === 0 || (selectedEntryPaths.size === 1 && selectedEntryPaths.has(entryKey))) {
+          toggleEntrySelection(entryKey);
+        }
+        return;
+      }
       selectEntry(entryKey);
       return;
     }
@@ -483,7 +489,15 @@ export function renderFileBrowser(): string {
     if (event.shiftKey && selectionAnchorPath) {
       selectEntryRange(selectionAnchorPath, entryKey);
     } else if (event.metaKey || event.ctrlKey) {
-      toggleEntrySelection(entryKey);
+      const parentEntrySelected = Array.from(selectedEntryPaths).some(selectedPath => {
+        const selectedEntry = findCurrentEntryByPath(selectedPath);
+        return selectedEntry && isParentEntry(selectedEntry);
+      });
+      if (parentEntrySelected) {
+        selectEntry(entryKey);
+      } else {
+        toggleEntrySelection(entryKey);
+      }
     } else {
       selectEntry(entryKey);
     }
@@ -576,6 +590,15 @@ export function renderFileBrowser(): string {
     const end = Math.max(anchorIndex, targetIndex);
     selectedEntryPaths = new Set(visiblePaths.slice(start, end + 1));
     selectedEntryPath = targetPath;
+    syncSelectedRows();
+  }
+
+  function selectAllVisibleEntries() {
+    const visibleEntries = getVisibleEntries().filter(entry => !isParentEntry(entry));
+    const visiblePaths = visibleEntries.map(entry => entry.path || entry.name);
+    selectedEntryPaths = new Set(visiblePaths);
+    selectedEntryPath = visiblePaths[visiblePaths.length - 1] || '';
+    selectionAnchorPath = visiblePaths[0] || '';
     syncSelectedRows();
   }
 

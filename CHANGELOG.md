@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* Added **Select All** support in the Remote Edit Files view with `Cmd/Ctrl+A`, selecting all visible files and directories except the parent directory entry (`..`), with refined parent-entry selection behavior.
+
 ## [1.11.0] - 2026-10-05
 
 ### Added

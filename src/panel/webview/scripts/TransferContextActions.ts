@@ -476,6 +476,18 @@ export function renderTransferContextActions(): string {
     if (event.key === 'Escape' && transferQueueModalOpen) {
       hideTransferQueueModal();
     }
+
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && String(event.key || '').toLowerCase() === 'a') {
+      const hasOpenModalDialog = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).some(dialog => {
+        const visibilityRoot = dialog.closest('[aria-hidden]');
+        return Boolean(visibilityRoot && visibilityRoot.getAttribute('aria-hidden') === 'false');
+      });
+      if (activeConnectionId && getActiveConnectionView() === 'files' && !hasOpenModalDialog && !getTextEditableTarget(event.target)) {
+        event.preventDefault();
+        event.stopPropagation();
+        selectAllVisibleEntries();
+      }
+    }
   });
   filterInput.addEventListener('input', () => {
     scheduleFilterInputApply();

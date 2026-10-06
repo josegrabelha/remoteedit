@@ -602,6 +602,80 @@ export function renderFileBrowser(): string {
     syncSelectedRows();
   }
 
+  function scrollEntrySelectionIntoView(entryPath, attemptsRemaining = 4) {
+    if (!entryPath) return;
+    const row = entriesBody.querySelector('tr.entry-row[data-entry-path="' + cssEscape(entryPath) + '"]');
+    if (row) {
+      row.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (attemptsRemaining > 0) {
+      window.requestAnimationFrame(() => scrollEntrySelectionIntoView(entryPath, attemptsRemaining - 1));
+    }
+  }
+
+  function moveEntrySelection(direction) {
+    flushPendingFilterInputWithoutRender();
+    const visibleEntries = getVisibleEntries();
+    if (!visibleEntries.length) return false;
+
+    const visiblePaths = visibleEntries.map(entry => entry.path || entry.name);
+    const activeIndex = visiblePaths.indexOf(selectedEntryPath);
+    let nextIndex;
+
+    if (activeIndex === -1) {
+      nextIndex = direction < 0 ? visiblePaths.length - 1 : 0;
+    } else {
+      nextIndex = Math.max(0, Math.min(visiblePaths.length - 1, activeIndex + direction));
+    }
+
+    const nextPath = visiblePaths[nextIndex] || '';
+    if (!nextPath) return false;
+    selectEntry(nextPath);
+    scrollEntrySelectionIntoView(nextPath);
+    return true;
+  }
+
+  function extendEntrySelection(direction) {
+    flushPendingFilterInputWithoutRender();
+    const visibleEntries = getVisibleEntries();
+    if (!visibleEntries.length) return false;
+
+    const visiblePaths = visibleEntries.map(entry => entry.path || entry.name);
+    const activeIndex = visiblePaths.indexOf(selectedEntryPath);
+    if (activeIndex === -1) {
+      return moveEntrySelection(direction);
+    }
+
+    const nextIndex = Math.max(0, Math.min(visiblePaths.length - 1, activeIndex + direction));
+    const nextPath = visiblePaths[nextIndex] || '';
+    if (!nextPath) return false;
+
+    if (!selectionAnchorPath || !visiblePaths.includes(selectionAnchorPath)) {
+      selectionAnchorPath = selectedEntryPath;
+    }
+
+    selectEntryRange(selectionAnchorPath, nextPath);
+    scrollEntrySelectionIntoView(nextPath);
+    return true;
+  }
+
+  function openSelectedEntriesFromKeyboard() {
+    const selectedEntries = currentEntries.filter(entry => selectedEntryPaths.has(entry.path || entry.name));
+    if (!selectedEntries.length) return false;
+
+    if (selectedEntries.length === 1) {
+      vscode.postMessage({ type: 'openEntry', payload: selectedEntries[0] });
+      return true;
+    }
+
+    if (selectedEntries.length !== selectedEntryPaths.size) return false;
+    if (!selectedEntries.every(entry => !isParentEntry(entry) && getEffectiveEntryType(entry) === 'file')) return false;
+
+    vscode.postMessage({ type: 'openEntries', payload: { entries: selectedEntries.map(actionPayload) } });
+    return true;
+  }
+
   function syncSelectedRows() {
     for (const row of entriesBody.querySelectorAll('tr.entry-row')) {
       const entryPath = row.dataset.entryPath || '';

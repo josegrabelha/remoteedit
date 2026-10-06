@@ -477,16 +477,79 @@ export function renderTransferContextActions(): string {
       hideTransferQueueModal();
     }
 
-    if ((event.metaKey || event.ctrlKey) && !event.altKey && String(event.key || '').toLowerCase() === 'a') {
-      const hasOpenModalDialog = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).some(dialog => {
-        const visibilityRoot = dialog.closest('[aria-hidden]');
-        return Boolean(visibilityRoot && visibilityRoot.getAttribute('aria-hidden') === 'false');
-      });
-      if (activeConnectionId && getActiveConnectionView() === 'files' && !hasOpenModalDialog && !getTextEditableTarget(event.target)) {
+    const isSelectAllShortcut = (event.metaKey || event.ctrlKey) && !event.altKey && String(event.key || '').toLowerCase() === 'a';
+    const isMacPlatform = /Mac/.test(String(navigator.platform || ''));
+    const isDeleteKey = event.key === 'Delete' || (isMacPlatform && event.key === 'Backspace');
+    const isPlainDeleteShortcut = !event.metaKey && !event.ctrlKey && !event.altKey && isDeleteKey;
+    const isMacCommandDeleteShortcut = isMacPlatform && event.metaKey && !event.ctrlKey && !event.altKey && isDeleteKey;
+    const isDeleteShortcut = isPlainDeleteShortcut || isMacCommandDeleteShortcut;
+    const isRenameShortcut = !event.metaKey && !event.ctrlKey && !event.altKey && event.key === 'F2';
+    const isMoveSelectionShortcut = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown');
+    const isExtendSelectionShortcut = !event.metaKey && !event.ctrlKey && !event.altKey && event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown');
+    const isOpenSelectionShortcut = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key === 'Enter';
+    if (!isSelectAllShortcut && !isDeleteShortcut && !isRenameShortcut && !isMoveSelectionShortcut && !isExtendSelectionShortcut && !isOpenSelectionShortcut) return;
+
+    const hasOpenModalDialog = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).some(dialog => {
+      const visibilityRoot = dialog.closest('[aria-hidden]');
+      return Boolean(visibilityRoot && visibilityRoot.getAttribute('aria-hidden') === 'false');
+    });
+    const canHandleFilesKeyboardAction = activeConnectionId
+      && getActiveConnectionView() === 'files'
+      && !hasOpenModalDialog
+      && !getTextEditableTarget(event.target);
+    if (!canHandleFilesKeyboardAction) return;
+
+    const focusedInteractiveControl = event.target instanceof Element
+      ? event.target.closest('button, a, select, [role="button"], [role="menuitem"], [role="combobox"]')
+      : null;
+    if ((isMoveSelectionShortcut || isExtendSelectionShortcut || isOpenSelectionShortcut) && focusedInteractiveControl) return;
+
+    if (isSelectAllShortcut) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAllVisibleEntries();
+      return;
+    }
+
+    if (isDeleteShortcut) {
+      const entries = getSelectedActionEntries();
+      if (entries.length) {
         event.preventDefault();
         event.stopPropagation();
-        selectAllVisibleEntries();
+        contextDelete.click();
       }
+      return;
+    }
+
+    if (isRenameShortcut) {
+      const entry = getSelectedActionEntry();
+      if (entry) {
+        event.preventDefault();
+        event.stopPropagation();
+        contextRename.click();
+      }
+      return;
+    }
+
+    if (isMoveSelectionShortcut) {
+      if (moveEntrySelection(event.key === 'ArrowUp' ? -1 : 1)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+
+    if (isExtendSelectionShortcut) {
+      if (extendEntrySelection(event.key === 'ArrowUp' ? -1 : 1)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+
+    if (isOpenSelectionShortcut && openSelectedEntriesFromKeyboard()) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   });
   filterInput.addEventListener('input', () => {

@@ -4,7 +4,7 @@
 
 ### Added
 
-* Added **Select All** support in the Remote Edit Files view with `Cmd/Ctrl+A`, selecting all visible files and directories except the parent directory entry (`..`), with refined parent-entry selection behavior.
+* Added keyboard controls to the **Remote Edit Files view**, including `Cmd/Ctrl+A` for Select All, `Delete`/`Cmd+Delete` for deleting selected items, `F2` for rename, Arrow keys with `Shift` range selection, and `Enter` for navigating and opening files or directories, with appropriate handling of the parent directory entry (`..`).
 
 ### Changed
 

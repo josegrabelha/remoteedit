@@ -6,6 +6,11 @@
 
 * Added **Select All** support in the Remote Edit Files view with `Cmd/Ctrl+A`, selecting all visible files and directories except the parent directory entry (`..`), with refined parent-entry selection behavior.
 
+### Changed
+
+* Improved the **Multi-Target Manage Targets** modal with group navigation and simplified visible-target selection.
+* Improved **Workspace Sync** mapping combobox filtering and dropdown behavior.
+
 ## [1.11.0] - 2026-10-05
 
 ### Added

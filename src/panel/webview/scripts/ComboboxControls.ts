@@ -8,6 +8,7 @@ export function renderComboboxControls(): string {
     if (!opened) return;
     const current = opened;
     opened = undefined;
+    current.placement = undefined;
     current.menu.remove();
     current.wrapper.classList.remove('open');
     current.button.setAttribute('aria-expanded', 'false');
@@ -15,12 +16,25 @@ export function renderComboboxControls(): string {
   }
   function positionCombo(current) {
     const rect = current.button.getBoundingClientRect();
+    const viewportMargin = 8;
+    const menuGap = 4;
+    current.menu.style.width = \`\${Math.min(rect.width, innerWidth - (viewportMargin * 2))}px\`;
+    current.menu.style.left = \`\${Math.max(viewportMargin, Math.min(rect.left, innerWidth - rect.width - viewportMargin))}px\`;
+    if (current.forceDown) {
+      const top = rect.bottom + menuGap;
+      const availableHeight = Math.max(0, innerHeight - top - viewportMargin);
+      current.menu.dataset.placement = 'down';
+      current.menu.style.top = \`\${top}px\`;
+      current.menu.style.maxHeight = \`\${Math.min(300, availableHeight)}px\`;
+      return;
+    }
     const height = Math.min(300, Math.max(100, innerHeight - 24));
-    current.menu.style.width = \`\${Math.min(rect.width, innerWidth - 16)}px\`;
-    current.menu.style.left = \`\${Math.max(8, Math.min(rect.left, innerWidth - rect.width - 8))}px\`;
     current.menu.style.maxHeight = \`\${height}px\`;
-    current.menu.style.top = \`\${rect.bottom + 4}px\`;
-    if (rect.bottom + current.menu.offsetHeight > innerHeight - 8) current.menu.style.top = \`\${Math.max(8, rect.top - current.menu.offsetHeight - 4)}px\`;
+    if (!current.placement) current.placement = rect.bottom + current.menu.offsetHeight > innerHeight - viewportMargin ? 'up' : 'down';
+    current.menu.dataset.placement = current.placement;
+    current.menu.style.top = current.placement === 'up'
+      ? \`\${Math.max(viewportMargin, rect.top - current.menu.offsetHeight - menuGap)}px\`
+      : \`\${rect.bottom + menuGap}px\`;
   }
   function fillCombo(current, query = '') {
     current.list.replaceChildren();
@@ -38,13 +52,35 @@ export function renderComboboxControls(): string {
     if (!options.length) { const empty = document.createElement('div'); empty.className = 'profile-dropdown-empty'; empty.textContent = 'No matching options'; current.list.append(empty); }
     positionCombo(current);
   }
+  function clearComboFilter(current) {
+    if (!current.search) return;
+    current.search.value = '';
+    current.searchWrap.classList.remove('has-value');
+    current.clearSearch.disabled = true;
+    fillCombo(current);
+    current.search.focus();
+  }
+  function updateComboFilterState(current) {
+    if (!current.search) return;
+    const hasValue = Boolean(current.search.value);
+    current.searchWrap.classList.toggle('has-value', hasValue);
+    current.clearSearch.disabled = !hasValue;
+  }
   function openCombo(current) {
     if (current.button.disabled) return;
     closeCombo(); opened = current;
+    current.placement = undefined;
     current.wrapper.classList.add('open'); current.button.setAttribute('aria-expanded', 'true');
     const host = dialogs.length ? dialogs[dialogs.length - 1].element : document.body;
     host.append(current.menu);
-    current.search.value = ''; fillCombo(current); current.search.focus();
+    if (current.search) {
+      current.search.value = '';
+      updateComboFilterState(current);
+      fillCombo(current);
+      current.search.focus();
+    } else {
+      fillCombo(current);
+    }
   }
   function refresh() {
     for (const [select, item] of combos) {
@@ -62,20 +98,33 @@ export function renderComboboxControls(): string {
       const label = document.createElement('span'); label.className = 'profile-dropdown-label';
       button.append(label); button.insertAdjacentHTML('beforeend', '<svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>'); wrapper.append(button);
       const menu = document.createElement('div'); menu.className = 'profile-dropdown-menu sync-combo-menu'; menu.dataset.for = select.id;
-      const searchWrap = document.createElement('div'); searchWrap.className = 'profile-dropdown-filter';
-      const search = document.createElement('input'); search.placeholder = 'Filter…'; search.setAttribute('aria-label', 'Filter options'); searchWrap.append(search);
+      const hasFilter = select.id !== 'mapDirection';
+      let searchWrap, search, clearSearch;
+      if (hasFilter) {
+        searchWrap = document.createElement('div'); searchWrap.className = 'profile-dropdown-filter filter-box';
+        search = document.createElement('input'); search.className = 'filter-input'; search.placeholder = 'Filter…'; search.setAttribute('aria-label', 'Filter options');
+        clearSearch = document.createElement('button'); clearSearch.type = 'button'; clearSearch.className = 'filter-clear-button'; clearSearch.setAttribute('aria-label', 'Clear Filter'); clearSearch.setAttribute('data-tooltip', 'Clear Filter'); clearSearch.disabled = true;
+        clearSearch.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg>';
+        searchWrap.append(search, clearSearch); menu.append(searchWrap);
+      }
       const list = document.createElement('div'); list.id = \`sync-options-\${++serial}\`; list.setAttribute('role','listbox'); list.setAttribute('aria-label',button.getAttribute('aria-label')); button.setAttribute('aria-controls',list.id);
-      menu.append(searchWrap, list);
-      const item = { select, wrapper, button, label, menu, search, list, observer: new MutationObserver(() => refresh()) };
+      menu.append(list);
+      const item = { select, wrapper, button, label, menu, searchWrap, search, clearSearch, list, forceDown: Boolean(select.closest('#mappingDialog')), placement: undefined, observer: new MutationObserver(() => refresh()) };
       item.observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled','selected'] }); combos.set(select,item);
       button.onclick = () => opened === item ? closeCombo() : openCombo(item);
       button.onkeydown = event => { if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); openCombo(item); const items = [...list.querySelectorAll('button:not(:disabled)')]; (event.key === 'End' || event.key === 'ArrowUp' ? items.at(-1) : items[0])?.focus(); } };
-      search.oninput = () => fillCombo(item, search.value);
+      if (search) {
+        search.oninput = () => { updateComboFilterState(item); fillCombo(item, search.value); };
+        clearSearch.onclick = event => { event.preventDefault(); event.stopPropagation(); clearComboFilter(item); };
+      }
       menu.onkeydown = event => {
         const items = [...list.querySelectorAll('button:not(:disabled)')]; const index = items.indexOf(document.activeElement);
-        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeCombo(true); }
+        if (event.key === 'Escape') {
+          event.preventDefault(); event.stopPropagation();
+          if (search && search.value) clearComboFilter(item); else closeCombo(true);
+        }
         else if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? (index + 1) % items.length : (index - 1 + items.length) % items.length; items[next]?.focus(); }
-        else if (event.key === 'Enter' && document.activeElement === search) { event.preventDefault(); items[0]?.click(); }
+        else if (event.key === 'Enter' && search && document.activeElement === search) { event.preventDefault(); items[0]?.click(); }
         else if (event.key === 'Tab') closeCombo();
       };
       label.textContent = select.selectedOptions[0]?.text || 'Select…'; button.disabled = select.disabled;

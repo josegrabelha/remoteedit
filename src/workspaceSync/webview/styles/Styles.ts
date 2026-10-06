@@ -698,6 +698,7 @@ button.resolution-choice.resolution-selected:hover:not(:disabled),
 .profile-picker[data-for="mapping"] .profile-dropdown-button, .profile-picker[data-for="target"] .profile-dropdown-button { height: var(--workspace-sync-control-height); min-height: var(--workspace-sync-control-height); padding: 2px 7px 2px 8px; line-height: 21px; font-size: 11px; }
 .profile-picker[data-for="mapping"] .profile-dropdown-label, .profile-picker[data-for="target"] .profile-dropdown-label { line-height: 21px; font-size: 11px; }
 .sync-combo-menu .profile-dropdown-filter input { height: var(--workspace-sync-control-height); min-height: var(--workspace-sync-control-height); padding-top: 2px; padding-bottom: 2px; line-height: 21px; }
+.sync-combo-menu .profile-dropdown-filter.filter-box input { padding-right: 28px; }
 .sync-combo-menu[data-for="mapping"] .profile-dropdown-filter input,
 .sync-combo-menu[data-for="target"] .profile-dropdown-filter input,
 .sync-combo-menu[data-for="mapping"] .profile-dropdown-item,

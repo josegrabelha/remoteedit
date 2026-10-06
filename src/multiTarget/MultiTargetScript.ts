@@ -15,7 +15,7 @@ export function renderMultiTargetScript(): string {
   let resultView = {}, batchQuery = {};
   let initialized = false, batchId = '', selected = '', filter = 'All', ratio = .3, activeInputRequestId = '';
   let activeTooltipTarget = null, tooltipTimer = 0, activeTextEditTarget = null;
-  let draftTargets = new Set(), savedCommands = [], targetSets = [], preferenceTimer, sessionStateTimer;
+  let draftTargets = new Set(), activeManageGroup = '', savedCommands = [], targetSets = [], preferenceTimer, sessionStateTimer;
   let editingSavedCommandId = '', pendingReplaceId = '', pendingDeleteId = '', returnToSavedCommands = false, resetSavedSearchOnOpen = false;
   let editingTargetSetId = '', pendingTargetSetReplaceId = '', pendingTargetSetDeleteId = '', returnToTargetSets = false, resetTargetSetSearchOnOpen = false;
   let draftTargetSetTargets = new Map();
@@ -578,6 +578,12 @@ ${renderRemoteSearchSnippetFunctions()}
     $('saved-delete-dialog').close();
     feedback(); post('clearFeedback'); post('deleteSavedCommand', { id, reopen: true });
   });
+  function syncTargetSetSearchClearButton() {
+    const input = $('target-set-search'), box = $('target-set-search-box'), clear = $('clear-target-set-search');
+    const hasValue = Boolean(input.value);
+    box.classList.toggle('has-value', hasValue);
+    clear.disabled = !hasValue;
+  }
   function visibleTargetSets() {
     const query = $('target-set-search').value.trim().toLowerCase();
     return targetSets.filter(item => !query || [item.title, ...(item.targets || []).map(target => {
@@ -612,11 +618,23 @@ ${renderRemoteSearchSnippetFunctions()}
   function openTargetSets(items, resetSearch = true) {
     if (Array.isArray(items)) targetSets = items;
     if (resetSearch) $('target-set-search').value = '';
+    syncTargetSetSearchClearButton();
     renderTargetSets();
     if (!$('target-sets-dialog').open) $('target-sets-dialog').showModal();
     $('target-set-search').focus();
   }
-  $('target-set-search').addEventListener('input', renderTargetSets);
+  function clearTargetSetSearch() {
+    $('target-set-search').value = '';
+    syncTargetSetSearchClearButton();
+    renderTargetSets();
+    $('target-set-search').focus();
+  }
+  $('target-set-search').addEventListener('input', () => { syncTargetSetSearchClearButton(); renderTargetSets(); });
+  $('target-set-search').addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !$('target-set-search').value) return;
+    event.preventDefault(); event.stopPropagation(); clearTargetSetSearch();
+  });
+  $('clear-target-set-search').addEventListener('click', clearTargetSetSearch);
   $('target-sets-close').addEventListener('click', () => $('target-sets-dialog').close());
   $('target-sets-dialog').addEventListener('cancel', event => { event.preventDefault(); $('target-sets-dialog').close(); });
   function buildTargetSetEditorRows(sourceTargets) {
@@ -779,30 +797,61 @@ ${renderRemoteSearchSnippetFunctions()}
   $('input-cancel').addEventListener('click', () => closeInputPrompt(true));
   $('input-value').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); submitInputPrompt(); } });
   $('input-dialog').addEventListener('cancel', event => { event.preventDefault(); closeInputPrompt(true); });
+  function syncManageSearchClearButton() {
+    const input = $('search'), box = $('manage-search-box'), clear = $('clear-manage-search');
+    const hasValue = Boolean(input.value);
+    box.classList.toggle('has-value', hasValue);
+    clear.disabled = !hasValue;
+  }
   function visibleProfiles() {
-    const search = $('search').value.trim().toLowerCase(), group = $('group').value;
+    const search = $('search').value.trim().toLowerCase(), group = activeManageGroup;
     return state.profiles.filter(profile => (!group || (group === '__ungrouped__' ? !profile.groupId : profile.groupId === group)) && (!search || [profile.name, profile.host, profile.username].join(' ').toLowerCase().includes(search)));
+  }
+  function syncSelectVisible() {
+    const checkbox = $('select-visible');
+    const profiles = visibleProfiles();
+    const selectedCount = profiles.reduce((count, profile) => count + (draftTargets.has(profile.id) ? 1 : 0), 0);
+    checkbox.disabled = profiles.length === 0;
+    checkbox.checked = profiles.length > 0 && selectedCount === profiles.length;
+    checkbox.indeterminate = selectedCount > 0 && selectedCount < profiles.length;
+  }
+  function renderManageGroups() {
+    const list = $('manage-groups'); list.replaceChildren();
+    const groups = [{ id: '', name: 'All' }, { id: '__ungrouped__', name: 'Ungrouped' }, ...state.groups];
+    for (const group of groups) {
+      const item = document.createElement('button'); item.type = 'button'; item.className = 'manage-group-item' + (activeManageGroup === group.id ? ' selected' : '');
+      item.textContent = group.name; item.setAttribute('role', 'option'); item.setAttribute('aria-selected', activeManageGroup === group.id ? 'true' : 'false');
+      item.addEventListener('click', () => { if (activeManageGroup === group.id) return; activeManageGroup = group.id; renderManageGroups(); renderProfiles(); });
+      list.append(item);
+    }
   }
   function renderProfiles() {
     $('manage-list').replaceChildren();
     for (const profile of visibleProfiles()) {
       const label = document.createElement('label'); label.className = 'profile';
       const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = draftTargets.has(profile.id);
-      checkbox.addEventListener('change', () => { if (checkbox.checked) draftTargets.add(profile.id); else draftTargets.delete(profile.id); $('manage-count').textContent = draftTargets.size + ' selected'; });
+      checkbox.addEventListener('change', () => { if (checkbox.checked) draftTargets.add(profile.id); else draftTargets.delete(profile.id); $('manage-count').textContent = draftTargets.size + ' selected'; syncSelectVisible(); });
       const name = document.createElement('span'); name.className = 'profile-text'; name.textContent = profile.name;
       const details = document.createElement('span'); details.className = 'detail'; details.textContent = [profile.username ? profile.username + '@' + profile.host : profile.host, state.groups.find(g => g.id === profile.groupId)?.name].filter(Boolean).join(' · ');
       name.append(details); label.append(checkbox, name); $('manage-list').append(label);
     }
     if (!$('manage-list').children.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'No matching SSH/SFTP connections.'; $('manage-list').append(empty); }
-    $('manage-count').textContent = draftTargets.size + ' selected';
+    $('manage-count').textContent = draftTargets.size + ' selected'; syncSelectVisible();
   }
   $('manage').addEventListener('click', () => {
-    draftTargets = new Set(state.targets.map(t => t.connectionId)); $('search').value = ''; $('group').replaceChildren(new Option('All Groups', ''), new Option('Ungrouped', '__ungrouped__'));
-    state.groups.forEach(group => $('group').append(new Option(group.name, group.id))); renderProfiles(); $('manage-dialog').showModal(); $('search').focus();
+    draftTargets = new Set(state.targets.map(t => t.connectionId)); activeManageGroup = ''; $('search').value = '';
+    syncManageSearchClearButton(); renderManageGroups(); renderProfiles(); $('manage-dialog').showModal(); $('search').focus();
   });
-  $('search').addEventListener('input', renderProfiles); $('group').addEventListener('change', renderProfiles);
-  $('select-visible').addEventListener('click', () => { visibleProfiles().forEach(p => draftTargets.add(p.id)); renderProfiles(); });
-  $('deselect-visible').addEventListener('click', () => { visibleProfiles().forEach(p => draftTargets.delete(p.id)); renderProfiles(); });
+  function clearManageSearch() {
+    $('search').value = ''; syncManageSearchClearButton(); renderProfiles(); $('search').focus();
+  }
+  $('search').addEventListener('input', () => { syncManageSearchClearButton(); renderProfiles(); });
+  $('search').addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !$('search').value) return;
+    event.preventDefault(); event.stopPropagation(); clearManageSearch();
+  });
+  $('clear-manage-search').addEventListener('click', clearManageSearch);
+  $('select-visible').addEventListener('change', () => { const checked = $('select-visible').checked; visibleProfiles().forEach(profile => checked ? draftTargets.add(profile.id) : draftTargets.delete(profile.id)); renderProfiles(); });
   $('manage-cancel').addEventListener('click', () => $('manage-dialog').close());
   $('manage-save').addEventListener('click', () => { post('targets', { ids: [...draftTargets] }); $('manage-dialog').close(); });
   $('bulk-directory').addEventListener('click', () => { $('bulk-path').value = ''; $('directory-dialog').showModal(); $('bulk-path').focus(); });

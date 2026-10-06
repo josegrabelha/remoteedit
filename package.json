@@ -68,6 +68,12 @@
         "category": "Remote Edit"
       },
       {
+        "command": "remoteedit.sidebar.manageMasterPassword",
+        "title": "Manage Master Password",
+        "icon": "$(key)",
+        "category": "Remote Edit"
+      },
+      {
         "command": "remoteedit.sidebar.quickConnect",
         "title": "Quick Connect",
         "icon": "$(zap)",
@@ -884,6 +890,11 @@
           "command": "remoteedit.sidebar.newConnectionGroup",
           "when": "view == remoteedit.connectionsView",
           "group": "navigation@1.5"
+        },
+        {
+          "command": "remoteedit.sidebar.manageMasterPassword",
+          "when": "view == remoteedit.connectionsView",
+          "group": "navigation@1.75"
         },
         {
           "command": "remoteedit.sidebar.refreshConnections",

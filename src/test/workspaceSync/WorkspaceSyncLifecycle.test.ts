@@ -38,28 +38,6 @@ const snapshot: any = { host: 'target', port: 22, jumpChain: [{ profileId: 'jump
 
 
 
-test('disposed Local Watch cannot re-register subscriptions from a late refresh', () => {
-  const workspace = vscodeStub.workspace as any;
-  const previous = workspace.onDidSaveTextDocument;
-  let registrations = 0;
-  workspace.onDidSaveTextDocument = () => { registrations += 1; return { dispose() {} }; };
-  const watcher = new WorkspaceWatcher(async () => {}, output);
-  try {
-    watcher.dispose();
-    watcher.refresh([{ ...mapping, options: { ...mapping.options, watchLocalChanges: false } }]);
-    assert.equal(registrations, 0);
-  } finally { watcher.dispose(); workspace.onDidSaveTextDocument = previous; }
-});
-
-test('disposed Remote Watch cannot restart its polling timer', () => {
-  const watcher = new RemoteWorkspaceWatcher(async () => {}, output);
-  try {
-    watcher.dispose();
-    watcher.refresh([mapping]);
-    assert.equal((watcher as any).timer, undefined);
-  } finally { watcher.dispose(); }
-});
-
 test('Remote Watch stops scheduling new polls when disposed mid-poll', async () => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });

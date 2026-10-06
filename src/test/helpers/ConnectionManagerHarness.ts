@@ -23,8 +23,10 @@ export const inputUi = {
   prompts: [] as unknown[],
   errors: [] as string[],
   information: [] as string[],
+  warnings: [] as { message: string; options: unknown; items: unknown[] }[],
+  warningResponses: [] as (string | undefined)[],
   picks: [] as unknown[],
-  pickPrompts: [] as unknown[],
+  pickPrompts: [] as { items: unknown; options: { title?: string; placeHolder?: string } | undefined }[],
   configurationWrites: [] as { key: string; value: unknown }[],
   configuration: new Map<string, unknown>()
 };
@@ -36,11 +38,18 @@ export const vscodeStub = {
   ProgressLocation: { Notification: 15 }, ConfigurationTarget: { Global: 1 },
   window: {
     showInputBox: async (options: unknown) => { inputUi.prompts.push(options); return inputUi.inputs.shift(); },
-    showQuickPick: async (items: unknown, options: unknown) => {
+    showQuickPick: async (items: unknown, options?: { title?: string; placeHolder?: string }) => {
       inputUi.pickPrompts.push({ items, options }); return inputUi.picks.shift();
     },
     showErrorMessage: async (message: string) => { inputUi.errors.push(message); },
     showInformationMessage: async (message: string) => { inputUi.information.push(message); },
+    showWarningMessage: async (message: string, ...args: unknown[]) => {
+      const hasOptions = Boolean(args.length && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0]));
+      const options = hasOptions ? args[0] : undefined;
+      const items = hasOptions ? args.slice(1) : args;
+      inputUi.warnings.push({ message, options, items });
+      return inputUi.warningResponses.shift();
+    },
     withProgress: async (_options: unknown, callback: (progress: unknown, token: InputCancellationSource['token']) => Promise<unknown>) => {
       const source = new InputCancellationSource();
       try { return await callback({ report() {} }, source.token); } finally { source.dispose(); }
@@ -73,7 +82,7 @@ export function profile(id: string, overrides: Partial<ConnectionProfile> = {}):
 export const secretKey = (id: string, field: 'password' | 'passphrase') => `remoteedit.connectionSecret.${id}.${field}`;
 
 export function createConnectionManagerHarness(profiles: ConnectionProfile[] = []) {
-  for (const values of [inputUi.inputs, inputUi.prompts, inputUi.errors, inputUi.information, inputUi.picks, inputUi.pickPrompts, inputUi.configurationWrites]) values.length = 0;
+  for (const values of [inputUi.inputs, inputUi.prompts, inputUi.errors, inputUi.information, inputUi.warnings, inputUi.warningResponses, inputUi.picks, inputUi.pickPrompts, inputUi.configurationWrites]) values.length = 0;
   inputUi.configuration.clear();
   inputUi.configuration.set('diagnostics.debugLogs', true);
   inputUi.configuration.set('diagnostics.performanceLogs', true);

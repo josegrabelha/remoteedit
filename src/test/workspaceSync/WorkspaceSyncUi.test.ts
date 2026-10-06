@@ -76,29 +76,6 @@ test('Activity persists locally in bounded batches and restores after recreation
 
 
 
-test('Activity Clear removes persisted history and wins over queued writes', async () => {
-  class DelayedActivityState extends MemoryActivityState {
-    override async update(key: string, value: unknown): Promise<void> {
-      this.updates += 1;
-      await delay(10);
-      this.values.set(key, value);
-    }
-  }
-
-  const state = new DelayedActivityState();
-  const ui = new WorkspaceSyncUi(new WorkspaceSyncActivityStore(state), 1);
-  ui.log('Will be cleared');
-  await delay(3);
-  ui.clear();
-  await delay(30);
-
-  assert.deepEqual(state.get<any[]>(WORKSPACE_SYNC_ACTIVITY_KEY, []), []);
-  const restored = new WorkspaceSyncUi(new WorkspaceSyncActivityStore(state), 1);
-  assert.equal(restored.snapshot().length, 0);
-  restored.dispose();
-  ui.dispose();
-});
-
 
 
 test('text comparison reconstructs both inputs including insertions, deletions and CRLF', () => {

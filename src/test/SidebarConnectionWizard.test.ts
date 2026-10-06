@@ -51,25 +51,33 @@ test('sidebar credentials can configure and select Master Password without openi
 });
 
 
-test('sidebar Add Connection can configure and save the Master Password source', async () => {
-  const harness = createConnectionManagerHarness([]);
+
+test('sidebar Master Password header action changes and removes the global secret without changing saved profiles', async () => {
+  const source = profile('source', { name: 'Source', passwordSource: 'master' });
+  const harness = createConnectionManagerHarness([source]);
   const sessions = { hasConnection: () => false } as unknown as RemoteSessionManager;
   const ui = createConnectionUiHarness(harness, sessions);
 
-  inputUi.inputs.push('New Server', 'server.invalid', '22', 'admin', 'global-secret', 'global-secret', '/');
-  inputUi.picks.push(
-    { label: 'SFTP', value: 'sftp' },
-    { label: 'Password', value: 'password' },
-    { label: 'Master Password', value: 'master' },
-    { label: 'Configure Master Password', value: 'configure' },
-    { label: 'On', value: true }
-  );
+  harness.secrets.set('remoteedit.masterPassword', 'old-secret');
+  inputUi.picks.push({ label: 'Change Master Password', value: 'change' });
+  inputUi.inputs.push('new-secret', 'new-secret');
 
-  await (ui.sidebar as any).addConnection();
+  await (ui.sidebar as any).manageMasterPasswordFromSidebar();
 
-  const profiles = await harness.manager.listProfiles();
-  assert.equal(profiles.length, 1);
-  assert.equal(profiles[0].passwordSource, 'master');
-  assert.equal(harness.secrets.get('remoteedit.masterPassword'), 'global-secret');
-  assert.equal(harness.secrets.has(`remoteedit.connectionSecret.${profiles[0].id}.password`), false);
+  assert.equal(harness.secrets.get('remoteedit.masterPassword'), 'new-secret');
+  assert.equal((await harness.manager.getProfile('source'))?.passwordSource, 'master');
+  assert.equal(inputUi.pickPrompts[0]?.options?.title, 'Master Password');
+  assert.equal(inputUi.pickPrompts[0]?.options?.placeHolder, 'Configured · Used by 1 saved connection');
+
+  inputUi.picks.push({ label: 'Remove Master Password', value: 'remove' });
+  inputUi.warningResponses.push('Remove');
+
+  await (ui.sidebar as any).manageMasterPasswordFromSidebar();
+
+  assert.equal(harness.secrets.has('remoteedit.masterPassword'), false);
+  assert.equal((await harness.manager.getProfile('source'))?.passwordSource, 'master');
+  assert.equal(inputUi.warnings.length, 1);
+  assert.equal(inputUi.warnings[0].message, 'Remove Master Password?');
+  assert.deepEqual(inputUi.warnings[0].items, ['Remove']);
 });
+

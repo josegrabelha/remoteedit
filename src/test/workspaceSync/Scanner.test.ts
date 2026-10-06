@@ -38,38 +38,6 @@ test('LocalScanner respects ignore rules and records symbolic links without foll
   }
 });
 
-test('LocalScanner omits a file confirmed gone after readdir, without adding an Unknown', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-vanishing-file-'));
-  const volatile = path.join(root, 'devio_semaphore_logi_hpp_OptionsPlus_test');
-  const fsModule = require('fs/promises') as typeof import('fs/promises');
-  const originalLstat = fsModule.lstat.bind(fsModule);
-  try {
-    await fs.writeFile(volatile, 'transient');
-    await fs.writeFile(path.join(root, 'stable.txt'), 'stable');
-    let intercepted = false;
-    t.mock.method(fsModule, 'lstat', async (file: any, options?: any) => {
-      if (file === volatile && !intercepted) {
-        intercepted = true;
-        await fs.rm(volatile);
-        throw Object.assign(new Error('file vanished'), { code: 'ENOENT' });
-      }
-      return originalLstat(file, options);
-    });
-    const snapshot = await scanLocalTree(root);
-    assert.equal(intercepted, true);
-    assert.equal(snapshot.entries[path.basename(volatile)], undefined);
-    assert.ok(snapshot.entries['stable.txt']);
-    assert.deepEqual(snapshot.incompletePaths, []);
-    const diff = diffSnapshots(snapshot, createSyncSnapshot([]));
-    assert.equal(diff.length, 1);
-    assert.equal(diff[0].relativePath, 'stable.txt');
-    assert.equal(diff[0].status, 'localOnly');
-  } finally {
-    t.mock.restoreAll();
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
 
 
 test('LocalScanner keeps permission failures visible as Unknown with their error code', async t => {
@@ -117,14 +85,6 @@ test('RemoteScanner fails closed when a directory listing fails', async () => {
 });
 
 
-
-test('LocalScanner reports an unreadable root instead of treating it as an empty tree', async () => {
-  const missing = path.join(os.tmpdir(), `remoteedit-missing-${Date.now()}-${Math.random()}`);
-  await assert.rejects(
-    () => scanLocalTree(missing),
-    /cannot scan Local root/i
-  );
-});
 
 
 

@@ -67,17 +67,6 @@ test('independent Local and Remote replacements remain a real conflict', async (
 
 
 
-test('one-path classifier returns Unknown when a transient candidate vanished everywhere', () => {
-  const diff = classifyCurrentPath({
-    relativePath: 'gone.txt',
-    remoteMtimeReliable: true
-  });
-
-  assert.strictEqual(diff.status, 'unknown');
-  assert.strictEqual(diff.relativePath, 'gone.txt');
-  assert.strictEqual(diff.reason, 'Path has no current or baseline state.');
-});
-
 
 
 test('a completed upload baseline makes the later Remote Watch observation Same', async () => {

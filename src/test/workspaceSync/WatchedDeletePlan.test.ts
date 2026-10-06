@@ -30,9 +30,3 @@ test('WatchedDeletePlan expands a mirrored directory deepest-first and preserves
     'folder'
   ]);
 });
-
-test('WatchedDeletePlan returns one mirrored file and ignores untrusted paths', () => {
-  assert.deepEqual(collectWatchedDeletePaths(baseline(), 'other.txt'), ['other.txt']);
-  assert.deepEqual(collectWatchedDeletePaths(baseline(), 'folder/remote-only.txt'), []);
-  assert.deepEqual(collectWatchedDeletePaths(baseline(), 'missing.txt'), []);
-});

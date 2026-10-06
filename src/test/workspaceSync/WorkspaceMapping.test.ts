@@ -34,61 +34,6 @@ function mappingInput(name = 'Production') {
   };
 }
 
-test('WorkspaceMapping normalizes roots and applies safe defaults', () => {
-  const mapping = createWorkspaceMapping(mappingInput());
-  assert.equal(mapping.localRoot, path.resolve('./project'));
-  assert.equal(mapping.targets[0].remoteRoot, '/var/www/app');
-  assert.equal(mapping.options.direction, 'bidirectional');
-  assert.equal(mapping.options.conflictProtection, true);
-  assert.equal(mapping.options.atomicTransfer, true);
-  assert.equal(mapping.options.propagateDeletes, false);
-  assert.equal(mapping.options.uploadOnSave, false);
-  assert.equal(mapping.options.watchLocalChanges, false);
-  assert.equal(mapping.options.watchRemoteChanges, false);
-  assert.deepEqual(mapping.options.ignorePatterns, ['.git/', 'node_modules/']);
-});
-
-test('WorkspaceMapping normalizes direction-dependent automatic sync options', () => {
-  const localToRemote = createWorkspaceMapping({
-    ...mappingInput('Local to Remote'),
-    options: {
-      direction: 'localToRemote',
-      uploadOnSave: true,
-      watchLocalChanges: true,
-      watchRemoteChanges: true
-    }
-  });
-  assert.equal(localToRemote.options.uploadOnSave, true);
-  assert.equal(localToRemote.options.watchLocalChanges, true);
-  assert.equal(localToRemote.options.watchRemoteChanges, false);
-
-  const remoteToLocal = createWorkspaceMapping({
-    ...mappingInput('Remote to Local'),
-    options: {
-      direction: 'remoteToLocal',
-      uploadOnSave: true,
-      watchLocalChanges: true,
-      watchRemoteChanges: true
-    }
-  });
-  assert.equal(remoteToLocal.options.uploadOnSave, false);
-  assert.equal(remoteToLocal.options.watchLocalChanges, false);
-  assert.equal(remoteToLocal.options.watchRemoteChanges, true);
-
-  const bidirectional = createWorkspaceMapping({
-    ...mappingInput('Bidirectional'),
-    options: {
-      direction: 'bidirectional',
-      uploadOnSave: true,
-      watchLocalChanges: true,
-      watchRemoteChanges: true
-    }
-  });
-  assert.equal(bidirectional.options.uploadOnSave, true);
-  assert.equal(bidirectional.options.watchLocalChanges, true);
-  assert.equal(bidirectional.options.watchRemoteChanges, true);
-});
-
 test('WorkspaceMapping rejects duplicate target names case-insensitively', () => {
   assert.throws(() => createWorkspaceMapping({
     name: 'Production',

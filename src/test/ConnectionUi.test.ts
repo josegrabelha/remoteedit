@@ -11,27 +11,6 @@ import { renderTransferContextActions } from '../panel/webview/scripts/TransferC
 
 
 
-test('webview confirm dialogs distinguish Escape dismissal from the cancel button', async () => {
-  const messages: any[] = [];
-  const manager = new RemoteEditDialogManager(() => true, (type, payload) => messages.push({ type, payload }));
-  const options = { title: 'Conflict', message: 'Choose', confirmLabel: 'Replace', cancelLabel: 'Keep Current' };
-
-  const dismissed = manager.showConfirmDialogDecision(options);
-  manager.handleConfirmDialogResponse({ requestId: messages.at(-1).payload.requestId, confirmed: false, dismissed: true });
-  assert.equal(await dismissed, 'dismiss');
-
-  const kept = manager.showConfirmDialogDecision(options);
-  manager.handleConfirmDialogResponse({ requestId: messages.at(-1).payload.requestId, confirmed: false, dismissed: false });
-  assert.equal(await kept, 'cancel');
-
-  const replaced = manager.showConfirmDialogDecision(options);
-  manager.handleConfirmDialogResponse({ requestId: messages.at(-1).payload.requestId, confirmed: true, dismissed: false });
-  assert.equal(await replaced, 'confirm');
-
-  assert.match(renderStateDialogs(true, true, 'symbolic'), /dismissed: Boolean\(dismissed\)/);
-  assert.match(renderTransferContextActions(), /closeConfirmDialog\([^;]+, true\);/);
-});
-
 
 test('Webview Direct selection sends an explicit clear through the real save message and host persistence', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);

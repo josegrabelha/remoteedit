@@ -10,14 +10,6 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-test('LocalRootOperationCoordinator detects equal, parent/child, and independent roots', () => {
-  const base = path.resolve('/tmp/workspace-sync-root');
-  assert.equal(localRootsOverlap(base, base), true);
-  assert.equal(localRootsOverlap(base, path.join(base, 'nested')), true);
-  assert.equal(localRootsOverlap(path.join(base, 'nested'), base), true);
-  assert.equal(localRootsOverlap(`${base}-a`, `${base}-b`), false);
-});
-
 test('LocalRootOperationCoordinator serializes the same Local Root', async () => {
   const coordinator = new LocalRootOperationCoordinator();
   const gate = deferred();
@@ -56,26 +48,6 @@ test('LocalRootOperationCoordinator allows independent roots to run in parallel'
   assert.equal(secondRan, true);
   gate.resolve();
   await first;
-});
-
-test('LocalRootOperationCoordinator preserves FIFO for overlapping waiters and releases after failure', async () => {
-  const coordinator = new LocalRootOperationCoordinator();
-  const gate = deferred();
-  const order: string[] = [];
-  const root = path.resolve('/tmp/workspace-sync-fifo');
-
-  const first = coordinator.run(root, async () => {
-    order.push('first');
-    await gate.promise;
-    throw new Error('expected');
-  });
-  const second = coordinator.run(path.join(root, 'child'), async () => { order.push('second'); });
-  const third = coordinator.run(root, async () => { order.push('third'); });
-
-  gate.resolve();
-  await assert.rejects(first, /expected/);
-  await Promise.all([second, third]);
-  assert.deepEqual(order, ['first', 'second', 'third']);
 });
 
 

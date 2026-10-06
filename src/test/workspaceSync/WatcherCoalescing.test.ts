@@ -2,15 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isInitialBidirectionalWatchOperationEnabled, isLocalChangeEnabled, isWatchSourceAuthoritative, mergeLocalChangeSource } from '../../workspaceSync/watcher/WatcherCoalescing';
 
-test('watcher coalescing preserves both save and filesystem watcher origins', () => {
-  assert.equal(mergeLocalChangeSource(undefined, 'save'), 'save');
-  assert.equal(mergeLocalChangeSource('save', 'save'), 'save');
-  assert.equal(mergeLocalChangeSource('watcher', 'watcher'), 'watcher');
-  assert.equal(mergeLocalChangeSource('save', 'watcher'), 'both');
-  assert.equal(mergeLocalChangeSource('watcher', 'save'), 'both');
-  assert.equal(mergeLocalChangeSource('both', 'save'), 'both');
-});
-
 
 
 

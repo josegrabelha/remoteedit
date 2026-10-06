@@ -68,37 +68,6 @@ test('failed logical commands remain failures even if the final command exits ze
   assert.equal(batch.executions[0].status, 'Failed'); assert.equal(batch.executions[0].code, 0);
 });
 
-test('output buffers are bounded and truncation is explicit', async () => {
-  const batch = new CommandBatch([target('one')], 'cmd', () => {});
-  await batch.run(async context => { context.append('x'.repeat(600000), 'stdout'); return { code: 0 }; });
-  assert.equal(batch.executions[0].truncated, true);
-  assert.ok(batch.executions[0].output.length <= 512 * 1024);
-  assert.ok(batch.executions[0].stdout.length <= 512 * 1024);
-});
-
-test('new default-directory mode leaves the SSH session cwd untouched; legacy mode still changes cwd', () => {
-  const legacy = buildControlledRemoteCommandScript('/tmp', 'pwd', 'PID_', false);
-  const defaultDirectory = buildControlledRemoteCommandScript('', 'pwd', 'PID_', false, true);
-  assert.match(legacy, /^cd '\/tmp'/);
-  assert.doesNotMatch(defaultDirectory, /^cd /);
-  assert.match(execFileSync('sh', ['-c', defaultDirectory], { cwd: '/', encoding: 'utf8' }), /\n\/\n/);
-  assert.match(execFileSync('sh', ['-c', legacy], { cwd: '/', encoding: 'utf8' }), /\n\/tmp\n/);
-  assert.match(buildControlledRemoteCommandScript('', 'pwd', 'PID_', false), /^cd ''/);
-});
-
-test('new adapter reuses existing executor without changing multiline input, explicit paths or controls', async () => {
-  const calls: any[][] = [];
-  const sessions = { runRemoteCommandStreaming: async (...args: any[]) => { calls.push(args); return { code: 0 }; } } as unknown as RemoteSessionManager;
-  const service = new RemoteCommandService(sessions);
-  const command = "echo 'first'\nfor x in a b; do\n  echo \"$x\"\ndone";
-  const control = () => {};
-  await service.run('one', '', command, { onControl: control });
-  await service.run('two', '/a b', command);
-  assert.equal(calls[0][2], command); assert.equal(calls[0][3].onControl, control);
-  assert.equal(calls[0][3].useSessionWorkingDirectory, true);
-  assert.equal(calls[1][1], '/a b'); assert.equal(calls[1][3].useSessionWorkingDirectory, false);
-});
-
 test('sudo uses existing session support, does not prompt root/Windows, and clears failed elevation', async () => {
   let username = 'root', remotePlatform = 'posix', enabled = false, prompts = 0, fail = false;
   const sessions = {

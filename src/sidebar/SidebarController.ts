@@ -212,6 +212,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.window.registerTreeDataProvider('remoteedit.transfersView', this.transfersProvider),
       vscode.commands.registerCommand('remoteedit.sidebar.newConnection', () => this.addConnection()),
       vscode.commands.registerCommand('remoteedit.sidebar.newConnectionGroup', () => this.addConnectionGroup()),
+      vscode.commands.registerCommand('remoteedit.sidebar.manageMasterPassword', () => this.manageMasterPasswordFromSidebar()),
       vscode.commands.registerCommand('remoteedit.sidebar.openSettings', () => this.openSettings()),
       vscode.commands.registerCommand('remoteedit.sidebar.exportBackup', () => this.exportBackup()),
       vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importBackup()),
@@ -2446,6 +2447,82 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       const message = error instanceof Error ? error.message : String(error);
       void vscode.window.showErrorMessage(message);
       return false;
+    }
+  }
+
+  private async manageMasterPasswordFromSidebar(): Promise<void> {
+    const state = await this.connectionManager.getMasterPasswordState();
+
+    if (!state.configured) {
+      await this.configureMasterPasswordFromSidebar();
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick([
+      { label: 'Change Master Password', value: 'change' as const },
+      { label: 'Remove Master Password', value: 'remove' as const }
+    ], {
+      title: 'Master Password',
+      placeHolder: `Configured · Used by ${state.usedBy} saved ${state.usedBy === 1 ? 'connection' : 'connections'}`,
+      ignoreFocusOut: true
+    });
+
+    if (!selected) {
+      return;
+    }
+
+    if (selected.value === 'change') {
+      const password = await vscode.window.showInputBox({
+        title: 'Change Master Password',
+        prompt: 'Enter the new Master Password.',
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: value => String(value || '') ? undefined : 'Master Password is required.'
+      });
+
+      if (password === undefined) {
+        return;
+      }
+
+      const confirmation = await vscode.window.showInputBox({
+        title: 'Change Master Password',
+        prompt: 'Confirm the new Master Password.',
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: value => value === password ? undefined : 'Passwords do not match.'
+      });
+
+      if (confirmation === undefined) {
+        return;
+      }
+
+      try {
+        await this.connectionManager.setMasterPassword(password, confirmation);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(message);
+      }
+      return;
+    }
+
+    const confirmed = await vscode.window.showWarningMessage(
+      'Remove Master Password?',
+      {
+        modal: true,
+        detail: 'Removing it will not remove or modify connections that use Master Password. They will require a configured Master Password or a different password source before connecting again.'
+      },
+      'Remove'
+    );
+
+    if (confirmed !== 'Remove') {
+      return;
+    }
+
+    try {
+      await this.connectionManager.removeMasterPassword();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
     }
   }
 

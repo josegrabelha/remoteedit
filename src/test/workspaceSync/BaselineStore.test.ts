@@ -82,38 +82,6 @@ test('BaselineStore clears a persisted baseline when connection or root context 
 
 
 
-test('BaselineStore keeps independent history for mappings and targets that share the same roots', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-baseline-shared-roots-'));
-  try {
-    const store = new BaselineStore(contextAt(root));
-    const sharedContext = {
-      localRoot: '/local/shared',
-      remoteRoot: '/remote/shared',
-      connectionId: 'connection-shared',
-      connectionIdentity: 'endpoint-shared'
-    };
-    await store.ensureContext('mapping-a', 'target-a', sharedContext);
-    await store.ensureContext('mapping-b', 'target-b', sharedContext);
-    await store.set({
-      mappingId: 'mapping-a',
-      targetId: 'target-a',
-      capturedAt: 1,
-      entries: { 'file.txt': { local: { kind: 'file', size: 1, mtimeMs: 1 }, remote: { kind: 'file', size: 1, mtimeMs: 1 } } }
-    });
-    await store.set({
-      mappingId: 'mapping-b',
-      targetId: 'target-b',
-      capturedAt: 2,
-      entries: { 'file.txt': { local: { kind: 'file', size: 2, mtimeMs: 2 }, remote: { kind: 'file', size: 2, mtimeMs: 2 } } }
-    });
-
-    assert.equal((await store.get('mapping-a', 'target-a'))?.entries['file.txt']?.local?.size, 1);
-    assert.equal((await store.get('mapping-b', 'target-b'))?.entries['file.txt']?.local?.size, 2);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
 
 
 

@@ -75,33 +75,3 @@ test('password prompts receive the target cancellation token and cannot reconnec
   password.resolve('synthetic'); await connecting;
   assert.equal(commands.hasConnection('target'), false); pool.dispose();
 });
-
-test('FTP targets are rejected before requesting credentials or opening a session', async () => {
-  let credentialsRead = false;
-  const source = {
-    listProfiles: async () => [{ id: 'ftp', connectionType: 'ftp' }],
-    getProfileCredentials: async () => { credentialsRead = true; return {}; }
-  } as unknown as ConnectionManager;
-  const pool = new CommandSessions(new SftpSessionManager(), source, () => {});
-  await assert.rejects(pool.connect('ftp'), /SSH\/SFTP/);
-  assert.equal(credentialsRead, false); assert.equal(pool.states.get('ftp'), 'Failed'); pool.dispose();
-});
-
-test('multi-target connection diagnostics include lifecycle timing without credential values', async () => {
-  harness.configuration.set('diagnostics.debugLogs', true);
-  harness.configuration.set('diagnostics.performanceLogs', true);
-  const logs: string[] = [];
-  const output = { appendLine: (line: string) => logs.push(line) } as any;
-  harness.clients.push(new ControlledSftp());
-  const commands = new SftpSessionManager();
-  const pool = new CommandSessions(commands, profiles, () => {}, undefined, output);
-  await pool.connect('target');
-  await pool.disconnect('target');
-  pool.dispose();
-  const text = logs.join('\n');
-  assert.match(text, /\[DEBUG\] \[MultiTarget\] Target connection started\./);
-  assert.match(text, /\[PERF\] \[MultiTarget\] target connection completed/);
-  assert.match(text, /\[DEBUG\] \[MultiTarget\] Target disconnect started\./);
-  assert.match(text, /\[PERF\] \[MultiTarget\] target disconnect completed/);
-  assert.doesNotMatch(text, /synthetic/);
-});

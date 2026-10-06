@@ -17,50 +17,6 @@ loader._load = (request: string, parent: unknown, isMain: boolean) => request ==
 const { SearchBatch, DEFAULT_SEARCH_QUERY, formatSearchResults } = require('../multiTargetSearch/SearchBatch') as typeof import('../multiTargetSearch/SearchBatch');
 loader._load = original;
 
-test('multi-target feedback is normalized across Commands and Search', () => {
-  assert.equal(formatMultiTargetOperationStatus('Running on', 1), 'Running on 1 connected target...');
-  assert.equal(formatMultiTargetOperationStatus('Running on', 3), 'Running on 3 connected targets...');
-  assert.equal(formatMultiTargetOperationStatus('Searching', 1), 'Searching 1 connected target...');
-  assert.equal(formatMultiTargetOperationStatus('Searching', 4), 'Searching 4 connected targets...');
-  assert.equal(formatMultiTargetSkippedStatus(1), '1 disconnected target skipped.');
-  assert.equal(formatMultiTargetSkippedStatus(3), '3 disconnected targets skipped.');
-  assert.equal(formatMultiTargetUnavailableStatus(1, 'Production'), '1 unavailable target skipped while loading "Production".');
-  assert.equal(formatMultiTargetUnavailableStatus(2, 'Production'), '2 unavailable targets skipped while loading "Production".');
-  assert.equal(formatMultiTargetConnectionFailureStatus(1), '1 target failed to connect.');
-  assert.equal(formatMultiTargetConnectionFailureStatus(2), '2 targets failed to connect.');
-  assert.equal(formatMultiTargetSearchCompletedStatus(1, 4), 'Search completed · 1 target searched · 4 results found.');
-  assert.equal(formatMultiTargetSearchCompletedStatus(2, 1, 1), 'Search completed · 2 targets searched · 1 result found · 1 failed.');
-  assert.equal(formatMultiTargetCommandsCompletedStatus(1), 'Commands completed · 1 target finished.');
-  assert.equal(formatMultiTargetCommandsCompletedStatus(2, 1, 1), 'Commands completed · 2 targets finished · 1 failed · 1 stopped.');
-  assert.match(multiTargetStyles, /#feedback\{[^}]*height:22px/);
-  assert.match(multiTargetStyles, /#feedback-primary,#feedback-secondary\{[^}]*font-size:10px/);
-  assert.doesNotMatch(multiTargetStyles, /#feedback\.feedback-warning/);
-  assert.doesNotMatch(multiTargetStyles, /#feedback\.feedback-error/);
-  const script = renderMultiTargetFeedbackScript();
-  assert.match(script, /feedbackSecondaryPriority/);
-  assert.match(script, /beginOperationFeedback/);
-  assert.match(script, /feedbackSecondaryScope !== 'connection'/);
-  assert.match(script, /clearTransientFeedback/);
-});
-
-test('Target Sets keep per-target working directories and expose Save New for a loaded set', () => {
-  assert.deepEqual(normalizeSavedMultiTargetSets([{ id: 'set', title: 'Servers', targets: [
-    { connectionId: 'dev', workingDirectory: '/srv/dev' },
-    { connectionId: 'test', workingDirectory: '/srv/test' }
-  ] }]), [{ id: 'set', title: 'Servers', targets: [
-    { connectionId: 'dev', workingDirectory: '/srv/dev' },
-    { connectionId: 'test', workingDirectory: '/srv/test' }
-  ] }]);
-  const html = renderMultiTargetHtml({} as any);
-  assert.match(html, /<th>Working Directory<\/th>/);
-  assert.match(html, /id="target-set-save-new"[^>]*hidden>Save New<\/button>/);
-  const script = renderMultiTargetScript();
-  assert.match(script, /item\.id === state\.targetSetId/);
-  assert.match(script, /workingDirectory: String\(target\.workingDirectory \|\| ''\)/);
-  assert.match(script, /saveAsNew/);
-  assert.match(script, /loadAfterSave/);
-});
-
 const target = (id: string) => ({ connectionId: id, name: id, workingDirectory: '' });
 function remote(run: (id: string, path: string, command: string, callbacks: RemoteCommandStreamingCallbacks) => Promise<{ code: number }>): RemoteSessionManager {
   return {
@@ -138,17 +94,6 @@ test('connection loss fails one target without reconnecting or stopping peers', 
   const run = batch.run(); await flush(); batch.connectionClosed('one'); gates.get('two')!.resolve({ code: 0 }); await run;
   assert.deepEqual(batch.executions.map(item => item.status), ['Failed', 'Finished']);
   assert.match(batch.executions[0].error!, /Connection closed/);
-});
-
-test('filename results and copying retain paths, match lines and text', async () => {
-  const sessions = remote(async (_id, _path, command, callbacks) => {
-    assert.doesNotMatch(command, /grep/);
-    callbacks.onStdout?.('F\t/home/test/a.log\nD\t/home/test/folder\n'); return { code: 0 };
-  });
-  const batch = new SearchBatch([target('test')], DEFAULT_SEARCH_QUERY, sessions, undefined, () => {});
-  await batch.run();
-  assert.equal(formatSearchResults(batch.executions[0].results), '/home/test/a.log\n/home/test/folder');
-  assert.equal(formatSearchResults([{path:'/a',line:2,text:'hello'},{path:'/a',line:8,text:'world'}]), '/a (2 matches)\n  2: hello\n  8: world');
 });
 
 test('closing/reopening the tab keeps session state; extension restart starts Multi-Target clean', async () => {

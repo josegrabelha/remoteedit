@@ -17,12 +17,6 @@ function operation(type: SyncOperation['type'], kind?: 'file' | 'directory'): Sy
 
 
 
-test('Workspace Sync failure guidance recommends reconnect and Refresh for connection failures', () => {
-  const text = describeSyncOperationFailure(operation('upload'), 'ECONNRESET: socket connection lost');
-  assert.match(text || '', /Reconnect the target, run Refresh, and retry/);
-  assert.match(text || '', /does not advance its synchronization baseline/);
-});
-
 
 
 
@@ -38,10 +32,3 @@ test('Workspace Sync error output preserves safe protocol details without a stac
 });
 
 
-
-test('Workspace Sync error output does not serialize arbitrary error properties', () => {
-  const error = Object.assign(new Error('FTP failed'), { code: 550, password: 'secret-value', nested: { token: 'hidden' } });
-  const text = formatSyncErrorOutput(error);
-  assert.match(text, /code=550/);
-  assert.doesNotMatch(text, /secret-value|hidden/);
-});

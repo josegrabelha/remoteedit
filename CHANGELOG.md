@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [1.12.1] - 2026-10-06
+
+### Fixed
+
+* Corrected the published changelog for the v1.12 release.
+
+## [1.12.0] - 2026-10-06
 
 ### Added
 

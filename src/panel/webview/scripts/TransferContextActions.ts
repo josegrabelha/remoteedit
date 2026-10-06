@@ -338,6 +338,21 @@ export function renderTransferContextActions(): string {
       trapConfirmDialogFocus(event);
       return;
     }
+    if (event.key === 'Escape' && masterPasswordMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMasterPasswordDialog();
+      return;
+    }
+    if (masterPasswordMode) {
+      if (event.key === 'Enter' && event.target && event.target.tagName === 'INPUT') {
+        event.preventDefault();
+        submitMasterPassword();
+        return;
+      }
+      trapMasterPasswordFocus(event);
+      return;
+    }
     if (event.key === 'Escape' && saveProfileMenuOpen) {
       event.preventDefault();
       event.stopPropagation();

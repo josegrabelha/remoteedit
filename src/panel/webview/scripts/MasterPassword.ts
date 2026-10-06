@@ -138,15 +138,21 @@ export function renderMasterPassword(): string {
   masterElement('masterPasswordCancel').addEventListener('click', closeMasterPasswordDialog);
   masterElement('masterPasswordSave').addEventListener('click', submitMasterPassword);
   for (const id of ['masterPasswordNew', 'masterPasswordConfirm']) bindTemporaryPasswordReveal(masterElement(id + 'Reveal'), masterElement(id));
-  masterPasswordBackdrop.addEventListener('keydown', event => {
-    event.stopPropagation();
-    if (event.key === 'Escape') { event.preventDefault(); closeMasterPasswordDialog(); }
-    if (event.key === 'Enter' && event.target.tagName === 'INPUT') { event.preventDefault(); submitMasterPassword(); }
-    if (event.key === 'Tab') {
-      const controls = Array.from(masterPasswordBackdrop.querySelectorAll('button, input')).filter(element => !element.disabled && element.getClientRects().length);
+  function trapMasterPasswordFocus(event) {
+    if (!masterPasswordMode || event.key !== 'Tab') return;
+    const controls = Array.from(masterPasswordBackdrop.querySelectorAll('button, input'))
+      .filter(element => !element.disabled && element.getClientRects().length);
+    if (!controls.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
-      if (controls.length) controls[(controls.indexOf(document.activeElement) + (event.shiftKey ? controls.length - 1 : 1)) % controls.length].focus();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
-  });
+  }
+  masterPasswordBackdrop.addEventListener('keydown', trapMasterPasswordFocus);
 `;
 }

@@ -12,6 +12,7 @@ export interface JumpConnectOptions {
   port: number;
   username: string;
   authType: AuthType;
+  passwordSource?: 'connection' | 'master';
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
@@ -26,6 +27,7 @@ export interface ConnectOptions {
   port: number;
   username: string;
   authType: AuthType;
+  passwordSource?: 'connection' | 'master';
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
@@ -82,6 +84,7 @@ export interface ActiveConnection {
   port: number;
   username: string;
   authType: AuthType;
+  passwordSource?: 'connection' | 'master';
   privateKeyPath?: string;
   startPath: string;
   keepAlive: boolean;

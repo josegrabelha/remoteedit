@@ -160,6 +160,8 @@ export function getSavedCredentialLabel(profile: ConnectionProfile, quickConnect
     return profile.hasSavedPassphrase ? 'Saved' : 'Not saved';
   }
 
+  if (profile.passwordSource === 'master') return 'Master Password';
+
   if (quickConnect) {
     return profile.hasSavedPassword ? 'Set' : 'Not set';
   }
@@ -363,6 +365,7 @@ export function formatCredentialStatus(profile: ConnectionProfile): string {
     return profile.hasSavedPassphrase ? 'Saved passphrase available.' : '';
   }
 
+  if (profile.passwordSource === 'master') return 'Uses Master Password.';
   return profile.hasSavedPassword ? 'Saved password available.' : '';
 }
 

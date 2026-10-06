@@ -168,6 +168,7 @@ export class FtpSessionManager implements RemoteSessionManager {
         port: options.port,
         username: options.username,
         authType: 'password',
+        passwordSource: options.passwordSource,
         startPath,
         keepAlive: options.keepAlive !== false,
         ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(options.ftpsAllowSelfSignedCertificate) : false,

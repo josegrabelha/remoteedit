@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput } from '../connection/ConnectionManager';
+import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput, PasswordSource } from '../connection/ConnectionManager';
 import type { JumpProfileDescriptor } from '../connection/JumpChain';
 import { buildRemoteEditUri, preferOpenRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
 import { resolveEditorRootSegments } from '../filesystem/EditorRootLabel';
@@ -682,6 +682,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     let authType: AuthType = 'password';
+    let passwordSource: PasswordSource = 'connection';
     let privateKeyPath = '';
     let password = '';
     let passphrase = '';
@@ -730,18 +731,28 @@ export class RemoteEditSidebarController implements vscode.Disposable {
 
       passphrase = enteredPassphrase;
     } else {
-      const enteredPassword = await vscode.window.showInputBox({
-        title: 'Add Connection',
-        prompt: 'Enter the password to save with this connection. Leave empty to save without a password.',
-        password: true,
-        ignoreFocusOut: true
-      });
+      const selectedPasswordSource = await this.promptSidebarPasswordSource('Add Connection');
 
-      if (enteredPassword === undefined) {
+      if (!selectedPasswordSource) {
         return;
       }
 
-      password = enteredPassword;
+      passwordSource = selectedPasswordSource;
+
+      if (passwordSource === 'connection') {
+        const enteredPassword = await vscode.window.showInputBox({
+          title: 'Add Connection',
+          prompt: 'Enter the password to save with this connection. Leave empty to save without a password.',
+          password: true,
+          ignoreFocusOut: true
+        });
+
+        if (enteredPassword === undefined) {
+          return;
+        }
+
+        password = enteredPassword;
+      }
     }
 
     const startPath = await vscode.window.showInputBox({
@@ -788,10 +799,11 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         port: Number(portValue),
         username: username.trim(),
         authType,
+        passwordSource: authType === 'password' ? passwordSource : undefined,
         privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
-        password: authType === 'password' ? password : undefined,
+        password: authType === 'password' && passwordSource === 'connection' ? password : undefined,
         passphrase: authType === 'privateKey' ? passphrase : undefined,
-        rememberPassword: authType === 'password' && Boolean(password),
+        rememberPassword: authType === 'password' && passwordSource === 'connection' && Boolean(password),
         rememberPassphrase: authType === 'privateKey' && Boolean(passphrase),
         startPath: normalizeRemotePath(startPath),
         keepAlive: keepAliveSelection.value,
@@ -2356,6 +2368,87 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
   }
 
+  private async promptSidebarPasswordSource(title: string): Promise<PasswordSource | undefined> {
+    const masterPasswordState = await this.connectionManager.getMasterPasswordState();
+    const selected = await vscode.window.showQuickPick([
+      {
+        label: 'Enter Password',
+        description: 'Use a password for this connection',
+        value: 'connection' as PasswordSource
+      },
+      {
+        label: 'Master Password',
+        description: masterPasswordState.configured ? 'Configured' : 'Not configured',
+        value: 'master' as PasswordSource
+      }
+    ], {
+      title,
+      placeHolder: 'Select password source',
+      ignoreFocusOut: true
+    });
+
+    if (!selected) {
+      return undefined;
+    }
+
+    if (selected.value === 'master' && !masterPasswordState.configured) {
+      const configured = await this.configureMasterPasswordFromSidebar();
+      if (!configured) {
+        return undefined;
+      }
+    }
+
+    return selected.value;
+  }
+
+  private async configureMasterPasswordFromSidebar(): Promise<boolean> {
+    const action = await vscode.window.showQuickPick([
+      { label: 'Configure Master Password', value: 'configure' as const },
+      { label: 'Cancel', value: 'cancel' as const }
+    ], {
+      title: 'Master Password',
+      placeHolder: 'Master Password is not configured.',
+      ignoreFocusOut: true
+    });
+
+    if (!action || action.value !== 'configure') {
+      return false;
+    }
+
+    const password = await vscode.window.showInputBox({
+      title: 'Configure Master Password',
+      prompt: 'Enter the Master Password.',
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: value => String(value || '') ? undefined : 'Master Password is required.'
+    });
+
+    if (password === undefined) {
+      return false;
+    }
+
+    const confirmation = await vscode.window.showInputBox({
+      title: 'Configure Master Password',
+      prompt: 'Confirm the Master Password.',
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: value => value === password ? undefined : 'Passwords do not match.'
+    });
+
+    if (confirmation === undefined) {
+      return false;
+    }
+
+    try {
+      await this.connectionManager.setMasterPassword(password, confirmation);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(message);
+      return false;
+    }
+  }
+
   private async manageConnectionCredentials(itemOrProfileId: RemoteEditSidebarItem | string | undefined): Promise<void> {
     const profileId = typeof itemOrProfileId === 'string' ? itemOrProfileId : itemOrProfileId?.profileId;
 
@@ -2384,13 +2477,15 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     }
 
     const isPrivateKey = normalizeConnectionType(profile.connectionType || 'sftp') === 'sftp' && profile.authType === 'privateKey';
+    const masterPasswordState = isPrivateKey ? undefined : await this.connectionManager.getMasterPasswordState();
     const actions = isPrivateKey
       ? [
           { label: isQuickConnect ? 'Set Passphrase' : 'Update Passphrase', action: 'updatePassphrase' },
           { label: isQuickConnect ? 'Clear Passphrase' : 'Clear Saved Passphrase', action: 'clearPassphrase' }
         ]
       : [
-          { label: isQuickConnect ? 'Set Password' : 'Update Password', action: 'updatePassword' },
+          { label: 'Enter Password', description: 'Use a password for this connection', action: 'updatePassword' },
+          { label: 'Master Password', description: masterPasswordState?.configured ? 'Configured' : 'Not configured', action: 'useMasterPassword' },
           { label: isQuickConnect ? 'Clear Password' : 'Clear Saved Password', action: 'clearPassword' }
         ];
 
@@ -2421,9 +2516,18 @@ export class RemoteEditSidebarController implements vscode.Disposable {
           return;
         }
 
-        this.connectionDrafts.updateDraftValue(profileId, { password, rememberPassword: !isQuickConnect });
+        this.connectionDrafts.updateDraftValue(profileId, { password, passwordSource: 'connection', rememberPassword: !isQuickConnect });
+      } else if (selected.action === 'useMasterPassword') {
+        if (!masterPasswordState?.configured) {
+          const configured = await this.configureMasterPasswordFromSidebar();
+          if (!configured) {
+            return;
+          }
+        }
+
+        this.connectionDrafts.updateDraftValue(profileId, { password: '', passwordSource: 'master', rememberPassword: false });
       } else if (selected.action === 'clearPassword') {
-        this.connectionDrafts.updateDraftValue(profileId, { password: '', rememberPassword: false });
+        this.connectionDrafts.updateDraftValue(profileId, { password: '', passwordSource: 'connection', rememberPassword: false });
       } else if (selected.action === 'updatePassphrase') {
         const passphrase = await vscode.window.showInputBox({
           title: isQuickConnect ? 'Set Passphrase' : 'Update Saved Passphrase',

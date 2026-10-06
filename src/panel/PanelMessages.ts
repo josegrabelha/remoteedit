@@ -1,4 +1,5 @@
 export const RemoteEditIncomingMessageType = {
+  MasterPassword: 'masterPassword',
   Ready: 'ready',
   SaveConnection: 'saveConnection',
   SaveConnectionAs: 'saveConnectionAs',
@@ -87,6 +88,7 @@ export const RemoteEditIncomingMessageType = {
 } as const;
 
 export const RemoteEditOutboundMessageType = {
+  MasterPasswordState: 'masterPasswordState',
   ProfilesLoaded: 'profilesLoaded',
   PrivateKeyPathSelected: 'privateKeyPathSelected',
   CaCertificatePathSelected: 'caCertificatePathSelected',

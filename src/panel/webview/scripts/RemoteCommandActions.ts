@@ -573,6 +573,7 @@ export function renderRemoteCommandActions(): string {
       port: Number(payload.port || getDefaultPortForConnectionType(payload.connectionType)),
       username: String(payload.username || '').trim(),
       authType: String(payload.authType || 'password'),
+      passwordSource: payload.passwordSource,
       privateKeyPath: String(payload.privateKeyPath || '').trim(),
       startPath: normalizeUiRemotePath(payload.startPath || '/'),
       currentPath: normalizeUiRemotePath(payload.startPath || '/'),
@@ -702,6 +703,7 @@ export function renderRemoteCommandActions(): string {
       username: profile.username,
       jumpProfileId: connectionTypeValue === 'sftp' ? (normalizeJumpProfileId(profile.jumpProfileId) || undefined) : undefined,
       authType: connectionTypeValue === 'sftp' ? (profile.authType || 'password') : 'password',
+      passwordSource: profile.passwordSource || 'connection',
       password: '',
       rememberPassword: Boolean(profile.hasSavedPassword),
       privateKeyPath: profile.privateKeyPath || '',
@@ -783,6 +785,8 @@ export function renderRemoteCommandActions(): string {
     username.value = session.username || '';
     const sessionJumpProfileId = isSftpFormConnection() ? normalizeJumpProfileId(session.jumpProfileId) : '';
     authType.value = isSftpFormConnection() ? (session.authType || 'password') : 'password';
+    passwordSource = session.passwordSource === 'master' ? 'master' : 'connection';
+    updatePasswordSourceUI();
     password.value = '';
     rememberPassword.checked = false;
     password.placeholder = '';
@@ -816,6 +820,8 @@ export function renderRemoteCommandActions(): string {
       authDropdownButton,
       password,
       passwordRevealButton,
+      passwordSourceButton,
+      document.getElementById('masterPasswordSelection'),
       rememberPassword,
       privateKeyPath,
       privateKeyBrowseButton,
@@ -1368,6 +1374,7 @@ export function renderRemoteCommandActions(): string {
       return profile.hasSavedPassphrase ? 'passphrase saved' : 'passphrase not saved';
     }
 
+    if (profile.passwordSource === 'master') return 'Master Password';
     return profile.hasSavedPassword ? 'password saved' : 'password not saved';
   }
 
@@ -1397,6 +1404,8 @@ export function renderRemoteCommandActions(): string {
     const profileJumpProfileId = isSftpFormConnection() ? normalizeJumpProfileId(profile.jumpProfileId) : '';
     renderConnectionNameGroupOptions(profile.groupId || '');
     authType.value = isSftpFormConnection() ? (profile.authType || 'password') : 'password';
+    passwordSource = profile.passwordSource === 'master' ? 'master' : 'connection';
+    updatePasswordSourceUI();
     password.value = profile.hasSavedPassword ? SAVED_SECRET_MASK : '';
     rememberPassword.checked = Boolean(profile.hasSavedPassword);
     privateKeyPath.value = profile.privateKeyPath || '';
@@ -1425,6 +1434,8 @@ export function renderRemoteCommandActions(): string {
     jumpProfileId.value = '';
     renderConnectionNameGroupOptions('');
     authType.value = 'password';
+    passwordSource = 'connection';
+    updatePasswordSourceUI();
     password.value = '';
     rememberPassword.checked = false;
     password.placeholder = '';
@@ -1497,6 +1508,7 @@ export function renderRemoteCommandActions(): string {
 
   function updateConnectionCredentialRevealControls() {
     updateConnectionCredentialRevealButton(passwordRevealButton, password);
+    if (passwordSource === 'master') { passwordRevealButton.disabled = true; passwordRevealButton.style.display = 'none'; }
     updateConnectionCredentialRevealButton(passphraseRevealButton, passphrase);
   }
 
@@ -1618,7 +1630,7 @@ export function renderRemoteCommandActions(): string {
     hideTemporaryPassword(exportCredentialPassword);
     hideTemporaryPassword(exportCredentialConfirmPassword);
     exportCredentialsDisabledHelp.textContent = includeConnections && !exportIncludeUsernames.checked
-      ? 'Enable usernames to include encrypted passwords/passphrases.'
+      ? 'Enable usernames to include encrypted credentials.'
       : '';
 
     if (!showCredentials) {

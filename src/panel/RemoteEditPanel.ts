@@ -525,7 +525,8 @@ export class RemoteEditPanel {
       sendProfiles: () => this.sendProfiles(),
       postPersistentStorageSnapshot: () => this.postPersistentStorageSnapshot(),
       logInfo: (message, details) => this.logInfo(message, details),
-      logError: (message, details) => this.logError(message, details)
+      logError: (message, details) => this.logError(message, details),
+      showConfirmDialogDecision: options => this.dialogManager.showConfirmDialogDecision(options)
     });
 
     this.disposables.push(
@@ -643,6 +644,7 @@ export class RemoteEditPanel {
           this.postPersistentStorageSnapshot();
           this.postRemoteClipboardState();
         },
+        masterPassword: payload => this.manageMasterPassword(payload),
         saveConnection: payload => this.saveConnection(payload),
         saveConnectionAs: payload => this.saveConnectionAs(payload),
         pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
@@ -942,12 +944,31 @@ export class RemoteEditPanel {
     }
   }
 
+  private async manageMasterPassword(payload: any): Promise<void> {
+    try {
+      if (payload?.action === 'save') {
+        await this.connectionManager.setMasterPassword(payload.password, payload.confirmation);
+      } else if (payload?.action === 'remove') {
+        await this.connectionManager.removeMasterPassword();
+      }
+      this.postMessage(RemoteEditOutboundMessageType.MasterPasswordState, {
+        ...await this.connectionManager.getMasterPasswordState(),
+        completed: payload?.action === 'save' || payload?.action === 'remove'
+      });
+    } catch (error) {
+      this.postMessage(RemoteEditOutboundMessageType.MasterPasswordState, {
+        error: error instanceof Error ? error.message : 'Unable to update Master Password.'
+      });
+    }
+  }
+
   private async sendProfiles(selectedId?: string, options?: { renameProfileId?: string }): Promise<void> {
     const timer = createPerformanceTimer();
     const profiles = await this.connectionManager.listProfiles();
     const connectionGroups = await this.connectionManager.listGroups();
     this.postMessage(RemoteEditOutboundMessageType.ProfilesLoaded, {
       profiles,
+      masterPasswordState: await this.connectionManager.getMasterPasswordState(),
       connectionGroups,
       selectedId,
       renameProfileId: options?.renameProfileId
@@ -976,6 +997,7 @@ export class RemoteEditPanel {
       port: attempt.port,
       username: attempt.username,
       authType: attempt.authType,
+      passwordSource: attempt.passwordSource,
       privateKeyPath: attempt.privateKeyPath,
       startPath,
       currentPath: this.state.getCurrentPath(connectionId, startPath),

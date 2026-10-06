@@ -11,6 +11,7 @@ import { renderMultiTargetHtml } from './MultiTargetHtml';
 import { MULTI_TARGET_SAVED_COMMANDS_STORAGE_KEY, MULTI_TARGET_TARGET_SETS_STORAGE_KEY, normalizeSavedMultiTargetCommands, normalizeSavedMultiTargetSets, updateSharedTargetSets, type SavedMultiTargetCommand, type SavedMultiTargetSet } from '../multiTarget/MultiTargetStorage';
 import { formatMultiTargetCommandsCompletedStatus, formatMultiTargetConnectionFailureStatus, formatMultiTargetOperationStatus, formatMultiTargetSkippedStatus, formatMultiTargetUnavailableStatus } from '../multiTarget/MultiTargetFeedback';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
+import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 export const COMMAND_OPEN_MULTI_TARGET = 'remoteedit.multiTarget.open';
 const LEGACY_RUNTIME_STORAGE_KEY = 'remoteedit.multiTarget';
@@ -86,8 +87,32 @@ class MultiTargetPanel implements vscode.Disposable {
     return passwords;
   }
   private async prepareTargetSudo(id: string, useSudo: boolean, passwords: Map<string, string>): Promise<void> {
-    if (!useSudo) this.sessions.remote.disableSudoMode(id);
-    await this.service.prepareSudo(id, useSudo, async () => passwords.get(id));
+    if (!useSudo) {
+      this.sessions.remote.disableSudoMode(id);
+      await this.service.prepareSudo(id, false, async () => passwords.get(id));
+      return;
+    }
+    const timer = createPerformanceTimer();
+    appendDebugLog(this.output, 'MultiTarget', 'Sudo preparation started.', { connectionId: id });
+    try {
+      const enabled = await this.service.prepareSudo(id, true, async () => passwords.get(id));
+      appendDebugLog(this.output, 'MultiTarget', 'Sudo preparation completed.', {
+        connectionId: id,
+        enabled
+      });
+      appendPerformanceLog(this.output, 'MultiTarget', 'sudo preparation completed', {
+        connectionId: id,
+        enabled,
+        total: `${timer()}ms`
+      });
+    } catch (error) {
+      appendDebugLog(this.output, 'MultiTarget', 'Sudo preparation failed.', { connectionId: id });
+      appendPerformanceLog(this.output, 'MultiTarget', 'sudo preparation failed', {
+        connectionId: id,
+        total: `${timer()}ms`
+      });
+      throw error;
+    }
   }
   private panel: vscode.WebviewPanel | undefined;
   private readonly sessions: CommandSessions;
@@ -124,7 +149,7 @@ class MultiTargetPanel implements vscode.Disposable {
       scroll: { output: 0, table: 0 }
     };
     const remote = new SftpSessionManager(output);
-    this.sessions = new CommandSessions(remote, profiles, () => { void this.sendState(); }, (options, token) => this.requestInput(options, token));
+    this.sessions = new CommandSessions(remote, profiles, () => { void this.sendState(); }, (options, token) => this.requestInput(options, token), output);
     this.service = new RemoteCommandService(remote);
     this.closeListener = remote.onDidCloseConnection(id => this.searchBatch?.connectionClosed(id));
     this.openPanel();
@@ -309,7 +334,21 @@ class MultiTargetPanel implements vscode.Disposable {
         if (message.type === 'preferences') this.persist();
         return;
       case 'run': await this.runSearch(normalizeSearchQuery(message.query), message.sudoPasswords); return;
-      case 'stop': if (message.batchId === this.searchBatch?.id) this.searchBatch?.stop(typeof message.commandId === 'string' ? message.commandId : undefined); return;
+      case 'stop': {
+        const batch = this.searchBatch;
+        if (batch && message.batchId === batch.id) {
+          const commandId = typeof message.commandId === 'string' ? message.commandId : undefined;
+          const affected = batch.executions.filter(item => (!commandId || item.commandId === commandId)
+            && (item.status === 'Pending' || item.status === 'Running')).length;
+          appendDebugLog(this.output, 'MultiTargetSearch', 'Stop requested.', {
+            batchId: batch.id,
+            scope: commandId ? 'target' : 'all',
+            targets: affected
+          });
+          batch.stop(commandId);
+        }
+        return;
+      }
       case 'clear': if (!this.searchBusy) { this.searchBatch = undefined; this.searchDirty.clear(); this.sentResults.clear(); this.preferences.search.selectedCommandId = ''; this.persist(); this.postSearch({ type: 'batch', batchId: '', executions: [] }); } return;
       case 'copyOutput': {
         const item = this.searchBatch?.executions.find(item => item.commandId === message.commandId && Boolean(item.results.length));
@@ -387,7 +426,20 @@ class MultiTargetPanel implements vscode.Disposable {
         break;
       }
       case 'disconnect':
-        this.runGeneration++; this.searchGeneration++; this.batch?.stop(); this.searchBatch?.stop();
+        this.runGeneration++; this.searchGeneration++;
+        if (this.batch?.active) appendDebugLog(this.output, 'MultiTargetCommands', 'Stop requested.', {
+          batchId: this.batch.id,
+          scope: 'all',
+          reason: 'disconnect',
+          targets: this.batch.executions.filter(item => item.status === 'Pending' || item.status === 'Connecting' || item.status === 'Running').length
+        });
+        if (this.searchBatch?.executions.some(item => item.status === 'Pending' || item.status === 'Running')) appendDebugLog(this.output, 'MultiTargetSearch', 'Stop requested.', {
+          batchId: this.searchBatch.id,
+          scope: 'all',
+          reason: 'disconnect',
+          targets: this.searchBatch.executions.filter(item => item.status === 'Pending' || item.status === 'Running').length
+        });
+        this.batch?.stop(); this.searchBatch?.stop();
         await Promise.allSettled(this.preferences.targets.map(target => this.sessions.disconnect(target.connectionId))); break;
       case 'connectTarget': {
         if (this.anyBusy) return;
@@ -407,9 +459,27 @@ class MultiTargetPanel implements vscode.Disposable {
         const connectionId = typeof message.connectionId === 'string' ? message.connectionId : '';
         if (!this.preferences.targets.some(target => target.connectionId === connectionId)) return;
         const execution = this.batch?.executions.find(item => item.connectionId === connectionId);
-        if (execution) this.batch?.stop(execution.commandId);
+        if (execution && (execution.status === 'Pending' || execution.status === 'Connecting' || execution.status === 'Running')) {
+          appendDebugLog(this.output, 'MultiTargetCommands', 'Stop requested.', {
+            batchId: this.batch?.id,
+            scope: 'target',
+            reason: 'disconnectTarget',
+            connectionId,
+            targets: 1
+          });
+          this.batch?.stop(execution.commandId);
+        }
         const searchExecution = this.searchBatch?.executions.find(item => item.connectionId === connectionId);
-        if (searchExecution) this.searchBatch?.stop(searchExecution.commandId);
+        if (searchExecution && (searchExecution.status === 'Pending' || searchExecution.status === 'Running')) {
+          appendDebugLog(this.output, 'MultiTargetSearch', 'Stop requested.', {
+            batchId: this.searchBatch?.id,
+            scope: 'target',
+            reason: 'disconnectTarget',
+            connectionId,
+            targets: 1
+          });
+          this.searchBatch?.stop(searchExecution.commandId);
+        }
         await this.sessions.disconnect(connectionId);
         break;
       }
@@ -430,7 +500,21 @@ class MultiTargetPanel implements vscode.Disposable {
         break;
       }
       case 'run': await this.run(String(message.command || ''), Boolean(message.useSudo), message.sudoPasswords); break;
-      case 'stop': if (message.batchId === this.batch?.id) this.batch?.stop(typeof message.commandId === 'string' ? message.commandId : undefined); break;
+      case 'stop': {
+        const batch = this.batch;
+        if (batch && message.batchId === batch.id) {
+          const commandId = typeof message.commandId === 'string' ? message.commandId : undefined;
+          const affected = batch.executions.filter(item => (!commandId || item.commandId === commandId)
+            && (item.status === 'Pending' || item.status === 'Connecting' || item.status === 'Running')).length;
+          appendDebugLog(this.output, 'MultiTargetCommands', 'Stop requested.', {
+            batchId: batch.id,
+            scope: commandId ? 'target' : 'all',
+            targets: affected
+          });
+          batch.stop(commandId);
+        }
+        break;
+      }
       case 'clear': if (!this.busy) { this.batch = undefined; this.dirty.clear(); this.sentOutput.clear(); this.preferences.selectedCommandId = ''; this.persist(); this.postCommands({ type: 'batch', batchId: '', executions: [] }); } break;
       case 'copyOutput': {
         const item = this.batch?.executions.find(item => item.commandId === message.commandId && Boolean(item.output));
@@ -633,37 +717,129 @@ class MultiTargetPanel implements vscode.Disposable {
       this.preferences.command = command; this.preferences.useSudo = useSudo; this.preferences.selectedCommandId = ''; this.persist(); this.dirty.clear(); this.sentOutput.clear();
       const batch = new CommandBatch(targets, command, item => this.queueExecution(item));
       this.batch = batch;
+      const batchTimer = createPerformanceTimer();
+      appendDebugLog(this.output, 'MultiTargetCommands', 'Batch started.', {
+        batchId: batch.id,
+        targets: targets.length,
+        skippedTargets,
+        useSudo,
+        concurrency: 5,
+        commandLines: command.split(/\r?\n/).filter(line => line.trim()).length
+      });
       this.postCommands({ type: 'batch', batchId: batch.id, command, executions: batch.executions });
       this.postCommands({ type: 'notice', channel: 'primary', scope: 'operation', severity: 'info', persistent: false,
         message: formatMultiTargetOperationStatus('Running on', targets.length) });
       if (skippedTargets > 0) this.postCommands({ type: 'notice', channel: 'secondary', scope: 'operation', severity: 'warning', persistent: true,
         message: formatMultiTargetSkippedStatus(skippedTargets) });
       await this.sendState();
-      await batch.run(async context => {
-        const { execution } = context;
-        const source = new vscode.CancellationTokenSource();
-        context.setStop(() => source.cancel());
-        try {
-          // Serialize only Sudo preparation and command launch. The executor captures
-          // its credentials synchronously, so both modes can then stream concurrently.
-          const { completion } = await this.withTarget(execution.connectionId, async () => {
-            if (context.isStopped()) throw new Error('Stopped.');
-            await this.prepareTargetSudo(execution.connectionId, useSudo, sudoPasswords);
-            if (context.isStopped()) throw new Error('Stopped.');
-            context.setStatus('Running');
-            return { completion: this.service.run(execution.connectionId, execution.workingDirectory, command, {
-              onControl: context.setControl,
-              onCommand: text => context.append(`$ ${text}\n`),
-              onCommandStatus: (_index, code) => { if (code !== 0) execution.failedCommands++; },
-              onStdout: text => context.append(text, 'stdout'), onStderr: text => context.append(text, 'stderr')
-            }, source.token) };
+      try {
+        await batch.run(async context => {
+          const { execution } = context;
+          const source = new vscode.CancellationTokenSource();
+          const targetTimer = createPerformanceTimer();
+          let targetStatus: 'Finished' | 'Failed' | 'Stopped' = 'Failed';
+          appendDebugLog(this.output, 'MultiTargetCommands', 'Target execution started.', {
+            batchId: batch.id,
+            commandId: execution.commandId,
+            connectionId: execution.connectionId,
+            target: execution.name,
+            useSudo
           });
-          return await completion;
-        } finally { source.dispose(); }
-      });
+          context.setStop(() => source.cancel());
+          try {
+            // Serialize only Sudo preparation and command launch. The executor captures
+            // its credentials synchronously, so both modes can then stream concurrently.
+            const { completion } = await this.withTarget(execution.connectionId, async () => {
+              if (context.isStopped()) throw new Error('Stopped.');
+              await this.prepareTargetSudo(execution.connectionId, useSudo, sudoPasswords);
+              if (context.isStopped()) throw new Error('Stopped.');
+              context.setStatus('Running');
+              return { completion: this.service.run(execution.connectionId, execution.workingDirectory, command, {
+                onControl: context.setControl,
+                onCommand: text => context.append(`$ ${text}\n`),
+                onCommandStatus: (_index, code) => { if (code !== 0) execution.failedCommands++; },
+                onStdout: text => context.append(text, 'stdout'), onStderr: text => context.append(text, 'stderr')
+              }, source.token) };
+            });
+            const result = await completion;
+            targetStatus = context.isStopped() ? 'Stopped' : result.code === 0 && !execution.failedCommands ? 'Finished' : 'Failed';
+            if (targetStatus === 'Stopped') {
+              appendDebugLog(this.output, 'MultiTargetCommands', 'Target execution stopped.', {
+                batchId: batch.id,
+                commandId: execution.commandId,
+                connectionId: execution.connectionId,
+                target: execution.name
+              });
+            } else if (targetStatus === 'Failed') {
+              appendDebugLog(this.output, 'MultiTargetCommands', 'Target execution failed.', {
+                batchId: batch.id,
+                commandId: execution.commandId,
+                connectionId: execution.connectionId,
+                target: execution.name,
+                exitCode: result.code,
+                failedCommands: execution.failedCommands
+              });
+            } else {
+              appendDebugLog(this.output, 'MultiTargetCommands', 'Target execution completed.', {
+                batchId: batch.id,
+                commandId: execution.commandId,
+                connectionId: execution.connectionId,
+                target: execution.name,
+                exitCode: result.code
+              });
+            }
+            return result;
+          } catch (error) {
+            targetStatus = context.isStopped() ? 'Stopped' : 'Failed';
+            appendDebugLog(this.output, 'MultiTargetCommands', targetStatus === 'Stopped' ? 'Target execution stopped.' : 'Target execution failed.', {
+              batchId: batch.id,
+              commandId: execution.commandId,
+              connectionId: execution.connectionId,
+              target: execution.name
+            });
+            throw error;
+          } finally {
+            appendPerformanceLog(this.output, 'MultiTargetCommands', 'target execution completed', {
+              batchId: batch.id,
+              commandId: execution.commandId,
+              connectionId: execution.connectionId,
+              target: execution.name,
+              status: targetStatus,
+              total: `${targetTimer()}ms`
+            });
+            source.dispose();
+          }
+        });
+      } catch (error) {
+        appendDebugLog(this.output, 'MultiTargetCommands', 'Batch failed.', {
+          batchId: batch.id,
+          targets: targets.length
+        });
+        appendPerformanceLog(this.output, 'MultiTargetCommands', 'batch failed', {
+          batchId: batch.id,
+          targets: targets.length,
+          total: `${batchTimer()}ms`
+        });
+        throw error;
+      }
       const finished = batch.executions.filter(item => item.status === 'Finished').length;
       const failed = batch.executions.filter(item => item.status === 'Failed').length;
       const stopped = batch.executions.filter(item => item.status === 'Stopped').length;
+      appendDebugLog(this.output, 'MultiTargetCommands', 'Batch completed.', {
+        batchId: batch.id,
+        targets: batch.executions.length,
+        finished,
+        failed,
+        stopped
+      });
+      appendPerformanceLog(this.output, 'MultiTargetCommands', 'batch completed', {
+        batchId: batch.id,
+        targets: batch.executions.length,
+        finished,
+        failed,
+        stopped,
+        total: `${batchTimer()}ms`
+      });
       this.postCommands({ type: 'notice', channel: 'primary', scope: 'operation', severity: 'info', persistent: true,
         message: formatMultiTargetCommandsCompletedStatus(finished, failed, stopped) });
     } finally { this.busy = false; await this.sendState(); }
@@ -710,16 +886,56 @@ class MultiTargetPanel implements vscode.Disposable {
         await this.prepareTargetSudo(execution.connectionId, query.useSudo, sudoPasswords);
       }, (id, operation) => this.withTarget(id, operation));
       this.searchBatch = batch;
+      const batchTimer = createPerformanceTimer();
+      appendDebugLog(this.output, 'MultiTargetSearch', 'Batch started.', {
+        batchId: batch.id,
+        targets: targets.length,
+        skippedTargets: skipped,
+        searchInsideFiles: query.searchInsideFiles,
+        includeSubdirectories: query.includeSubdirectories,
+        includeHiddenFiles: query.includeHiddenFiles,
+        caseSensitive: query.caseSensitive,
+        useSudo: query.useSudo,
+        concurrency: 5
+      });
       this.postSearch({ type: 'batch', batchId: batch.id, query, executions: batch.executions });
       this.postSearch({ type: 'notice', channel: 'primary', scope: 'operation', severity: 'info', persistent: false,
         message: formatMultiTargetOperationStatus('Searching', targets.length) });
       if (skipped > 0) this.postSearch({ type: 'notice', channel: 'secondary', scope: 'operation', severity: 'warning', persistent: true,
         message: formatMultiTargetSkippedStatus(skipped) });
       await this.sendState();
-      await batch.run();
+      try {
+        await batch.run();
+      } catch (error) {
+        appendDebugLog(this.output, 'MultiTargetSearch', 'Batch failed.', {
+          batchId: batch.id,
+          targets: targets.length
+        });
+        appendPerformanceLog(this.output, 'MultiTargetSearch', 'batch failed', {
+          batchId: batch.id,
+          targets: targets.length,
+          total: `${batchTimer()}ms`
+        });
+        throw error;
+      }
       const failed = batch.executions.filter(item => item.status === 'Failed').length;
       const stopped = batch.executions.filter(item => item.status === 'Stopped').length;
       const results = batch.executions.reduce((total, item) => total + item.results.length, 0);
+      appendDebugLog(this.output, 'MultiTargetSearch', 'Batch completed.', {
+        batchId: batch.id,
+        targets: batch.executions.length,
+        results,
+        failed,
+        stopped
+      });
+      appendPerformanceLog(this.output, 'MultiTargetSearch', 'batch completed', {
+        batchId: batch.id,
+        targets: batch.executions.length,
+        results,
+        failed,
+        stopped,
+        total: `${batchTimer()}ms`
+      });
       this.postSearch({ type: 'notice', channel: 'primary', scope: 'operation', severity: 'info', persistent: true,
         message: formatMultiTargetSearchCompletedStatus(batch.executions.length, results, failed, stopped) });
     } finally { this.searchBusy = false; await this.sendState(); }

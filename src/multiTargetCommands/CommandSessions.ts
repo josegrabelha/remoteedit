@@ -4,6 +4,7 @@ import { loadWorkspaceSyncConnectionSnapshot } from '../workspaceSync/connection
 import type { ConnectOptions } from '../remote/RemoteSessionTypes';
 import type { ConnectionManager } from '../connection/ConnectionManager';
 import type { RemoteSessionManager, ActiveConnection } from '../remote/RemoteSessionManager';
+import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 export type TargetConnectionStatus = 'Disconnected' | 'Connecting' | 'Connected' | 'Failed';
 type InputPrompt = (options: vscode.InputBoxOptions, token?: vscode.CancellationToken) => PromiseLike<string | undefined>;
@@ -15,8 +16,12 @@ export class CommandSessions implements vscode.Disposable {
   private disposed = false;
   private readonly closeListener: vscode.Disposable | undefined;
   constructor(readonly remote: RemoteSessionManager, private readonly profiles: ConnectionManager,
-    private readonly changed: () => void, private readonly promptInput: InputPrompt = (options, token) => vscode.window.showInputBox(options, token)) {
-    this.closeListener = remote.onDidCloseConnection?.(id => this.setState(id, 'Disconnected'));
+    private readonly changed: () => void, private readonly promptInput: InputPrompt = (options, token) => vscode.window.showInputBox(options, token),
+    private readonly output?: vscode.OutputChannel) {
+    this.closeListener = remote.onDidCloseConnection?.(id => {
+      appendDebugLog(this.output, 'MultiTarget', 'Target connection closed.', { connectionId: id });
+      this.setState(id, 'Disconnected');
+    });
   }
   private setState(id: string, status: TargetConnectionStatus): void {
     if (this.disposed) return;
@@ -41,7 +46,9 @@ export class CommandSessions implements vscode.Disposable {
     const connected = this.remote.getConnection(id);
     if (connected && !this.closing.has(id)) return Promise.resolve(connected);
     const source = new vscode.CancellationTokenSource();
+    const timer = createPerformanceTimer();
     const assertActive = () => { if (this.disposed || source.token.isCancellationRequested) throw new Error('Connection canceled.'); };
+    appendDebugLog(this.output, 'MultiTarget', 'Target connection started.', { connectionId: id });
     this.setState(id, 'Connecting');
     const promise = (async () => {
       try {
@@ -92,9 +99,24 @@ export class CommandSessions implements vscode.Disposable {
         });
         assertActive();
         const connection = await this.remote.connect(options, source.token);
-        assertActive(); this.setState(id, 'Connected'); return connection;
+        assertActive();
+        this.setState(id, 'Connected');
+        appendDebugLog(this.output, 'MultiTarget', 'Target connection completed.', { connectionId: id });
+        appendPerformanceLog(this.output, 'MultiTarget', 'target connection completed', {
+          connectionId: id,
+          total: `${timer()}ms`
+        });
+        return connection;
       } catch (error) {
-        this.setState(id, source.token.isCancellationRequested ? 'Disconnected' : 'Failed');
+        const cancelled = source.token.isCancellationRequested;
+        this.setState(id, cancelled ? 'Disconnected' : 'Failed');
+        appendDebugLog(this.output, 'MultiTarget', cancelled ? 'Target connection canceled.' : 'Target connection failed.', {
+          connectionId: id
+        });
+        appendPerformanceLog(this.output, 'MultiTarget', cancelled ? 'target connection canceled' : 'target connection failed', {
+          connectionId: id,
+          total: `${timer()}ms`
+        });
         if (error instanceof Error && error.message.includes('Workspace Sync')) throw new Error(error.message.replace(/Workspace Sync/g, 'Multi-Target Commands & Search'));
         throw error;
       } finally {
@@ -109,9 +131,26 @@ export class CommandSessions implements vscode.Disposable {
     this.pending.get(id)?.source.cancel();
     const existing = this.closing.get(id);
     if (existing) return existing;
+    const timer = createPerformanceTimer();
+    appendDebugLog(this.output, 'MultiTarget', 'Target disconnect started.', { connectionId: id });
     const closing = this.remote.disconnect(id);
     this.closing.set(id, closing);
-    try { await closing; this.setState(id, 'Disconnected'); }
+    try {
+      await closing;
+      this.setState(id, 'Disconnected');
+      appendDebugLog(this.output, 'MultiTarget', 'Target disconnect completed.', { connectionId: id });
+      appendPerformanceLog(this.output, 'MultiTarget', 'target disconnect completed', {
+        connectionId: id,
+        total: `${timer()}ms`
+      });
+    } catch (error) {
+      appendDebugLog(this.output, 'MultiTarget', 'Target disconnect failed.', { connectionId: id });
+      appendPerformanceLog(this.output, 'MultiTarget', 'target disconnect failed', {
+        connectionId: id,
+        total: `${timer()}ms`
+      });
+      throw error;
+    }
     finally { if (this.closing.get(id) === closing) this.closing.delete(id); }
   }
   dispose(): void {

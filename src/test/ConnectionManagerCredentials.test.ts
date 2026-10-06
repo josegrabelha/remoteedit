@@ -86,3 +86,66 @@ test('Save As creates an independent profile from current values and carries unc
 });
 
 
+
+test('Master Password resolves across protocols and Jump Hosts without exposing or copying the secret', async () => {
+  const h = createConnectionManagerHarness([
+    profile('jump', { passwordSource: 'master' }),
+    profile('sftp', { passwordSource: 'master', jumpProfileId: 'jump' }),
+    profile('ftp', { connectionType: 'ftp', passwordSource: 'master' }),
+    profile('ftps', { connectionType: 'ftps', passwordSource: 'master', ftpsAllowSelfSignedCertificate: true })
+  ]);
+  await h.manager.setMasterPassword('synthetic-master', 'synthetic-master');
+  for (const id of ['sftp', 'ftp', 'ftps']) {
+    const options = await h.manager.buildConnectOptions({ id, password: 'ignored-individual' });
+    assert.equal(options.password, 'synthetic-master');
+    if (id === 'sftp') assert.equal(options.jumpChain?.[0].password, 'synthetic-master');
+  }
+  assert.deepEqual(await h.manager.getMasterPasswordState(), { configured: true, usedBy: 4 });
+  const publicState = JSON.stringify({ profiles: await h.manager.listProfiles(), state: [...h.state], logs: h.logs });
+  assert.ok(!publicState.includes('synthetic-master'));
+  assert.equal(h.secrets.size, 1);
+});
+
+test('Master Password changes and removal apply to Sync and Multi-Target snapshots without fallback', async () => {
+  const { loadWorkspaceSyncConnectionSnapshot } = await import('../workspaceSync/connection/WorkspaceSyncConnectionSnapshot');
+  const h = createConnectionManagerHarness([profile('jump', { passwordSource: 'master' }), profile('target', { passwordSource: 'master', jumpProfileId: 'jump' })]);
+  h.secrets.set(secretKey('target', 'password'), 'stale-individual');
+  await h.manager.setMasterPassword('first-global', 'first-global');
+  const snapshot = await loadWorkspaceSyncConnectionSnapshot(h.manager, 'target');
+  assert.equal(snapshot.password, 'first-global');
+  assert.equal(snapshot.jumpChain[0].password, 'first-global');
+  await h.manager.setMasterPassword('new-global', 'new-global');
+  assert.equal((await loadWorkspaceSyncConnectionSnapshot(h.manager, 'target')).password, 'new-global');
+  const before = [...h.state];
+  await h.manager.removeMasterPassword();
+  assert.deepEqual([...h.state], before);
+  await assert.rejects(h.manager.buildConnectOptions({ id: 'target', password: 'ignored' }), /Master Password is not configured/);
+  await assert.rejects(loadWorkspaceSyncConnectionSnapshot(h.manager, 'target', async () => { assert.fail('must not prompt for individual password'); }), /Master Password is not configured/);
+  assert.equal(h.ui.prompts.length, 0);
+  await h.manager.setMasterPassword('restored-global', 'restored-global');
+  assert.equal((await h.manager.getProfileCredentials('target')).password, 'restored-global');
+});
+
+test('Master Password save, clone and Save As preserve the source while individual and key modes remain independent', async () => {
+  const h = createConnectionManagerHarness([profile('target')]);
+  h.secrets.set(secretKey('target', 'password'), 'old-individual');
+  await h.manager.setMasterPassword('shared-value', 'shared-value');
+  await h.manager.saveProfile({ id: 'target', passwordSource: 'master', password: 'ignored', rememberPassword: true });
+  assert.equal(h.secrets.has(secretKey('target', 'password')), false);
+  const clone = await h.manager.cloneProfile('target');
+  const copy = await h.manager.saveProfileAs('target', { name: 'Second copy', host: 'copy.invalid', username: 'user', rememberPassword: true });
+  for (const saved of [clone, copy]) {
+    assert.equal(saved.passwordSource, 'master');
+    assert.equal(h.secrets.has(secretKey(saved.id, 'password')), false);
+    assert.equal((await h.manager.buildConnectOptions({ id: saved.id })).password, 'shared-value');
+  }
+  await h.manager.saveProfile({ id: 'target', passwordSource: 'connection', password: 'own-value', rememberPassword: true });
+  assert.equal((await h.manager.buildConnectOptions({ id: 'target' })).password, 'own-value');
+  await h.manager.saveProfile({ id: 'target', authType: 'privateKey', privateKeyPath: '/test/key', passwordSource: 'master', passphrase: 'key-value', rememberPassphrase: true });
+  await h.manager.removeMasterPassword();
+  const key = await h.manager.buildConnectOptions({ id: 'target' });
+  assert.equal(key.passphrase, 'key-value');
+  assert.equal(key.password, undefined);
+  await assert.rejects(h.manager.setMasterPassword('', ''), /required/);
+  await assert.rejects(h.manager.setMasterPassword('one', 'two'), /do not match/);
+});

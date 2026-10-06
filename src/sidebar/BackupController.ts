@@ -111,6 +111,31 @@ export class SidebarBackupController {
         return;
       }
 
+      if (importOptions.restoreCredentials && importOptions.importMode === 'merge') {
+        const masterPasswordConflict = await this.options.connectionManager.getBackupMasterPasswordConflict(
+          backup,
+          String(importOptions.credentialPassword || '')
+        );
+
+        if (masterPasswordConflict === 'conflict') {
+          const choice = await vscode.window.showWarningMessage(
+            'Remote Edit: This backup contains a different Master Password.',
+            {
+              modal: true,
+              detail: 'Keep the current Master Password to leave existing Master Password connections unchanged, or replace it with the Master Password from this backup.'
+            },
+            'Keep Current',
+            'Replace'
+          );
+
+          if (choice === undefined) {
+            return;
+          }
+
+          importOptions.masterPasswordConflict = choice === 'Replace' ? 'replace' : 'keep';
+        }
+      }
+
       const result = await this.options.connectionManager.importBackupFile(backup, importOptions);
       this.options.onImported();
       if (importOptions.includeWorkspaceSync) {
@@ -134,7 +159,7 @@ export class SidebarBackupController {
       { label: 'Multi-Target Commands & Search', description: 'Export saved commands and target sets', option: 'multiTarget', picked: true },
       { label: 'Remote path favorites', description: 'Export favorites stored with saved connections', option: 'favorites', picked: true },
       { label: 'Include usernames', description: 'Include saved usernames in exported connections', option: 'usernames', picked: true },
-      { label: 'Include encrypted saved passwords/passphrases', description: 'Requires an export password', option: 'credentials' }
+      { label: 'Include encrypted saved passwords/passphrases', description: 'Includes Master Password; requires an export password', option: 'credentials' }
     ];
 
     const selected = await vscode.window.showQuickPick(items, {
@@ -155,7 +180,7 @@ export class SidebarBackupController {
     let credentialPassword = '';
 
     if (includeCredentials) {
-      credentialPassword = await this.promptBackupPassword('Export Remote Edit backup', 'Enter a password to encrypt saved passwords/passphrases in the backup.', true) || '';
+      credentialPassword = await this.promptBackupPassword('Export Remote Edit backup', 'Enter a password to encrypt saved passwords, the Master Password, and key passphrases in the backup.', true) || '';
 
       if (!credentialPassword) {
         return undefined;
@@ -182,7 +207,7 @@ export class SidebarBackupController {
       { label: 'Multi-Target Commands & Search', description: `${summary.multiTargetSavedCommandCount} command(s), ${summary.multiTargetTargetSetCount} target set(s)`, option: 'multiTarget', picked: summary.multiTargetSavedCommandCount > 0 || summary.multiTargetTargetSetCount > 0 },
       { label: 'Remote path favorites', description: `${summary.remotePathFavoriteCount} favorite path(s)`, option: 'favorites', picked: summary.remotePathFavoriteCount > 0 },
       { label: 'Include usernames', description: summary.usernamesIncluded ? 'Restore usernames from backup' : 'No usernames found in this backup', option: 'usernames', picked: summary.usernamesIncluded },
-      { label: 'Restore encrypted saved passwords/passphrases', description: summary.hasEncryptedCredentials ? 'Requires the export password' : 'No encrypted credentials found', option: 'credentials' }
+      { label: 'Restore encrypted saved passwords/passphrases', description: summary.hasEncryptedCredentials ? 'Includes Master Password; requires the export password' : 'No encrypted credentials found', option: 'credentials' }
     ];
 
     const selected = await vscode.window.showQuickPick(items, {
@@ -221,7 +246,7 @@ export class SidebarBackupController {
     }
 
     if (restoreCredentials) {
-      credentialPassword = await this.promptBackupPassword('Import Remote Edit backup', 'Enter the export password to restore encrypted saved passwords/passphrases.', false) || '';
+      credentialPassword = await this.promptBackupPassword('Import Remote Edit backup', 'Enter the export password to restore encrypted saved passwords, the Master Password, and key passphrases.', false) || '';
 
       if (!credentialPassword) {
         return undefined;
@@ -317,6 +342,10 @@ export class SidebarBackupController {
 
     if (result.credentialsRestored) {
       parts.push(`Credentials restored: ${result.credentialsRestored}.`);
+    }
+
+    if (result.masterPasswordRestored) {
+      parts.push('Master Password restored.');
     }
 
     if (result.savedCommandsImported) {

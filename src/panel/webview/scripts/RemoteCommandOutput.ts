@@ -109,8 +109,8 @@ export function renderRemoteCommandOutput(): string {
     importCredentialsDisabledHelp.textContent = hasImportError
       ? ''
       : (!hasCredentials
-        ? 'This backup does not contain encrypted passwords/passphrases.'
-        : (includeConnections && !importIncludeUsernames.checked ? 'Enable usernames to restore encrypted passwords/passphrases.' : ''));
+        ? 'This backup does not contain encrypted credentials.'
+        : (includeConnections && !importIncludeUsernames.checked ? 'Enable usernames to restore encrypted credentials.' : ''));
 
     const includeWorkspaceSync = hasWorkspaceSync && Boolean(importIncludeWorkspaceSync.checked);
     const includeMultiTarget = hasMultiTarget && Boolean(importIncludeMultiTarget.checked);
@@ -222,6 +222,7 @@ export function renderRemoteCommandOutput(): string {
   }
 
   function showManageProfilesDialog() {
+    vscode.postMessage({ type: 'masterPassword', payload: { action: 'state' } });
     manageProfilesDialogOpen = true;
     renameProfileId = '';
     renameGroupId = '';

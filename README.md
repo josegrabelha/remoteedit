@@ -447,7 +447,7 @@ On supported POSIX-compatible SSH/SFTP targets, Remote Edit can update permissio
 Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 
 - Connection groups
-- Password authentication
+- Password authentication with an individual password or a shared Master Password
 - SSH private-key authentication
 - Optional private-key passphrases
 - Start paths
@@ -456,6 +456,10 @@ Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 - Secure credential storage through VS Code Secret Storage
 
 Use **Clone** to create an independent copy of a saved connection. Use the **Save** split button and **Save As...** to create a new saved profile from the current values without modifying the original.
+
+**Master Password** can be used as a shared password source across Remote Edit and managed from **Manage Connections**. It is stored securely in VS Code SecretStorage, and private-key authentication is unchanged.
+
+Backup/Restore preserves the selected password source and can include the Master Password when encrypted credentials are exported. During Merge, an existing different Master Password is kept unless you choose to replace it.
 
 ## Import and Export
 
@@ -555,7 +559,7 @@ Work with multiple remote servers at the same time and quickly switch between ac
 ### Diagnostics
 
 - `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including Remote Edit and Workspace Sync lifecycle, Watch/reconciliation, planner, and FTP/FTPS/SFTP diagnostics
-- `remoteedit.diagnostics.performanceLogs` — enable performance timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, incremental view updates, and multi-target operations
+- `remoteedit.diagnostics.performanceLogs` — enable performance timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, incremental view updates, and Multi-Target connection, command, and search operations
 
 Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
 
@@ -565,7 +569,7 @@ Diagnostic logging automatically turns off when VS Code is restarted or reloaded
 - Prompted Workspace Sync and Multi-Target connection credentials remain session-only unless already stored with the saved connection
 - FTPS supports certificate validation
 - Sudo passwords are never saved
-- Optional credential export uses password-protected encrypted backup data
+- Optional credential export uses password-protected encrypted backup data, including the Master Password when configured
 - SFTP and FTPS are recommended when secure transport is required
 
 ## Requirements

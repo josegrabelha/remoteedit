@@ -5,12 +5,32 @@ import { createConnectionManagerHarness, loadWithVscode, profile, secretKey } fr
 import { createConnectionUiHarness, createJumpWebviewHarness } from './helpers/ConnectionUiHarness';
 import { SidebarConnectionDraftStore, QUICK_CONNECT_ID } from '../sidebar/ConnectionDraftStore';
 import { buildSidebarJumpDisplay } from '../sidebar/ItemHelpers';
+import { RemoteEditDialogManager } from '../panel/DialogManager';
+import { renderStateDialogs } from '../panel/webview/scripts/StateDialogs';
+import { renderTransferContextActions } from '../panel/webview/scripts/TransferContextActions';
 
 
 
+test('webview confirm dialogs distinguish Escape dismissal from the cancel button', async () => {
+  const messages: any[] = [];
+  const manager = new RemoteEditDialogManager(() => true, (type, payload) => messages.push({ type, payload }));
+  const options = { title: 'Conflict', message: 'Choose', confirmLabel: 'Replace', cancelLabel: 'Keep Current' };
 
+  const dismissed = manager.showConfirmDialogDecision(options);
+  manager.handleConfirmDialogResponse({ requestId: messages.at(-1).payload.requestId, confirmed: false, dismissed: true });
+  assert.equal(await dismissed, 'dismiss');
 
+  const kept = manager.showConfirmDialogDecision(options);
+  manager.handleConfirmDialogResponse({ requestId: messages.at(-1).payload.requestId, confirmed: false, dismissed: false });
+  assert.equal(await kept, 'cancel');
 
+  const replaced = manager.showConfirmDialogDecision(options);
+  manager.handleConfirmDialogResponse({ requestId: messages.at(-1).payload.requestId, confirmed: true, dismissed: false });
+  assert.equal(await replaced, 'confirm');
+
+  assert.match(renderStateDialogs(true, true, 'symbolic'), /dismissed: Boolean\(dismissed\)/);
+  assert.match(renderTransferContextActions(), /closeConfirmDialog\([^;]+, true\);/);
+});
 
 
 test('Webview Direct selection sends an explicit clear through the real save message and host persistence', async () => {
@@ -113,4 +133,22 @@ test('Webview Save As uses the current draft, a new name, and the selected saved
   assert.equal(message.payload.username, 'different-user');
   assert.equal(message.payload.startPath, '/srv/different');
   assert.equal(message.payload.groupId, 'group-b');
+});
+
+test('Webview Master Password selection persists as a source and never submits the individual field', async () => {
+  const saved = profile('shared', { passwordSource: 'master' });
+  const { context } = createJumpWebviewHarness([saved]);
+  context.selectProfile('shared');
+  assert.equal(context.passwordSource, 'master');
+  assert.equal(context.isSelectedSavedConnectionDirty(), false);
+  context.password.value = 'stale-individual';
+  context.rememberPassword.checked = true;
+  const payload = context.collectConnectionPayload();
+  assert.equal(payload.passwordSource, 'master');
+  assert.equal(payload.password, '');
+  assert.equal(payload.rememberPassword, false);
+  assert.equal(context.isSelectedSavedConnectionDirty(), false);
+  context.passwordSource = 'connection';
+  assert.equal(context.isSelectedSavedConnectionDirty(), true);
+  assert.equal(context.collectConnectionPayload().password, 'stale-individual');
 });

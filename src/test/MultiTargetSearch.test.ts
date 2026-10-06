@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { TestCancellationSource, TestEventEmitter, deferred, flush } from './helpers/SftpSessionHarness';
+import { TestCancellationSource, TestEventEmitter, deferred, flush, harness } from './helpers/SftpSessionHarness';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import type { RemoteCommandStreamingCallbacks } from '../remote/RemoteSessionTypes';
 import { formatMultiTargetCommandsCompletedStatus, formatMultiTargetConnectionFailureStatus, formatMultiTargetOperationStatus, formatMultiTargetSearchCompletedStatus, formatMultiTargetSkippedStatus, formatMultiTargetUnavailableStatus, renderMultiTargetFeedbackScript } from '../multiTarget/MultiTargetFeedback';
@@ -152,6 +152,10 @@ test('filename results and copying retain paths, match lines and text', async ()
 });
 
 test('closing/reopening the tab keeps session state; extension restart starts Multi-Target clean', async () => {
+  harness.configuration.set('diagnostics.debugLogs', true);
+  harness.configuration.set('diagnostics.performanceLogs', true);
+  const diagnostics: string[] = [];
+  const output = { appendLine: (line: string) => diagnostics.push(line) } as any;
   const registrations = new Map<string, () => void>();
   const panels: any[] = [], remotes: any[] = [];
   const state = new Map<string, unknown>();
@@ -210,7 +214,7 @@ test('closing/reopening the tab keeps session state; extension restart starts Mu
   const context = { globalState: { get: (key: string, fallback: unknown) => state.get(key) ?? fallback,
     update: async (key: string, value: unknown) => { if (value === undefined) state.delete(key); else state.set(key, value); } } } as any;
   const profiles = { listProfiles: async () => [{ id: 'dev', name: 'DEV', username: 'tester', host: 'dev.example', connectionType: 'sftp' }], listGroups: async () => [] } as any;
-  const feature = new Feature(context, profiles, undefined as any);
+  const feature = new Feature(context, profiles, output);
   registrations.get('remoteedit.multiTarget.open')!(); await flush();
   const first = panels[0];
   first.incoming.fire({ type: 'targets', ids: ['dev'] }); await flush();
@@ -240,6 +244,14 @@ test('closing/reopening the tab keeps session state; extension restart starts Mu
   assert.equal(batch.executions[0].status, 'Running'); assert.equal(batch.executions[0].results.length, 1);
   assert.equal(connects, 1);
   gate.resolve({ code: 0 }); await flush();
+  const diagnosticText = diagnostics.join('\n');
+  assert.match(diagnosticText, /\[DEBUG\] \[MultiTargetCommands\] Batch started\./);
+  assert.match(diagnosticText, /\[DEBUG\] \[MultiTargetCommands\] Stop requested\./);
+  assert.match(diagnosticText, /\[PERF\] \[MultiTargetCommands\] target execution completed/);
+  assert.match(diagnosticText, /\[PERF\] \[MultiTargetCommands\] batch completed/);
+  assert.match(diagnosticText, /\[DEBUG\] \[MultiTargetSearch\] Batch started\./);
+  assert.match(diagnosticText, /\[PERF\] \[MultiTargetSearch\] batch completed/);
+  assert.doesNotMatch(diagnosticText, /secret/);
   // Shared set membership does not overwrite the tool's local directory.
   state.set('remoteedit.multiTarget.targetSets', [{ id: 'shared', title: 'Servers', targets: [{ connectionId: 'dev', workingDirectory: '/saved/log' }] }]);
   second.incoming.fire({ type: 'loadTargetSet', id: 'shared' }); await flush();
@@ -270,7 +282,7 @@ test('closing/reopening the tab keeps session state; extension restart starts Mu
   assert.deepEqual(importedSets.items, [{ id: 'imported-set', title: 'Imported Set', targets: [{ connectionId: 'dev', workingDirectory: '/imported' }] }]);
 
   feature.dispose();
-  const restarted = new Feature(context, profiles, undefined as any);
+  const restarted = new Feature(context, profiles, output);
   registrations.get('remoteedit.multiTarget.open')!(); await flush();
   const restored = panels[2].messages.findLast((message: any) => message.type === 'state');
   assert.equal(restored.activeTab, 'commands');
@@ -283,6 +295,7 @@ test('closing/reopening the tab keeps session state; extension restart starts Mu
   assert.equal(connects, 1);
   assert.equal(state.has('remoteedit.multiTarget'), false);
   assert.doesNotMatch(JSON.stringify([...state]), /secret/); restarted.dispose();
+  harness.configuration.clear();
 });
 
 test('shared Target Set writes from Commands and Search cannot overwrite one another', async () => {

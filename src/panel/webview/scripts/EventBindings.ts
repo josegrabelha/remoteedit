@@ -16,7 +16,11 @@ export function renderEventBindings(): string {
     const payload = message.payload || {};
 
     switch (message.type) {
+      case 'masterPasswordState':
+        receiveMasterPasswordState(payload);
+        break;
       case 'profilesLoaded':
+        if (payload.masterPasswordState) receiveMasterPasswordState(payload.masterPasswordState);
         profiles = payload.profiles || [];
         connectionGroups = payload.connectionGroups || [];
         renderProfiles(Object.prototype.hasOwnProperty.call(payload, 'selectedId') ? payload.selectedId : selectedProfileId);

@@ -6,6 +6,9 @@ export async function tryHandleConnectionMessage(
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<boolean> {
   switch (message.type) {
+    case RemoteEditIncomingMessageType.MasterPassword:
+      await handlers.masterPassword(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.Ready:
       await handlers.onReady();
       return true;

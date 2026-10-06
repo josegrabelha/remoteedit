@@ -69,6 +69,8 @@ export interface TransferSummary {
   canceledItems: string[];
 }
 
+export type ConfirmDialogDecision = 'confirm' | 'cancel' | 'dismiss';
+
 export interface ConfirmDialogOptions {
   title: string;
   message: string;

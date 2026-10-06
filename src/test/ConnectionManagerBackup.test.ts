@@ -271,3 +271,49 @@ test('Multi-Target backup includes saved target directories, excludes runtime st
   assert.equal(destination.state.has('remoteedit.multiTarget.targetSets'), false);
   assert.equal(destination.state.has('remoteedit.multiTargetCommands.savedCommands'), false);
 });
+
+test('encrypted backup includes and restores Master Password while plain backup never exposes it', async () => {
+  const source = createConnectionManagerHarness([profile('shared', { passwordSource: 'master' })]);
+  await source.manager.setMasterPassword('synthetic-global', 'synthetic-global');
+
+  const plain = await source.manager.buildBackupFile(exportOptions);
+  assert.equal(plain.connections?.[0].passwordSource, 'master');
+  assert.equal(plain.encryptedCredentials, null);
+  assert.ok(!JSON.stringify(plain).includes('synthetic-global'));
+
+  const encrypted = await source.manager.buildBackupFile({ ...exportOptions, includeCredentials: true, credentialPassword: 'backup-password' });
+  assert.equal(encrypted.connections?.[0].passwordSource, 'master');
+  assert.ok(encrypted.encryptedCredentials);
+  assert.ok(!JSON.stringify(encrypted).includes('synthetic-global'));
+
+  const target = createConnectionManagerHarness();
+  const result = await target.manager.importBackupFile(encrypted, {
+    ...importOptions, importMode: 'replace', restoreCredentials: true, credentialPassword: 'backup-password'
+  });
+  assert.equal(result.masterPasswordRestored, true);
+  assert.equal((await target.manager.getProfile('shared'))?.passwordSource, 'master');
+  assert.equal((await target.manager.buildConnectOptions({ id: 'shared' })).password, 'synthetic-global');
+});
+
+test('Master Password restore keeps or replaces an existing secret safely during Merge', async () => {
+  const source = createConnectionManagerHarness([profile('shared', { passwordSource: 'master' })]);
+  await source.manager.setMasterPassword('backup-master', 'backup-master');
+  const encrypted = await source.manager.buildBackupFile({ ...exportOptions, includeCredentials: true, credentialPassword: 'backup-password' });
+
+  const keepTarget = createConnectionManagerHarness([profile('shared', { passwordSource: 'master' })]);
+  await keepTarget.manager.setMasterPassword('current-master', 'current-master');
+  assert.equal(await keepTarget.manager.getBackupMasterPasswordConflict(encrypted, 'backup-password'), 'conflict');
+  const keepResult = await keepTarget.manager.importBackupFile(encrypted, {
+    ...importOptions, restoreCredentials: true, credentialPassword: 'backup-password', masterPasswordConflict: 'keep'
+  });
+  assert.equal(keepResult.masterPasswordRestored, false);
+  assert.equal((await keepTarget.manager.buildConnectOptions({ id: 'shared' })).password, 'current-master');
+
+  const replaceTarget = createConnectionManagerHarness([profile('shared', { passwordSource: 'master' })]);
+  await replaceTarget.manager.setMasterPassword('current-master', 'current-master');
+  const replaceResult = await replaceTarget.manager.importBackupFile(encrypted, {
+    ...importOptions, restoreCredentials: true, credentialPassword: 'backup-password', masterPasswordConflict: 'replace'
+  });
+  assert.equal(replaceResult.masterPasswordRestored, true);
+  assert.equal((await replaceTarget.manager.buildConnectOptions({ id: 'shared' })).password, 'backup-master');
+});

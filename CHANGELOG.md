@@ -4,12 +4,14 @@
 
 ### Added
 
-* Added keyboard controls to the **Remote Edit Files view**, including `Cmd/Ctrl+A` for Select All, `Delete`/`Cmd+Delete` for deleting selected items, `F2` for rename, Arrow keys with `Shift` range selection, and `Enter` for navigating and opening files or directories, with appropriate handling of the parent directory entry (`..`).
+* Added **Master Password** as a shared password source across Remote Edit.
+* Added keyboard navigation and selection controls to the **Remote Edit Files view**, including Select All, Delete, Rename, Arrow key selection, and Enter navigation/open.
 
 ### Changed
 
 * Improved the **Multi-Target Manage Targets** modal with group navigation and simplified visible-target selection.
 * Improved **Workspace Sync** mapping combobox filtering and dropdown behavior.
+* Expanded **Diagnostics** coverage for Multi-Target Commands & Search.
 
 ## [1.11.0] - 2026-10-05
 

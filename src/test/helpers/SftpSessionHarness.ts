@@ -67,6 +67,7 @@ export class ControlledJump extends EventEmitter {
 
 export const harness = {
   clients: [] as ControlledSftp[],
+  configuration: new Map<string, unknown>(),
   probe: async (_options: unknown): Promise<void> => undefined,
   platform: async (_client: unknown) => ({ platform: 'posix', shell: 'sh' }),
   prompt: async (): Promise<string | undefined> => undefined,
@@ -85,7 +86,8 @@ const originalLoad = loader._load;
 loader._load = (request, parent, isMain) => {
   if (request === 'vscode') return {
     EventEmitter: TestEventEmitter, CancellationTokenSource: TestCancellationSource,
-    workspace: { getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }) },
+    workspace: { getConfiguration: () => ({ get: (key: string, fallback: unknown) =>
+      harness.configuration.has(key) ? harness.configuration.get(key) : fallback }) },
     window: { showInputBox: () => harness.prompt() }
   };
   if (request === 'ssh2-sftp-client') return class { constructor() {
@@ -122,6 +124,7 @@ export function options(id = 'target'): ConnectOptions {
 
 export function resetHarness(): void {
   harness.clients.length = 0;
+  harness.configuration.clear();
   harness.probe = async () => undefined;
   harness.platform = async () => ({ platform: 'posix', shell: 'sh' });
   harness.prompt = async () => undefined;

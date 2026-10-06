@@ -8,6 +8,7 @@ import type { OutputLogDetails } from '../utils/outputLogger';
 import { RemoteEditOutboundMessageType } from './PanelMessages';
 import { formatBackupFileDate } from './FileNameUtils';
 import { buildExportResultMessage, buildImportResultMessage, countBackupFavorites, parseExportOptions, parseImportOptions } from './BackupUtils';
+import type { ConfirmDialogDecision, ConfirmDialogOptions } from './PanelTypes';
 
 interface PanelBackupControllerOptions {
   context: vscode.ExtensionContext;
@@ -17,6 +18,7 @@ interface PanelBackupControllerOptions {
   postPersistentStorageSnapshot: () => void;
   logInfo: (message: string, details?: OutputLogDetails) => void;
   logError: (message: string, details?: OutputLogDetails) => void;
+  showConfirmDialogDecision: (options: ConfirmDialogOptions) => Promise<ConfirmDialogDecision>;
 }
 
 export class PanelBackupController {
@@ -115,6 +117,34 @@ export class PanelBackupController {
       throw new Error('Select at least one import option.');
     }
 
+    if (importOptions.restoreCredentials && importOptions.importMode === 'merge') {
+      const masterPasswordConflict = await this.options.connectionManager.getBackupMasterPasswordConflict(
+        this.pendingImportBackupFile,
+        String(importOptions.credentialPassword || '')
+      );
+
+      if (masterPasswordConflict === 'conflict') {
+        const decision = await this.options.showConfirmDialogDecision({
+          title: 'Master Password Already Configured',
+          message: 'This backup contains a different Master Password.',
+          details: 'Keep the current Master Password to leave existing Master Password connections unchanged, or replace it with the Master Password from this backup.',
+          confirmLabel: 'Replace',
+          cancelLabel: 'Keep Current'
+        });
+
+        if (decision === 'dismiss') {
+          this.options.postMessage(RemoteEditOutboundMessageType.BackupOperationResult, {
+            operation: 'import',
+            message: 'Import canceled.',
+            isError: false
+          });
+          return;
+        }
+
+        importOptions.masterPasswordConflict = decision === 'confirm' ? 'replace' : 'keep';
+      }
+    }
+
     const result = await this.options.connectionManager.importBackupFile(this.pendingImportBackupFile, importOptions);
 
     await this.options.sendProfiles();
@@ -143,6 +173,7 @@ export class PanelBackupController {
       FavoritesImported: String(result.favoritesImported),
       UsernamesImported: String(result.usernamesImported),
       CredentialsRestored: String(result.credentialsRestored),
+      MasterPasswordRestored: result.masterPasswordRestored ? 'Yes' : 'No',
       WorkspaceSyncMappingsImported: String(result.workspaceSyncMappingsImported),
       MultiTargetCommandsImported: String(result.multiTargetSavedCommandsImported),
       MultiTargetTargetSetsImported: String(result.multiTargetTargetSetsImported)

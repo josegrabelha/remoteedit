@@ -1,5 +1,5 @@
 import { RemoteEditOutboundMessageType } from './PanelMessages';
-import type { ConfirmDialogOptions } from './PanelTypes';
+import type { ConfirmDialogDecision, ConfirmDialogOptions } from './PanelTypes';
 
 export interface InputDialogOptions {
   title: string;
@@ -16,7 +16,7 @@ export interface InputDialogOptions {
 }
 
 export class RemoteEditDialogManager {
-  private readonly pendingConfirmDialogs = new Map<string, (confirmed: boolean) => void>();
+  private readonly pendingConfirmDialogs = new Map<string, (decision: ConfirmDialogDecision) => void>();
   private readonly pendingInputDialogs = new Map<string, (value: string | undefined) => void>();
   private confirmDialogSequence = 0;
   private inputDialogSequence = 0;
@@ -72,13 +72,17 @@ export class RemoteEditDialogManager {
   }
 
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
+    return this.showConfirmDialogDecision(options).then(decision => decision === 'confirm');
+  }
+
+  showConfirmDialogDecision(options: ConfirmDialogOptions): Promise<ConfirmDialogDecision> {
     if (!this.canShowDialog()) {
-      return Promise.resolve(false);
+      return Promise.resolve('dismiss');
     }
 
     const requestId = `${Date.now()}-${++this.confirmDialogSequence}`;
 
-    return new Promise<boolean>(resolve => {
+    return new Promise<ConfirmDialogDecision>(resolve => {
       this.pendingConfirmDialogs.set(requestId, resolve);
       this.postMessage(RemoteEditOutboundMessageType.ShowConfirmDialog, {
         requestId,
@@ -103,12 +107,12 @@ export class RemoteEditDialogManager {
     }
 
     this.pendingConfirmDialogs.delete(requestId);
-    resolve(Boolean(payload?.confirmed));
+    resolve(payload?.dismissed === true ? 'dismiss' : (Boolean(payload?.confirmed) ? 'confirm' : 'cancel'));
   }
 
   resolvePendingConfirmDialogs(): void {
     for (const resolve of this.pendingConfirmDialogs.values()) {
-      resolve(false);
+      resolve('dismiss');
     }
 
     this.pendingConfirmDialogs.clear();

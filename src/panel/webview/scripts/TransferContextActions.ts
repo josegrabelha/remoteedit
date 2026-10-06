@@ -331,7 +331,7 @@ export function renderTransferContextActions(): string {
     if (event.key === 'Escape' && confirmDialogOpen) {
       event.preventDefault();
       event.stopPropagation();
-      closeConfirmDialog(String(confirmDialogRequestId || '').indexOf('client:profileDirtySwitch:') === 0 ? null : false);
+      closeConfirmDialog(String(confirmDialogRequestId || '').indexOf('client:profileDirtySwitch:') === 0 ? null : false, true);
       return;
     }
     if (confirmDialogOpen) {

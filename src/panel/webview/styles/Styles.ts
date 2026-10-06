@@ -417,6 +417,19 @@ export function renderStyles(): string {
   input, select { width: 100%; height: 31px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 5px 8px; border-radius: 3px; outline: none; }
   input:focus, select:focus { border-color: var(--vscode-focusBorder); }
   input:disabled, select:disabled { opacity: 0.68; }
+  #passwordBlock .hidden, #masterPasswordBackdrop .hidden { display: none !important; }
+  #masterPasswordActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .master-password-summary + .backup-section-title { margin-bottom: 6px; }
+  .master-password-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  #masterPasswordBackdrop { z-index: 240; }
+  .master-password-field + .master-password-field { margin-top: 10px; }
+  .password-source-picker .input-with-button input { padding-right: 62px; }
+  .password-source-picker .input-with-button.reveal-hidden input { padding-right: 34px; }
+  .password-source-picker .input-with-button .input-icon-button.password-reveal-button { right: 30px; }
+  .password-source-picker .password-source-button { position: absolute; top: 2px; right: 2px; opacity: 1; }
+  #masterPasswordSelection { padding-right: 34px; text-align: left; }
+  #masterPasswordHint { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #masterPasswordHint.hidden { display: none; }
   .input-with-button { position: relative; display: flex; align-items: center; }
   .input-with-button input { padding-right: 34px; }
   .input-with-button.reveal-hidden input { padding-right: 8px; }
@@ -424,6 +437,7 @@ export function renderStyles(): string {
   .input-icon-button { position: absolute; top: 2px; right: 2px; width: 27px; min-width: 27px; height: 27px; min-height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-left: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 0 2px 2px 0; background: transparent; color: var(--vscode-input-foreground); opacity: 0.8; }
   .input-icon-button:hover:not(:disabled) { opacity: 1; background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
   .input-icon-button svg { width: 15px; height: 15px; display: block; fill: currentColor; }
+  .input-icon-button svg.profile-dropdown-chevron { fill: none; }
   .button-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
   .connection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; align-items: center; width: 100%; min-width: 0; margin-top: 0; }
   .connection-actions .connection-action-full { grid-column: 1 / -1; }
@@ -700,7 +714,7 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
   .manage-profiles-empty { color: var(--vscode-descriptionForeground); padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .manage-profiles-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
   .manage-profiles-header-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-  .manage-profiles-header-actions button { min-height: 28px; height: 28px; padding: 3px 10px; font-size: 12px; }
+  .manage-profiles-header-actions button, #manageMasterPasswordButton { min-height: 28px; height: 28px; padding: 3px 10px; font-size: 12px; }
   .manage-profile-group-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; min-height: 34px; padding: 4px 6px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-sideBar-background); }
   .manage-profile-group-header.renaming { grid-template-columns: 1fr; }
   .manage-profile-group-header:not(.renaming) { cursor: pointer; }
@@ -733,7 +747,7 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
   .manage-profile-group-header .manage-profile-icon-button svg { width: 18px; height: 18px; }
   .backup-dialog { width: min(620px, calc(100vw - 48px)); max-height: calc(100vh - 48px); }
   .backup-dialog.export-backup-dialog { height: min(500px, calc(100vh - 48px)); }
-  .backup-dialog.import-backup-dialog { height: min(660px, calc(100vh - 48px)); }
+  .backup-dialog.import-backup-dialog { height: min(672px, calc(100vh - 48px)); }
   .backup-dialog .file-properties-path { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 400; line-height: 1.3; margin-top: 3px; opacity: 0.85; }
   .backup-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 10px; overflow: hidden; }
   .connection-name-dialog { width: min(460px, calc(100vw - 48px)); }

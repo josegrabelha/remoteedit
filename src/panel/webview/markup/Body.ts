@@ -34,7 +34,7 @@ export function renderBody(): string {
               <select id="profileSelect" class="profile-select-native" aria-hidden="true" tabindex="-1"><option value="">New / Quick Connection</option></select>
               <input id="profileName" type="hidden" autocomplete="off" />
             </div>
-            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Manage Saved Connections" data-tooltip="Manage Saved Connections">
+            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Manage Connections" data-tooltip="Manage Connections">
               <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-280v-40h560v40H200Zm0-180v-40h560v40H200Zm0-180v-40h560v40H200Z" /></svg>
             </button>
             </div>
@@ -123,13 +123,22 @@ export function renderBody(): string {
             </div>
             <div id="passwordBlock" class="full auth-block visible">
               <label for="password">Password</label>
+              <div id="passwordSourcePicker" class="auth-picker password-source-picker">
               <div class="input-with-button">
+                <button id="masterPasswordSelection" type="button" class="profile-dropdown-button hidden">Master Password</button>
                 <input id="password" type="password" autocomplete="current-password" />
                 <button id="passwordRevealButton" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily Show Password" data-tooltip="Hold to Show Password">
                   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg>
                 </button>
+                <button id="passwordSourceButton" type="button" class="input-icon-button password-source-button" aria-label="Password source" aria-haspopup="listbox" aria-expanded="false"><svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg></button>
               </div>
-              <label class="checkbox-row"><input id="rememberPassword" class="dialog-checkbox" type="checkbox" /> Remember password securely</label>
+              <div id="passwordSourceMenu" class="profile-dropdown-menu auth-dropdown-menu" role="listbox" aria-label="Password source">
+                <button type="button" class="profile-dropdown-item" role="option" data-password-source="connection"><span class="profile-dropdown-name">Enter Password</span></button>
+                <button type="button" class="profile-dropdown-item" role="option" data-password-source="master"><span class="profile-dropdown-name">Master Password</span></button>
+              </div>
+              </div>
+              <div id="masterPasswordHint" class="credential-state hidden"><span id="masterPasswordHintText"></span> <button id="configureMasterPasswordInline" type="button" class="secondary">Configure...</button></div>
+              <label id="rememberPasswordRow" class="checkbox-row"><input id="rememberPassword" class="dialog-checkbox" type="checkbox" /> Remember password securely</label>
               <div id="passwordSecretState" class="credential-state not-saved">Password not saved.</div>
             </div>
             <div id="privateKeyBlock" class="full auth-block">
@@ -527,11 +536,25 @@ export function renderBody(): string {
     </section>
   </div>
 
+  <div id="masterPasswordBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="masterPasswordTitle" aria-hidden="true">
+    <section class="file-properties-dialog input-prompt-dialog">
+      <div class="file-properties-header"><h2 id="masterPasswordTitle" class="file-properties-title">Master Password</h2></div>
+      <div class="file-properties-body">
+        <div id="masterPasswordStatus" class="file-properties-path"></div>
+        <div id="masterPasswordFields"><div class="master-password-field"><label id="masterPasswordNewLabel" for="masterPasswordNew">Master Password</label><div class="input-with-button"><input id="masterPasswordNew" type="password" autocomplete="new-password" /><button id="masterPasswordNewReveal" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily Show Password" data-tooltip="Hold to Show Password"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg></button></div></div><div class="master-password-field"><label id="masterPasswordConfirmLabel" for="masterPasswordConfirm">Confirm Master Password</label><div class="input-with-button"><input id="masterPasswordConfirm" type="password" autocomplete="new-password" /><button id="masterPasswordConfirmReveal" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily Show Password" data-tooltip="Hold to Show Password"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg></button></div></div></div>
+        <div id="masterPasswordImpact" class="file-properties-path"></div>
+        <div id="masterPasswordActions" class="dialog-actions"><button id="masterPasswordChange" type="button" class="secondary">Change Master Password</button><button id="masterPasswordRemove" type="button" class="secondary">Remove Master Password</button></div>
+        <div id="masterPasswordFeedback" class="input-prompt-feedback" role="alert"></div>
+      </div>
+      <div class="file-properties-actions"><button id="masterPasswordCancel" type="button" class="secondary">Cancel</button><button id="masterPasswordSave" type="button">Save</button></div>
+    </section>
+  </div>
+
   <div id="manageProfilesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="manageProfilesTitle" aria-hidden="true">
     <section class="file-properties-dialog manage-profiles-dialog">
       <div class="file-properties-header manage-profiles-header-row">
         <div>
-          <h2 id="manageProfilesTitle" class="file-properties-title">Manage Saved Connections</h2>
+          <h2 id="manageProfilesTitle" class="file-properties-title">Manage Connections</h2>
           <div class="file-properties-path">Clone, rename, reorder, or remove saved connection profiles.</div>
         </div>
         <div class="manage-profiles-header-actions">
@@ -540,6 +563,11 @@ export function renderBody(): string {
         </div>
       </div>
       <div class="file-properties-body">
+        <div class="master-password-summary">
+          <div><p class="backup-section-title">Master Password</p><div id="masterPasswordSummary" class="file-properties-path">Not configured</div></div>
+          <button id="manageMasterPasswordButton" type="button" class="secondary">Configure...</button>
+        </div>
+        <p class="backup-section-title">Saved Connections</p>
         <div id="manageProfilesFeedback" class="manage-profiles-feedback" role="status" aria-live="polite"></div>
         <div class="manage-profiles-toolbar">
           <div id="manageProfilesFilterBox" class="manage-profiles-filter filter-box">
@@ -633,7 +661,7 @@ export function renderBody(): string {
                 <label class="modal-checkbox-line"><input id="exportIncludeUsernames" class="dialog-checkbox" type="checkbox" checked> Include usernames</label>
                 <label class="modal-checkbox-line"><input id="exportIncludeCredentials" class="dialog-checkbox" type="checkbox"> Include encrypted passwords/passphrases</label>
                 <div id="exportCredentialsBlock" class="backup-credential-block">
-                  <div class="modal-helper-text">Encrypt saved passwords and key passphrases. Private key files are not exported.</div>
+                  <div class="modal-helper-text">Encrypt saved passwords, Master Password, and key passphrases. Private key files are not exported.</div>
                   <div class="backup-credential-fields">
                     <label>Export password
                       <div class="input-with-button">

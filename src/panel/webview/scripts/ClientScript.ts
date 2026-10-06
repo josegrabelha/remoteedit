@@ -1,3 +1,4 @@
+import { renderMasterPassword } from './MasterPassword';
 import { renderStateDialogs } from './StateDialogs';
 import { renderEventBindings } from './EventBindings';
 import { renderTransferContextActions } from './TransferContextActions';
@@ -45,5 +46,5 @@ export function renderClientScript(options: ClientScriptOptions): string {
     renderDragDropTargets() +
     renderDragDropUpload() +
     renderRemoteDragDropMove() +
-    renderTransfersStatus();
+    renderTransfersStatus() + renderMasterPassword();
 }

@@ -138,6 +138,7 @@ export function renderRemoteSearch(): string {
   }
 
   function hasPasswordForConnection() {
+    if (passwordSource === 'master') return masterPasswordState.configured;
     const value = String(password.value || '');
     return value === SAVED_SECRET_MASK || value.length > 0;
   }
@@ -168,7 +169,7 @@ export function renderRemoteSearch(): string {
     }
 
     if (mode === 'connect' && !isPrivateKeyAuth && !hasPasswordForConnection()) {
-      errors.push({ field: password, label: 'Password', kind: 'required', message: 'Password is required for password authentication.' });
+      errors.push({ field: passwordSource === 'master' ? passwordSourceButton : password, label: 'Password', kind: 'required', message: passwordSource === 'master' ? 'Master Password is not configured. Configure it in Manage Connections.' : 'Password is required for password authentication.' });
     }
 
     if (mode === 'connect' && isPrivateKeyAuth && !String(privateKeyPath.value || '').trim()) {
@@ -378,10 +379,11 @@ export function renderRemoteSearch(): string {
       username: normalizeConnectionComparableString(profile.username),
       jumpProfileId: typeValue === 'sftp' ? normalizeJumpProfileId(profile.jumpProfileId) : '',
       authType: authValue,
+      passwordSource: authValue === 'password' && profile.passwordSource === 'master' ? 'master' : 'connection',
       privateKeyPath: authValue === 'privateKey' ? normalizeConnectionComparableString(profile.privateKeyPath) : '',
       startPath: normalizeConnectionComparableString(profile.startPath),
       keepAlive: profile.keepAlive !== false,
-      passwordState: authValue === 'password' && profile.hasSavedPassword ? 'saved:existing' : 'none',
+      passwordState: authValue === 'password' && profile.passwordSource !== 'master' && profile.hasSavedPassword ? 'saved:existing' : 'none',
       passphraseState: authValue === 'privateKey' && profile.hasSavedPassphrase ? 'saved:existing' : 'none',
       ftpsAllowSelfSignedCertificate: typeValue === 'ftps' ? Boolean(profile.ftpsAllowSelfSignedCertificate) : false,
       ftpsCaCertificatePath: typeValue === 'ftps' && !Boolean(profile.ftpsAllowSelfSignedCertificate) ? normalizeConnectionComparableString(profile.ftpsCaCertificatePath) : ''
@@ -400,10 +402,11 @@ export function renderRemoteSearch(): string {
       username: normalizeConnectionComparableString(username.value),
       jumpProfileId: typeValue === 'sftp' ? normalizeJumpProfileId(jumpProfileId.value) : '',
       authType: authValue,
+      passwordSource: authValue === 'password' ? passwordSource : 'connection',
       privateKeyPath: authValue === 'privateKey' ? normalizeConnectionComparableString(privateKeyPath.value) : '',
       startPath: normalizeConnectionComparableString(startPath.value),
       keepAlive: Boolean(keepAlive.checked),
-      passwordState: authValue === 'password'
+      passwordState: authValue === 'password' && passwordSource !== 'master'
         ? getComparableSavedCredentialState(Boolean(profile && profile.hasSavedPassword), password.value, rememberPassword.checked)
         : 'none',
       passphraseState: authValue === 'privateKey'
@@ -631,8 +634,9 @@ export function renderRemoteSearch(): string {
       username: username.value,
       jumpProfileId: isSftpFormConnection() ? normalizeJumpProfileId(jumpProfileId.value) : undefined,
       authType: authType.value,
-      password: password.value === SAVED_SECRET_MASK ? '' : password.value,
-      rememberPassword: rememberPassword.checked,
+      passwordSource: authType.value === 'password' ? passwordSource : 'connection',
+      password: passwordSource === 'master' || password.value === SAVED_SECRET_MASK ? '' : password.value,
+      rememberPassword: passwordSource !== 'master' && rememberPassword.checked,
       privateKeyPath: privateKeyPath.value,
       passphrase: passphrase.value === SAVED_SECRET_MASK ? '' : passphrase.value,
       rememberPassphrase: rememberPassphrase.checked,
@@ -665,6 +669,8 @@ export function renderRemoteSearch(): string {
     updateConnectionTypeDropdown();
     updateAuthDropdown();
     updateFtpsCertificateFields();
+    closePasswordSourceMenu();
+    updatePasswordSourceUI();
   }
 
 

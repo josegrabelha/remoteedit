@@ -22,6 +22,8 @@ import {
   type MultiTargetBackupState
 } from '../multiTarget/MultiTargetStorage';
 
+export type PasswordSource = 'connection' | 'master';
+
 export type AuthType = 'password' | 'privateKey';
 
 export interface ConnectionProfile {
@@ -32,6 +34,7 @@ export interface ConnectionProfile {
   port: number;
   username: string;
   authType: AuthType;
+  passwordSource?: PasswordSource;
   startPath: string;
   privateKeyPath?: string;
   hasSavedPassword?: boolean;
@@ -61,6 +64,7 @@ export interface ConnectionGroup {
 
 
 export type RemoteEditImportMode = 'merge' | 'replace';
+export type MasterPasswordImportConflictResolution = 'keep' | 'replace';
 
 export interface ConnectionBackupExportOptions {
   includeSettings: boolean;
@@ -84,6 +88,7 @@ export interface ConnectionBackupImportOptions {
   restoreCredentials: boolean;
   credentialPassword?: string;
   importMode: RemoteEditImportMode;
+  masterPasswordConflict?: MasterPasswordImportConflictResolution;
 }
 
 export interface RemoteEditBackupConnection {
@@ -94,6 +99,7 @@ export interface RemoteEditBackupConnection {
   port: number;
   username?: string;
   authType: AuthType;
+  passwordSource?: PasswordSource;
   startPath: string;
   privateKeyPath?: string;
   keepAlive: boolean;
@@ -180,6 +186,7 @@ export interface RemoteEditBackupImportResult {
   replaced: boolean;
   skippedUnsupported: number;
   credentialsRestored: number;
+  masterPasswordRestored: boolean;
   favoritesImported: number;
   usernamesImported: number;
   connectionGroupsImported: number;
@@ -255,6 +262,7 @@ export interface ConnectionProfileInput {
   port?: number | string;
   username?: string;
   authType?: AuthType;
+  passwordSource?: PasswordSource;
   connectionType?: RemoteConnectionType | string;
   startPath?: string;
   privateKeyPath?: string;
@@ -276,6 +284,8 @@ const SAVED_REMOTE_COMMANDS_KEY = 'remoteedit.savedRemoteCommands';
 const SERVER_LOG_SHORTCUTS_KEY = 'remoteedit.serverLogShortcuts';
 const SERVER_PORT_FORWARDS_KEY = 'remoteedit.serverPortForwards';
 const LOG_VIEWER_FAVORITES_KEY = 'remoteedit.logViewer.favorites.v1';
+const MASTER_PASSWORD_KEY = 'remoteedit.masterPassword';
+const MASTER_PASSWORD_BACKUP_CREDENTIAL_ID = '__remoteedit_master_password_v1__';
 const SECRET_PREFIX = 'remoteedit.connectionSecret';
 const FTPS_CA_CERTIFICATE_REQUIRED_MESSAGE = 'CA certificate path is required for FTPS unless self-signed/untrusted certificates are allowed.';
 
@@ -470,11 +480,39 @@ export class ConnectionManager {
    * This is intentionally configuration-only: callers receive no active
    * Remote Edit session, socket, cache, or connection lifecycle state.
    */
+  async getMasterPasswordState(): Promise<{ configured: boolean; usedBy: number }> {
+    const profiles = this.context.globalState.get<ConnectionProfile[]>(CONNECTIONS_KEY, []);
+    return {
+      configured: Boolean(await this.context.secrets.get(MASTER_PASSWORD_KEY)),
+      usedBy: profiles.filter(profile => profile.authType === 'password' && profile.passwordSource === 'master').length
+    };
+  }
+
+  async setMasterPassword(password: string, confirmation: string): Promise<void> {
+    if (typeof password !== 'string' || !password) throw new Error('Master Password is required.');
+    if (password !== confirmation) throw new Error('Passwords do not match.');
+    await this.context.secrets.store(MASTER_PASSWORD_KEY, password);
+  }
+
+  async removeMasterPassword(): Promise<void> {
+    await this.context.secrets.delete(MASTER_PASSWORD_KEY);
+  }
+
+  async resolveProfilePassword(profile: Pick<ConnectionProfileInput, 'id' | 'passwordSource'>, enteredPassword?: string): Promise<string> {
+    if (profile.passwordSource === 'master') {
+      const password = await this.context.secrets.get(MASTER_PASSWORD_KEY);
+      if (!password) throw new Error('Master Password is not configured. Configure it in Manage Connections or select Enter Password.');
+      return password;
+    }
+    return enteredPassword || (profile.id ? await this.context.secrets.get(secretKey(profile.id, 'password')) : '') || '';
+  }
+
   async getProfileCredentials(profileId: string): Promise<ConnectionProfileCredentials> {
     const id = String(profileId || '').trim();
     if (!id) return {};
+    const profile = await this.getProfile(id);
     const [password, passphrase] = await Promise.all([
-      this.context.secrets.get(secretKey(id, 'password')),
+      profile?.authType === 'password' ? this.resolveProfilePassword(profile) : Promise.resolve(''),
       this.context.secrets.get(secretKey(id, 'passphrase'))
     ]);
     return {
@@ -515,7 +553,7 @@ export class ConnectionManager {
     nextProfiles.splice(sourceIndex + 1, 0, clone);
     this.validateProfileJumpReferences(nextProfiles);
 
-    const password = await this.context.secrets.get(secretKey(source.id, 'password'));
+    const password = source.passwordSource === 'master' ? undefined : await this.context.secrets.get(secretKey(source.id, 'password'));
     const passphrase = await this.context.secrets.get(secretKey(source.id, 'passphrase'));
 
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
@@ -573,12 +611,13 @@ export class ConnectionManager {
     try {
       savedProfile = await this.saveProfile({
         ...input,
+        passwordSource: input.passwordSource ?? source.passwordSource,
         id: undefined,
         favoriteRemotePaths: normalizeFavoriteRemotePaths(source.favoriteRemotePaths || [])
       });
 
-      if (savedProfile.authType === 'password' && Boolean(input.rememberPassword) && !String(input.password || '')) {
-        const password = await this.context.secrets.get(secretKey(source.id, 'password'));
+      if (savedProfile.authType === 'password' && savedProfile.passwordSource !== 'master' && Boolean(input.rememberPassword) && !String(input.password || '')) {
+        const password = source.passwordSource === 'master' ? undefined : await this.context.secrets.get(secretKey(source.id, 'password'));
         if (password) {
           await this.context.secrets.store(secretKey(savedProfile.id, 'password'), password);
         }
@@ -654,6 +693,7 @@ export class ConnectionManager {
       port,
       username,
       authType,
+      passwordSource: authType === 'password' && (input.passwordSource ?? existing?.passwordSource) === 'master' ? 'master' : undefined,
       startPath,
       privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
       keepAlive,
@@ -674,7 +714,7 @@ export class ConnectionManager {
 
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
 
-    await this.applyCredentialPreferences(profile.id, authType, input);
+    await this.applyCredentialPreferences(profile.id, authType, { ...input, passwordSource: profile.passwordSource });
 
     this.logDebug(existing ? 'Updated saved connection profile.' : 'Created saved connection profile.', {
       Profile: profile.name,
@@ -903,10 +943,15 @@ export class ConnectionManager {
 
     if (includeCredentials) {
       const credentials = await this.collectStoredCredentials(profiles);
+      const masterPassword = await this.context.secrets.get(MASTER_PASSWORD_KEY);
+      if (masterPassword) {
+        credentials[MASTER_PASSWORD_BACKUP_CREDENTIAL_ID] = { password: masterPassword };
+      }
+
       if (Object.keys(credentials).length > 0) {
         const password = String(options.credentialPassword || '');
         if (!password) {
-          throw new Error('Export password is required to include encrypted passwords/passphrases.');
+          throw new Error('Export password is required to include encrypted credentials.');
         }
 
         backup.encryptedCredentials = await encryptCredentials(credentials, password);
@@ -962,6 +1007,25 @@ export class ConnectionManager {
     };
   }
 
+  async getBackupMasterPasswordConflict(backup: RemoteEditBackupFile, credentialPassword: string): Promise<'none' | 'restore' | 'same' | 'conflict'> {
+    if (!backup.encryptedCredentials) {
+      return 'none';
+    }
+
+    const credentials = await decryptCredentials(backup.encryptedCredentials, String(credentialPassword || ''));
+    const backupMasterPassword = credentials[MASTER_PASSWORD_BACKUP_CREDENTIAL_ID]?.password;
+    if (!backupMasterPassword) {
+      return 'none';
+    }
+
+    const currentMasterPassword = await this.context.secrets.get(MASTER_PASSWORD_KEY);
+    if (!currentMasterPassword) {
+      return 'restore';
+    }
+
+    return currentMasterPassword === backupMasterPassword ? 'same' : 'conflict';
+  }
+
   async importBackupFile(backup: RemoteEditBackupFile, options: ConnectionBackupImportOptions): Promise<RemoteEditBackupImportResult> {
     const timer = createPerformanceTimer();
     const backupVersion = validateBackupVersion(backup);
@@ -982,6 +1046,7 @@ export class ConnectionManager {
       replaced: options.importMode === 'replace' && Boolean(options.includeConnections),
       skippedUnsupported: 0,
       credentialsRestored: 0,
+      masterPasswordRestored: false,
       favoritesImported: 0,
       usernamesImported: 0,
       connectionGroupsImported: 0,
@@ -1078,12 +1143,12 @@ export class ConnectionManager {
     let restoredCredentials: StoredCredentialMap | undefined;
     if (options.restoreCredentials) {
       if (!backup.encryptedCredentials) {
-        throw new Error('This backup does not contain encrypted passwords/passphrases.');
+        throw new Error('This backup does not contain encrypted credentials.');
       }
 
       const password = String(options.credentialPassword || '');
       if (!password) {
-        throw new Error('Export password is required to restore encrypted passwords/passphrases.');
+        throw new Error('Export password is required to restore encrypted credentials.');
       }
 
       restoredCredentials = await decryptCredentials(backup.encryptedCredentials, password);
@@ -1120,6 +1185,20 @@ export class ConnectionManager {
         if (profileCredentials.passphrase) {
           await this.context.secrets.store(secretKey(profileId, 'passphrase'), profileCredentials.passphrase);
           result.credentialsRestored += 1;
+        }
+      }
+
+      const backupMasterPassword = restoredCredentials[MASTER_PASSWORD_BACKUP_CREDENTIAL_ID]?.password;
+      if (backupMasterPassword) {
+        const currentMasterPassword = await this.context.secrets.get(MASTER_PASSWORD_KEY);
+        const shouldRestoreMasterPassword = options.importMode === 'replace'
+          || !currentMasterPassword
+          || currentMasterPassword === backupMasterPassword
+          || options.masterPasswordConflict === 'replace';
+
+        if (shouldRestoreMasterPassword && currentMasterPassword !== backupMasterPassword) {
+          await this.context.secrets.store(MASTER_PASSWORD_KEY, backupMasterPassword);
+          result.masterPasswordRestored = true;
         }
       }
     }
@@ -1168,6 +1247,7 @@ export class ConnectionManager {
       host: profile.host,
       port: profile.port,
       authType: profile.authType,
+      passwordSource: profile.passwordSource,
       startPath: profile.startPath || '',
       privateKeyPath: profile.authType === 'privateKey' ? profile.privateKeyPath || '' : undefined,
       keepAlive: profile.keepAlive !== false,
@@ -1427,6 +1507,7 @@ export class ConnectionManager {
         port: normalizePort(connection.port || getDefaultPortForConnectionType(connectionType)),
         username: options.includeUsernames ? String(connection.username || '').trim() : '',
         authType,
+        passwordSource: authType === 'password' && connection.passwordSource === 'master' ? 'master' : undefined,
         startPath: String(connection.startPath || '').trim(),
         privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
         keepAlive: connection.keepAlive !== false,
@@ -1566,12 +1647,10 @@ export class ConnectionManager {
       throw new Error('Username is required to connect. It can be omitted from the saved profile, but must be entered before connecting.');
     }
 
-    let password = typeof input.password === 'string' ? input.password : '';
+    const password = authType === 'password'
+      ? await this.resolveProfilePassword({ id: profile?.id, passwordSource: input.passwordSource ?? profile?.passwordSource }, input.password)
+      : '';
     let passphrase = typeof input.passphrase === 'string' ? input.passphrase : '';
-
-    if (!password && profile?.id) {
-      password = await this.context.secrets.get(secretKey(profile.id, 'password')) || '';
-    }
 
     if (!passphrase && profile?.id) {
       passphrase = await this.context.secrets.get(secretKey(profile.id, 'passphrase')) || '';
@@ -1613,6 +1692,7 @@ export class ConnectionManager {
       port,
       username,
       authType,
+      passwordSource: authType === 'password' ? input.passwordSource ?? profile?.passwordSource : undefined,
       password: authType === 'password' ? password : undefined,
       privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
       passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
@@ -1641,7 +1721,7 @@ export class ConnectionManager {
     }
 
     if (profile.authType === 'password') {
-      let password = await this.context.secrets.get(secretKey(profile.id, 'password')) || '';
+      let password = await this.resolveProfilePassword(profile);
 
       if (!password) {
         const promptedPassword = await vscode.window.showInputBox({
@@ -1702,6 +1782,12 @@ export class ConnectionManager {
     const rememberPassword = Boolean(input.rememberPassword);
     const rememberPassphrase = Boolean(input.rememberPassphrase);
 
+    if (authType === 'password' && input.passwordSource === 'master') {
+      await this.context.secrets.delete(secretKey(profileId, 'password'));
+      await this.context.secrets.delete(secretKey(profileId, 'passphrase'));
+      return;
+    }
+
     if (authType === 'password') {
       if (password) {
         if (rememberPassword) {
@@ -1744,6 +1830,7 @@ export class ConnectionManager {
     const connectionType = normalizeConnectionType(profile.connectionType);
     return {
       ...profile,
+      passwordSource: profile.passwordSource === 'master' && normalizeAuthTypeForConnection(profile.authType, connectionType) === 'password' ? 'master' : undefined,
       connectionType,
       port: normalizePort(profile.port || getDefaultPortForConnectionType(profile.connectionType)),
       authType: normalizeAuthTypeForConnection(profile.authType, profile.connectionType),
@@ -2218,7 +2305,7 @@ async function encryptCredentials(credentials: StoredCredentialMap, password: st
 
 async function decryptCredentials(encryptedCredentials: RemoteEditEncryptedCredentials, password: string): Promise<StoredCredentialMap> {
   if (!encryptedCredentials || encryptedCredentials.version !== 1 || encryptedCredentials.kdf !== 'scrypt' || encryptedCredentials.cipher !== 'aes-256-gcm') {
-    throw new Error('Unsupported encrypted passwords/passphrases format.');
+    throw new Error('Unsupported encrypted credentials format.');
   }
 
   try {
@@ -2234,7 +2321,7 @@ async function decryptCredentials(encryptedCredentials: RemoteEditEncryptedCrede
 
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch (_) {
-    throw new Error('Could not restore saved passwords/passphrases. Check the export password and try again.');
+    throw new Error('Could not restore encrypted credentials. Check the export password and try again.');
   }
 }
 

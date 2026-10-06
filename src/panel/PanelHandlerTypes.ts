@@ -1,6 +1,7 @@
 export interface RemoteEditPanelMessageHandlers {
   getActiveConnectionId(): string | undefined;
   getActivePath(): string;
+  masterPassword(payload: any): Promise<void>;
   onReady(): Promise<void>;
   saveConnection(payload: any): Promise<void>;
   saveConnectionAs(payload: any): Promise<void>;

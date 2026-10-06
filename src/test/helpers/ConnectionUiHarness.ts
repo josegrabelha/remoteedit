@@ -46,6 +46,7 @@ export function createConnectionUiHarness(harness: ConnectionManagerHarness, ses
 }
 
 class FormElement {
+  style: Record<string, string> = {};
   value = '';
   checked = false;
   disabled = false;
@@ -60,6 +61,7 @@ class FormElement {
   appendChild(child: FormElement): void { this.children.push(child); }
   addEventListener() {}
   closest() { return null; }
+  querySelectorAll() { return []; }
   querySelector() { return new FormElement(); }
   setAttribute() {}
   setSelectionRange() {}
@@ -72,9 +74,12 @@ class FormElement {
 export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false) {
   const messages: any[] = [];
   const context: any = {
+    passwordSource: 'connection', masterPasswordState: { configured: false, usedBy: 0 },
+    passwordSourcePicker: new FormElement(), passwordSourceButton: new FormElement(),
+    passwordSecretState: new FormElement(), passwordRevealButton: new FormElement(), passphraseRevealButton: new FormElement(),
     profiles, connectionGroups: [], selectedProfileId: '', activeConnectionId: '', pendingConnectionNameGroupId: '', pendingConnectionNameNewGroupName: '',
     jumpProfileDropdownFilterText: '', saveProfileMenuOpen: false, FILES_STATUS_GLOBAL_KEY: 'global', SAVED_SECRET_MASK: '********',
-    document: { createElement: () => new FormElement() },
+    document: { createElement: () => new FormElement(), getElementById: () => new FormElement() },
     vscode: { postMessage: (message: unknown) => messages.push(JSON.parse(JSON.stringify(message))) },
     showUnsavedConnectionProfileSwitchDialog: async () => 'discard',
     showConnectionNameDialog: async () => ({ name: 'Quick saved', groupId: '' })

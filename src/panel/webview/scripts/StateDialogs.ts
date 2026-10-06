@@ -116,6 +116,14 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const authDropdownLabel = document.getElementById('authDropdownLabel');
   const authDropdownMenu = document.getElementById('authDropdownMenu');
   const password = document.getElementById('password');
+  let passwordSource = 'connection';
+  let masterPasswordState = { configured: false, usedBy: 0 };
+  let masterPasswordMode = '';
+  let masterPasswordBusy = false;
+  let masterPasswordReturnFocus = null;
+  const passwordSourcePicker = document.getElementById('passwordSourcePicker');
+  const passwordSourceButton = document.getElementById('passwordSourceButton');
+  const masterPasswordBackdrop = document.getElementById('masterPasswordBackdrop');
   const passwordRevealButton = document.getElementById('passwordRevealButton');
   const rememberPassword = document.getElementById('rememberPassword');
   const passwordSecretState = document.getElementById('passwordSecretState');
@@ -1133,7 +1141,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
     setTimeout(() => (confirmDialogCancelButton.hidden ? confirmDialogConfirmButton : confirmDialogCancelButton).focus(), 0);
   }
 
-  function closeConfirmDialog(confirmed) {
+  function closeConfirmDialog(confirmed, dismissed) {
     if (!confirmDialogOpen) return;
 
     const requestId = confirmDialogRequestId;
@@ -1166,7 +1174,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
       return;
     }
 
-    vscode.postMessage({ type: 'confirmDialogResponse', payload: { requestId, confirmed: Boolean(confirmed) } });
+    vscode.postMessage({ type: 'confirmDialogResponse', payload: { requestId, confirmed: Boolean(confirmed), dismissed: Boolean(dismissed) } });
   }
 
   function setTransferConflictMeta(element, label, value) {

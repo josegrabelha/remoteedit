@@ -300,6 +300,7 @@ export class SftpSessionManager implements RemoteSessionManager {
         port: options.port,
         username: options.username,
         authType: options.authType,
+        passwordSource: options.passwordSource,
         privateKeyPath: options.privateKeyPath,
         startPath,
         keepAlive: options.keepAlive !== false,

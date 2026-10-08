@@ -1,3 +1,4 @@
+import { ConnectionImportController } from './ConnectionImportController';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -93,6 +94,7 @@ export class RemoteEditPanel {
   private pendingPermissionsDialogResolve: ((result?: SetPermissionsDialogResult) => void) | undefined;
   private readonly dialogManager: RemoteEditDialogManager;
   private readonly virtualDocuments = new Map<string, string>();
+  private readonly connectionImportController: ConnectionImportController;
   private readonly backupController: PanelBackupController;
   private readonly droppedUploadStaging: DroppedUploadStagingService;
   private readonly remoteMoveService: RemoteMoveService;
@@ -518,6 +520,7 @@ export class RemoteEditPanel {
       logWarn: (message, details) => this.logWarn(message, details),
       logError: (message, details) => this.logError(message, details)
     });
+    this.connectionImportController = new ConnectionImportController(this.connectionManager, (type, payload) => this.postMessage(type, payload), () => this.sendProfiles(), this.output);
     this.backupController = new PanelBackupController({
       context: this.context,
       connectionManager: this.connectionManager,
@@ -644,6 +647,7 @@ export class RemoteEditPanel {
           this.postPersistentStorageSnapshot();
           this.postRemoteClipboardState();
         },
+        connectionImport: payload => this.connectionImportController.handle(payload),
         masterPassword: payload => this.manageMasterPassword(payload),
         saveConnection: payload => this.saveConnection(payload),
         saveConnectionAs: payload => this.saveConnectionAs(payload),
@@ -5335,6 +5339,7 @@ export class RemoteEditPanel {
   }
 
   dispose(): void {
+    this.connectionImportController.dispose();
     this.isDisposed = true;
     RemoteEditPanel.currentPanel = undefined;
 

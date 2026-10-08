@@ -16,6 +16,9 @@ export function renderEventBindings(): string {
     const payload = message.payload || {};
 
     switch (message.type) {
+      case 'connectionImportState':
+        receiveConnectionImportState(payload);
+        break;
       case 'masterPasswordState':
         receiveMasterPasswordState(payload);
         break;

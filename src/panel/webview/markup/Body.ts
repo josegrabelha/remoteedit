@@ -1,6 +1,8 @@
+import { renderConnectionImportMarkup } from './ConnectionImportMarkup';
 export function renderBody(): string {
   return `</head>
 <body>
+  ${renderConnectionImportMarkup()}
   <main class="page">
   <div class="shell">
     <section id="mainLayout" class="layout">
@@ -558,7 +560,12 @@ export function renderBody(): string {
           <div class="file-properties-path">Clone, rename, reorder, or remove saved connection profiles.</div>
         </div>
         <div class="manage-profiles-header-actions">
-          <button id="manageProfilesImportButton" class="secondary" type="button">Import</button>
+          <div id="connectionImportMenuWrap" class="connection-import-menu-wrap">
+          <button id="manageProfilesImportButton" class="secondary" type="button" aria-haspopup="menu" aria-expanded="false"><span class="profile-dropdown-label">Import</span><svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg></button>
+          <div id="connectionImportMenu" class="profile-dropdown-menu" role="menu">
+          <button id="connectionImportBackup" class="profile-dropdown-item" type="button" role="menuitem">Import Remote Edit Backup</button>
+          <button id="connectionImportOpen" class="profile-dropdown-item" type="button" role="menuitem">Import Connections from Other Applications</button>
+          </div></div>
           <button id="manageProfilesExportButton" class="secondary" type="button">Export</button>
         </div>
       </div>

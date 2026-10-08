@@ -1041,9 +1041,7 @@ export function renderTransferContextActions(): string {
   if (manageGroupRemoveConnectionsRadio) manageGroupRemoveConnectionsRadio.addEventListener('change', updateManageGroupRemoveDialogState);
   if (manageGroupRemoveCancelButton) manageGroupRemoveCancelButton.addEventListener('click', hideManageGroupRemoveDialog);
   if (manageGroupRemoveConfirmButton) manageGroupRemoveConfirmButton.addEventListener('click', confirmManageGroupRemoveDialog);
-  manageProfilesImportButton.addEventListener('click', () => {
-    vscode.postMessage({ type: 'requestImportConnectionsSettings' });
-  });
+  manageProfilesImportButton.addEventListener('click', toggleConnectionImportMenu);
 
   manageProfilesExportButton.addEventListener('click', () => {
     showExportBackupDialog();

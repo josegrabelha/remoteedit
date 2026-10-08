@@ -1,7 +1,8 @@
+import { renderConnectionImportStyles } from './ConnectionImportStyles';
 import { remoteSearchResultStyles } from '../../../search/RemoteSearchResultStyles';
 import { renderProfileDropdownStyles } from './ProfileDropdownStyles';
 export function renderStyles(): string {
-  return `  :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; --remoteedit-connection-header-height: 50px; --remoteedit-session-tab-height: 34px; }
+  return renderConnectionImportStyles() + `  :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; --remoteedit-connection-header-height: 50px; --remoteedit-session-tab-height: 34px; }
   * { box-sizing: border-box; }
   * { scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
   *::-webkit-scrollbar { width: 6px; height: 6px; }

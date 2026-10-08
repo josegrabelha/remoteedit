@@ -38,6 +38,7 @@ Remote Edit is available on the [Visual Studio Code Marketplace](https://marketp
 - Sudo Mode on supported SSH/SFTP targets
 - File permissions and ownership management
 - Favorites, saved connections, connection groups, Clone, and Save As
+- Import saved connections from OpenSSH, FileZilla, WinSCP, PuTTY, SSH FS, and VS Code SFTP
 - Password-protected import/export backups
 
 ## Remote Edit Webview
@@ -102,6 +103,7 @@ Changes apply to subsequent file opens. Close and reopen existing editors to use
 | Favorites | ✓ |
 | Transfer Queue | ✓ |
 | Multiple Simultaneous Transfers | ✓ |
+| Import Connections from Other Applications | ✓ |
 | Import / Export | ✓ |
 | SSH Terminal | ✓ |
 | Remote Commands | ✓ |
@@ -558,10 +560,33 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 ### Diagnostics
 
-- `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including Remote Edit and Workspace Sync lifecycle, Watch/reconciliation, planner, and FTP/FTPS/SFTP diagnostics
-- `remoteedit.diagnostics.performanceLogs` — enable performance timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, incremental view updates, and Multi-Target connection, command, and search operations
+- `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including Remote Edit, Workspace Sync, Multi-Target, and Import Connections workflows
+- `remoteedit.diagnostics.performanceLogs` — enable performance timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, Multi-Target operations, and Import Connections steps
 
-Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
+Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Import Connections diagnostics record action outcomes, source types, counts, and durations without recording configuration-file paths, connection details, or credential values. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
+
+## Import Connections
+
+In **Manage Connections**, choose **Import → Import Connections from Other Applications**. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details; use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
+
+Supported sources and compatibility:
+
+| Application | Supported input | Important limitations |
+| --- | --- | --- |
+| **OpenSSH** | SSH configuration files, including `Include` files and host aliases | Host patterns, defaults, and `ProxyJump` chains are resolved. Conditional `Match` rules may require manual review, `ProxyCommand` is unsupported, and only the first applicable identity is imported. Include any required Jump Host profiles in the same import. |
+| **FileZilla** | Site Manager XML | Saved credentials can be imported or unlocked when supported. Explicit FTPS is supported; implicit FTPS is not. Opportunistic TLS is imported as required explicit TLS with a warning. |
+| **WinSCP** | INI files or detected Windows Registry sessions | Supported stored passwords may be recovered or unlocked with the external master password. SCP, WebDAV, S3, tunnels, and proxies are not imported. |
+| **PuTTY** | Windows Registry, `.reg` exports, or Unix saved-session files | SSH sessions only; `.ppk` private keys must be converted to OpenSSH format. PuTTY does not provide saved SSH passwords for import. |
+| **SSH FS** | VS Code settings, `.code-workspace` files, configuration arrays, and referenced config paths | Supports representable `label`, `group`, `extend`, and `hop` settings. Proxies, embedded private keys, and some external SSH/PuTTY references require manual configuration. |
+| **VS Code SFTP** | Supported `sftp.json` variants | Supports profile overrides and recoverable passwords/passphrases. Unsupported remote hops, proxies, and embedded private keys require manual configuration. |
+
+Source detection uses standard application locations on the VS Code extension host, including the Windows Registry and PuTTY sessions in `~/.putty/sessions/` on Linux/macOS. Portable installations or configurations copied from another machine can be selected manually. Detection does not launch external applications or modify source files. Configuration files are limited to 2 MiB each, with up to 2,000 connections per review.
+
+Recoverable credentials use Remote Edit's existing secure storage. Protected FileZilla and WinSCP credentials may be unlocked by source/key group; if selected connections remain locked, a single confirmation offers batch unlock or import without the protected credentials. The external password does not change Remote Edit's Master Password. Replacing a connection may replace or clear its saved credentials; the confirmation warns about this risk. Open sessions are not reconnected automatically.
+
+Imported groups are represented by their source folder paths, and some application-specific settings cannot be translated directly. Review warnings, authentication, directories, and Jump Host dependencies before importing. Import operations save connections one at a time rather than as a single transaction: if one fails, previous successful saves are not automatically rolled back. Review the saved connections before retrying.
+
+**Import → Import Remote Edit Backup** continues to use the existing backup restore flow. **Export** is unchanged.
 
 ## Security
 

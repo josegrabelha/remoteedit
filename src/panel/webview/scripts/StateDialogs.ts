@@ -840,6 +840,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
     if (tooltipTimer) clearTimeout(tooltipTimer);
     activeTooltipTarget = target;
     webviewTooltip.textContent = text;
+    webviewTooltip.classList.toggle('connection-import-multiline-tooltip', target.hasAttribute('data-tooltip-multiline'));
     webviewTooltip.setAttribute('aria-hidden', 'false');
     webviewTooltip.classList.remove('visible');
     webviewTooltip.style.left = '0px';
@@ -861,6 +862,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
     if (tooltipTimer) clearTimeout(tooltipTimer);
     activeTooltipTarget = tooltipTarget;
     webviewTooltip.textContent = String(message || 'Copied');
+    webviewTooltip.classList.remove('connection-import-multiline-tooltip');
     webviewTooltip.setAttribute('aria-hidden', 'false');
     webviewTooltip.classList.remove('visible');
     webviewTooltip.style.left = '0px';

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* Added **Import Connections** to **Manage Connections**, supporting automatic detection and manual file selection for **OpenSSH, FileZilla, WinSCP, PuTTY, SSH FS, and VS Code SFTP**. Includes a unified review, field-level comparison, and **Import as New** / **Replace** options. PuTTY detection also supports saved sessions on Linux and macOS.
+
+### Changed
+
+* The **Import** button in **Manage Connections** now opens a menu to choose between importing external connections and the existing Remote Edit backup import.
+
 ## [1.12.1] - 2026-10-06
 
 ### Fixed

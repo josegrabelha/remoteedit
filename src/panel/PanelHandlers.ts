@@ -1,3 +1,4 @@
+import { tryHandleConnectionImportMessage } from './handlers/connectionImportMessageHandlers';
 import { type RemoteEditWebviewMessage } from './PanelMessages';
 import type { RemoteEditPanelMessageHandlers } from './PanelHandlerTypes';
 import { tryHandleBrowserMessage } from './handlers/browserMessageHandlers';
@@ -13,6 +14,7 @@ export async function handleRemoteEditPanelMessage(
   message: RemoteEditWebviewMessage,
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<void> {
+  if (await tryHandleConnectionImportMessage(message, handlers)) return;
   if (await tryHandleConnectionMessage(message, handlers)) {
     return;
   }

@@ -12,6 +12,7 @@
 
 * Reorganized connection administration, Import/Export, Master Password, and Settings under **Connection & Settings Management**.
 * Updated Native Sidebar **Import** and **Export** actions, with Import supporting both Remote Edit backups and connections from other applications.
+* Updated the extension display name to **Remote Edit - SSH/FTP Tools**.
 
 ## [1.12.1] - 2026-10-06
 

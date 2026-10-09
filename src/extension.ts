@@ -1,3 +1,5 @@
+import { appendDebugLog, appendPerformanceLog } from './utils/outputLogger';
+import { setProxyDiagnostics } from './proxy/ProxyDiagnostics';
 import { MultiTargetFeature } from './multiTarget/MultiTargetPanel';
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -31,6 +33,11 @@ const SESSION_ONLY_DIAGNOSTIC_SETTINGS = [
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Remote Edit');
+  setProxyDiagnostics(event => {
+    appendDebugLog(output, 'Proxy', 'Tunnel ' + event.status, event);
+    if (event.status !== 'connecting') appendPerformanceLog(output, 'Proxy', 'Tunnel ' + event.status, event);
+  });
+  context.subscriptions.push({dispose:()=>setProxyDiagnostics()});
   void resetSessionOnlyDiagnosticsSettings(output);
 
   void cleanupDroppedUploadStagingRoot(path.join(context.globalStorageUri.fsPath, 'dropped-uploads'))

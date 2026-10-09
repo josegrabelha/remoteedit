@@ -96,6 +96,7 @@ export class PanelBackupController {
       File: target.fsPath,
       Settings: backup.settings ? 'Yes' : 'No',
       Connections: String(backup.connections?.length || 0),
+      ProxyProfiles: String(backup.proxyProfiles?.length || 0),
       WorkspaceSyncMappings: String(backup.workspaceSync?.mappings.length || 0),
       MultiTargetCommands: String(backup.multiTarget?.savedCommands?.length || 0),
       MultiTargetTargetSets: String(backup.multiTarget?.targetSets?.length || 0),

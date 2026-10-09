@@ -63,6 +63,7 @@ export class CommandSessions implements vscode.Disposable {
             throw new Error('Select an existing SSH/SFTP saved connection.');
           }
           const snapshot = await loadWorkspaceSyncConnectionSnapshot({
+            resolveProxyProfile: this.profiles.resolveProxyProfile?.bind(this.profiles),
             listProfiles: async () => savedProfiles,
             getProfileCredentials: profileId => this.profiles.getProfileCredentials(profileId)
           }, id, async input => {
@@ -77,6 +78,7 @@ export class CommandSessions implements vscode.Disposable {
           assertActive();
           if (snapshot.connectionType !== 'sftp') throw new Error('Select an existing SSH/SFTP saved connection.');
           const options: ConnectOptions = {
+            proxy: snapshot.proxy, proxyProfileId: savedProfiles.find(p=>p.id===id)?.proxyProfileId,
             connectionId: id, connectionType: 'sftp', name: snapshot.name,
             host: snapshot.host, port: snapshot.port, username: snapshot.username,
             authType: snapshot.authType, password: snapshot.password, privateKeyPath: snapshot.privateKeyPath,

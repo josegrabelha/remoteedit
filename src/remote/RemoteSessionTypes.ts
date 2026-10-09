@@ -1,3 +1,4 @@
+import type { ProxyConnection } from '../proxy/ProxyTransport';
 import type { RemoteConnectionType } from './RemoteConnectionTypes';
 import type { RemoteCapabilities } from './RemoteCapabilities';
 import type { RemotePlatform, RemoteShell } from './RemotePlatform';
@@ -5,6 +6,7 @@ import type { RemotePlatform, RemoteShell } from './RemotePlatform';
 export type AuthType = 'password' | 'privateKey';
 
 export interface JumpConnectOptions {
+  proxy?: ProxyConnection;
   profileId: string;
   name: string;
   connectionType: 'sftp';
@@ -20,6 +22,8 @@ export interface JumpConnectOptions {
 }
 
 export interface ConnectOptions {
+  proxyProfileId?: string;
+  proxy?: ProxyConnection;
   connectionId: string;
   connectionType?: RemoteConnectionType;
   name?: string;
@@ -77,6 +81,7 @@ export interface RemoteChecksumSummary {
 export type RemoteArchiveFormat = 'tar.gz' | 'tar.bz2' | 'tar.xz' | 'tar.Z';
 
 export interface ActiveConnection {
+  proxyProfileId?: string;
   id: string;
   connectionType: RemoteConnectionType;
   name: string;

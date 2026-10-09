@@ -579,6 +579,7 @@ export function renderRemoteCommandActions(): string {
       currentPath: normalizeUiRemotePath(payload.startPath || '/'),
       keepAlive: payload.keepAlive !== false,
       isQuickConnect: !payload.id,
+      proxyProfileId: payload.proxyProfileId || undefined,
       jumpProfileId: normalizeJumpProfileId(payload.jumpProfileId) || undefined,
       jumpProfileIds: jumpProfiles.map(profile => profile.id),
       jumpProfileNames: jumpProfiles.map(profile => profile.name),
@@ -660,7 +661,8 @@ export function renderRemoteCommandActions(): string {
         && Number(session.port || getDefaultPortForConnectionType(session.connectionType)) === portValue
         && String(session.username || '').trim() === usernameValue
         && String(session.authType || 'password') === authTypeValue
-        && normalizeJumpProfileId(session.jumpProfileId) === jumpProfileIdValue;
+        && normalizeJumpProfileId(session.jumpProfileId) === jumpProfileIdValue
+        && String(session.proxyProfileId || '') === document.getElementById('proxyProfileId').value;
     };
     return sessions.find(session => matchesForm(session) && predicate(session));
   }
@@ -701,6 +703,7 @@ export function renderRemoteCommandActions(): string {
       connectionType: connectionTypeValue,
       port: profile.port || getDefaultPortForConnectionType(connectionTypeValue),
       username: profile.username,
+      proxyProfileId: profile.proxyProfileId || undefined,
       jumpProfileId: connectionTypeValue === 'sftp' ? (normalizeJumpProfileId(profile.jumpProfileId) || undefined) : undefined,
       authType: connectionTypeValue === 'sftp' ? (profile.authType || 'password') : 'password',
       passwordSource: profile.passwordSource || 'connection',
@@ -778,6 +781,7 @@ export function renderRemoteCommandActions(): string {
 
   function fillFormFromSession(session) {
     clearConnectionValidationErrors();
+    renderProxySelection(session.proxyProfileId);
     profileName.value = session.name || '';
     host.value = session.host || '';
     connectionType.value = normalizeConnectionTypeValue(session.connectionType);
@@ -810,6 +814,7 @@ export function renderRemoteCommandActions(): string {
       port,
       connectionType,
       connectionTypeDropdownButton,
+      document.getElementById('proxyProfileId'),
       jumpProfileId,
       jumpProfileDropdownButton,
       ftpsAllowSelfSignedCertificate,
@@ -1022,7 +1027,18 @@ export function renderRemoteCommandActions(): string {
     filterInput.setAttribute('aria-label', 'Filter Jump Hosts');
     filterInput.setAttribute('autocomplete', 'off');
     filterInput.value = filterTextBeforeRender;
-    filterWrap.appendChild(filterInput);
+    filterInput.className = 'filter-input';
+    const filterBox = document.createElement('div'); filterBox.className = 'filter-box';
+    filterBox.classList.toggle('has-value', Boolean(filterTextBeforeRender));
+    const clearFilter = document.createElement('button'); clearFilter.type = 'button';
+    clearFilter.className = 'filter-clear-button has-tooltip'; clearFilter.disabled = !filterTextBeforeRender;
+    clearFilter.setAttribute('aria-label', 'Clear Filter'); clearFilter.setAttribute('data-tooltip', 'Clear Filter');
+    clearFilter.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg>';
+    clearFilter.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      jumpProfileDropdownFilterText = ''; updateJumpProfilePicker(undefined, { focusFilter: true });
+    });
+    filterBox.appendChild(filterInput); filterBox.appendChild(clearFilter); filterWrap.appendChild(filterBox);
     jumpProfileDropdownMenu.appendChild(filterWrap);
 
     const pinnedWrap = document.createElement('div');
@@ -1396,6 +1412,7 @@ export function renderRemoteCommandActions(): string {
 
   function fillForm(profile) {
     clearConnectionValidationErrors();
+    renderProxySelection(profile.proxyProfileId || '');
     profileName.value = profile.name || '';
     host.value = profile.host || '';
     connectionType.value = normalizeConnectionTypeValue(profile.connectionType);
@@ -1431,6 +1448,7 @@ export function renderRemoteCommandActions(): string {
     connectionType.value = 'sftp';
     port.value = '22';
     username.value = '';
+    renderProxySelection('');
     jumpProfileId.value = '';
     renderConnectionNameGroupOptions('');
     authType.value = 'password';
@@ -1601,6 +1619,7 @@ export function renderRemoteCommandActions(): string {
     exportBackupValidation.textContent = '';
     clearExportBackupFieldErrors();
     clearBackupResult(exportBackupResult);
+    restoreDialogFocus(manageProfilesButton);
   }
 
   function updateExportBackupDialogState() {
@@ -1641,6 +1660,7 @@ export function renderRemoteCommandActions(): string {
     exportBackupValidation.textContent = '';
     clearExportBackupFieldErrors();
     clearBackupResult(exportBackupResult);
+    restoreDialogFocus(manageProfilesButton);
   }
 
   function applyExportBackupDialog() {
@@ -1721,7 +1741,7 @@ export function renderRemoteCommandActions(): string {
     importIncludeWorkspaceSync.checked = Boolean(importBackupSummaryState.hasWorkspaceSync);
     importIncludeMultiTarget.checked = Number(importBackupSummaryState.multiTargetSavedCommandCount || 0) > 0
       || Number(importBackupSummaryState.multiTargetTargetSetCount || 0) > 0;
-    importIncludeConnections.checked = Number(importBackupSummaryState.supportedConnectionCount || 0) > 0;
+    importIncludeConnections.checked = (Number(importBackupSummaryState.supportedConnectionCount || 0) > 0 || Number(importBackupSummaryState.proxyProfileCount || 0) > 0);
     importIncludeFavorites.checked = Number(importBackupSummaryState.remotePathFavoriteCount || 0) > 0;
     importIncludeUsernames.checked = Boolean(importBackupSummaryState.usernamesIncluded);
     importRestoreCredentials.checked = false;

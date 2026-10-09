@@ -1,3 +1,4 @@
+import { importProxyCommand } from './ProxyImport';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -191,8 +192,7 @@ export async function parseOpenSsh(
     if (one('proxyjump') && one('proxyjump') !== 'none')
       c.jumpAlias = one('proxyjump');
     if (one('proxycommand') && one('proxycommand') !== 'none')
-      c.unsupported =
-        'ProxyCommand cannot be represented as a saved jump connection.';
+      importProxyCommand(c, one('proxycommand'));
     if (conditionalMatch)
       c.warnings.push(
         'Conditional Match rules may override this host and are not imported.'

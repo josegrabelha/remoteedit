@@ -6,7 +6,7 @@ export function renderConnectionImport(): string { return `
   const ciBatchSkippedGroups = new Set();
   let ciReviewSort = { key: '', direction: '' };
   const ciChoices = new Map(), ciPreferredActions = new Map(), ciSourceChoices = new Map();
-  const ciFieldLabels = { name:'Name', connectionType:'Protocol', host:'Host', port:'Port', username:'Username', authType:'Authentication', startPath:'Remote Path', privateKeyPath:'Private Key', jumpProfileId:'Jump Host' };
+  const ciFieldLabels = { proxyType:'Proxy Type',proxyHost:'Proxy Host',proxyPort:'Proxy Port',proxyAuthentication:'Proxy Authentication',proxyUsername:'Proxy Username', name:'Name', connectionType:'Protocol', host:'Host', port:'Port', username:'Username', authType:'Authentication', startPath:'Remote Path', privateKeyPath:'Private Key', jumpProfileId:'Jump Host' };
   function ciSetFeedback(text, tooltip, error=false) { const el=ci('Feedback'), value=String(text || ''); el.textContent=value; el.classList.toggle('error',!!error); const full=String(tooltip || '').trim(); if(full && (full!==value || el.scrollWidth>el.clientWidth))el.setAttribute('data-tooltip',full);else el.removeAttribute('data-tooltip'); }
   function ciRestoreFeedback() { if(!ciBusy)ciSetFeedback(ciFeedbackDefault); }
   function ciSend(payload) { ciClosePicker(); ciBusy = true; ciSetFeedback('Working...'); ciControls(); vscode.postMessage({ type: 'connectionImport', payload }); }
@@ -20,11 +20,76 @@ export function renderConnectionImport(): string { return `
     ci('Content').querySelectorAll('button,input').forEach(el => { el.disabled = ciBusy || el.dataset.unavailable === 'true'; });
     ci('Details').querySelectorAll('button,input').forEach(el => { el.disabled = ciBusy || el.dataset.unavailable === 'true'; });
   }
-  function ciCloseMenu() { const wrap=document.getElementById('connectionImportMenuWrap'); wrap.classList.remove('open'); document.getElementById('connectionImportMenu').style.display='none'; manageProfilesImportButton.setAttribute('aria-expanded','false'); }
-  function toggleConnectionImportMenu() {
-    const wrap=document.getElementById('connectionImportMenuWrap'), open=!wrap.classList.contains('open');
-    ciCloseMenu(); if(open) { wrap.classList.add('open'); document.getElementById('connectionImportMenu').style.display='block'; manageProfilesImportButton.setAttribute('aria-expanded','true'); document.getElementById('connectionImportOpen').focus(); }
+  function ciCloseMenu() { document.getElementById('connectionImportMenu').style.display='none'; manageProfilesImportButton.setAttribute('aria-expanded','false'); }
+  function toggleConnectionImportMenu(force) {
+    const open=force===true || manageProfilesImportButton.getAttribute('aria-expanded')!=='true';
+    ciCloseMenu(); if(open) { positionConnectionManagementMenu(document.getElementById('connectionImportMenu'),manageProfilesImportButton,true); manageProfilesImportButton.setAttribute('aria-expanded','true'); document.getElementById('connectionImportBackup').focus(); }
   }
+  const connectionManagementMenu = document.getElementById('connectionManagementMenu');
+  const connectionImportMenu = document.getElementById('connectionImportMenu');
+  // Fixed menus must be outside the transformed, overflow-hidden connection panel.
+  document.body.append(connectionManagementMenu, connectionImportMenu);
+  function connectionManagementContains(target) {
+    return connectionManagementMenu.contains(target) || connectionImportMenu.contains(target);
+  }
+  function positionConnectionManagementMenu(menu, anchor, submenu) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.display = 'block';
+    const width = menu.offsetWidth, height = menu.offsetHeight;
+    let left = submenu ? rect.right + 4 : rect.right - width;
+    if (submenu && left + width > window.innerWidth - 8) left = rect.left - width - 4;
+    menu.style.left = Math.max(8, Math.min(left, window.innerWidth - width - 8)) + 'px';
+    menu.style.top = Math.max(8, Math.min(submenu ? rect.top : rect.bottom + 4, window.innerHeight - height - 8)) + 'px';
+  }
+  function closeConnectionManagementMenu(focus) {
+    ciCloseMenu(); connectionManagementMenu.style.display = 'none';
+    manageProfilesButton.setAttribute('aria-expanded', 'false');
+    if (focus) restoreDialogFocus(manageProfilesButton);
+  }
+  function toggleConnectionManagementMenu(key) {
+    if (manageProfilesButton.getAttribute('aria-expanded') === 'true' && !key) { closeConnectionManagementMenu(true); return; }
+    hideProfileDropdown();
+    positionConnectionManagementMenu(connectionManagementMenu, manageProfilesButton, false);
+    manageProfilesButton.setAttribute('aria-expanded', 'true');
+    const items = connectionManagementItems();
+    (key === 'ArrowUp' || key === 'End' ? items[items.length - 1] : items[0]).focus();
+  }
+  function connectionManagementItems() {
+    return Array.from(connectionManagementMenu.querySelectorAll('button[role="menuitem"]')).filter(item => !document.getElementById('connectionImportMenu').contains(item));
+  }
+  document.getElementById('connectionManagementConnections').addEventListener('click', () => { closeConnectionManagementMenu(true); showManageProfilesDialog(); });
+  manageProfilesButton.addEventListener('keydown', event => {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); toggleConnectionManagementMenu(event.key); }
+  });
+  connectionManagementMenu.addEventListener('keydown', event => {
+    if (document.getElementById('connectionImportMenu').contains(event.target)) return;
+    const items = connectionManagementItems(), index = items.indexOf(document.activeElement);
+    if (event.key === 'ArrowRight' && document.activeElement === manageProfilesImportButton) { event.preventDefault(); toggleConnectionImportMenu(true); }
+    else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault(); ciCloseMenu();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
+      items[next].focus();
+    }
+  });
+  document.addEventListener('keydown', event => {
+    if (manageProfilesButton.getAttribute('aria-expanded') !== 'true') return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (manageProfilesImportButton.getAttribute('aria-expanded') === 'true') { ciCloseMenu(); manageProfilesImportButton.focus(); }
+      else closeConnectionManagementMenu(true);
+    } else if (event.key === 'Tab') closeConnectionManagementMenu(true);
+  }, true);
+  document.addEventListener('focusin', event => {
+    if (event.target !== manageProfilesButton && !connectionManagementContains(event.target)) closeConnectionManagementMenu(false);
+  });
+  document.addEventListener('click', event => {
+    if (!connectionManagementContains(event.target) && !manageProfilesButton.contains(event.target)) closeConnectionManagementMenu(false);
+  });
+  window.addEventListener('resize', () => closeConnectionManagementMenu(false));
+  document.addEventListener('scroll', event => {
+    if (!connectionManagementContains(event.target)) closeConnectionManagementMenu(false);
+  }, true);
+
   function ciClosePicker(focus) {
     if (!ciOpenPicker) return;
     const current = ciOpenPicker; ciOpenPicker = null;
@@ -54,7 +119,7 @@ export function renderConnectionImport(): string { return `
     const open=(edge)=>{ if(button.disabled)return;ciClosePicker();ciOpenPicker={wrapper,button,menu};wrapper.classList.add('open');button.setAttribute('aria-expanded','true');ciPositionPicker(ciOpenPicker);update();const items=Array.from(menu.querySelectorAll('button:not(:disabled)'));if(edge==='first')items[0]?.focus();if(edge==='last')items[items.length-1]?.focus(); };
     button.addEventListener('click',()=>ciOpenPicker?.button===button?ciClosePicker(true):open());
     button.addEventListener('keydown',e=>{if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();open(e.key==='ArrowUp'||e.key==='End'?'last':'first');}});
-    menu.addEventListener('keydown',e=>{const items=Array.from(menu.querySelectorAll('button:not(:disabled)')),index=items.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();e.stopPropagation();ciClosePicker(true);}else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?items.length-1:e.key==='ArrowDown'?(index+1)%items.length:(index-1+items.length)%items.length;items[next]?.focus();}else if(e.key==='Tab')ciClosePicker();});
+    menu.addEventListener('keydown',e=>{const items=Array.from(menu.querySelectorAll('button:not(:disabled)')),index=items.indexOf(document.activeElement);if(e.key==='Escape'||e.key==='ArrowLeft'){e.preventDefault();e.stopPropagation();ciClosePicker(true);}else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?items.length-1:e.key==='ArrowDown'?(index+1)%items.length:(index-1+items.length)%items.length;items[next]?.focus();}else if(e.key==='Tab')ciClosePicker();});
     update(); return {wrapper,button,setValue(next){currentValue=next;update();},getValue(){return currentValue;}};
   }
   function ciSetReviewLayout(enabled) { const body=ci('Content').parentElement;body.classList.toggle('connection-import-review-layout',!!enabled);if(!enabled)body.classList.remove('connection-import-result-layout'); }
@@ -194,10 +259,10 @@ export function renderConnectionImport(): string { return `
     else ciImportNow(false);
   }
   function ciOpen() {
-    ciReturnFocus=manageProfilesImportButton; ciCloseMenu(); ciClosePicker(); ciStage='sources'; ciSources=[]; ciCandidates=[]; ciChoices.clear(); ciPreferredActions.clear(); ciSourceChoices.clear(); ciReviewSort={key:'',direction:''}; ciSelectedCandidateId=''; ciBatchUnlock=false;ciBatchSkippedGroups.clear();ciUnlockId='';ciConfirmReturnFocus=null;ciHideConfirmation();ci('UnlockBackdrop').classList.remove('visible');ci('UnlockBackdrop').setAttribute('aria-hidden','true'); ciFeedbackDefault=''; ciSetFeedback(''); ciSetReviewLayout(false); ci('Content').replaceChildren(); ci('Details').replaceChildren();
+    ciReturnFocus=manageProfilesButton; closeConnectionManagementMenu(true); ciClosePicker(); ciStage='sources'; ciSources=[]; ciCandidates=[]; ciChoices.clear(); ciPreferredActions.clear(); ciSourceChoices.clear(); ciReviewSort={key:'',direction:''}; ciSelectedCandidateId=''; ciBatchUnlock=false;ciBatchSkippedGroups.clear();ciUnlockId='';ciConfirmReturnFocus=null;ciHideConfirmation();ci('UnlockBackdrop').classList.remove('visible');ci('UnlockBackdrop').setAttribute('aria-hidden','true'); ciFeedbackDefault=''; ciSetFeedback(''); ciSetReviewLayout(false); ci('Content').replaceChildren(); ci('Details').replaceChildren();
     ci('Step').textContent='Sources'; ci('Backdrop').classList.add('visible'); ci('Backdrop').setAttribute('aria-hidden','false'); ciSend({action:'detect'});
   }
-  function ciClose() { if(ciBusy) return; ciHideConfirmation();ciHideUnlock();ciBatchUnlock=false;ciBatchSkippedGroups.clear(); ciClosePicker(); ciSetReviewLayout(false); ci('Backdrop').classList.remove('visible'); ci('Backdrop').setAttribute('aria-hidden','true'); ci('Content').replaceChildren(); ci('Details').replaceChildren(); ciCandidates=[]; ciChoices.clear(); ciPreferredActions.clear(); ciReviewSort={key:'',direction:''}; vscode.postMessage({type:'connectionImport',payload:{action:'close'}}); if(ciReturnFocus) ciReturnFocus.focus(); }
+  function ciClose() { if(ciBusy) return; ciHideConfirmation();ciHideUnlock();ciBatchUnlock=false;ciBatchSkippedGroups.clear(); ciClosePicker(); ciSetReviewLayout(false); ci('Backdrop').classList.remove('visible'); ci('Backdrop').setAttribute('aria-hidden','true'); ci('Content').replaceChildren(); ci('Details').replaceChildren(); ciCandidates=[]; ciChoices.clear(); ciPreferredActions.clear(); ciReviewSort={key:'',direction:''}; vscode.postMessage({type:'connectionImport',payload:{action:'close'}}); restoreDialogFocus(ciReturnFocus); }
   function ciText(tag,text) { const el=document.createElement(tag); el.textContent=String(text ?? ''); return el; }
   // Only show the existing custom tooltip when the text is actually clipped.
   // Capturing the event ensures this runs before the shared tooltip handler.
@@ -246,6 +311,12 @@ export function renderConnectionImport(): string { return `
     ciDetailPair(grid,'Source',c.source); ciDetailPair(grid,'User',c.profile.username || '—'); ciDetailPair(grid,'Authentication',c.profile.authType==='privateKey'?'Private key':'Password');
     ciDetailPair(grid,'Status',c.status); ciDetailPair(grid,'Credentials',c.unlocked?'Unlocked':c.credentials || '—'); ciDetailPair(grid,'Group',c.group || '—');
     ciDetailPair(grid,'Remote Path',c.profile.startPath || '—'); ciDetailPair(grid,'Jump Host',c.jump || '—'); ciDetailPair(grid,'Private Key',c.profile.privateKeyPath || '—');
+    if(c.profile.proxyType){
+      ciDetailPair(grid,'Proxy Type',c.profile.proxyType==='http'?'HTTP CONNECT':String(c.profile.proxyType).toUpperCase());
+      ciDetailPair(grid,'Proxy Host',c.profile.proxyHost);ciDetailPair(grid,'Proxy Port',c.profile.proxyPort);
+      ciDetailPair(grid,'Proxy Authentication',c.profile.proxyAuthentication==='password'?'Username / Password':'None');
+      ciDetailPair(grid,c.profile.proxyType==='socks4'?'Proxy User ID':'Proxy Username',c.profile.proxyUsername||'—');
+    }
     ciDetailPair(grid,'Location',c.sourcePath || '—',true);
     const unsupportedItems=ciUnsupportedItems(c); if(unsupportedItems.length){const unsupportedText=unsupportedItems.join(', ');ciDetailPair(grid,'Unsupported',unsupportedText,true,unsupportedText,true);}
     ci('Details').append(grid);
@@ -439,8 +510,9 @@ export function renderConnectionImport(): string { return `
       }
       if(Array.isArray(payload.unlocked)){
         const selectedId=ciUnlockId, batch=ciBatchUnlock, unlocked=new Set(payload.unlocked);
+        const stillLocked=new Set(payload.stillLocked||[]);
         for(const c of ciCandidates){if(unlocked.has(c.id)){
-          c.canUnlock=false;c.unlocked=true;c.credentials='Unlocked';
+          c.canUnlock=stillLocked.has(c.id);c.unlocked=!c.canUnlock;c.credentials=c.canUnlock?'Partially unlocked':'Unlocked';
           c.warnings=c.warnings.filter(w=>!/^Protected\\b/.test(w));
           c.status=c.reason?'Unsupported':c.conflicts.length||c.duplicate?'Conflict':c.warnings.length?'Warning':'Ready';
         }}
@@ -465,13 +537,14 @@ export function renderConnectionImport(): string { return `
     if(ciResponseError)ciSetFeedback(ciResponseError,ciResponseError,true);
     ciControls(); if(!ciUnlockId)ci('Cancel').focus();
   }
-  manageProfilesImportButton.addEventListener('keydown',e=>{if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();ciCloseMenu();const wrap=document.getElementById('connectionImportMenuWrap'),menu=document.getElementById('connectionImportMenu'),items=Array.from(menu.querySelectorAll('button'));wrap.classList.add('open');menu.style.display='block';manageProfilesImportButton.setAttribute('aria-expanded','true');(e.key==='ArrowUp'||e.key==='End'?items[items.length-1]:items[0])?.focus();}});
+  document.getElementById('connectionImportMenuWrap').addEventListener('mouseenter', () => { positionConnectionManagementMenu(document.getElementById('connectionImportMenu'), manageProfilesImportButton, true); manageProfilesImportButton.setAttribute('aria-expanded', 'true'); });
+  connectionManagementItems().filter(item => item !== manageProfilesImportButton).forEach(item => item.addEventListener('mouseenter', ciCloseMenu));
   document.getElementById('connectionImportOpen').addEventListener('click',ciOpen);
-  document.getElementById('connectionImportBackup').addEventListener('click',()=>{ciCloseMenu();vscode.postMessage({type:'requestImportConnectionsSettings'});});
-  document.addEventListener('click',e=>{if(!document.getElementById('connectionImportMenuWrap').contains(e.target))ciCloseMenu();if(ciOpenPicker&&!ciOpenPicker.menu.contains(e.target)&&!ciOpenPicker.wrapper.contains(e.target))ciClosePicker();});
+  document.getElementById('connectionImportBackup').addEventListener('click',()=>{closeConnectionManagementMenu(true);vscode.postMessage({type:'requestImportConnectionsSettings'});});
+  document.addEventListener('click',e=>{if(!document.getElementById('connectionImportMenuWrap').contains(e.target)&&!connectionImportMenu.contains(e.target))ciCloseMenu();if(ciOpenPicker&&!ciOpenPicker.menu.contains(e.target)&&!ciOpenPicker.wrapper.contains(e.target))ciClosePicker();});
   window.addEventListener('resize',()=>ciClosePicker());
   document.addEventListener('scroll',e=>{if(ciOpenPicker&&!ciOpenPicker.menu.contains(e.target))ciClosePicker();},true);
-  document.getElementById('connectionImportMenu').addEventListener('keydown',e=>{const items=Array.from(document.getElementById('connectionImportMenu').querySelectorAll('button'));const index=items.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();e.stopPropagation();ciCloseMenu();manageProfilesImportButton.focus();}else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?items.length-1:e.key==='ArrowDown'?(index+1)%items.length:(index-1+items.length)%items.length;items[next]?.focus();}});
+  document.getElementById('connectionImportMenu').addEventListener('keydown',e=>{const items=Array.from(document.getElementById('connectionImportMenu').querySelectorAll('button'));const index=items.indexOf(document.activeElement);if(e.key==='Escape'||e.key==='ArrowLeft'){e.preventDefault();e.stopPropagation();ciCloseMenu();manageProfilesImportButton.focus();}else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?items.length-1:e.key==='ArrowDown'?(index+1)%items.length:(index-1+items.length)%items.length;items[next]?.focus();}});
   bindTemporaryPasswordReveal(ci('UnlockReveal'),ci('UnlockPassword'));
   ci('UnlockCancel').addEventListener('click',ciSkipUnlock);
   ci('UnlockSkipAll').addEventListener('click',ciSkipAllUnlock);
@@ -483,5 +556,5 @@ export function renderConnectionImport(): string { return `
   ci('ConfirmBack').addEventListener('click',()=>{const focus=ciConfirmReturnFocus;ciPendingDeselectId='';ciHideConfirmation();if(focus&&document.contains(focus))focus.focus();else ci('Next').focus();});
   ci('ConfirmProceed').addEventListener('click',()=>{if(ciConfirmMode==='jump'){ciHideConfirmation();ciCompleteJumpDeselect();ciPendingDeselectId='';}else ciImportNow(true);});
   ci('ConfirmUnlock').addEventListener('click',()=>{if(ciConfirmMode!=='credentials')return;ciHideConfirmation();ciBatchUnlock=true;ciBatchSkippedGroups.clear();ciUnlockNext();});
-  document.addEventListener('keydown',e=>{if(!ci('Backdrop').classList.contains('visible'))return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(ciOpenPicker)ciClosePicker(true);else if(ciUnlockId)ciDismissUnlock();else if(ci('ConfirmBackdrop').classList.contains('visible'))ci('ConfirmBack').click();else ciClose();}if(e.key==='Tab'&&!ciOpenPicker){e.stopImmediatePropagation();const focusable=Array.from((ciUnlockId?ci('UnlockBackdrop'):ci('ConfirmBackdrop').classList.contains('visible')?ci('ConfirmBackdrop'):ci('Backdrop')).querySelectorAll('button:not(:disabled):not([hidden]),input:not(:disabled),tr[tabindex]')).filter(item=>item.getClientRects().length);const first=focusable[0],last=focusable[focusable.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}},true);
+  document.addEventListener('keydown',e=>{if(!ci('Backdrop').classList.contains('visible'))return;if(e.key==='Escape'||e.key==='ArrowLeft'){e.preventDefault();e.stopImmediatePropagation();if(ciOpenPicker)ciClosePicker(true);else if(ciUnlockId)ciDismissUnlock();else if(ci('ConfirmBackdrop').classList.contains('visible'))ci('ConfirmBack').click();else ciClose();}if(e.key==='Tab'&&!ciOpenPicker){e.stopImmediatePropagation();const focusable=Array.from((ciUnlockId?ci('UnlockBackdrop'):ci('ConfirmBackdrop').classList.contains('visible')?ci('ConfirmBackdrop'):ci('Backdrop')).querySelectorAll('button:not(:disabled):not([hidden]),input:not(:disabled),tr[tabindex]')).filter(item=>item.getClientRects().length);const first=focusable[0],last=focusable[focusable.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}},true);
 `; }

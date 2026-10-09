@@ -1,5 +1,6 @@
 export const RemoteEditIncomingMessageType = {
   ConnectionImport: 'connectionImport',
+  ProxyProfiles: 'proxyProfiles',
   MasterPassword: 'masterPassword',
   Ready: 'ready',
   SaveConnection: 'saveConnection',
@@ -90,8 +91,12 @@ export const RemoteEditIncomingMessageType = {
 
 export const RemoteEditOutboundMessageType = {
   ConnectionImportState: 'connectionImportState',
+  ProxyProfilesState: 'proxyProfilesState',
+  ShowProxyProfiles: 'showProxyProfiles',
+  ShowConnectionImport: 'showConnectionImport',
   MasterPasswordState: 'masterPasswordState',
   ProfilesLoaded: 'profilesLoaded',
+  ConnectionEditResult: 'connectionEditResult',
   PrivateKeyPathSelected: 'privateKeyPathSelected',
   CaCertificatePathSelected: 'caCertificatePathSelected',
   SessionsChanged: 'sessionsChanged',

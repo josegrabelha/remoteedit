@@ -1,8 +1,13 @@
+import { importProxy } from './ProxyImport';
 import type { ImportCandidate } from '../ConnectionImportTypes';
 import { array, candidate, credential, scalar, xml } from './ImportParsing';
-export function parseFileZilla(text: string, path: string): ImportCandidate[] {
+export function parseFileZilla(text: string, path: string, settingsText?: string): ImportCandidate[] {
   const root = xml(text)?.FileZilla3?.Servers;
   if (!root) throw new Error('Expected FileZilla Site Manager XML.');
+  const settings: Record<string,string> = {};
+  for (const source of [settingsText, text]) if(source) {
+    for(const setting of array<any>(xml(source)?.FileZilla3?.Settings?.Setting)) settings[String(setting['@_name'])] = scalar(setting);
+  }
   const result: ImportCandidate[] = [];
   function walk(node: any, group: string, depth: number): void {
     if (depth > 30) throw new Error('Folder nesting limit exceeded.');
@@ -16,6 +21,11 @@ export function parseFileZilla(text: string, path: string): ImportCandidate[] {
         p === '1' ? 'sftp' : ['0', '4'].includes(p) ? 'ftps' : 'ftp'
       );
       c.group = group || undefined;
+      if (scalar(s.BypassProxy) !== '1' && settings['Proxy type'] && settings['Proxy type'] !== '0') importProxy(c,{
+        type:({'1':'http','2':'socks4','3':'socks5'} as Record<string,string>)[settings['Proxy type']],
+        host:settings['Proxy host'],port:settings['Proxy port'],username:settings['Proxy user'],password:settings['Proxy password']
+      });
+      if (scalar(s.BypassProxy) !== '1' && settings['FTP Proxy type'] && settings['FTP Proxy type'] !== '0' && p !== '1') c.unsupported='Legacy FTP proxy commands require manual migration.';
       if (p === '0')
         c.warnings.push(
           'Opportunistic FTP TLS becomes required explicit TLS in Remote Edit.'

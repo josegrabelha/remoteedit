@@ -1,3 +1,5 @@
+import { openProxyTunnel } from '../../proxy/ProxyTransport';
+import type { Socket } from 'net';
 import * as fs from 'fs/promises';
 import { Client as SshClient } from 'ssh2';
 import type { WorkspaceSyncConnectionSnapshot, WorkspaceSyncJumpSnapshot } from './WorkspaceSyncConnectionSnapshot';
@@ -10,15 +12,22 @@ interface ActiveJump {
 
 export class SyncJumpHostChain {
   private disposed = false;
+  private proxySocket?: Socket;
+  private readonly abort = new AbortController();
   private readonly jumps: ActiveJump[] = [];
 
   async openTargetSocket(snapshot: WorkspaceSyncConnectionSnapshot): Promise<NodeJS.ReadWriteStream | undefined> {
     if (this.disposed) throw new SessionDisconnectedError();
+    if (snapshot.proxy) {
+      const first = snapshot.jumpChain[0] || snapshot;
+      this.proxySocket = await openProxyTunnel(snapshot.proxy, first.host, first.port, 30000, this.abort.signal);
+      if (this.disposed) { this.proxySocket.destroy(); throw new SessionDisconnectedError(); }
+    }
     if (!snapshot.jumpChain.length) {
-      return undefined;
+      return this.proxySocket;
     }
 
-    let inboundSocket: NodeJS.ReadWriteStream | undefined;
+    let inboundSocket: NodeJS.ReadWriteStream | undefined = this.proxySocket;
     try {
       for (let index = 0; index < snapshot.jumpChain.length; index += 1) {
         const jump = snapshot.jumpChain[index];
@@ -50,6 +59,8 @@ export class SyncJumpHostChain {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.abort.abort();
+    this.proxySocket?.destroy();
     for (const jump of [...this.jumps].reverse()) {
       try { jump.client.end(); } catch { /* best effort */ }
       try { jump.client.destroy(); } catch { /* best effort */ }

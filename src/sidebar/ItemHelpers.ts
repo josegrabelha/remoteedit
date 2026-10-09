@@ -33,6 +33,7 @@ export type ConnectionDetailField =
   | 'host'
   | 'port'
   | 'connectionType'
+  | 'proxyProfileId'
   | 'jumpProfileId'
   | 'username'
   | 'authType'
@@ -78,6 +79,8 @@ export function getConnectionDetailFields(profile: ConnectionProfile): Connectio
     'connectionType'
   ];
 
+  fields.push('proxyProfileId');
+
   if (isSftp) {
     fields.push('jumpProfileId');
   }
@@ -105,7 +108,7 @@ export function getConnectionDetailFields(profile: ConnectionProfile): Connectio
   return fields;
 }
 
-export function buildConnectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; jumpProfileLabel?: string; jumpRoute?: string }): {
+export function buildConnectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; proxyProfileLabel?: string; jumpProfileLabel?: string; jumpRoute?: string }): {
   label: string;
   value: string;
   icon: vscode.ThemeIcon;
@@ -121,6 +124,7 @@ export function buildConnectionDetail(profile: ConnectionProfile, field: Connect
     host: { name: 'Hostname', value: profile.host || '', icon: 'globe' },
     port: { name: 'Port', value: String(profile.port || ''), icon: 'plug' },
     connectionType: { name: 'Type', value: protocol, icon: 'remote' },
+    proxyProfileId: { name: 'Proxy', value: profile.proxyProfileId ? options?.proxyProfileLabel || 'Unavailable Proxy' : 'No Proxy', icon: 'globe' },
     jumpProfileId: { name: 'Jump Host', value: isSftp ? options?.jumpProfileLabel || 'Direct connection' : 'Not used', icon: 'server-environment' },
     username: { name: 'Username', value: profile.username || '', icon: 'account' },
     authType: { name: 'Auth Method', value: isSftp ? authLabel : 'Password', icon: 'key' },

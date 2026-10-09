@@ -1,3 +1,5 @@
+import { ProxyProfiles, PROXY_PROFILES_KEY, proxySecretKey, normalizeProxyProfile } from '../proxy/ProxyProfiles';
+import type { ProxyProfile, ProxyConnection } from '../proxy/ProxyTransport';
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { ConnectOptions } from '../remote/RemoteSessionManager';
@@ -42,6 +44,7 @@ export interface ConnectionProfile {
   keepAlive: boolean;
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
+  proxyProfileId?: string;
   jumpProfileId?: string;
   favoriteRemotePaths?: string[];
   groupId?: string;
@@ -105,6 +108,7 @@ export interface RemoteEditBackupConnection {
   keepAlive: boolean;
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
+  proxyProfileId?: string;
   jumpProfileId?: string;
   remotePathFavorites?: string[];
   createdAt?: number;
@@ -148,6 +152,7 @@ export interface RemoteEditBackupFile {
   extensionVersion?: string;
   settings?: Record<string, unknown>;
   settingsKeys?: string[];
+  proxyProfiles?: ProxyProfile[];
   connections?: RemoteEditBackupConnection[];
   connectionGroups?: RemoteEditBackupConnectionGroup[];
   encryptedCredentials?: RemoteEditEncryptedCredentials | null;
@@ -163,6 +168,7 @@ export interface RemoteEditBackupSummary {
   hasSettings: boolean;
   hasWorkspaceSync: boolean;
   connectionCount: number;
+  proxyProfileCount: number;
   connectionGroupCount: number;
   supportedConnectionCount: number;
   unsupportedConnectionCount: number;
@@ -274,6 +280,7 @@ export interface ConnectionProfileInput {
   groupId?: string;
   ftpsAllowSelfSignedCertificate?: boolean;
   ftpsCaCertificatePath?: string;
+  proxyProfileId?: string;
   jumpProfileId?: string;
   favoriteRemotePaths?: string[];
 }
@@ -294,6 +301,9 @@ export class ConnectionManager {
     private readonly context: vscode.ExtensionContext,
     private readonly output?: vscode.OutputChannel
   ) {}
+
+  get proxyProfiles(): ProxyProfiles { return new ProxyProfiles(this.context); }
+  async resolveProxyProfile(id?: string): Promise<ProxyConnection | undefined> { return this.proxyProfiles.resolve(id); }
 
   async listGroups(): Promise<ConnectionGroup[]> {
     const timer = createPerformanceTimer();
@@ -665,6 +675,8 @@ export class ConnectionManager {
     const jumpProfileId = connectionType === SFTP_CONNECTION_TYPE
       ? normalizeJumpProfileId(input.jumpProfileId !== undefined ? input.jumpProfileId : existing?.jumpProfileId)
       : undefined;
+    const proxyProfileId = String(input.proxyProfileId ?? existing?.proxyProfileId ?? '').trim() || undefined;
+    if (proxyProfileId && !(await this.proxyProfiles.list()).some(p => p.id === proxyProfileId)) throw new Error('Selected proxy profile is unavailable.');
     const groupId = await this.normalizeProfileGroupId(input.groupId ?? existing?.groupId);
 
     if (!name) {
@@ -700,6 +712,7 @@ export class ConnectionManager {
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : '',
       jumpProfileId,
+      proxyProfileId,
       favoriteRemotePaths: normalizeFavoriteRemotePaths(input.favoriteRemotePaths ?? existing?.favoriteRemotePaths ?? []),
       groupId,
       createdAt: existing?.createdAt || now,
@@ -930,6 +943,7 @@ export class ConnectionManager {
       extensionVersion: options.extensionVersion || undefined,
       settings: options.includeSettings ? this.exportSettings() : undefined,
       settingsKeys: options.includeSettings ? [...REMOTE_EDIT_SETTING_KEYS] : undefined,
+      proxyProfiles: includeConnections ? (await this.proxyProfiles.list()).map(p => ({...normalizeProxyProfile(p), username: options.includeUsernames ? p.username : ''})) : undefined,
       connections: includeConnections ? backupConnections : undefined,
       connectionGroups: includeConnections ? connectionGroups.map(group => this.toBackupConnectionGroup(group)) : undefined,
       encryptedCredentials: null,
@@ -943,6 +957,10 @@ export class ConnectionManager {
 
     if (includeCredentials) {
       const credentials = await this.collectStoredCredentials(profiles);
+      for (const proxy of await this.proxyProfiles.list()) {
+        const secret = await this.context.secrets.get(proxySecretKey(proxy.id));
+        if (secret) credentials['proxy:' + proxy.id] = { password: secret };
+      }
       const masterPassword = await this.context.secrets.get(MASTER_PASSWORD_KEY);
       if (masterPassword) {
         credentials[MASTER_PASSWORD_BACKUP_CREDENTIAL_ID] = { password: masterPassword };
@@ -962,6 +980,7 @@ export class ConnectionManager {
       Settings: Boolean(backup.settings),
       Profiles: backup.connections?.length || 0,
       Groups: backup.connectionGroups?.length || 0,
+      ProxyProfiles: backup.proxyProfiles?.length || 0,
       WorkspaceSyncMappings: backup.workspaceSync?.mappings.length || 0,
       MultiTargetCommands: backup.multiTarget?.savedCommands?.length || 0,
       MultiTargetTargetSets: backup.multiTarget?.targetSets?.length || 0,
@@ -970,6 +989,7 @@ export class ConnectionManager {
     this.logPerformance('Built Remote Edit backup file', timer(), {
       Profiles: backup.connections?.length || 0,
       Groups: backup.connectionGroups?.length || 0,
+      ProxyProfiles: backup.proxyProfiles?.length || 0,
       WorkspaceSyncMappings: backup.workspaceSync?.mappings.length || 0
     });
     return backup;
@@ -987,6 +1007,7 @@ export class ConnectionManager {
       hasSettings: Boolean(backup.settings && typeof backup.settings === 'object'),
       hasWorkspaceSync: Boolean(backup.workspaceSync && typeof backup.workspaceSync === 'object'),
       connectionCount: connections.length,
+      proxyProfileCount: Array.isArray(backup.proxyProfiles) ? backup.proxyProfiles.length : 0,
       connectionGroupCount: connectionGroups.length,
       supportedConnectionCount: supportedConnections.length,
       unsupportedConnectionCount: Math.max(0, connections.length - supportedConnections.length),
@@ -994,7 +1015,7 @@ export class ConnectionManager {
         const favorites = Array.isArray(connection.remotePathFavorites) ? connection.remotePathFavorites : [];
         return count + favorites.length;
       }, 0),
-      usernamesIncluded: supportedConnections.some(connection => typeof connection.username === 'string' && connection.username.trim().length > 0),
+      usernamesIncluded: [...supportedConnections, ...(backup.proxyProfiles || [])].some(item => typeof item.username === 'string' && item.username.trim().length > 0),
       hasEncryptedCredentials: Boolean(backup.encryptedCredentials),
       savedCommandCount: countCollectionItems(backup.savedCommands),
       serverLogShortcutCount: countCollectionItems(backup.serverLogShortcuts),
@@ -1077,9 +1098,40 @@ export class ConnectionManager {
       return result;
     }
 
+    let restoredCredentials: StoredCredentialMap | undefined;
+    if (options.restoreCredentials) {
+      if (!backup.encryptedCredentials) {
+        throw new Error('This backup does not contain encrypted credentials.');
+      }
+
+      const password = String(options.credentialPassword || '');
+      if (!password) {
+        throw new Error('Export password is required to restore encrypted credentials.');
+      }
+
+      restoredCredentials = await decryptCredentials(backup.encryptedCredentials, password);
+    }
+
+    const existingProxies = await this.proxyProfiles.list();
+    const incomingProxies = (backup.proxyProfiles || []).map(p => normalizeProxyProfile(p));
+    if (new Set(incomingProxies.map(p => p.id)).size !== incomingProxies.length) throw new Error('Duplicate proxy IDs in backup.');
+    const proxyIdMap = new Map<string,string>();
+    const nextProxies = options.importMode === 'replace' ? [] : existingProxies.map(p => normalizeProxyProfile(p));
+    for (const incoming of incomingProxies) {
+      const collision = nextProxies.find(p => p.id === incoming.id);
+      if (!options.includeUsernames) incoming.username = collision?.username || '';
+      const originalId = incoming.id;
+      const incomingPassword = restoredCredentials?.['proxy:' + originalId]?.password;
+      const currentPassword = collision ? await this.context.secrets.get(proxySecretKey(collision.id)) : undefined;
+      if (collision && (JSON.stringify(collision) !== JSON.stringify(incoming) || (incomingPassword && incomingPassword !== currentPassword))) incoming.id = crypto.randomUUID();
+      proxyIdMap.set(originalId, incoming.id);
+      if (!nextProxies.some(p => p.id === incoming.id)) nextProxies.push(incoming);
+    }
+    const proxyBackupConnections = (backup.connections || []).map(p => ({...p, proxyProfileId: p.proxyProfileId ? proxyIdMap.get(p.proxyProfileId) || p.proxyProfileId : undefined}));
+    if (proxyBackupConnections.some(p => p.proxyProfileId && !nextProxies.some(proxy => proxy.id === p.proxyProfileId))) throw new Error('Backup contains a missing proxy reference.');
     const importedGroups = normalizeBackupConnectionGroups(backup.connectionGroups || []);
     const importedGroupIds = new Set(importedGroups.map(group => group.id));
-    const normalizedBackupConnections = this.normalizeBackupConnections(backup.connections || [], options, backupVersion);
+    const normalizedBackupConnections = this.normalizeBackupConnections(proxyBackupConnections, options, backupVersion);
     const missingGroupReferenceCount = normalizedBackupConnections.filter(profile => profile.groupId && !importedGroupIds.has(profile.groupId)).length;
     const importedConnections = normalizedBackupConnections
       .map(profile => sanitizeProfileGroupId(profile, importedGroupIds));
@@ -1140,25 +1192,20 @@ export class ConnectionManager {
 
     this.validateProfileJumpReferences(nextProfiles);
 
-    let restoredCredentials: StoredCredentialMap | undefined;
-    if (options.restoreCredentials) {
-      if (!backup.encryptedCredentials) {
-        throw new Error('This backup does not contain encrypted credentials.');
-      }
-
-      const password = String(options.credentialPassword || '');
-      if (!password) {
-        throw new Error('Export password is required to restore encrypted credentials.');
-      }
-
-      restoredCredentials = await decryptCredentials(backup.encryptedCredentials, password);
-    }
-
     if (options.includeSettings && backup.settings && typeof backup.settings === 'object') {
       await this.importSettings(backup.settings, Array.isArray(backup.settingsKeys) ? backup.settingsKeys : undefined);
       result.settingsImported = true;
     }
 
+    await this.context.globalState.update(PROXY_PROFILES_KEY, nextProxies);
+    for (const [sourceId, destinationId] of proxyIdMap) {
+      const secret = restoredCredentials?.['proxy:' + sourceId]?.password;
+      if (secret) await this.context.secrets.store(proxySecretKey(destinationId), secret);
+      else if (options.importMode === 'replace') await this.context.secrets.delete(proxySecretKey(destinationId));
+    }
+    if (options.importMode === 'replace') {
+      for (const proxy of existingProxies) if (!nextProxies.some(p => p.id === proxy.id)) await this.context.secrets.delete(proxySecretKey(proxy.id));
+    }
     await this.context.globalState.update(CONNECTION_GROUPS_KEY, nextGroups);
     await this.context.globalState.update(CONNECTIONS_KEY, nextProfiles);
 
@@ -1253,6 +1300,7 @@ export class ConnectionManager {
       keepAlive: profile.keepAlive !== false,
       ftpsAllowSelfSignedCertificate: profile.connectionType === 'ftps' ? Boolean(profile.ftpsAllowSelfSignedCertificate) : undefined,
       ftpsCaCertificatePath: profile.connectionType === 'ftps' ? String(profile.ftpsCaCertificatePath || '').trim() : undefined,
+      proxyProfileId: profile.proxyProfileId,
       jumpProfileId: profile.connectionType === SFTP_CONNECTION_TYPE ? normalizeJumpProfileId(profile.jumpProfileId) : undefined,
       groupId: profile.groupId || undefined,
       createdAt: profile.createdAt,
@@ -1513,6 +1561,7 @@ export class ConnectionManager {
         keepAlive: connection.keepAlive !== false,
         ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? Boolean(connection.ftpsAllowSelfSignedCertificate) : false,
         ftpsCaCertificatePath: connectionType === 'ftps' ? String(connection.ftpsCaCertificatePath || '').trim() : '',
+        proxyProfileId: String(connection.proxyProfileId || '') || undefined,
         jumpProfileId: backupVersion >= 3 ? normalizeJumpProfileId(connection.jumpProfileId) : undefined,
         favoriteRemotePaths: options.includeFavorites ? normalizeFavoriteRemotePaths(connection.remotePathFavorites || []) : [],
         groupId: String(connection.groupId || '').trim() || undefined,
@@ -1700,6 +1749,8 @@ export class ConnectionManager {
       keepAlive,
       ftpsAllowSelfSignedCertificate: connectionType === 'ftps' ? ftpsAllowSelfSignedCertificate : false,
       ftpsCaCertificatePath: connectionType === 'ftps' ? ftpsCaCertificatePath : undefined,
+      proxyProfileId: String(input.proxyProfileId ?? profile?.proxyProfileId ?? '') || undefined,
+      proxy: await this.resolveProxyProfile(String(input.proxyProfileId ?? profile?.proxyProfileId ?? '') || undefined),
       isQuickConnect: !profile?.id,
       ...(jumpProfileId && jumpChain ? { jumpProfileId, jumpChain } : {})
     };
@@ -1744,6 +1795,7 @@ export class ConnectionManager {
       }
 
       return {
+        proxy: await this.resolveProxyProfile(profile.proxyProfileId),
         profileId: profile.id,
         name: profile.name,
         connectionType: 'sftp',
@@ -1762,6 +1814,7 @@ export class ConnectionManager {
 
     const passphrase = await this.context.secrets.get(secretKey(profile.id, 'passphrase')) || '';
     return {
+      proxy: await this.resolveProxyProfile(profile.proxyProfileId),
       profileId: profile.id,
       name: profile.name,
       connectionType: 'sftp',

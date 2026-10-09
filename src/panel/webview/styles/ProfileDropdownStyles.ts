@@ -1,5 +1,9 @@
 export function renderProfileDropdownStyles(): string {
   return `  .profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: end; margin-bottom: 12px; min-width: 0; }
+
+  .profile-dropdown-menu.connection-management-menu { position: fixed; z-index: 150; right: auto; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+  .connection-management-menu .profile-dropdown-item { min-height: 30px; padding: 5px 7px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); white-space: normal; }
+  #manageProfilesImportButton { grid-template-columns: minmax(0, 1fr) auto; }
   .profile-picker-field { min-width: 0; }
   .profile-select-native { display: none; }
   .profile-picker { position: relative; min-width: 0; }
@@ -8,12 +12,14 @@ export function renderProfileDropdownStyles(): string {
   .profile-dropdown-button:focus { outline: none; border-color: var(--vscode-focusBorder); }
   .profile-dropdown-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-dropdown-chevron { width: 15px; height: 15px; display: block; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.78; transition: transform 120ms ease; }
-  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron, .jump-profile-picker.open .profile-dropdown-chevron, .connection-name-group-picker.open .profile-dropdown-chevron, .server-auto-refresh-picker.open .profile-dropdown-chevron { transform: rotate(180deg); }
+  .profile-picker.open .profile-dropdown-chevron, .auth-picker.open .profile-dropdown-chevron, .connection-type-picker.open .profile-dropdown-chevron, .jump-profile-picker.open .profile-dropdown-chevron, .connection-name-group-picker.open .profile-dropdown-chevron, .server-auto-refresh-picker.open .profile-dropdown-chevron, .connection-save-split.open .profile-dropdown-chevron { transform: rotate(180deg); }
   .profile-dropdown-menu { position: absolute; z-index: 130; top: calc(100% + 4px); left: 0; right: 0; display: none; width: 100%; max-width: 100%; box-sizing: border-box; max-height: 300px; overflow-y: auto; overflow-x: hidden; padding: 5px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
   .connection-profile-dropdown-menu { max-height: min(75vh, 600px); overflow: hidden; }
   .profile-dropdown-filter { padding: 2px 2px 5px; position: sticky; top: -5px; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
-  .connection-profile-dropdown-menu .profile-dropdown-filter { position: static; flex: 0 0 auto; }
+  .connection-profile-dropdown-menu .profile-dropdown-filter, .sync-combo-menu .profile-dropdown-filter { position: static; flex: 0 0 auto; }
+  .profile-dropdown-filter .filter-input { padding-right: 30px; }
   .profile-dropdown-filter input { width: 100%; height: 28px; box-sizing: border-box; padding: 4px 7px; }
+  .profile-dropdown-menu.sync-combo-menu.combo-with-action { display: flex !important; flex-direction: column; overflow: hidden; }
   .profile-dropdown-pinned { flex: 0 0 auto; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
   .profile-dropdown-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   .profile-dropdown-empty { color: var(--vscode-descriptionForeground); padding: 10px 7px; font-size: 12px; }

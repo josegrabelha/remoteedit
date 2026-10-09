@@ -1,3 +1,4 @@
+import type { ProxyConnection } from '../../proxy/ProxyTransport';
 import * as crypto from 'crypto';
 
 export interface WorkspaceSyncConnectionIdentityHop {
@@ -7,6 +8,7 @@ export interface WorkspaceSyncConnectionIdentityHop {
 }
 
 export interface WorkspaceSyncConnectionIdentityInput {
+  proxy?: ProxyConnection;
   connectionType: 'sftp' | 'ftp' | 'ftps';
   host: string;
   port: number;
@@ -23,6 +25,8 @@ export interface WorkspaceSyncConnectionIdentityInput {
  */
 export function buildWorkspaceSyncConnectionIdentity(input: WorkspaceSyncConnectionIdentityInput): string {
   const canonical = {
+    ...(input.proxy ? { proxy: { type: input.proxy.type, host: normalizeHost(input.proxy.host), port: input.proxy.port,
+      authentication: input.proxy.authentication, username: input.proxy.username || '' } } : {}),
     connectionType: input.connectionType,
     host: normalizeHost(input.host),
     port: normalizePort(input.port),

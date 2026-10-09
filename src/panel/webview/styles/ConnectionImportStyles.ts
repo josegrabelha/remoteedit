@@ -125,13 +125,6 @@ export function renderConnectionImportStyles(): string {
 .connection-import-compare-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 9.5px; margin-top: 3px; }
 .connection-import-detail-empty { color: var(--vscode-descriptionForeground); font-size: 10px; }
 .webview-tooltip.connection-import-multiline-tooltip { max-width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 24px); white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: hidden; text-overflow: clip; }
-.connection-import-menu-wrap { position: relative; }
-.manage-profiles-header-actions .connection-import-menu-wrap,
-.manage-profiles-header-actions #manageProfilesExportButton { width: 68px; flex: 0 0 68px; box-sizing: border-box; }
-.connection-import-menu-wrap #manageProfilesImportButton { display: inline-flex; align-items: center; justify-content: space-between; gap: 3px; width: 100%; min-width: 0; box-sizing: border-box; padding: 3px 6px; line-height: normal; }
-.connection-import-menu-wrap #manageProfilesImportButton .profile-dropdown-chevron { flex: 0 0 15px; }
-.connection-import-menu-wrap.open #manageProfilesImportButton .profile-dropdown-chevron { transform: rotate(180deg); }
-.connection-import-menu-wrap .profile-dropdown-menu { width: max-content; min-width: 0; max-width: calc(100vw - 24px); right: 0; left: auto; }
 .connection-import-picker { min-width: 132px; }
 .connection-import-picker + .connection-import-picker { margin-top: 3px; }
 .connection-import-picker-menu { position: fixed; z-index: 275; right: auto; display: none; width: auto; min-width: 0; max-width: calc(100vw - 16px); overflow-x: hidden; }

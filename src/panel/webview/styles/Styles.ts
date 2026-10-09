@@ -1,8 +1,9 @@
+import { renderReusableProfileListStyles } from './ReusableProfileListStyles';
 import { renderConnectionImportStyles } from './ConnectionImportStyles';
 import { remoteSearchResultStyles } from '../../../search/RemoteSearchResultStyles';
 import { renderProfileDropdownStyles } from './ProfileDropdownStyles';
 export function renderStyles(): string {
-  return renderConnectionImportStyles() + `  :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; --remoteedit-connection-header-height: 50px; --remoteedit-session-tab-height: 34px; }
+  return renderReusableProfileListStyles() + renderConnectionImportStyles() + `  :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; --remoteedit-connection-header-height: 50px; --remoteedit-session-tab-height: 34px; }
   * { box-sizing: border-box; }
   * { scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
   *::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -420,15 +421,22 @@ export function renderStyles(): string {
   input:disabled, select:disabled { opacity: 0.68; }
   #passwordBlock .hidden, #masterPasswordBackdrop .hidden { display: none !important; }
   #masterPasswordActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-  .master-password-summary + .backup-section-title { margin-bottom: 6px; }
-  .master-password-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--vscode-panel-border); }
-  #masterPasswordBackdrop { z-index: 240; }
+  #masterPasswordBackdrop, #proxyProfilesBackdrop { z-index: 240; }
+  #proxyProfilesBackdrop [hidden] { display: none !important; }
+  .profile-dropdown-menu.sync-combo-menu { display: block !important; position: fixed; z-index: 10040; right: auto; }
+  #proxyProfilesBackdrop .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #proxyListPage, #proxyEditorPage { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  #proxyList { display: grid; align-content: start; gap: 2px; padding: 3px; background: var(--vscode-editor-background); }
+  #proxyList .compact { min-height: 23px; height: 23px; padding: 2px 7px; font-size: 12px; }
+  #proxyProfilesBackdrop .proxy-address-row { margin-top: 10px; }
+  #proxyProfilesBackdrop .proxy-address-row .master-password-field { min-width: 0; margin-top: 0; }
+  #proxyProfilesBackdrop .proxy-address-row + .master-password-field { margin-top: 10px; }
   .master-password-field + .master-password-field { margin-top: 10px; }
   .password-source-picker .input-with-button input { padding-right: 62px; }
   .password-source-picker .input-with-button.reveal-hidden input { padding-right: 34px; }
   .password-source-picker .input-with-button .input-icon-button.password-reveal-button { right: 30px; }
   .password-source-picker .password-source-button { position: absolute; top: 2px; right: 2px; opacity: 1; }
-  #masterPasswordSelection { padding-right: 34px; text-align: left; }
+  #masterPasswordSelection, #edit_masterPasswordSelection { padding-right: 34px; text-align: left; }
   #masterPasswordHint { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #masterPasswordHint.hidden { display: none; }
   .input-with-button { position: relative; display: flex; align-items: center; }
@@ -446,7 +454,6 @@ export function renderStyles(): string {
   .connection-save-split { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 34px; width: 100%; min-width: 0; }
   .connection-save-split .connection-save-main { border-right-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
   .connection-save-split .connection-save-menu-button { min-width: 34px; width: 34px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
-  .connection-save-menu-button svg { width: 14px; height: 14px; fill: currentColor; }
   .connection-save-menu { position: absolute; z-index: 180; right: 0; bottom: calc(100% + 4px); display: none; min-width: 150px; padding: 4px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 5px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
   .connection-save-split.open .connection-save-menu { display: block; }
   .connection-save-menu button { width: 100%; height: 28px; min-height: 28px; padding: 0 8px; justify-content: flex-start; border: 0; border-radius: 3px; background: transparent; color: inherit; text-align: left; }
@@ -663,6 +670,7 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
 
   .file-properties-backdrop { position: fixed; inset: 0; z-index: 210; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .file-properties-backdrop.visible { display: flex; }
+  #proxyProfilesBackdrop.nested-proxy-backdrop { background: transparent; }
   #inputPromptBackdrop { z-index: 320; }
   .file-properties-dialog { width: min(640px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
   .file-properties-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
@@ -699,8 +707,16 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
   #serverOverviewDetailsBackdrop .server-overview-detail-table { font-size: 11px; }
   #serverOverviewDetailsBackdrop .server-overview-detail-table th, #serverOverviewDetailsBackdrop .server-overview-detail-table td { padding: 4px 7px; }
   #serverOverviewDetailsBackdrop .server-overview-detail-empty { padding: 8px 10px; font-size: 11.5px; }
-  .manage-profiles-dialog { width: min(640px, calc(100vw - 48px)); height: min(560px, calc(100vh - 48px)); max-height: calc(100vh - 48px); }
+  .file-properties-dialog.proxy-profiles-dialog, .manage-profiles-dialog { resize: none; width: min(640px, calc(100vw - 48px)); height: min(560px, calc(100vh - 48px)); max-height: calc(100vh - 48px); }
   .manage-profiles-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #manageProfilesListPage[hidden], #manageConnectionEditor[hidden] { display: none; }
+  #manageConnectionEditor { overflow-y: auto; display: block; margin-bottom: 16px; }
+  #manageConnectionEditor .connection-panel-divider { margin: 16px 0; }
+  #edit_feedback:empty { display: none; }
+  #manageConnectionEditor .connection-type-note { display: none; }
+  #edit_ftpsCaCertificateBlock { margin-top: 10px; }
+  #edit_masterPasswordHint { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .manage-profiles-dialog .backup-section-title { margin-bottom: 8px; }
   .manage-profiles-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .manage-profiles-filter { flex: 1 1 auto; min-width: 0; }
   .manage-profiles-filter input { width: 100%; box-sizing: border-box; }
@@ -714,8 +730,6 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
   .manage-profiles-drop-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--vscode-focusBorder); pointer-events: none; z-index: 8; display: none; }
   .manage-profiles-empty { color: var(--vscode-descriptionForeground); padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editor-background); }
   .manage-profiles-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-  .manage-profiles-header-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-  .manage-profiles-header-actions button, #manageMasterPasswordButton { min-height: 28px; height: 28px; padding: 3px 10px; font-size: 12px; }
   .manage-profile-group-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; min-height: 34px; padding: 4px 6px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-sideBar-background); }
   .manage-profile-group-header.renaming { grid-template-columns: 1fr; }
   .manage-profile-group-header:not(.renaming) { cursor: pointer; }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { createConnectionManagerHarness, inputUi, profile } from './helpers/ConnectionManagerHarness';
-import { createConnectionUiHarness } from './helpers/ConnectionUiHarness';
+import { RemoteEditPanel, createConnectionUiHarness } from './helpers/ConnectionUiHarness';
 import { buildSidebarJumpDisplay } from '../sidebar/ItemHelpers';
 
 
@@ -81,3 +81,112 @@ test('sidebar Master Password header action changes and removes the global secre
   assert.deepEqual(inputUi.warnings[0].items, ['Remove']);
 });
 
+
+test('sidebar proxy picker pins actions, selects the current proxy and preserves selection on cancel', async () => {
+  const h = createConnectionManagerHarness([profile('source')]);
+  const ui = createConnectionUiHarness(h, { hasConnection: () => false } as unknown as RemoteSessionManager);
+  await h.manager.proxyProfiles.save({ id: 'proxy', name: 'Office', type: 'http', host: 'proxy.invalid', port: 8080, authentication: 'none' });
+  assert.equal(await ui.sidebar.promptSidebarProxyProfileId('proxy'), 'proxy');
+  const request = ui.pickRequests[0];
+  assert.deepEqual(request.items.slice(0, 2).map((item: any) => [item.label, item.alwaysShow]), [
+    ['New Proxy', true], ['Manage Proxies (Webview)', true]
+  ]);
+  assert.equal(request.items[3].label, 'No Proxy');
+  ui.sidebar.connectionDrafts.updateDraftValue('source', { proxyProfileId: 'proxy', host: 'unsaved.invalid' });
+  ui.pickChoices.push(() => undefined);
+  await ui.sidebar.editConnectionDetail('source', 'proxyProfileId');
+  assert.equal(ui.sidebar.connectionDrafts.mergeProfileWithDraft((await h.manager.getProfile('source'))!).host, 'unsaved.invalid');
+});
+
+test('native proxy creation stores credentials securely and changes only the originating draft', async () => {
+  const h = createConnectionManagerHarness([profile('source')]);
+  const ui = createConnectionUiHarness(h, { hasConnection: () => false } as unknown as RemoteSessionManager);
+  ui.pickChoices.push(options => options.items[0]);
+  inputUi.picks.push({ value: 'socks5' }, { value: 'password' });
+  inputUi.inputs.push('Office', 'proxy.invalid', '1080', 'user', 'proxy-secret');
+  await ui.sidebar.editConnectionDetail('source', 'proxyProfileId');
+  const saved = (await h.manager.getProfile('source'))!;
+  const id = ui.sidebar.connectionDrafts.mergeProfileWithDraft(saved).proxyProfileId;
+  assert.ok(id);
+  assert.equal((await h.manager.proxyProfiles.resolve(id))?.password, 'proxy-secret');
+  assert.equal((await h.manager.getProfile('source'))?.proxyProfileId, undefined);
+  assert.ok(!JSON.stringify([...h.state]).includes('proxy-secret'));
+});
+
+test('canceling native proxy creation does not save a partial proxy', async () => {
+  const h = createConnectionManagerHarness();
+  const ui = createConnectionUiHarness(h, { hasConnection: () => false } as unknown as RemoteSessionManager);
+  inputUi.inputs.push('Canceled');
+  inputUi.picks.push(undefined);
+  assert.equal(await ui.sidebar.createSidebarProxy(), undefined);
+  assert.deepEqual(await h.manager.proxyProfiles.list(), []);
+});
+
+test('Manage Proxies opens the webview without changing the sidebar association', async () => {
+  const h = createConnectionManagerHarness([profile('source')]);
+  const ui = createConnectionUiHarness(h, { hasConnection: () => false } as unknown as RemoteSessionManager);
+  const original = RemoteEditPanel.openProxyProfiles;
+  let opened = false;
+  RemoteEditPanel.openProxyProfiles = () => { opened = true; };
+  try {
+    ui.pickChoices.push(options => options.items[1]);
+    assert.equal(await ui.sidebar.promptSidebarProxyProfileId(), undefined);
+    assert.equal(opened, true);
+    assert.equal((await h.manager.getProfile('source'))?.proxyProfileId, undefined);
+  } finally {
+    RemoteEditPanel.openProxyProfiles = original;
+  }
+});
+
+
+test('sidebar Import dispatches backup and application imports and does nothing on cancel', async () => {
+  const h = createConnectionManagerHarness([profile('source')]);
+  const ui = createConnectionUiHarness(h, {} as RemoteSessionManager);
+  let backups = 0;
+  let applications = 0;
+  ui.sidebar.backupController = { importBackup: async () => { backups++; } };
+  const original = RemoteEditPanel.openConnectionImport;
+  RemoteEditPanel.openConnectionImport = () => { applications++; };
+  try {
+    ui.pickChoices.push(options => {
+      assert.equal(options.title, 'Import');
+      assert.deepEqual(options.items.map((item: any) => item.label), [
+        'Import Remote Edit Backup', 'Import Connections from Other Applications (Webview)'
+      ]);
+      assert.ok(options.items.every((item: any) => !item.iconPath && !item.kind && !item.label.includes('$(')));
+      return options.items[0];
+    }, options => options.items[1], () => undefined);
+    await ui.sidebar.importConnections();
+    assert.equal(backups, 1);
+    assert.equal(applications, 0);
+    await ui.sidebar.importConnections();
+    assert.equal(backups, 1);
+    assert.equal(applications, 1);
+    await ui.sidebar.importConnections();
+    assert.equal(backups, 1);
+    assert.equal(applications, 1);
+  } finally {
+    RemoteEditPanel.openConnectionImport = original;
+  }
+});
+
+test('application import opens in a ready webview and queues during initialization', () => {
+  const panelClass = RemoteEditPanel as any;
+  const original = panelClass.getOrCreate;
+  const messages: string[] = [];
+  const panel = { webviewReady: false, pendingConnectionImportOpen: false, postMessage: (type: string) => messages.push(type) };
+  panelClass.getOrCreate = () => panel;
+  const h = createConnectionManagerHarness();
+  try {
+    RemoteEditPanel.openConnectionImport(h.context, {} as RemoteSessionManager, h.manager, h.output);
+    assert.equal(panel.pendingConnectionImportOpen, true);
+    assert.deepEqual(messages, []);
+    panel.webviewReady = true;
+    panel.pendingConnectionImportOpen = false;
+    RemoteEditPanel.openConnectionImport(h.context, {} as RemoteSessionManager, h.manager, h.output);
+    assert.deepEqual(messages, ['showConnectionImport']);
+    assert.equal(panel.pendingConnectionImportOpen, false);
+  } finally {
+    panelClass.getOrCreate = original;
+  }
+});

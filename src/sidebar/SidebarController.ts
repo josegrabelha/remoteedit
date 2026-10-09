@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { normalizeProxyProfile } from '../proxy/ProxyProfiles';
+import type { ProxyType } from '../proxy/ProxyTransport';
 import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput, PasswordSource } from '../connection/ConnectionManager';
 import type { JumpProfileDescriptor } from '../connection/JumpChain';
 import { buildRemoteEditUri, preferOpenRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
@@ -195,7 +197,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         Reason: event.reason || 'unspecified',
         SelectedId: event.selectedId || ''
       });
-      this.connectionDrafts.clear();
+      if (event.reason !== 'proxyProfilesChanged') this.connectionDrafts.clear();
       this.connectionsProvider.refresh();
       this.openConnectionsProvider.refresh();
       appendPerformanceLog(this.output, 'Sidebar', `Refreshed profile trees after profiles changed in ${timer()}ms`, {
@@ -215,7 +217,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.manageMasterPassword', () => this.manageMasterPasswordFromSidebar()),
       vscode.commands.registerCommand('remoteedit.sidebar.openSettings', () => this.openSettings()),
       vscode.commands.registerCommand('remoteedit.sidebar.exportBackup', () => this.exportBackup()),
-      vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importBackup()),
+      vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importConnections()),
       vscode.commands.registerCommand('remoteedit.sidebar.quickConnect', () => this.revealQuickConnect()),
       vscode.commands.registerCommand('remoteedit.sidebar.refreshConnections', () => {
         this.connectionsProvider.refresh();
@@ -457,8 +459,20 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     await this.backupController.exportBackup();
   }
 
-  private async importBackup(): Promise<void> {
-    await this.backupController.importBackup();
+  private async importConnections(): Promise<void> {
+    type ImportItem = vscode.QuickPickItem & { source: 'backup' | 'applications' };
+    const items: ImportItem[] = [
+      { label: 'Import Remote Edit Backup', source: 'backup' },
+      { label: 'Import Connections from Other Applications (Webview)', source: 'applications' }
+    ];
+    const selected = await this.showQuickPickWithActiveItem<ImportItem>({
+      title: 'Import', placeHolder: 'Select import source', items, activeItem: items[0]
+    });
+    if (selected?.source === 'backup') {
+      await this.backupController.importBackup();
+    } else if (selected?.source === 'applications') {
+      RemoteEditPanel.openConnectionImport(this.context, this.sessions, this.connectionManager, this.output);
+    }
   }
 
   private async expandConnectionGroups(): Promise<void> {
@@ -616,6 +630,9 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     if (portValue === undefined) {
       return;
     }
+
+    const proxyProfileId = await this.promptSidebarProxyProfileId();
+    if (proxyProfileId === undefined) return;
 
     const username = await vscode.window.showInputBox({
       title: 'Add Connection',
@@ -810,6 +827,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         keepAlive: keepAliveSelection.value,
         ftpsAllowSelfSignedCertificate,
         ftpsCaCertificatePath,
+        proxyProfileId,
         jumpProfileId
       });
 
@@ -2245,6 +2263,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return;
       }
 
+      if (field === 'proxyProfileId') {
+        const selectedId = await this.promptSidebarProxyProfileId(currentProfile.proxyProfileId);
+        if (selectedId !== undefined) {
+          this.connectionDrafts.updateDraftValue(profileId, { proxyProfileId: selectedId });
+          this.connectionsProvider.refresh();
+        }
+        return;
+      }
       if (field === 'jumpProfileId') {
         if (normalizeConnectionType(currentProfile.connectionType || 'sftp') !== 'sftp') {
           void vscode.window.showInformationMessage('Only SFTP connections can use a Jump Host.');
@@ -2894,6 +2920,101 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     });
   }
 
+  private async promptSidebarProxyProfileId(currentId = ''): Promise<string | undefined> {
+    type ProxyItem = vscode.QuickPickItem & { action: 'select' | 'new' | 'manage'; id?: string };
+    const proxies = await this.connectionManager.proxyProfiles.list();
+    const noProxy: ProxyItem = { label: 'No Proxy', action: 'select', id: '' };
+    const items: ProxyItem[] = [
+      { label: 'New Proxy', action: 'new', alwaysShow: true },
+      { label: 'Manage Proxies (Webview)', action: 'manage', alwaysShow: true },
+      { label: '', kind: vscode.QuickPickItemKind.Separator, action: 'select' },
+      noProxy,
+      ...proxies.map(proxy => ({
+        label: proxy.name, description: proxy.type === 'http' ? 'HTTP CONNECT' : proxy.type.toUpperCase(),
+        action: 'select' as const, id: proxy.id
+      }))
+    ];
+    const selected = await this.showQuickPickWithActiveItem<ProxyItem>({
+      title: 'Select Proxy', placeHolder: 'Select a proxy profile',
+      items, activeItem: items.find(item => item.id === currentId) || noProxy
+    });
+    if (!selected) return undefined;
+    if (selected.action === 'manage') {
+      RemoteEditPanel.openProxyProfiles(this.context, this.sessions, this.connectionManager, this.output);
+      return undefined;
+    }
+    if (selected.action === 'new') return this.createSidebarProxy();
+    return selected.id;
+  }
+
+  private async createSidebarProxy(): Promise<string | undefined> {
+    const proxies = await this.connectionManager.proxyProfiles.list();
+    const input = (prompt: string, extra: vscode.InputBoxOptions = {}) =>
+      vscode.window.showInputBox({ title: 'New Proxy', prompt, ignoreFocusOut: true, ...extra });
+    const name = await input('Enter the proxy name.', { validateInput: value => {
+      if (!value.trim()) return 'Proxy name is required.';
+      return proxies.some(proxy => proxy.name.toLowerCase() === value.trim().toLowerCase())
+        ? 'A proxy with this name already exists.' : undefined;
+    } });
+    if (name === undefined) return undefined;
+    const type = await vscode.window.showQuickPick([
+      { label: 'SOCKS4', value: 'socks4' as ProxyType },
+      { label: 'SOCKS5', value: 'socks5' as ProxyType },
+      { label: 'HTTP CONNECT', value: 'http' as ProxyType }
+    ], { title: 'New Proxy', placeHolder: 'Select proxy type', ignoreFocusOut: true });
+    if (!type) return undefined;
+    const host = await input('Enter the proxy hostname or IP address.', { validateInput: value => {
+      try { normalizeProxyProfile({ id: 'validation', name: name.trim(), type: type.value, host: value, port: 1080, authentication: 'none' }); }
+      catch (error) { return error instanceof Error ? error.message : String(error); }
+      return undefined;
+    } });
+    if (host === undefined) return undefined;
+    const port = await input('Enter the proxy port.', {
+      value: type.value === 'http' ? '8080' : '1080',
+      validateInput: value => this.validateConnectionDetailInput('port', value)
+    });
+    if (port === undefined) return undefined;
+    let authentication: 'none' | 'password' = 'none';
+    if (type.value !== 'socks4') {
+      const auth = await vscode.window.showQuickPick([
+        { label: 'None', value: 'none' as const },
+        { label: 'Username / Password', value: 'password' as const }
+      ], { title: 'New Proxy', placeHolder: 'Select authentication', ignoreFocusOut: true });
+      if (!auth) return undefined;
+      authentication = auth.value;
+    }
+    let username = '', password = '';
+    if (type.value === 'socks4' || authentication === 'password') {
+      const enteredUsername = await input(type.value === 'socks4' ? 'Enter the User ID (optional).' : 'Enter the proxy username.', {
+        validateInput: value => {
+          if (authentication === 'password' && !value) return 'Proxy username is required.';
+          if (type.value === 'http' && value.includes(':')) return 'HTTP proxy username cannot contain a colon.';
+          return undefined;
+        }
+      });
+      if (enteredUsername === undefined) return undefined;
+      username = enteredUsername;
+    }
+    if (authentication === 'password') {
+      const enteredPassword = await input('Enter the proxy password. It will be stored securely.', {
+        password: true, validateInput: value => value ? undefined : 'Proxy password is required.'
+      });
+      if (enteredPassword === undefined) return undefined;
+      password = enteredPassword;
+    }
+    try {
+      const proxy = await this.connectionManager.proxyProfiles.save({
+        id: '', name, type: type.value, host, port: Number(port), authentication, username, password
+      });
+      this.connectionsProvider.refresh();
+      RemoteEditSharedState.fireProfilesChanged(undefined, 'sidebar', 'proxyProfilesChanged');
+      return proxy.id;
+    } catch (error) {
+      this.showSidebarCommandError(error);
+      return undefined;
+    }
+  }
+
   private async promptSidebarJumpProfileId(
     target: JumpProfileDescriptor,
     profiles: readonly ConnectionProfile[],
@@ -3381,7 +3502,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
     void vscode.window.showInformationMessage('Copied connection detail.');
   }
 
-  private getProfileFieldValue(profile: { host: string; port: number; username: string; startPath: string; privateKeyPath?: string; ftpsCaCertificatePath?: string; jumpProfileId?: string }, field: ConnectionDetailField): string {
+  private getProfileFieldValue(profile: { host: string; port: number; username: string; startPath: string; privateKeyPath?: string; ftpsCaCertificatePath?: string; proxyProfileId?: string; jumpProfileId?: string }, field: ConnectionDetailField): string {
     switch (field) {
       case 'host':
         return profile.host || '';
@@ -3395,6 +3516,8 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return profile.privateKeyPath || '';
       case 'ftpsCaCertificatePath':
         return profile.ftpsCaCertificatePath || '';
+      case 'proxyProfileId':
+        return profile.proxyProfileId || '';
       case 'jumpProfileId':
         return profile.jumpProfileId || '';
       default:
@@ -3416,6 +3539,8 @@ export class RemoteEditSidebarController implements vscode.Disposable {
         return 'Private Key Path';
       case 'ftpsCaCertificatePath':
         return 'CA Certificate Path';
+      case 'proxyProfileId':
+        return 'Proxy';
       case 'jumpProfileId':
         return 'Jump Host';
       default:

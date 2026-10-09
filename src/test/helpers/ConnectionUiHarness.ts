@@ -59,6 +59,8 @@ class FormElement {
   get innerHTML(): string { return this.html; }
   set innerHTML(value: string) { this.html = value; this.children = []; }
   appendChild(child: FormElement): void { this.children.push(child); }
+  replaceChildren(...children: FormElement[]): void { this.children = children; }
+  add(child: FormElement): void { this.children.push(child); }
   addEventListener() {}
   closest() { return null; }
   querySelectorAll() { return []; }
@@ -74,6 +76,7 @@ class FormElement {
 export function createJumpWebviewHarness(profiles: unknown[], lifecycle = false) {
   const messages: any[] = [];
   const context: any = {
+    proxyProfiles: [], proxySelect: new FormElement(), Option: FormElement, window: {RemoteEditControls:{refresh(){}}},
     passwordSource: 'connection', masterPasswordState: { configured: false, usedBy: 0 },
     passwordSourcePicker: new FormElement(), passwordSourceButton: new FormElement(),
     passwordSecretState: new FormElement(), passwordRevealButton: new FormElement(), passphraseRevealButton: new FormElement(),

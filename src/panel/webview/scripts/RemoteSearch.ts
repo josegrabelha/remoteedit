@@ -148,7 +148,12 @@ export function renderRemoteSearch(): string {
     return Number.isFinite(numeric) && numeric > 0 && numeric <= 65535;
   }
 
-  function getConnectionValidationErrors(action) {
+  function getConnectionValidationErrors(action, fields) {
+    return validateConnectionFields(action, fields || { host, port, username, connectionType, authType, ftpsAllowSelfSignedCertificate, ftpsCaCertificatePath, privateKeyPath, password, passwordSourceButton, jumpProfileDropdownButton, passwordSource, hasPasswordForConnection, getJumpProfileSelectionError });
+  }
+
+  function validateConnectionFields(action, fields) {
+    const { host, port, username, connectionType, authType, ftpsAllowSelfSignedCertificate, ftpsCaCertificatePath, privateKeyPath, password, passwordSourceButton, jumpProfileDropdownButton, passwordSource, hasPasswordForConnection, getJumpProfileSelectionError } = fields;
     const mode = action === 'save' ? 'save' : 'connect';
     const normalizedConnectionType = normalizeConnectionTypeValue(connectionType.value);
     const normalizedAuthType = normalizedConnectionType === 'sftp' ? String(authType.value || 'password') : 'password';
@@ -377,6 +382,7 @@ export function renderRemoteSearch(): string {
       connectionType: typeValue,
       port: normalizeConnectionComparableNumber(profile.port, getDefaultPortForConnectionType(typeValue)),
       username: normalizeConnectionComparableString(profile.username),
+      proxyProfileId: profile.proxyProfileId || '',
       jumpProfileId: typeValue === 'sftp' ? normalizeJumpProfileId(profile.jumpProfileId) : '',
       authType: authValue,
       passwordSource: authValue === 'password' && profile.passwordSource === 'master' ? 'master' : 'connection',
@@ -400,6 +406,7 @@ export function renderRemoteSearch(): string {
       connectionType: typeValue,
       port: normalizeConnectionComparableNumber(port.value, getDefaultPortForConnectionType(typeValue)),
       username: normalizeConnectionComparableString(username.value),
+      proxyProfileId: document.getElementById('proxyProfileId').value,
       jumpProfileId: typeValue === 'sftp' ? normalizeJumpProfileId(jumpProfileId.value) : '',
       authType: authValue,
       passwordSource: authValue === 'password' ? passwordSource : 'connection',
@@ -632,6 +639,7 @@ export function renderRemoteSearch(): string {
       connectionType: normalizeConnectionTypeValue(connectionType.value),
       port: port.value,
       username: username.value,
+      proxyProfileId: document.getElementById('proxyProfileId').value,
       jumpProfileId: isSftpFormConnection() ? normalizeJumpProfileId(jumpProfileId.value) : undefined,
       authType: authType.value,
       passwordSource: authType.value === 'password' ? passwordSource : 'connection',

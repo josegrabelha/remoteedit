@@ -1,3 +1,5 @@
+import * as path from 'path';
+import { normalizeProxyProfile, PROXY_PROFILES_KEY } from '../proxy/ProxyProfiles';
 import { unlockFileZillaGroup, unlockWinScp } from './ConnectionImportCredentials';
 import type {
   ConnectionManager,
@@ -46,7 +48,7 @@ export class ConnectionImportService {
     private readonly manager: Pick<
       ConnectionManager,
       'listProfiles' | 'saveProfile' | 'listGroups' | 'createGroup'
-    >
+    > & Partial<Pick<ConnectionManager, 'proxyProfiles'>>
   ) {}
   clear(): void {
     this.candidates = [];
@@ -104,7 +106,12 @@ export class ConnectionImportService {
     let failures = 0;
     for (const file of files) {
       try {
-        loaded.push(...(await parsers[id](await readConfig(file), file)));
+        const content = await readConfig(file);
+        if (id === 'filezilla') {
+          let settings: string | undefined;
+          try { settings = await readConfig(path.join(path.dirname(file),'filezilla.xml')); } catch { /* Export may contain settings itself. */ }
+          loaded.push(...parseFileZilla(content,file,settings));
+        } else loaded.push(...(await parsers[id](content, file)));
       } catch {
         failures++;
       }
@@ -134,6 +141,7 @@ export class ConnectionImportService {
     const anchor = this.candidates.find(
       (c) => c.id === id && this.reviewed.has(id)
     );
+    if (anchor?.lockedProxyPassword && !anchor.lockedCredential) return this.candidates.filter(c=>this.reviewed.has(c.id)&&c.sourcePath===anchor.sourcePath&&c.lockedProxyPassword).map(c=>c.id);
     if (!anchor?.lockedCredential)
       throw new Error('Unavailable credential.');
     const lockedAnchor = anchor.lockedCredential;
@@ -154,10 +162,23 @@ export class ConnectionImportService {
     }).map((candidate) => candidate.id);
   }
 
+  lockedCredentialIds(): string[] {
+    return this.candidates.filter(c => this.reviewed.has(c.id) && (c.lockedCredential || c.lockedProxyPassword)).map(c => c.id);
+  }
+
   unlock(id: string, password: string, tryCompatibleGroups = false): string[] {
+    if (typeof password !== 'string' || !password || password.length > 4096) throw new Error('Unavailable credential.');
     const anchor = this.candidates.find(
       (c) => c.id === id && this.reviewed.has(id)
     );
+    if (anchor?.lockedProxyPassword && !anchor.lockedCredential) {
+      const value=unlockWinScp(anchor.lockedProxyPassword,password);
+      const ids: string[]=[];
+      for(const c of this.candidates.filter(c=>this.reviewed.has(c.id)&&c.sourcePath===anchor.sourcePath&&c.lockedProxyPassword&&c.proxy)) {
+        try { c.proxy!.password=c===anchor?value:unlockWinScp(c.lockedProxyPassword!,password); c.lockedProxyPassword=undefined; c.warnings=c.warnings.filter(w=>w!=='Proxy password is unavailable; configure it after importing.'); ids.push(c.id); } catch { /* Other credentials may use another master password. */ }
+      }
+      return ids;
+    }
     if (
       !anchor?.lockedCredential ||
       typeof password !== 'string' ||
@@ -197,6 +218,9 @@ export class ConnectionImportService {
     }
 
     for (const item of unlocked) {
+      if (item.candidate.lockedProxyPassword && item.candidate.proxy) {
+        try { item.candidate.proxy.password=unlockWinScp(item.candidate.lockedProxyPassword,password); item.candidate.lockedProxyPassword=undefined; } catch { /* Keep available for a later unlock. */ }
+      }
       item.candidate.profile.password = item.value;
       item.candidate.profile.rememberPassword = true;
       item.candidate.warnings = item.candidate.warnings.filter(
@@ -237,6 +261,8 @@ export class ConnectionImportService {
   }
   async preview(ids: SourceId[]): Promise<any[]> {
     const existing = await this.manager.listProfiles();
+    const proxies = await this.manager.proxyProfiles?.list() || [];
+    const publicProxy = (id?: string) => { const p=proxies.find(p=>p.id===id); return p ? {proxyType:p.type,proxyHost:p.host,proxyPort:p.port,proxyAuthentication:p.authentication,proxyUsername:p.username || ''} : {}; };
     this.fingerprints = new Map(existing.map((p) => [p.id, JSON.stringify(p)]));
     const selected = this.candidates.filter((c) => ids.includes(c.source));
     if (selected.length > 2000)
@@ -255,7 +281,7 @@ export class ConnectionImportService {
         id: c.id,
         source: sourceNames[c.source],
         sourcePath: c.sourcePath,
-        profile: publicProfile(c.profile),
+        profile: {...publicProfile(c.profile), ...(c.proxy ? {proxyType:c.proxy.type,proxyHost:c.proxy.host,proxyPort:c.proxy.port,proxyAuthentication:c.proxy.authentication,proxyUsername:c.proxy.username || ''} : {})},
         group: c.group || '',
         warnings: c.warnings,
         ignored: c.ignored,
@@ -274,14 +300,14 @@ export class ConnectionImportService {
             : c.profile.privateKeyPath
               ? 'Private key path'
               : 'Not available',
-        canUnlock: !!c.lockedCredential,
+        canUnlock: !!(c.lockedCredential || c.lockedProxyPassword),
         jump: c.jumpAlias || '',
         jumpCandidateId: c.jumpAlias
           ? selected.find((other) => other.source === c.source && other.alias === c.jumpAlias)?.id || ''
           : '',
         conflicts: matches.map((p) => ({
           id: p.id,
-          profile: publicProfile(p),
+          profile: {...publicProfile(p),...publicProxy(p.proxyProfileId)},
           credentials:
             p.hasSavedPassword || p.hasSavedPassphrase || p.passwordSource === 'master'
               ? 'Saved credentials'
@@ -448,11 +474,29 @@ export class ConnectionImportService {
           }
           groupId = group.id;
         }
+        let proxyProfileId = '';
+        if (c.proxy) {
+          const store = this.manager.proxyProfiles;
+          if (!store) throw new Error('Proxy import is unavailable.');
+          const known = await store.list();
+          let proxy = known.find(p => p.type === c.proxy!.type && p.host.toLowerCase() === c.proxy!.host.toLowerCase() && p.port === c.proxy!.port && p.authentication === c.proxy!.authentication && p.username === c.proxy!.username);
+          if (proxy && c.proxy.password) {
+            let resolved; try { resolved=await store.resolve(proxy.id); } catch { /* Missing credentials are not a match. */ }
+            if (resolved?.password !== c.proxy.password) proxy=undefined;
+          }
+          if (!proxy) {
+            let proxyName=c.proxy.name, suffix=2;
+            while(known.some(p=>p.name.toLowerCase()===proxyName.toLowerCase())) proxyName=c.proxy.name+' ('+suffix+++')';
+            proxy=await store.importProfile({...c.proxy,id:'',name:proxyName});
+          }
+          proxyProfileId=proxy.id;
+        }
         const p = await this.manager.saveProfile({
           ...c.profile,
           id: d.action === 'replace' ? d.existingId : undefined,
           name,
           groupId,
+          proxyProfileId,
           jumpProfileId,
           // Existing secrets must not silently be reused against an imported endpoint.
           rememberPassword: !!c.profile.password,

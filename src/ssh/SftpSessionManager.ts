@@ -1,3 +1,4 @@
+import { resolveRouteProxy, openProxyWithCancellation } from '../proxy/ProxyRoute';
 import * as vscode from 'vscode';
 import SftpClient from 'ssh2-sftp-client';
 import type { Client } from 'ssh2';
@@ -118,7 +119,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error('SftpSessionManager only supports SFTP connections.');
     }
     const connectionId = options.connectionId;
-    const jumpOptions = options.jumpChain || [];
+    let jumpOptions = options.jumpChain || [];
     if (options.jumpProfileId && jumpOptions.length === 0) {
       throw new Error(`Target "${options.name || `${options.username}@${options.host}`}" (${options.host}:${options.port}) has a jump reference but no resolved jump chain.`);
     }
@@ -148,12 +149,14 @@ export class SftpSessionManager implements RemoteSessionManager {
       passphrase: options.passphrase,
       keepAlive: options.keepAlive
     };
+    let proxySocket: import('net').Socket | undefined;
     let jumpChain: SshJumpChain | undefined;
     let cleanupPromise: Promise<void> | undefined;
     const sshClient = (client as unknown as { client: Client }).client;
     const cleanupAttempt = (): Promise<void> => {
       if (cleanupPromise) return cleanupPromise;
       source.cancel();
+      proxySocket?.destroy();
       const wasActive = this.sessions.get(connectionId) === client;
       if (this.attempts.get(connectionId) === attempt) {
         this.attempts.delete(connectionId);
@@ -219,6 +222,8 @@ export class SftpSessionManager implements RemoteSessionManager {
         config.keepaliveCountMax = jumpRuntimeSettings.keepAliveCountMax;
       }
 
+      const routeProxy = resolveRouteProxy(options.proxy, jumpOptions);
+      if (routeProxy && jumpOptions.length) jumpOptions = jumpOptions.map((hop, index) => ({...hop, proxy: index === 0 ? routeProxy : undefined}));
       if (jumpOptions.length > 0) {
         jumpChain = new SshJumpChain(jumpRuntimeSettings, {
           promptPassphrase: (promptTarget, token) => this.promptForPrivateKeyPassphrase(promptTarget, token),
@@ -230,6 +235,10 @@ export class SftpSessionManager implements RemoteSessionManager {
           host: target.host,
           port: target.port
         }, cancellationToken);
+      } else if (routeProxy) {
+        proxySocket = await openProxyWithCancellation(routeProxy, options.host, options.port, readyTimeout, cancellationToken);
+        if (source.token.isCancellationRequested) { proxySocket.destroy(); this.throwIfConnectionCancelled(source.token); }
+        config.sock = proxySocket;
       } else {
         try {
           await assertTcpConnectionReachable({
@@ -293,6 +302,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       if (resolvedStart.style) this.windowsSftpPathStyles.set(connectionId, resolvedStart.style);
 
       const connection: ActiveConnection = {
+        proxyProfileId: options.proxyProfileId,
         id: connectionId,
         connectionType: SFTP_CONNECTION_TYPE,
         name: target.name,

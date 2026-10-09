@@ -1,3 +1,4 @@
+import { importProxy } from './ProxyImport';
 import { candidate, credential, json } from './ImportParsing';
 import type { ImportCandidate, SourceId } from '../ConnectionImportTypes';
 export function parseVsCodeSftp(
@@ -61,7 +62,8 @@ export function parseVsCodeSftp(
     credential(c, v.password, v.passphrase);
     if (v.secure === 'implicit')
       c.unsupported = 'Implicit FTPS is not supported by Remote Edit.';
-    if (v.hop || v.proxy || v.sshConfigPath || v.extend)
+    if (v.proxy) importProxy(c,v.proxy);
+    if (v.hop || v.sshConfigPath || v.extend)
       c.unsupported =
         'Inherited, SSH-config or proxy settings require manual resolution.';
     if (typeof v.privateKey === 'string' && v.privateKey.includes('-----BEGIN'))

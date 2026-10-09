@@ -54,7 +54,7 @@ export class SidebarBackupController {
       });
 
       await fs.writeFile(target.fsPath, `${JSON.stringify(backup, null, 2)}\n`, 'utf8');
-      this.options.output.appendLine(`[Sidebar] Exported Remote Edit backup: ${target.fsPath}`);
+      this.options.output.appendLine(`[Sidebar] Exported Remote Edit backup: ${target.fsPath} | Connections: ${backup.connections?.length || 0} | Proxy profiles: ${backup.proxyProfiles?.length || 0}`);
       void vscode.window.showInformationMessage('Remote Edit: Export completed successfully.');
     } catch (error) {
       this.showSidebarCommandError(error);
@@ -202,7 +202,7 @@ export class SidebarBackupController {
   private async pickBackupImportOptions(summary: RemoteEditBackupSummary): Promise<ConnectionBackupImportOptions | undefined> {
     const items: Array<vscode.QuickPickItem & { option: 'settings' | 'connections' | 'workspaceSync' | 'multiTarget' | 'favorites' | 'usernames' | 'credentials' }> = [
       { label: 'Remote Edit settings', description: summary.hasSettings ? 'Import Remote Edit settings' : 'Not available in this backup', option: 'settings', picked: summary.hasSettings },
-      { label: 'Saved connections', description: `${summary.supportedConnectionCount} supported connection(s)`, option: 'connections', picked: summary.supportedConnectionCount > 0 },
+      { label: 'Saved connections', description: `${summary.supportedConnectionCount} supported connection(s), ${summary.proxyProfileCount} proxy profile(s)`, option: 'connections', picked: (summary.supportedConnectionCount > 0 || summary.proxyProfileCount > 0) },
       { label: 'Workspace Sync mappings', description: summary.hasWorkspaceSync ? `${summary.workspaceSyncMappingCount} mapping(s), ${summary.workspaceSyncTargetCount} target(s)` : 'Not available in this backup', option: 'workspaceSync', picked: summary.hasWorkspaceSync },
       { label: 'Multi-Target Commands & Search', description: `${summary.multiTargetSavedCommandCount} command(s), ${summary.multiTargetTargetSetCount} target set(s)`, option: 'multiTarget', picked: summary.multiTargetSavedCommandCount > 0 || summary.multiTargetTargetSetCount > 0 },
       { label: 'Remote path favorites', description: `${summary.remotePathFavoriteCount} favorite path(s)`, option: 'favorites', picked: summary.remotePathFavoriteCount > 0 },
@@ -222,7 +222,7 @@ export class SidebarBackupController {
     }
 
     const selectedOptions = new Set(selected.map(item => item.option));
-    const includeConnections = selectedOptions.has('connections') && summary.supportedConnectionCount > 0;
+    const includeConnections = selectedOptions.has('connections') && (summary.supportedConnectionCount > 0 || summary.proxyProfileCount > 0);
     const includeWorkspaceSync = selectedOptions.has('workspaceSync') && summary.hasWorkspaceSync;
     const includeMultiTarget = selectedOptions.has('multiTarget')
       && (summary.multiTargetSavedCommandCount > 0 || summary.multiTargetTargetSetCount > 0);
@@ -308,6 +308,7 @@ export class SidebarBackupController {
       `Settings: ${summary.hasSettings ? 'Yes' : 'No'}`,
       `Workspace Sync: ${summary.hasWorkspaceSync ? 'Yes' : 'No'}`,
       `Connections: ${summary.supportedConnectionCount}${summary.unsupportedConnectionCount ? ` supported, ${summary.unsupportedConnectionCount} unsupported` : ''}`,
+      `Proxy profiles: ${summary.proxyProfileCount}`,
       `Remote path favorites: ${summary.remotePathFavoriteCount}`,
       `Usernames: ${summary.usernamesIncluded ? 'Yes' : 'No'}`,
       `Encrypted credentials: ${summary.hasEncryptedCredentials ? 'Yes' : 'No'}`,

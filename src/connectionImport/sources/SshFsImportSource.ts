@@ -1,3 +1,4 @@
+import { importProxy } from './ProxyImport';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -114,7 +115,7 @@ export async function parseSshFs(text: string, sourcePath: string): Promise<Impo
     if (typeof v.hop === 'string' && v.hop.trim()) c.jumpAlias = v.hop.trim();
     if (resolutionError) c.unsupported = resolutionError;
     if (!c.profile.host && v.putty) c.unsupported = 'SSH FS PuTTY session references require manual migration of the referenced PuTTY session.';
-    if (v.proxy && !c.unsupported) c.unsupported = 'SSH FS HTTP/SOCKS proxy settings are not supported by Remote Edit connections.';
+    if (v.proxy && !c.unsupported) importProxy(c,v.proxy);
     if (v.sshConfigPath && !c.unsupported) c.unsupported = 'SSH FS sshConfigPath settings require manual resolution.';
     if (typeof v.privateKey === 'string' && v.privateKey.includes('-----BEGIN'))
       c.unsupported = 'Embedded private keys must be saved to a private key file first.';

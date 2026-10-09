@@ -801,6 +801,18 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   const TOOLTIP_FADE_MS = 80;
   let activeTooltipTarget = null;
   let tooltipTimer = 0;
+  let restoringDialogFocus = false;
+
+  function restoreDialogFocus(target) {
+    hideWebviewTooltip();
+    if (!target || target.disabled) return;
+    restoringDialogFocus = true;
+    try { target.focus(); }
+    finally {
+      restoringDialogFocus = false;
+      hideWebviewTooltip();
+    }
+  }
 
   function hideWebviewTooltip() {
     if (tooltipTimer) {
@@ -897,6 +909,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   });
 
   document.addEventListener('focusin', event => {
+    if (restoringDialogFocus) return;
     const target = getTooltipTarget(event.target);
     if (target) showWebviewTooltip(target);
   });
@@ -1159,6 +1172,12 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
     }
     confirmDialogCancelButton.hidden = false;
     confirmDialogConfirmButton.classList.remove('danger');
+
+    if (requestId === 'client:connectionEditorDiscard') {
+      if (confirmed) finishConnectionEditor(connectionEditorCloseAfterDiscard);
+      else document.getElementById('manageConnectionBack').focus();
+      return;
+    }
 
     if (requestId.indexOf('client:closeConnection:') === 0) {
       if (confirmed) {

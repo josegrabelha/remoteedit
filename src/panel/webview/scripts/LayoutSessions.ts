@@ -559,7 +559,7 @@ export function renderLayoutSessions(): string {
     persistConnectionPanelState();
   }
 
-  function renderProfiles(preferredId) {
+  function renderProfiles(preferredId, options = {}) {
     const previousId = preferredId || selectedProfileId || '';
     profileSelect.innerHTML = '<option value="">New / Quick Connection</option>';
 
@@ -574,7 +574,10 @@ export function renderLayoutSessions(): string {
     renderConnectionNameGroupOptions('');
     const exists = profiles.some(profile => profile.id === previousId);
     const nextId = exists ? previousId : '';
-    selectProfile(nextId, { preserveStatus: true, keepDropdownOpen: wasProfileDropdownOpen });
+    if (options.preserveForm && nextId === selectedProfileId) {
+      profileSelect.value = selectedProfileId;
+      updateProfileDropdownLabel();
+    } else selectProfile(nextId, { preserveStatus: true, keepDropdownOpen: wasProfileDropdownOpen });
     renderProfileDropdown({ preserveFilter: wasProfileDropdownOpen, preserveScroll: wasProfileDropdownOpen });
     renderManageProfilesList();
     setControls();
@@ -916,7 +919,18 @@ export function renderLayoutSessions(): string {
     filterInput.setAttribute('aria-label', 'Filter Saved Connections');
     filterInput.setAttribute('autocomplete', 'off');
     filterInput.value = filterTextBeforeRender;
-    filterWrap.appendChild(filterInput);
+    filterInput.className = 'filter-input';
+    const filterBox = document.createElement('div'); filterBox.className = 'filter-box';
+    filterBox.classList.toggle('has-value', Boolean(filterTextBeforeRender));
+    const clearFilter = document.createElement('button'); clearFilter.type = 'button';
+    clearFilter.className = 'filter-clear-button has-tooltip'; clearFilter.disabled = !filterTextBeforeRender;
+    clearFilter.setAttribute('aria-label', 'Clear Filter'); clearFilter.setAttribute('data-tooltip', 'Clear Filter');
+    clearFilter.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg>';
+    clearFilter.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      profileDropdownFilterText = ''; renderProfileDropdown({ focusFilter: true });
+    });
+    filterBox.appendChild(filterInput); filterBox.appendChild(clearFilter); filterWrap.appendChild(filterBox);
     profileDropdownMenu.appendChild(filterWrap);
 
     const pinnedWrap = document.createElement('div');

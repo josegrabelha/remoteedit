@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { createConnectionManagerHarness, loadWithVscode, profile, secretKey } from './helpers/ConnectionManagerHarness';
@@ -130,4 +131,90 @@ test('Webview Master Password selection persists as a source and never submits t
   context.passwordSource = 'connection';
   assert.equal(context.isSelectedSavedConnectionDirty(), true);
   assert.equal(context.collectConnectionPayload().password, 'stale-individual');
+});
+
+
+test('Manage Connections editor preserves identity, secure credentials and active sessions and posts a refresh without changing selection', async () => {
+  const harness = createConnectionManagerHarness([profile('active'), profile('edited')]);
+  harness.secrets.set(secretKey('edited', 'password'), 'existing-password');
+  const group = await harness.manager.createGroup('Production');
+  let sessionMutations = 0;
+  const sessions = { hasConnection: () => true, disconnect: () => { sessionMutations++; }, connect: () => { sessionMutations++; } } as unknown as RemoteSessionManager;
+  const ui = createConnectionUiHarness(harness, sessions);
+  await ui.panel.saveConnection({ id: 'edited', name: 'Renamed', host: 'new.invalid', port: 2222,
+    groupId: group.id, authType: 'password', rememberPassword: true, password: '', editorSave: true });
+  const saved = await harness.manager.getProfile('edited');
+  assert.equal(saved?.name, 'Renamed');
+  assert.equal(saved?.groupId, group.id);
+  assert.equal(saved?.createdAt, 1);
+  assert.equal(harness.secrets.get(secretKey('edited', 'password')), 'existing-password');
+  assert.deepEqual((await harness.manager.listProfiles()).map(p => p.id), ['active', 'edited']);
+  assert.equal(sessionMutations, 0);
+  const snapshot = ui.messages.find(message => message.type === 'profilesLoaded')?.payload;
+  assert.equal(snapshot.editorRefresh, true);
+  assert.equal(snapshot.editedProfileId, 'edited');
+  assert.equal(snapshot.selectedId, undefined);
+  assert.equal(JSON.stringify(snapshot).includes('existing-password'), false);
+  assert.deepEqual(ui.messages.find(message => message.type === 'connectionEditResult')?.payload, { id: 'edited', saved: true });
+});
+
+test('Manage Connections editor rejects stale profiles, duplicate names and circular jumps and keeps the editor open on error', async () => {
+  const harness = createConnectionManagerHarness([profile('first'), profile('second', { jumpProfileId: 'first' })]);
+  const ui = createConnectionUiHarness(harness, {} as RemoteSessionManager);
+  for (const payload of [
+    { id: 'missing', name: 'Missing', host: 'missing.invalid' },
+    { id: 'first', name: ' SECOND ', host: 'first.invalid' },
+    { id: 'first', name: 'first', host: 'first.invalid', jumpProfileId: 'second' }
+  ]) {
+    ui.messages.length = 0;
+    await ui.panel.saveConnection({ ...payload, editorSave: true });
+    const result = ui.messages.find(message => message.type === 'connectionEditResult');
+    assert.equal(result?.payload.id, payload.id);
+    assert.ok(result?.payload.error);
+    assert.equal(result?.payload.saved, undefined);
+    assert.equal(ui.messages.some(message => message.type === 'profilesLoaded'), false);
+  }
+  assert.deepEqual((await harness.manager.listProfiles()).map(p => [p.id, p.name]), [['first', 'first'], ['second', 'second']]);
+});
+
+
+test('dialog focus restoration cancels pending tooltips and preserves mouse and keyboard tooltips', () => {
+  const listeners = new Map<string, (event: any) => void>();
+  const timers = new Map<number, () => void>();
+  const classes = new Set<string>();
+  let timerId = 0, focused = false;
+  const target: any = {
+    disabled: false, classList: { contains: () => false },
+    closest: () => target, contains: (value: any) => value === target,
+    hasAttribute: () => false, getAttribute: () => 'Connection & Settings Management',
+    getBoundingClientRect: () => ({ left: 10, top: 10, width: 30, height: 20, bottom: 30 }),
+    focus: () => { focused = true; listeners.get('focusin')!({ target }); }
+  };
+  const context: any = {
+    webviewTooltip: {
+      classList: { remove: (name: string) => classes.delete(name), add: (name: string) => classes.add(name), toggle() {} },
+      style: {}, setAttribute() {}, getBoundingClientRect: () => ({ width: 50, height: 20 })
+    },
+    sessionTabDragging: false, manageProfileDragging: false,
+    document: { addEventListener: (name: string, callback: any) => listeners.set(name, callback) },
+    window: { innerWidth: 800, innerHeight: 600, setTimeout: (callback: () => void) => {
+      timers.set(++timerId, callback); return timerId;
+    } },
+    clearTimeout: (id: number) => timers.delete(id)
+  };
+  const script = renderStateDialogs(false, false, 'symbolic');
+  runInNewContext(script.slice(script.indexOf('  const TOOLTIP_SHOW_DELAY_MS'), script.indexOf("  window.addEventListener('scroll'")), context);
+  listeners.get('mouseover')!({ target });
+  assert.equal(timers.size, 1);
+  context.restoreDialogFocus(target);
+  assert.equal(focused, true);
+  assert.equal(timers.size, 0);
+  assert.equal(classes.has('visible'), false);
+  for (const event of ['mouseover', 'focusin']) {
+    listeners.get(event)!({ target });
+    assert.equal(timers.size, 1);
+    for (const callback of timers.values()) callback();
+    assert.equal(classes.has('visible'), true);
+    context.hideWebviewTooltip();
+  }
 });

@@ -6,6 +6,9 @@ export async function tryHandleConnectionMessage(
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<boolean> {
   switch (message.type) {
+    case RemoteEditIncomingMessageType.ProxyProfiles:
+      await handlers.proxyProfiles(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.MasterPassword:
       await handlers.masterPassword(message.payload);
       return true;
@@ -19,10 +22,10 @@ export async function tryHandleConnectionMessage(
       await handlers.saveConnectionAs(message.payload);
       return true;
     case RemoteEditIncomingMessageType.PickPrivateKeyPath:
-      await handlers.pickPrivateKeyPath();
+      await handlers.pickPrivateKeyPath(message.payload);
       return true;
     case RemoteEditIncomingMessageType.PickCaCertificatePath:
-      await handlers.pickCaCertificatePath();
+      await handlers.pickCaCertificatePath(message.payload);
       return true;
     case RemoteEditIncomingMessageType.DeleteConnection:
       await handlers.deleteConnection(message.payload);

@@ -33,9 +33,6 @@ export function renderMasterPassword(): string {
   function receiveMasterPasswordState(payload) {
     if (typeof payload.configured === 'boolean') {
       masterPasswordState = { configured: payload.configured, usedBy: Number(payload.usedBy || 0) };
-      masterElement('masterPasswordSummary').textContent = (payload.configured ? 'Configured' : 'Not configured')
-        + ' · Used by ' + masterPasswordState.usedBy + ' connections';
-      masterElement('manageMasterPasswordButton').textContent = payload.configured ? 'Manage' : 'Configure...';
       updatePasswordSourceUI();
     }
     if (payload.error || payload.completed) {
@@ -65,7 +62,7 @@ export function renderMasterPassword(): string {
     clearMasterPasswordFields(); masterPasswordMode = '';
     masterPasswordBackdrop.classList.remove('visible');
     masterPasswordBackdrop.setAttribute('aria-hidden', 'true');
-    if (masterPasswordReturnFocus && !masterPasswordReturnFocus.disabled) masterPasswordReturnFocus.focus();
+    restoreDialogFocus(masterPasswordReturnFocus);
   }
   function focusMasterPasswordDialog() {
     masterElement(masterPasswordMode === 'manage' ? 'masterPasswordChange'
@@ -127,7 +124,7 @@ export function renderMasterPassword(): string {
     } else if (event.key === 'Tab') closePasswordSourceMenu();
   });
   document.addEventListener('click', event => { if (!passwordSourcePicker.contains(event.target)) closePasswordSourceMenu(); });
-  masterElement('manageMasterPasswordButton').addEventListener('click', openMasterPasswordDialog);
+  masterElement('manageMasterPasswordButton').addEventListener('click', () => { closeConnectionManagementMenu(true); openMasterPasswordDialog(); });
   masterElement('configureMasterPasswordInline').addEventListener('click', openMasterPasswordDialog);
   masterElement('masterPasswordChange').addEventListener('click', () => {
     masterPasswordMode = 'change'; clearMasterPasswordFields(); renderMasterPasswordDialog(); focusMasterPasswordDialog();

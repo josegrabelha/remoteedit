@@ -1,3 +1,4 @@
+import { accessFtp } from '../proxy/ProxyFtp';
 import { Readable, Writable } from 'stream';
 import * as vscode from 'vscode';
 import { Client as FtpClient, FileInfo } from 'basic-ftp';
@@ -131,7 +132,7 @@ export class FtpSessionManager implements RemoteSessionManager {
     try {
       const secureOptions = await buildFtpsSecureOptions(options);
 
-      await assertTcpConnectionReachable({
+      if (!options.proxy) await assertTcpConnectionReachable({
         host: options.host,
         port: options.port,
         timeoutMs: connectTimeoutMs,
@@ -139,14 +140,14 @@ export class FtpSessionManager implements RemoteSessionManager {
         cancellationToken
       });
 
-      await client.access({
+      await accessFtp(client, {
         host: options.host,
         port: options.port,
         user: options.username,
         password: options.password,
         secure: connectionType === 'ftps',
         secureOptions
-      });
+      }, options.proxy);
       await this.setBinaryTransferMode(client);
 
       throwIfOperationCancelled(cancellationToken);
@@ -161,6 +162,7 @@ export class FtpSessionManager implements RemoteSessionManager {
       this.sessions.set(options.connectionId, client);
 
       const connection: ActiveConnection = {
+        proxyProfileId: options.proxyProfileId,
         id: options.connectionId,
         connectionType,
         name: options.name || `${options.username}@${options.host}`,
@@ -586,14 +588,14 @@ export class FtpSessionManager implements RemoteSessionManager {
 
     try {
       const secureOptions = await buildFtpsSecureOptions(options);
-      await client.access({
+      await accessFtp(client, {
         host: options.host,
         port: options.port,
         user: options.username,
         password: options.password,
         secure: options.connectionType === 'ftps',
         secureOptions
-      });
+      }, options.proxy);
       await this.setBinaryTransferMode(client);
 
       if (!this.isModifiedTimeLookupCurrent(connectionId, token)) {
@@ -1543,14 +1545,14 @@ export class FtpSessionManager implements RemoteSessionManager {
 
     try {
       const secureOptions = await buildFtpsSecureOptions(options);
-      await client.access({
+      await accessFtp(client, {
         host: options.host,
         port: options.port,
         user: options.username,
         password: options.password,
         secure: options.connectionType === 'ftps',
         secureOptions
-      });
+      }, options.proxy);
       await this.setBinaryTransferMode(client);
 
       this.sessions.set(connectionId, client);

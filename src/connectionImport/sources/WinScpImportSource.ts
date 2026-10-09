@@ -1,3 +1,4 @@
+import { importProxy } from './ProxyImport';
 import type { ImportCandidate } from '../ConnectionImportTypes';
 import { candidate, credential, decoded, ini } from './ImportParsing';
 // WinSCP's documented storage binds its reversible encoding to UTF-8 user + host.
@@ -84,7 +85,12 @@ export function parseWinScp(text: string, path: string): ImportCandidate[] {
       }
     }
     if (v.passwordplain) credential(c, decoded(v.passwordplain));
-    if (v.tunnel === '1' || (v.proxymethod && v.proxymethod !== '0'))
+    if (v.proxymethod && v.proxymethod !== '0') {
+      const password = v.proxypassword ? decodeWinScpPassword(v.proxypassword, decoded(v.proxyusername || '') + decoded(v.proxyhost || '')) : undefined;
+      importProxy(c,{type:({'1':'socks4','2':'socks5','3':'http'} as Record<string,string>)[v.proxymethod],host:decoded(v.proxyhost || ''),port:v.proxyport,username:decoded(v.proxyusername || ''),password:v.proxypasswordplain ? decoded(v.proxypasswordplain) : password});
+      if (c.proxy && /^A35D/i.test(v.proxypassword || '')) c.lockedProxyPassword=v.proxypassword;
+    }
+    if (v.tunnel === '1')
       c.unsupported = 'Tunnel/proxy configuration needs manual migration.';
     c.ignored = Object.keys(v).filter(
       (k) =>

@@ -1,9 +1,12 @@
+import type { ProxyConnection } from '../../proxy/ProxyTransport';
+import { resolveRouteProxy } from '../../proxy/ProxyRoute';
 import type { SyncInput } from '../ui/WorkspaceSyncUi';
 import type { ConnectionProfile } from '../../connection/ConnectionManager';
 import type { WorkspaceSyncConnectionConfigSource } from './WorkspaceSyncConnectionConfigSource';
 import { buildWorkspaceSyncConnectionIdentity } from './ConnectionIdentity';
 
 export interface WorkspaceSyncJumpSnapshot {
+  proxy?: ProxyConnection;
   profileId: string;
   name: string;
   host: string;
@@ -17,6 +20,7 @@ export interface WorkspaceSyncJumpSnapshot {
 }
 
 export interface WorkspaceSyncConnectionSnapshot {
+  proxy?: ProxyConnection;
   profileId: string;
   profileUpdatedAt: number;
   connectionIdentity: string;
@@ -62,6 +66,7 @@ export async function loadWorkspaceSyncConnectionSnapshot(
     const jumpCredentials = await connectionManager.getProfileCredentials(jumpProfile.id);
     const jumpAuth = await resolveAuthentication(jumpProfile, jumpUsername, jumpCredentials, true, input);
     jumpChain.push({
+      proxy: await connectionManager.resolveProxyProfile?.(jumpProfile.proxyProfileId),
       profileId: jumpProfile.id,
       name: jumpProfile.name,
       host: requiredHost(jumpProfile, true),
@@ -75,13 +80,17 @@ export async function loadWorkspaceSyncConnectionSnapshot(
     });
   }
 
+  if ([profile, ...jumpProfiles].some(p => p.proxyProfileId) && !connectionManager.resolveProxyProfile) throw new Error('Proxy configuration is unavailable.');
+  const proxy = resolveRouteProxy(await connectionManager.resolveProxyProfile?.(profile.proxyProfileId), jumpChain);
   const host = requiredHost(profile, false);
   const port = normalizePort(profile.port, connectionType === 'sftp' ? 22 : 21);
   return {
+    proxy,
     profileId: profile.id,
     profileUpdatedAt: Number(profile.updatedAt || 0),
     connectionIdentity: buildWorkspaceSyncConnectionIdentity({
       connectionType,
+      proxy,
       host,
       port,
       username,

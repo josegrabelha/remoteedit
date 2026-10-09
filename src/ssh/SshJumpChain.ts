@@ -1,3 +1,5 @@
+import { openProxyWithCancellation } from '../proxy/ProxyRoute';
+import type { Socket } from 'net';
 import * as fs from 'fs/promises';
 import { Client, utils, type ClientChannel, type ConnectConfig } from 'ssh2';
 import { assertTcpConnectionReachable } from '../remote/ConnectionProbe';
@@ -192,6 +194,7 @@ export class SshJumpChain {
   private readonly probe: (options: TcpProbeOptions) => Promise<void>;
   private readonly authenticationDependencies: SshAuthenticationDependencyOverrides;
   private readonly onUnexpectedClose?: () => void;
+  private proxySocket?: Socket;
   private started = false;
   private opened = false;
   private terminationNotified = false;
@@ -228,7 +231,7 @@ export class SshJumpChain {
       const outermost = this.toAuthenticationTarget(jumpChain[0]);
 
       try {
-        await this.probe({
+        if (!jumpChain[0].proxy) await this.probe({
           host: outermost.host,
           port: outermost.port,
           timeoutMs: this.settings.readyTimeout,
@@ -240,7 +243,11 @@ export class SshJumpChain {
         throw stageError(outermost, 'checking TCP reachability', error);
       }
 
-      let incomingSocket: ClientChannel | undefined;
+      if (jumpChain[0].proxy) {
+        this.proxySocket = await openProxyWithCancellation(jumpChain[0].proxy, outermost.host, outermost.port, this.settings.readyTimeout, cancellationToken);
+        if (this.disposed) { this.proxySocket.destroy(); throw new Error('Connection cancelled.'); }
+      }
+      let incomingSocket: ClientChannel | Socket | undefined = this.proxySocket;
 
       for (let index = 0; index < jumpChain.length; index += 1) {
         this.assertOpening(cancellationToken);
@@ -295,7 +302,7 @@ export class SshJumpChain {
 
       this.assertOpening(cancellationToken);
       this.opened = true;
-      return incomingSocket;
+      return incomingSocket as ClientChannel;
     } catch (error) {
       await this.dispose();
       throw error;
@@ -308,6 +315,7 @@ export class SshJumpChain {
     }
 
     this.disposed = true;
+    this.proxySocket?.destroy();
     this.disposePromise = Promise.resolve().then(async () => {
       const resources = this.resources.splice(0).reverse();
 

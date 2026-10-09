@@ -36,9 +36,25 @@ export function renderBody(): string {
               <select id="profileSelect" class="profile-select-native" aria-hidden="true" tabindex="-1"><option value="">New / Quick Connection</option></select>
               <input id="profileName" type="hidden" autocomplete="off" />
             </div>
-            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Manage Connections" data-tooltip="Manage Connections">
+            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Connection &amp; Settings Management" data-tooltip="Connection &amp; Settings Management" aria-haspopup="menu" aria-expanded="false" aria-controls="connectionManagementMenu">
               <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-280v-40h560v40H200Zm0-180v-40h560v40H200Zm0-180v-40h560v40H200Z" /></svg>
             </button>
+            <div id="connectionManagementMenu" class="profile-dropdown-menu connection-management-menu" role="menu" aria-label="Connection &amp; Settings Management">
+              <button id="connectionManagementConnections" class="profile-dropdown-item" type="button" role="menuitem">Manage Connections</button>
+              <button id="manageProxyProfilesButton" class="profile-dropdown-item" type="button" role="menuitem">Manage Proxies</button>
+              <button id="manageMasterPasswordButton" class="profile-dropdown-item" type="button" role="menuitem">Master Password</button>
+              <div class="profile-dropdown-separator" role="separator"></div>
+              <div id="connectionImportMenuWrap">
+                <button id="manageProfilesImportButton" class="profile-dropdown-item" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="connectionImportMenu"><span>Import</span><svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 5 9.5 8l-3 3" /></svg></button>
+                <div id="connectionImportMenu" class="profile-dropdown-menu connection-management-menu" role="menu" aria-label="Import">
+                  <button id="connectionImportBackup" class="profile-dropdown-item" type="button" role="menuitem">Import Remote Edit Backup</button>
+                  <button id="connectionImportOpen" class="profile-dropdown-item" type="button" role="menuitem">Import Connections from Other Applications</button>
+                </div>
+              </div>
+              <button id="manageProfilesExportButton" class="profile-dropdown-item" type="button" role="menuitem">Export</button>
+              <div class="profile-dropdown-separator" role="separator"></div>
+              <button id="showSettingsButton" class="profile-dropdown-item" type="button" role="menuitem">Settings</button>
+            </div>
             </div>
           </div>
 
@@ -90,6 +106,8 @@ export function renderBody(): string {
                 </div>
               </div>
             </div>
+
+            <div class="full"><label for="proxyProfileId">Proxy</label><select id="proxyProfileId" data-proxy data-combo-action="New Proxy"><option value="">No Proxy</option></select></div>
 
             <div id="jumpProfileBlock" class="full jump-profile-block">
               <label for="jumpProfileDropdownButton">Jump Host</label>
@@ -172,16 +190,15 @@ export function renderBody(): string {
           <div class="connection-actions-section">
             <div class="button-row connection-actions">
               <button id="connectButton" class="connection-action-full">Connect</button>
-              <div id="saveProfileSplitButton" class="connection-save-split connection-action-full">
+              <div id="saveProfileSplitButton" class="connection-save-split">
                 <button id="saveProfileButton" class="secondary connection-save-main" type="button">Save</button>
                 <button id="saveProfileMenuButton" class="secondary connection-save-menu-button" type="button" aria-label="More save options" aria-haspopup="menu" aria-expanded="false">
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5-.7-.7L8 8.6 5.2 5.8l-.7.7Z" /></svg>
+                  <svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg>
                 </button>
                 <div id="saveProfileMenu" class="connection-save-menu" role="menu" aria-hidden="true">
                   <button id="saveProfileAsButton" type="button" role="menuitem">Save As...</button>
                 </div>
               </div>
-              <button id="showSettingsButton" class="secondary">Settings</button>
               <button id="showOutputButton" class="secondary">Output</button>
             </div>
           </div>
@@ -538,6 +555,21 @@ export function renderBody(): string {
     </section>
   </div>
 
+  <div id="proxyProfilesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="proxyProfilesTitle" aria-hidden="true">
+    <section class="file-properties-dialog proxy-profiles-dialog">
+      <div class="file-properties-header"><h2 id="proxyProfilesTitle" class="file-properties-title">Proxy Profiles</h2></div>
+      <div class="file-properties-body"><div id="proxyListPage"><div id="proxyList"></div></div><div id="proxyEditorPage" hidden>
+      <input id="proxyEditId" type="hidden" />
+      <div class="master-password-field"><label for="proxyName">Name</label><input id="proxyName" /></div>
+      <div class="master-password-field"><label for="proxyType">Proxy Type</label><select id="proxyType" aria-label="Proxy Type" data-proxy><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option><option value="http">HTTP CONNECT</option></select></div>
+      <div class="form-grid proxy-address-row"><div class="master-password-field"><label for="proxyHost">Hostname</label><input id="proxyHost" /></div>
+      <div class="master-password-field"><label for="proxyPort">Port</label><input id="proxyPort" type="text" inputmode="numeric" pattern="[0-9]*" /></div></div>
+      <div id="proxyAuthenticationRow" class="master-password-field"><label for="proxyAuthentication">Authentication</label><select id="proxyAuthentication" aria-label="Authentication" data-proxy><option value="none">None</option><option value="password">Username / Password</option></select></div>
+      <div id="proxyUsernameRow" class="master-password-field"><label id="proxyUsernameLabel" for="proxyUsername">Username</label><input id="proxyUsername" autocomplete="off" /></div>
+      <div id="proxyPasswordRow" class="master-password-field"><label for="proxyPassword">Password</label><div class="input-with-button"><input id="proxyPassword" type="password" autocomplete="new-password" /><button id="proxyPasswordReveal" class="input-icon-button password-reveal-button has-tooltip" type="button" aria-label="Temporarily Show Password" data-tooltip="Hold to Show Password"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.5 3 2.1 5.1 1 8c1.1 2.9 3.5 5 7 5s5.9-2.1 7-5c-1.1-2.9-3.5-5-7-5Zm0 8.7A3.7 3.7 0 1 1 8 4.3a3.7 3.7 0 0 1 0 7.4Zm0-1.2A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" /></svg></button></div></div>
+      </div></div><div class="file-properties-actions connection-import-actions"><div id="proxyFeedback" class="connection-import-footer-status has-tooltip tooltip-above" role="status" aria-live="polite"></div><button id="proxyBack" class="secondary" type="button" hidden>Back</button><button id="proxyNew" class="secondary" type="button">New</button><button id="proxyClose" type="button">Close</button><button id="proxySave" type="button" hidden>Save</button></div>
+    </section>
+  </div>
   <div id="masterPasswordBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="masterPasswordTitle" aria-hidden="true">
     <section class="file-properties-dialog input-prompt-dialog">
       <div class="file-properties-header"><h2 id="masterPasswordTitle" class="file-properties-title">Master Password</h2></div>
@@ -557,23 +589,10 @@ export function renderBody(): string {
       <div class="file-properties-header manage-profiles-header-row">
         <div>
           <h2 id="manageProfilesTitle" class="file-properties-title">Manage Connections</h2>
-          <div class="file-properties-path">Clone, rename, reorder, or remove saved connection profiles.</div>
-        </div>
-        <div class="manage-profiles-header-actions">
-          <div id="connectionImportMenuWrap" class="connection-import-menu-wrap">
-          <button id="manageProfilesImportButton" class="secondary" type="button" aria-haspopup="menu" aria-expanded="false"><span class="profile-dropdown-label">Import</span><svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3" /></svg></button>
-          <div id="connectionImportMenu" class="profile-dropdown-menu" role="menu">
-          <button id="connectionImportBackup" class="profile-dropdown-item" type="button" role="menuitem">Import Remote Edit Backup</button>
-          <button id="connectionImportOpen" class="profile-dropdown-item" type="button" role="menuitem">Import Connections from Other Applications</button>
-          </div></div>
-          <button id="manageProfilesExportButton" class="secondary" type="button">Export</button>
+          <div class="file-properties-path">Clone, edit, reorder, or remove saved connection profiles.</div>
         </div>
       </div>
-      <div class="file-properties-body">
-        <div class="master-password-summary">
-          <div><p class="backup-section-title">Master Password</p><div id="masterPasswordSummary" class="file-properties-path">Not configured</div></div>
-          <button id="manageMasterPasswordButton" type="button" class="secondary">Configure...</button>
-        </div>
+      <div id="manageProfilesListPage" class="file-properties-body">
         <p class="backup-section-title">Saved Connections</p>
         <div id="manageProfilesFeedback" class="manage-profiles-feedback" role="status" aria-live="polite"></div>
         <div class="manage-profiles-toolbar">
@@ -590,7 +609,10 @@ export function renderBody(): string {
         </div>
         <div id="manageProfilesList" class="manage-profiles-list"></div>
       </div>
+      <div id="manageConnectionEditor" class="file-properties-body" hidden></div>
       <div class="file-properties-actions">
+        <button id="manageConnectionBack" class="secondary" type="button" hidden>Back</button>
+        <button id="manageConnectionSave" type="button" hidden>Save</button>
         <button id="manageProfilesCloseButton" type="button">Close</button>
       </div>
     </section>

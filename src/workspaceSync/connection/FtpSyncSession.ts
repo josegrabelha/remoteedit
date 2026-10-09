@@ -1,3 +1,4 @@
+import { accessFtp } from '../../proxy/ProxyFtp';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import { Writable } from 'stream';
@@ -216,14 +217,14 @@ export class FtpSyncSession implements WorkspaceSyncRemoteSession {
         ? await buildSecureOptions(this.snapshot)
         : undefined;
       this.lifetime.assertOpen();
-      await this.lifetime.run(() => client.access({
+      await this.lifetime.run(() => accessFtp(client, {
         host: this.snapshot.host,
         port: this.snapshot.port,
         user: this.snapshot.username,
         password: this.snapshot.password,
         secure: this.snapshot.connectionType === 'ftps',
         secureOptions
-      }));
+      }, this.snapshot.proxy));
       await this.lifetime.run(() => client.send('TYPE I'));
       try {
         const system = await this.lifetime.run(() => client.send('SYST'));

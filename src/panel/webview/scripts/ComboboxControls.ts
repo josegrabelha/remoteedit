@@ -1,4 +1,4 @@
-export function renderComboboxControls(): string {
+export function renderComboboxControls(selector = 'select'): string {
   return `(() => {
   const combos = new Map();
   let opened;
@@ -89,36 +89,48 @@ export function renderComboboxControls(): string {
       item.button.disabled = select.disabled;
       if (item.button.disabled && opened === item) closeCombo();
     }
-    document.querySelectorAll('select').forEach(select => {
+    document.querySelectorAll(${JSON.stringify(selector)}).forEach(select => {
       if (combos.has(select)) return;
       const wrapper = document.createElement('div'); wrapper.className = 'profile-picker'; wrapper.dataset.for = select.id;
       select.after(wrapper); select.classList.add('profile-select-native'); select.tabIndex = -1; select.setAttribute('aria-hidden', 'true');
       const button = document.createElement('button'); button.type = 'button'; button.className = 'profile-dropdown-button'; button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-expanded', 'false');
       button.setAttribute('aria-label', select.getAttribute('aria-label') || ({mapping:'Mapping',target:'Target',mapDirection:'Direction'})[select.id] || 'Connection');
       const label = document.createElement('span'); label.className = 'profile-dropdown-label';
-      button.append(label); button.insertAdjacentHTML('beforeend', '<svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>'); wrapper.append(button);
+      button.append(label); button.insertAdjacentHTML('beforeend', '<svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3"/></svg>'); wrapper.append(button);
       const menu = document.createElement('div'); menu.className = 'profile-dropdown-menu sync-combo-menu'; menu.dataset.for = select.id;
-      const hasFilter = select.id !== 'mapDirection';
+      const hasFilter = select.dataset.filter !== 'false' && !['mapDirection', 'proxyType', 'proxyAuthentication'].includes(select.id);
       let searchWrap, search, clearSearch;
       if (hasFilter) {
-        searchWrap = document.createElement('div'); searchWrap.className = 'profile-dropdown-filter filter-box';
+        const filterWrap = document.createElement('div'); filterWrap.className = 'profile-dropdown-filter';
+        searchWrap = document.createElement('div'); searchWrap.className = 'filter-box';
+        filterWrap.append(searchWrap);
         search = document.createElement('input'); search.className = 'filter-input'; search.placeholder = 'Filter…'; search.setAttribute('aria-label', 'Filter options');
         clearSearch = document.createElement('button'); clearSearch.type = 'button'; clearSearch.className = 'filter-clear-button'; clearSearch.setAttribute('aria-label', 'Clear Filter'); clearSearch.setAttribute('data-tooltip', 'Clear Filter'); clearSearch.disabled = true;
         clearSearch.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3L3 9"></path></svg>';
-        searchWrap.append(search, clearSearch); menu.append(searchWrap);
+        searchWrap.append(search, clearSearch); menu.append(filterWrap);
       }
       const list = document.createElement('div'); list.id = \`sync-options-\${++serial}\`; list.setAttribute('role','listbox'); list.setAttribute('aria-label',button.getAttribute('aria-label')); button.setAttribute('aria-controls',list.id);
+      let action;
+      if (select.dataset.comboAction) {
+        menu.classList.add('combo-with-action');
+        const pinned = document.createElement('div'); pinned.className = 'profile-dropdown-pinned';
+        action = document.createElement('button'); action.type = 'button'; action.className = 'profile-dropdown-item';
+        action.textContent = select.dataset.comboAction; action.setAttribute('role','option');
+        action.onclick = () => { closeCombo(true); select.dispatchEvent(new CustomEvent('comboAction', { bubbles: true })); };
+        const separator = document.createElement('div'); separator.className = 'profile-dropdown-separator';
+        pinned.append(action, separator); menu.append(pinned); list.className = 'profile-dropdown-list';
+      }
       menu.append(list);
       const item = { select, wrapper, button, label, menu, searchWrap, search, clearSearch, list, forceDown: Boolean(select.closest('#mappingDialog')), placement: undefined, observer: new MutationObserver(() => refresh()) };
       item.observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled','selected'] }); combos.set(select,item);
       button.onclick = () => opened === item ? closeCombo() : openCombo(item);
-      button.onkeydown = event => { if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); openCombo(item); const items = [...list.querySelectorAll('button:not(:disabled)')]; (event.key === 'End' || event.key === 'ArrowUp' ? items.at(-1) : items[0])?.focus(); } };
+      button.onkeydown = event => { if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); openCombo(item); const items = [...(action ? [action] : []), ...list.querySelectorAll('button:not(:disabled)')]; (event.key === 'End' || event.key === 'ArrowUp' ? items.at(-1) : items[0])?.focus(); } };
       if (search) {
         search.oninput = () => { updateComboFilterState(item); fillCombo(item, search.value); };
         clearSearch.onclick = event => { event.preventDefault(); event.stopPropagation(); clearComboFilter(item); };
       }
       menu.onkeydown = event => {
-        const items = [...list.querySelectorAll('button:not(:disabled)')]; const index = items.indexOf(document.activeElement);
+        const items = [...(action ? [action] : []), ...list.querySelectorAll('button:not(:disabled)')]; const index = items.indexOf(document.activeElement);
         if (event.key === 'Escape') {
           event.preventDefault(); event.stopPropagation();
           if (search && search.value) clearComboFilter(item); else closeCombo(true);

@@ -1,3 +1,4 @@
+import { importProxy } from './ProxyImport';
 import * as path from 'path';
 import type { ImportCandidate } from '../ConnectionImportTypes';
 import { candidate, decoded, ini } from './ImportParsing';
@@ -19,7 +20,7 @@ function puttyCandidate(
     c.profile.privateKeyPath = values.publickeyfile;
   }
   if (values.proxymethod && values.proxymethod !== '0')
-    c.unsupported = 'PuTTY proxy configuration needs manual migration.';
+    importProxy(c,{type:({'1':'socks4','2':'socks5','3':'http'} as Record<string,string>)[values.proxymethod],host:values.proxyhost,port:values.proxyport,username:values.proxyusername,password:values.proxypassword});
   c.credentialNote = 'PuTTY does not export saved passwords.';
   c.ignored = Object.keys(values).filter(
     (key) => !['hostname', 'username', 'portnumber', 'protocol', 'publickeyfile'].includes(key)

@@ -95,26 +95,26 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
           : 'remoteedit.action.logViewer.disabled'
       }),
       new RemoteEditSidebarItem({
-        label: 'Export Backup',
+        label: 'Export',
         kind: 'action',
         id: 'action:exportBackup',
         icon: new vscode.ThemeIcon('sign-out'),
         tooltip: 'Export Remote Edit data.',
         command: {
           command: COMMAND_EXPORT_BACKUP,
-          title: 'Export Backup'
+          title: 'Export'
         },
         contextValue: 'remoteedit.action.exportBackup'
       }),
       new RemoteEditSidebarItem({
-        label: 'Import Backup',
+        label: 'Import',
         kind: 'action',
         id: 'action:importBackup',
         icon: new vscode.ThemeIcon('sign-in'),
         tooltip: 'Import Remote Edit data.',
         command: {
           command: COMMAND_IMPORT_BACKUP,
-          title: 'Import Backup'
+          title: 'Import'
         },
         contextValue: 'remoteedit.action.importBackup'
       }),
@@ -162,13 +162,16 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
   }
 
   async getChildren(element?: RemoteEditSidebarItem): Promise<RemoteEditSidebarItem[]> {
+    const proxyProfiles = await this.connectionManager.proxyProfiles.list();
     if (element?.kind === 'quickConnect') {
       const profile = this.options.getQuickConnectProfile();
       const profiles = await this.connectionManager.listProfiles();
+      const proxyProfileLabel = proxyProfiles.find(p => p.id === profile.proxyProfileId)?.name;
       const jumpDisplay = buildSidebarJumpDisplay(profile, profiles);
       return getConnectionDetailFields(profile)
         .map(field => RemoteEditSidebarItem.connectionDetail(profile, field, {
           quickConnect: true,
+          proxyProfileLabel,
           jumpProfileLabel: jumpDisplay.label,
           jumpRoute: jumpDisplay.route
         }));
@@ -183,7 +186,8 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
         .filter(profile => !filterText || this.matchesFilter(this.options.getDraftProfile(profile), filterText, connectionGroups))
         .map(profile => {
           const draftProfile = this.options.getDraftProfile(profile);
-          const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
+          const proxyProfileLabel = proxyProfiles.find(p => p.id === draftProfile.proxyProfileId)?.name;
+      const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
           return RemoteEditSidebarItem.fromConnectionProfile(
             draftProfile,
             {
@@ -207,10 +211,12 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
         return [];
       }
 
+      const proxyProfileLabel = proxyProfiles.find(p => p.id === draftProfile.proxyProfileId)?.name;
       const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
       return getConnectionDetailFields(draftProfile)
         .map(field => RemoteEditSidebarItem.connectionDetail(draftProfile, field, {
           connected: this.options.isConnected(element.profileId!),
+          proxyProfileLabel,
           jumpProfileLabel: jumpDisplay.label,
           jumpRoute: jumpDisplay.route
         }));
@@ -274,6 +280,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
     }
 
     items.push(...filteredNewDraftProfiles.map(profile => {
+      const proxyProfileLabel = proxyProfiles.find(p => p.id === profile.proxyProfileId)?.name;
       const jumpDisplay = buildSidebarJumpDisplay(profile, profiles);
       return RemoteEditSidebarItem.fromConnectionProfile(
         profile,
@@ -288,7 +295,8 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
 
       items.push(...groupedProfiles.loose.map(profile => {
         const draftProfile = this.options.getDraftProfile(profile);
-        const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
+        const proxyProfileLabel = proxyProfiles.find(p => p.id === draftProfile.proxyProfileId)?.name;
+      const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
         return RemoteEditSidebarItem.fromConnectionProfile(
           draftProfile,
           {
@@ -302,7 +310,8 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<RemoteEd
     } else {
       items.push(...filteredProfiles.map(profile => {
         const draftProfile = this.options.getDraftProfile(profile);
-        const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
+        const proxyProfileLabel = proxyProfiles.find(p => p.id === draftProfile.proxyProfileId)?.name;
+      const jumpDisplay = buildSidebarJumpDisplay(draftProfile, profiles);
         return RemoteEditSidebarItem.fromConnectionProfile(
           draftProfile,
           {

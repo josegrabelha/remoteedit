@@ -18,28 +18,28 @@ Remote Edit supports Linux, Unix, AIX, and Windows OpenSSH targets, with protoco
 
 Remote Edit is available on the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=josegrabelha.remoteedit) and the [Open VSX Registry](https://open-vsx.org/extension/josegrabelha/remoteedit).
 
+## Getting Started
+
+1. Open **Remote Edit (Advanced View)** from the VS Code Activity Bar, or run **Remote Edit: Open** from the Command Palette.
+2. To create a saved connection, choose **Add Connection** in the Native Sidebar and follow the prompts. Alternatively, select **New / Quick Connection** in the Advanced View and enter your server details.
+3. Select **SFTP**, **FTP**, or **FTPS** and configure the host, port, and authentication. Add a Proxy or Jump Host if needed.
+4. Connect to browse and edit remote files. In the Advanced View, use **Save** to keep a new connection profile for later use.
+
 ## Highlights
 
-- SSH/SFTP, FTP, and FTPS connections
-- Full-featured Remote Edit Webview
-- Native VS Code Sidebar
-- Workspace Sync with multi-target and automatic synchronization support
-- Multi-Target Commands & Search with shared targets, connections, and Target Sets
-- Remote file browsing and direct editing in VS Code
-- Multiple active connections
-- Multiple simultaneous transfers and Transfer Queue
-- Unified Remote Search
-- Dedicated Log Viewer
-- Server View for SSH/SFTP connections
-- SSH Terminal access
-- Run Remote Command, Saved Commands, and Quick Tasks
+- SSH/SFTP, FTP, and FTPS connections with direct remote file editing
+- Full Remote Edit Webview and Native VS Code Sidebar
+- Workspace Sync with multi-target and automatic synchronization
+- Multi-Target Commands & Search with reusable Target Sets
+- Multiple active connections, concurrent transfers, and Transfer Queue
+- Remote Search by name and SSH/SFTP file content
+- SSH server tools: Server View, Terminal, Remote Commands, Quick Tasks, and Log Viewer
 - Local and reverse SSH port forwarding
-- SFTP Jump Hosts and multi-hop saved connection chains
-- Sudo Mode on supported SSH/SFTP targets
-- File permissions and ownership management
-- Favorites, saved connections, connection groups, Clone, and Save As
-- Import saved connections from OpenSSH, FileZilla, WinSCP, PuTTY, SSH FS, and VS Code SFTP
+- SFTP Jump Hosts and reusable SOCKS4, SOCKS5, and HTTP CONNECT proxy profiles
+- Saved connections, groups, favorites, and secure credentials
+- Import connections from OpenSSH, FileZilla, WinSCP, PuTTY, SSH FS, and VS Code SFTP
 - Password-protected import/export backups
+- Sudo Mode, permissions, ownership, checksums, and archive operations
 
 ## Remote Edit Webview
 
@@ -75,7 +75,7 @@ Use the Sidebar to access:
 - Favorites
 - Transfers
 - SSH Terminal actions
-- Import/Export backups
+- Import and Export, including connections from other applications
 
 ## Remote File Editor Labels
 
@@ -92,32 +92,24 @@ Changes apply to subsequent file opens. Close and reopen existing editors to use
 
 | Capability | Included |
 |---|:---:|
-| SSH/SFTP | ✓ |
-| FTP | ✓ |
-| FTPS | ✓ |
-| Full Visual Webview | ✓ |
-| Native VS Code Sidebar | ✓ |
+| SSH/SFTP, FTP, and FTPS | ✓ |
+| Advanced View and Native Sidebar | ✓ |
 | Workspace Sync | ✓ |
 | Multi-Target Commands & Search | ✓ |
 | Multiple Active Connections | ✓ |
-| Favorites | ✓ |
-| Transfer Queue | ✓ |
-| Multiple Simultaneous Transfers | ✓ |
+| Favorites, Saved Connections, and Groups | ✓ |
+| Transfer Queue and Simultaneous Transfers | ✓ |
 | Import Connections from Other Applications | ✓ |
-| Import / Export | ✓ |
-| SSH Terminal | ✓ |
-| Remote Commands | ✓ |
-| Saved Commands / Quick Tasks | ✓ |
+| Proxy Profiles and SFTP Jump Hosts | ✓ |
+| Password-Protected Import / Export | ✓ |
 | Remote Search | ✓ |
 | Server View | ✓ |
-| Local and Reverse SSH Port Forwarding | ✓ |
-| SFTP Jump Hosts | ✓ |
+| SSH Terminal, Remote Commands, and Quick Tasks | ✓ |
 | Log Viewer | ✓ |
+| Local and Reverse SSH Port Forwarding | ✓ |
 | Sudo Mode | ✓ |
-| Permissions Management | ✓ |
-| Owner / Group Management | ✓ |
-| Checksums | ✓ |
-| Archive Creation | ✓ |
+| Permissions and Ownership Management | ✓ |
+| Checksums and Archive Creation | ✓ |
 
 ## Workspace Sync
 
@@ -240,16 +232,29 @@ Backup/Restore exposes one **Multi-Target Commands & Search** category for the f
 
 ## Supported Protocols
 
-| Protocol | Browse / Edit | Upload / Download | File Search | Content Search | Workspace Sync | Multi-Target | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode | Jump Hosts |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | ✓ |
-| FTP | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - | - |
-| FTPS | ✓ | ✓ | ✓ | - | ✓ | - | - | - | - | - | - | - |
+### File Operations and Synchronization
+
+| Protocol | Browse / Edit | Upload / Download | File Search | Content Search | Workspace Sync |
+|---|:---:|:---:|:---:|:---:|:---:|
+| SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ |
+| FTP | ✓ | ✓ | ✓ | - | ✓ |
+| FTPS | ✓ | ✓ | ✓ | - | ✓ |
+
+### Connection & Server Tools
+
+| Protocol | Multi-Target | Remote Commands | Server View | Terminal | Log Viewer | Sudo Mode | Proxy | Jump Hosts |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| SSH/SFTP on Linux/Unix/AIX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SSH/SFTP on Windows OpenSSH | ✓ | ✓ | ✓ | ✓ | ✓ | - | ✓ | ✓ |
+| FTP | - | - | - | - | - | - | ✓ | - |
+| FTPS | - | - | - | - | - | - | ✓ | - |
 
 **Multi-Target** refers to **Multi-Target Commands & Search** and requires saved SSH/SFTP connections. FTP and FTPS are not supported in Multi-Target.
 
 FTP and FTPS Remote Search support file-name/path search. Content search requires SSH/SFTP.
+
+**Proxy Support** includes SOCKS4, SOCKS5, and HTTP CONNECT for SSH/SFTP, FTP, and FTPS connections, including compatible SSH Jump Host routes.
 
 ## Server View
 
@@ -393,7 +398,7 @@ Remote Edit validates missing profiles, self-references, cycles, and invalid non
 
 Jump Host references are preserved by current Remote Edit backups. Workspace Sync also resolves the Jump Host chain of saved SFTP connections used by its targets.
 
-FTP and FTPS remain direct connections.
+FTP and FTPS do not use SSH Jump Hosts, but both can connect through a configured proxy.
 
 ## Sudo Mode
 
@@ -454,12 +459,17 @@ Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 - Optional private-key passphrases
 - Start paths
 - Favorites
+- Reusable Proxy Profiles for SFTP, FTP, and FTPS
 - Jump Host references for SFTP profiles
 - Secure credential storage through VS Code Secret Storage
 
 Use **Clone** to create an independent copy of a saved connection. Use the **Save** split button and **Save As...** to create a new saved profile from the current values without modifying the original.
 
-**Master Password** can be used as a shared password source across Remote Edit and managed from **Manage Connections**. It is stored securely in VS Code SecretStorage, and private-key authentication is unchanged.
+In the Advanced View, **Connection & Settings Management** provides access to **Manage Connections**, **Manage Proxies**, **Master Password**, **Import**, **Export**, and **Settings**.
+
+**Manage Connections** provides group management, Clone, Delete, and full **Edit** of saved connections. Edit includes **Profile** and **Group** above the connection settings, with protocol-specific authentication, credentials, Proxy, Jump Host, and FTPS options. Saving updates the Advanced View and Native Sidebar immediately while preserving unsaved connection drafts and keeping active sessions connected. **Back** confirms before discarding unsaved edits. The Proxy selector also provides **New Proxy** for creating and selecting a profile without leaving the form.
+
+**Master Password** can be used as a shared password source across Remote Edit and managed from **Connection & Settings Management → Master Password**. It is stored securely in VS Code SecretStorage, and private-key authentication is unchanged.
 
 Backup/Restore preserves the selected password source and can include the Master Password when encrypted credentials are exported. During Merge, an existing different Master Password is kept unless you choose to replace it.
 
@@ -468,7 +478,7 @@ Backup/Restore preserves the selected password source and can include the Master
 Create password-protected backups of Remote Edit data, including selected categories such as:
 
 - Remote Edit settings
-- Saved connections
+- Saved connections and Proxy Profiles
 - Remote Path favorites
 - Encrypted credentials when explicitly selected
 - Saved Commands and their Remote Paths
@@ -482,6 +492,47 @@ Import supports **Merge** and **Replace** modes and shows a summary before chang
 
 Operational and session-only state is not included in backups. Examples include open tabs, active connections, running transfers, Sudo Mode state, Log Viewer buffers, command history, Multi-Target runtime state, Workspace Sync Activity history, sessions, comparison snapshots, and synchronization baselines. Workspace Sync Activity is retained locally across VS Code reloads and restarts, but it is not transferred through Import/Export.
 
+## Import Connections
+
+In the Advanced View, choose **Connection & Settings Management → Import → Import Connections from Other Applications**. In the Native Sidebar, choose **Import → Import Connections from Other Applications (Webview)** to open the same modal. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details and use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
+
+Supported sources and compatibility:
+
+| Application | Supported input | Important limitations |
+| --- | --- | --- |
+| **OpenSSH** | SSH configuration files, including `Include` files and host aliases | Resolves host patterns, defaults, and `ProxyJump` chains. Conditional `Match` rules may require manual review; only the first applicable identity is imported. Supports compatible `nc -X 4/5/connect -x host:port %h %p` `ProxyCommand` forms; other commands require manual migration and are never executed. Include required Jump Host profiles in the same import. |
+| **FileZilla** | Site Manager XML and companion `filezilla.xml` proxy settings when available | Supports saved or unlockable credentials and explicit FTPS; implicit FTPS is unsupported. Opportunistic TLS becomes required explicit TLS with a warning. Compatible global SOCKS4, SOCKS5, and HTTP CONNECT settings are imported unless bypassed by a site; Site Manager exports alone may omit these settings. |
+| **WinSCP** | INI files or detected Windows Registry sessions | Supports recoverable or unlockable credentials and compatible SOCKS4, SOCKS5, and HTTP CONNECT proxies. SCP, WebDAV, S3, SSH tunnels, and unsupported proxy methods require manual migration. |
+| **PuTTY** | Windows Registry, `.reg` exports, or Unix saved-session files | SSH sessions only, with compatible SOCKS4, SOCKS5, and HTTP CONNECT proxies. `.ppk` keys must be converted to OpenSSH format. Saved SSH passwords are not available from PuTTY; unsupported proxy methods need manual migration. |
+| **SSH FS** | VS Code settings, `.code-workspace` files, configuration arrays, and referenced config paths | Supports representable `label`, `group`, `extend`, and `hop` settings and compatible `proxy` objects. Embedded private keys, unresolved PuTTY references, and `sshConfigPath` settings require manual configuration. |
+| **VS Code SFTP** | Supported `sftp.json` / JSONC variants | Supports profile overrides, recoverable passwords/passphrases, and compatible `proxy` objects. Unsupported remote hops, external SSH settings, and embedded private keys require manual configuration. |
+
+Source detection uses standard application locations on the VS Code extension host, including Windows Registry sessions and PuTTY sessions in `~/.putty/sessions/` on Linux/macOS. Portable installations and configurations copied from another machine can be selected manually. Detection does not launch external applications or modify source files. Configuration files are limited to **2 MiB** each, with up to **2,000 connections** per review.
+
+Recoverable credentials use Remote Edit's existing secure storage. Protected FileZilla and WinSCP credentials may be unlocked by source/key group; if selected connections remain locked, a confirmation offers batch unlock or import without the protected credentials. The external password does not change Remote Edit's Master Password. Replacing a connection may replace or clear its saved credentials; the confirmation warns about this risk. Open sessions are not reconnected automatically.
+
+Compatible proxy settings create or reuse Remote Edit Proxy Profiles, with available passwords stored securely. Unavailable proxy credentials are reported as warnings and must be completed after import. Unsupported proxy configurations are not silently converted to direct connections. Credential values are not displayed in the review or comparison views.
+
+Imported connection groups preserve source folder paths as group names where available. Some application-specific settings cannot be translated directly, so review warnings, authentication, directories, proxies, and Jump Host dependencies before importing. Imports save connections one at a time rather than as a single transaction: if one fails, previous successful saves are not automatically rolled back. Review the saved connections before retrying.
+
+**Import → Import Remote Edit Backup** retains the existing backup restore flow in the Advanced View and Sidebar. **Export** retains the existing backup export flow.
+
+## Proxy Support
+
+Create reusable **SOCKS4**, **SOCKS5** or **HTTP CONNECT** profiles in **Connection & Settings Management → Manage Proxies**. Select a profile using the **Proxy** field in the Advanced View or Native Sidebar. Existing connections default to **No Proxy**. The Native Sidebar proxy picker keeps **New Proxy** and **Manage Proxies (Webview)** at the top, including while filtering. **New Proxy** uses a native wizard and selects the created profile in the current connection draft; save the connection to persist that association. **Manage Proxies (Webview)** opens the existing Proxy Profiles modal directly. **Add Connection** also offers this picker before Jump Host. Updating proxy profiles preserves unsaved connection drafts.
+
+Each proxy has a name, host and port. SOCKS4 accepts an optional User ID and no password. SOCKS5 and HTTP CONNECT support no authentication or username/password authentication; HTTP CONNECT uses Basic. Proxy passwords use VS Code SecretStorage independently of server credentials. SOCKS and plain HTTP proxies do not encrypt proxy authentication traffic; use them on a trusted network. SFTP and FTPS retain their own transport encryption.
+
+A profile can be shared by multiple connections. Editing it takes effect on the next connection or reconnection. Deleting a profile is blocked while saved connections reference it. To change a saved password, enter a new value; leave the password field empty to keep it.
+
+SFTP, FTP and explicit FTPS use the shared proxy transport. FTP/FTPS sends both control and passive data connections through the proxy, including directory listings and auxiliary connections. FTPS retains certificate validation. The proxy must allow the destination's control and passive data ports. A failed or missing proxy never falls back silently to a direct connection.
+
+For **Proxy + Jump Host**, one proxy precedes the outermost SSH hop. Select that profile on the target or a jump connection; other profiles in the route must use the same proxy or No Proxy. Different proxies in one route produce an error. Arbitrary chains of proxies are not supported.
+
+**Test Connection**, **Workspace Sync**, and **Multi-Target Commands & Search** use the selected connection's route. No separate proxy configuration is needed for these features. Connection backups include proxy profiles and associations; passwords are included only with encrypted credentials. Merge preserves existing proxy credentials and remaps conflicting profile IDs; Replace restores the backup's profiles. Proxy Profiles can also be restored from backups with no saved connections. The import summary includes proxy counts and usernames. External imports warn when proxy credentials need to be completed. Diagnostics records tunnel type, status, fixed failure categories and duration without credentials; terminal tunnel events also respect Performance Logs.
+
+System proxy detection, PAC/WPAD, NTLM/Kerberos/Digest, external SSH Config export and device synchronization are outside this feature.
+
 ## Quick Access
 
 Open Remote Edit from:
@@ -491,7 +542,7 @@ Open Remote Edit from:
 - Editor Title Bar Button
 - Status Bar Button
 
-The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, transfers, and backup actions.
+The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, transfers, Import, and Export.
 
 Open Connections uses a breadcrumb path tree by default. Users who prefer a shorter or more expanded layout can use `remoteedit.sidebar.openConnections.pathView`.
 
@@ -560,33 +611,10 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 ### Diagnostics
 
-- `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including Remote Edit, Workspace Sync, Multi-Target, and Import Connections workflows
-- `remoteedit.diagnostics.performanceLogs` — enable performance timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, Multi-Target operations, and Import Connections steps
+- `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including connection and profile operations, Workspace Sync, Multi-Target, FTP/FTPS/SFTP, and proxy tunnel events
+- `remoteedit.diagnostics.performanceLogs` — enable timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, Multi-Target operations, backup Import/Export, and proxy tunnel establishment
 
-Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Import Connections diagnostics record action outcomes, source types, counts, and durations without recording configuration-file paths, connection details, or credential values. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
-
-## Import Connections
-
-In **Manage Connections**, choose **Import → Import Connections from Other Applications**. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details; use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
-
-Supported sources and compatibility:
-
-| Application | Supported input | Important limitations |
-| --- | --- | --- |
-| **OpenSSH** | SSH configuration files, including `Include` files and host aliases | Host patterns, defaults, and `ProxyJump` chains are resolved. Conditional `Match` rules may require manual review, `ProxyCommand` is unsupported, and only the first applicable identity is imported. Include any required Jump Host profiles in the same import. |
-| **FileZilla** | Site Manager XML | Saved credentials can be imported or unlocked when supported. Explicit FTPS is supported; implicit FTPS is not. Opportunistic TLS is imported as required explicit TLS with a warning. |
-| **WinSCP** | INI files or detected Windows Registry sessions | Supported stored passwords may be recovered or unlocked with the external master password. SCP, WebDAV, S3, tunnels, and proxies are not imported. |
-| **PuTTY** | Windows Registry, `.reg` exports, or Unix saved-session files | SSH sessions only; `.ppk` private keys must be converted to OpenSSH format. PuTTY does not provide saved SSH passwords for import. |
-| **SSH FS** | VS Code settings, `.code-workspace` files, configuration arrays, and referenced config paths | Supports representable `label`, `group`, `extend`, and `hop` settings. Proxies, embedded private keys, and some external SSH/PuTTY references require manual configuration. |
-| **VS Code SFTP** | Supported `sftp.json` variants | Supports profile overrides and recoverable passwords/passphrases. Unsupported remote hops, proxies, and embedded private keys require manual configuration. |
-
-Source detection uses standard application locations on the VS Code extension host, including the Windows Registry and PuTTY sessions in `~/.putty/sessions/` on Linux/macOS. Portable installations or configurations copied from another machine can be selected manually. Detection does not launch external applications or modify source files. Configuration files are limited to 2 MiB each, with up to 2,000 connections per review.
-
-Recoverable credentials use Remote Edit's existing secure storage. Protected FileZilla and WinSCP credentials may be unlocked by source/key group; if selected connections remain locked, a single confirmation offers batch unlock or import without the protected credentials. The external password does not change Remote Edit's Master Password. Replacing a connection may replace or clear its saved credentials; the confirmation warns about this risk. Open sessions are not reconnected automatically.
-
-Imported groups are represented by their source folder paths, and some application-specific settings cannot be translated directly. Review warnings, authentication, directories, and Jump Host dependencies before importing. Import operations save connections one at a time rather than as a single transaction: if one fails, previous successful saves are not automatically rolled back. Review the saved connections before retrying.
-
-**Import → Import Remote Edit Backup** continues to use the existing backup restore flow. **Export** is unchanged.
+Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Proxy diagnostics record fixed failure categories and tunnel durations without credentials. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
 
 ## Security
 

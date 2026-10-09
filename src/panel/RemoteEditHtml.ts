@@ -1,3 +1,4 @@
+import { renderComboboxControls } from './webview/scripts/ComboboxControls';
 import * as vscode from 'vscode';
 import { renderBody } from './webview/markup/Body';
 import { renderClientScript } from './webview/scripts/ClientScript';
@@ -20,7 +21,7 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   <style>
 ${renderStyles()}  </style>
 ${renderBody()}  <script nonce="${nonce}">
-${renderClientScript(options)}  </script>
+${renderComboboxControls('select[data-proxy]')}${renderClientScript(options)}  </script>
 </body>
 </html>`;
 }

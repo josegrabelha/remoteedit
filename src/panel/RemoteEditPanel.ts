@@ -83,6 +83,9 @@ export class RemoteEditPanel {
   private readonly serverManagementController: ServerManagementController;
   private readonly remoteSearchResultBatcher: RemoteSearchResultBatcher;
   private readonly remoteCommandController: RemoteCommandController;
+  private webviewReady = false;
+  private pendingProxyProfilesOpen = false;
+  private pendingConnectionImportOpen = false;
   private runningTransfers = 0;
   private sessionOrder: string[] = [];
 
@@ -106,6 +109,28 @@ export class RemoteEditPanel {
     output: vscode.OutputChannel
   ): void {
     RemoteEditPanel.getOrCreate(context, sessions, connectionManager, output);
+  }
+
+  static openProxyProfiles(
+    context: vscode.ExtensionContext,
+    sessions: RemoteSessionManager,
+    connectionManager: ConnectionManager,
+    output: vscode.OutputChannel
+  ): void {
+    const panel = RemoteEditPanel.getOrCreate(context, sessions, connectionManager, output);
+    if (panel.webviewReady) panel.postMessage(RemoteEditOutboundMessageType.ShowProxyProfiles, {});
+    else panel.pendingProxyProfilesOpen = true;
+  }
+
+  static openConnectionImport(
+    context: vscode.ExtensionContext,
+    sessions: RemoteSessionManager,
+    connectionManager: ConnectionManager,
+    output: vscode.OutputChannel
+  ): void {
+    const panel = RemoteEditPanel.getOrCreate(context, sessions, connectionManager, output);
+    if (panel.webviewReady) panel.postMessage(RemoteEditOutboundMessageType.ShowConnectionImport, {});
+    else panel.pendingConnectionImportOpen = true;
   }
 
   static openConnection(
@@ -520,7 +545,7 @@ export class RemoteEditPanel {
       logWarn: (message, details) => this.logWarn(message, details),
       logError: (message, details) => this.logError(message, details)
     });
-    this.connectionImportController = new ConnectionImportController(this.connectionManager, (type, payload) => this.postMessage(type, payload), () => this.sendProfiles(), this.output);
+    this.connectionImportController = new ConnectionImportController(this.connectionManager, (type, payload) => this.postMessage(type, payload), () => this.sendProfiles());
     this.backupController = new PanelBackupController({
       context: this.context,
       connectionManager: this.connectionManager,
@@ -549,6 +574,12 @@ export class RemoteEditPanel {
             Reason: event.reason || 'unspecified',
             SelectedId: event.selectedId || ''
           });
+          if (event.reason === 'proxyProfilesChanged') {
+            this.postMessage(RemoteEditOutboundMessageType.ProxyProfilesState, {
+              profiles: await this.connectionManager.proxyProfiles.list()
+            });
+            return;
+          }
           await this.sendProfiles(event.selectedId);
           this.postPersistentStorageSnapshot();
           appendPerformanceLog(this.output, 'Panel', `Sent profiles snapshot after profiles changed in ${timer()}ms`, {
@@ -607,6 +638,7 @@ export class RemoteEditPanel {
     this.disposePanelDisposables();
     this.panel = panel;
     this.isDisposed = false;
+    this.webviewReady = false;
     this.panel.webview.html = this.renderHtml(this.panel.webview);
 
     this.panel.onDidDispose(() => this.handlePanelDisposed(), null, this.panelDisposables);
@@ -646,13 +678,23 @@ export class RemoteEditPanel {
           this.postAllPortForwardStates();
           this.postPersistentStorageSnapshot();
           this.postRemoteClipboardState();
+          this.webviewReady = true;
+          if (this.pendingConnectionImportOpen) {
+            this.pendingConnectionImportOpen = false;
+            this.postMessage(RemoteEditOutboundMessageType.ShowConnectionImport, {});
+          }
+          if (this.pendingProxyProfilesOpen) {
+            this.pendingProxyProfilesOpen = false;
+            this.postMessage(RemoteEditOutboundMessageType.ShowProxyProfiles, {});
+          }
         },
         connectionImport: payload => this.connectionImportController.handle(payload),
+        proxyProfiles: payload => this.manageProxyProfiles(payload),
         masterPassword: payload => this.manageMasterPassword(payload),
         saveConnection: payload => this.saveConnection(payload),
         saveConnectionAs: payload => this.saveConnectionAs(payload),
-        pickPrivateKeyPath: () => this.pickPrivateKeyPath(),
-        pickCaCertificatePath: () => this.pickCaCertificatePath(),
+        pickPrivateKeyPath: payload => this.pickPrivateKeyPath(payload),
+        pickCaCertificatePath: payload => this.pickCaCertificatePath(payload),
         deleteConnection: payload => this.deleteConnection(payload),
         cloneConnection: payload => this.cloneConnection(payload),
         renameConnection: payload => this.renameConnection(payload),
@@ -948,6 +990,32 @@ export class RemoteEditPanel {
     }
   }
 
+  private async manageProxyProfiles(payload: any): Promise<void> {
+    try {
+      let savedProfileId: string | undefined;
+      if (payload?.action === 'save') savedProfileId = (await this.connectionManager.proxyProfiles.save(payload.profile)).id;
+      else if (payload?.action === 'delete') {
+        const id = String(payload.id);
+        const proxy = (await this.connectionManager.proxyProfiles.list()).find(profile => profile.id === id);
+        if (!proxy) throw new Error('The selected proxy profile no longer exists.');
+        const confirmed = await this.showConfirmDialog({
+          title: 'Delete proxy profile?',
+          message: `Delete proxy profile "${proxy.name}"? Stored credentials for this proxy will also be removed.`,
+          confirmLabel: 'Delete',
+          cancelLabel: 'Cancel',
+          danger: true
+        });
+        if (confirmed) await this.connectionManager.proxyProfiles.delete(id, await this.connectionManager.listProfiles());
+      }
+      this.postMessage(RemoteEditOutboundMessageType.ProxyProfilesState, { profiles: await this.connectionManager.proxyProfiles.list(), savedProfileId, completed: payload?.action === 'save' || payload?.action === 'delete' });
+      if (payload?.action === 'save' || payload?.action === 'delete') {
+        RemoteEditSharedState.fireProfilesChanged(undefined, 'webview', 'proxyProfilesChanged');
+      }
+    } catch (error) {
+      this.postMessage(RemoteEditOutboundMessageType.ProxyProfilesState, { error: error instanceof Error ? error.message : 'Unable to update proxy profiles.' });
+    }
+  }
+
   private async manageMasterPassword(payload: any): Promise<void> {
     try {
       if (payload?.action === 'save') {
@@ -966,16 +1034,19 @@ export class RemoteEditPanel {
     }
   }
 
-  private async sendProfiles(selectedId?: string, options?: { renameProfileId?: string }): Promise<void> {
+  private async sendProfiles(selectedId?: string, options?: { renameProfileId?: string; editedProfileId?: string }): Promise<void> {
     const timer = createPerformanceTimer();
     const profiles = await this.connectionManager.listProfiles();
     const connectionGroups = await this.connectionManager.listGroups();
     this.postMessage(RemoteEditOutboundMessageType.ProfilesLoaded, {
       profiles,
+      proxyProfiles: await this.connectionManager.proxyProfiles.list(),
       masterPasswordState: await this.connectionManager.getMasterPasswordState(),
       connectionGroups,
       selectedId,
-      renameProfileId: options?.renameProfileId
+      renameProfileId: options?.renameProfileId,
+      editorRefresh: Boolean(options?.editedProfileId),
+      editedProfileId: options?.editedProfileId
     });
     appendPerformanceLog(this.output, 'Panel', `Posted profiles snapshot in ${timer()}ms`, {
       Profiles: profiles.length,
@@ -1009,6 +1080,7 @@ export class RemoteEditPanel {
       ftpsAllowSelfSignedCertificate: attempt.ftpsAllowSelfSignedCertificate,
       ftpsCaCertificatePath: attempt.ftpsCaCertificatePath,
       isQuickConnect: Boolean(attempt.isQuickConnect),
+      proxyProfileId: attempt.proxyProfileId,
       jumpProfileId: attempt.jumpProfileId,
       jumpProfileIds: attempt.jumpChain?.map(hop => hop.profileId),
       jumpProfileNames: attempt.jumpChain?.map(hop => hop.name),
@@ -1139,6 +1211,8 @@ export class RemoteEditPanel {
   private async saveConnection(payload: any): Promise<void> {
     const statusConnectionId = this.getOperationStatusConnectionId(payload);
     const profilePayload = { ...(payload || {}) };
+    const editorSave = Boolean(profilePayload.editorSave);
+    delete profilePayload.editorSave;
     const newGroupName = String(profilePayload.newGroupName || '').trim();
     delete profilePayload.statusConnectionId;
     delete profilePayload.newGroupName;
@@ -1146,17 +1220,29 @@ export class RemoteEditPanel {
     this.postBusy(true, 'Saving connection...', false, undefined, statusConnectionId);
 
     try {
+      if (editorSave && !(await this.connectionManager.getProfile(String(profilePayload.id || '')))) {
+        throw new Error('This saved connection no longer exists.');
+      }
+      if (editorSave) {
+        const all = await this.connectionManager.listProfiles();
+        if (all.some(p => p.id !== profilePayload.id && p.name.trim().toLowerCase() === String(profilePayload.name || '').trim().toLowerCase())) throw new Error('A connection with this name already exists.');
+      }
       if (newGroupName) {
         const group = await this.connectionManager.createGroup(newGroupName);
         profilePayload.groupId = group.id;
       }
       const profile = await this.connectionManager.saveProfile(profilePayload);
-      await this.sendProfiles(profile.id);
+      await this.sendProfiles(editorSave ? undefined : profile.id, editorSave ? { editedProfileId: profile.id } : undefined);
       RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'saveProfile');
+      if (editorSave) this.postMessage(RemoteEditOutboundMessageType.ConnectionEditResult, { id: profile.id, saved: true });
       this.postBusy(false, 'Connection saved.', false, undefined, statusConnectionId);
       this.logInfo('Saved connection.', { Name: profile.name, Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}` });
     } catch (error) {
       this.postBusy(false, 'Connection save failed.', false, undefined, statusConnectionId);
+      if (editorSave) {
+        this.postMessage(RemoteEditOutboundMessageType.ConnectionEditResult, { id: profilePayload.id, error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
       throw error;
     }
   }
@@ -1199,7 +1285,7 @@ export class RemoteEditPanel {
     return statusConnectionId || undefined;
   }
 
-  private async pickPrivateKeyPath(): Promise<void> {
+  private async pickPrivateKeyPath(payload?: any): Promise<void> {
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -1209,12 +1295,12 @@ export class RemoteEditPanel {
     });
 
     const selectedPath = selected?.[0]?.fsPath;
-    if (selectedPath) {
-      this.postMessage(RemoteEditOutboundMessageType.PrivateKeyPathSelected, { path: selectedPath });
+    if (selectedPath || payload?.editorProfileId) {
+      this.postMessage(RemoteEditOutboundMessageType.PrivateKeyPathSelected, { path: selectedPath, editorProfileId: payload?.editorProfileId });
     }
   }
 
-  private async pickCaCertificatePath(): Promise<void> {
+  private async pickCaCertificatePath(payload?: any): Promise<void> {
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -1225,8 +1311,8 @@ export class RemoteEditPanel {
     });
 
     const selectedPath = selected?.[0]?.fsPath;
-    if (selectedPath) {
-      this.postMessage(RemoteEditOutboundMessageType.CaCertificatePathSelected, { path: selectedPath });
+    if (selectedPath || payload?.editorProfileId) {
+      this.postMessage(RemoteEditOutboundMessageType.CaCertificatePathSelected, { path: selectedPath, editorProfileId: payload?.editorProfileId });
     }
   }
 

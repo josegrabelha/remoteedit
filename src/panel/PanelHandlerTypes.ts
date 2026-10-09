@@ -2,12 +2,13 @@ export interface RemoteEditPanelMessageHandlers {
   getActiveConnectionId(): string | undefined;
   getActivePath(): string;
   connectionImport(payload: any): Promise<void>;
+  proxyProfiles(payload: any): Promise<void>;
   masterPassword(payload: any): Promise<void>;
   onReady(): Promise<void>;
   saveConnection(payload: any): Promise<void>;
   saveConnectionAs(payload: any): Promise<void>;
-  pickPrivateKeyPath(): Promise<void>;
-  pickCaCertificatePath(): Promise<void>;
+  pickPrivateKeyPath(payload?: any): Promise<void>;
+  pickCaCertificatePath(payload?: any): Promise<void>;
   deleteConnection(payload: any): Promise<void>;
   cloneConnection(payload: any): Promise<void>;
   renameConnection(payload: any): Promise<void>;

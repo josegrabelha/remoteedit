@@ -1,3 +1,4 @@
+import type { ProxyConnection } from '../proxy/ProxyTransport';
 import type { ConnectionProfileInput } from '../connection/ConnectionManager';
 export const sourceNames = {
   openssh: 'OpenSSH',
@@ -12,6 +13,8 @@ export interface ImportCandidate {
   id: string;
   source: SourceId;
   sourcePath: string;
+  proxy?: ProxyConnection;
+  lockedProxyPassword?: string;
   profile: ConnectionProfileInput;
   group?: string;
   warnings: string[];

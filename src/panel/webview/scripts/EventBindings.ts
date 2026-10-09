@@ -19,14 +19,21 @@ export function renderEventBindings(): string {
       case 'connectionImportState':
         receiveConnectionImportState(payload);
         break;
+      case 'showConnectionImport': ciOpen(); break;
+      case 'showProxyProfiles': proxyElement('manageProxyProfilesButton').click(); break;
+      case 'proxyProfilesState': receiveProxyProfiles(payload); break;
       case 'masterPasswordState':
         receiveMasterPasswordState(payload);
         break;
+      case 'connectionEditResult': receiveConnectionEditResult(payload); break;
       case 'profilesLoaded':
+        const preserveEditorMainForm = Boolean(payload.editorRefresh) && (payload.editedProfileId !== selectedProfileId || isSelectedSavedConnectionDirty() || !selectedProfileId);
+        if (payload.editorRefresh && connectionEditorProfile && payload.editedProfileId === selectedProfileId) connectionEditorKeptDraft = preserveEditorMainForm;
         if (payload.masterPasswordState) receiveMasterPasswordState(payload.masterPasswordState);
+        if (payload.proxyProfiles) receiveProxyProfiles({profiles:payload.proxyProfiles});
         profiles = payload.profiles || [];
         connectionGroups = payload.connectionGroups || [];
-        renderProfiles(Object.prototype.hasOwnProperty.call(payload, 'selectedId') ? payload.selectedId : selectedProfileId);
+        renderProfiles(payload.editorRefresh ? selectedProfileId : (Object.prototype.hasOwnProperty.call(payload, 'selectedId') ? payload.selectedId : selectedProfileId), { preserveForm: preserveEditorMainForm });
         if (manageProfilesDialogOpen && payload.renameProfileId && profiles.some(profile => profile.id === payload.renameProfileId)) {
           renameProfileId = payload.renameProfileId;
           renderManageProfilesList();
@@ -78,6 +85,7 @@ export function renderEventBindings(): string {
         }
         break;
       case 'privateKeyPathSelected':
+        if (receiveConnectionEditorPath('privateKeyPath', payload)) break;
         if (payload.path) {
           privateKeyPath.value = payload.path;
           clearConnectionFieldInvalid(privateKeyPath);
@@ -85,6 +93,7 @@ export function renderEventBindings(): string {
         }
         break;
       case 'caCertificatePathSelected':
+        if (receiveConnectionEditorPath('ftpsCaCertificatePath', payload)) break;
         if (payload.path) {
           ftpsCaCertificatePath.value = payload.path;
           clearConnectionFieldInvalid(ftpsCaCertificatePath);
@@ -521,7 +530,7 @@ export function renderEventBindings(): string {
     }
   });
 
-  manageProfilesButton.addEventListener('click', () => showManageProfilesDialog());
+  manageProfilesButton.addEventListener('click', () => toggleConnectionManagementMenu());
 
   connectionNameCreateButton.addEventListener('click', () => confirmConnectionNameDialog());
   connectionNameCancelButton.addEventListener('click', () => closeConnectionNameDialog(null));
@@ -583,7 +592,7 @@ export function renderEventBindings(): string {
     vscode.postMessage({ type: 'connect', payload });
   });
 
-  showSettingsButton.addEventListener('click', () => vscode.postMessage({ type: 'showSettings' }));
+  showSettingsButton.addEventListener('click', () => { closeConnectionManagementMenu(true); vscode.postMessage({ type: 'showSettings' }); });
   showOutputButton.addEventListener('click', () => vscode.postMessage({ type: 'showOutput' }));
   document.addEventListener('click', event => {
     const viewButton = event.target && event.target.closest ? event.target.closest('[data-connection-view]') : null;

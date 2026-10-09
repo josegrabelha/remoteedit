@@ -17,6 +17,7 @@ export function renderRemoteCommandOutput(): string {
     importBackupValidation.textContent = '';
     clearImportBackupFieldErrors();
     clearBackupResult(importBackupResult);
+    restoreDialogFocus(manageProfilesButton);
   }
 
   function renderImportBackupSummary(summary) {
@@ -41,6 +42,7 @@ export function renderRemoteCommandOutput(): string {
       summary.hasSettings ? 'Settings included' : 'Settings not included',
       summary.hasWorkspaceSync ? 'Workspace Sync included' : 'Workspace Sync not included',
       connectionCount === 1 ? '1 connection' : connectionCount + ' connections',
+      Number(summary.proxyProfileCount || 0) + ' proxy profiles',
       favoriteCount === 1 ? '1 favorite' : favoriteCount + ' favorites',
       summary.usernamesIncluded ? 'usernames included' : 'usernames not included',
       summary.hasEncryptedCredentials ? 'passwords/passphrases encrypted' : 'passwords/passphrases not included'
@@ -68,7 +70,7 @@ export function renderRemoteCommandOutput(): string {
     const summary = importBackupSummaryState || {};
     const hasImportError = Boolean(summary.importError);
     const hasSettings = !hasImportError && Boolean(summary.hasSettings);
-    const hasConnections = !hasImportError && Number(summary.supportedConnectionCount || 0) > 0;
+    const hasConnections = !hasImportError && (Number(summary.supportedConnectionCount || 0) > 0 || Number(summary.proxyProfileCount || 0) > 0);
     const hasWorkspaceSync = !hasImportError && Boolean(summary.hasWorkspaceSync);
     const hasMultiTarget = !hasImportError && (Number(summary.multiTargetSavedCommandCount || 0) > 0
       || Number(summary.multiTargetTargetSetCount || 0) > 0);
@@ -135,6 +137,7 @@ export function renderRemoteCommandOutput(): string {
     importBackupValidation.textContent = '';
     clearImportBackupFieldErrors();
     clearBackupResult(importBackupResult);
+    restoreDialogFocus(manageProfilesButton);
     const restoreCredentials = Boolean(importRestoreCredentials.checked) && !importRestoreCredentials.disabled;
     const credentialPassword = String(importCredentialPassword.value || '');
 
@@ -222,7 +225,6 @@ export function renderRemoteCommandOutput(): string {
   }
 
   function showManageProfilesDialog() {
-    vscode.postMessage({ type: 'masterPassword', payload: { action: 'state' } });
     manageProfilesDialogOpen = true;
     renameProfileId = '';
     renameGroupId = '';
@@ -237,6 +239,7 @@ export function renderRemoteCommandOutput(): string {
   }
 
   function hideManageProfilesDialog() {
+    if (connectionEditorProfile) { leaveConnectionEditor(true); return; }
     if (!manageProfilesBackdrop) return;
     manageProfilesDialogOpen = false;
     manageProfilesFilterText = '';
@@ -248,6 +251,7 @@ export function renderRemoteCommandOutput(): string {
     hideManageGroupRemoveDialog();
     manageProfilesBackdrop.classList.remove('visible');
     manageProfilesBackdrop.setAttribute('aria-hidden', 'true');
+    restoreDialogFocus(manageProfilesButton);
   }
 
   function getConnectionGroupNameError(name, existingGroupId) {
@@ -1158,11 +1162,11 @@ export function renderRemoteCommandOutput(): string {
 
     row.appendChild(main);
 
+    const editButton = createManageProfileIconButton('edit', 'Edit', MANAGE_ICON_RENAME, 'secondary');
+    row.appendChild(editButton);
+
     const cloneButton = createManageProfileIconButton('clone', 'Clone', MANAGE_ICON_CLONE, 'secondary');
     row.appendChild(cloneButton);
-
-    const renameButton = createManageProfileIconButton('rename', 'Rename', MANAGE_ICON_RENAME, 'secondary');
-    row.appendChild(renameButton);
 
     const deleteButton = createManageProfileIconButton('delete', 'Delete', MANAGE_ICON_DELETE, 'secondary');
     row.appendChild(deleteButton);
@@ -1341,9 +1345,8 @@ export function renderRemoteCommandOutput(): string {
       return;
     }
 
-    if (action === 'rename') {
-      renameProfileId = profileId;
-      renderManageProfilesList();
+    if (action === 'edit') {
+      showConnectionEditor(profile);
       return;
     }
 

@@ -174,9 +174,10 @@ export class RemoteEditSidebarItem extends vscode.TreeItem {
     });
   }
 
-  static connectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; modified?: boolean; connected?: boolean; jumpProfileLabel?: string; jumpRoute?: string }): RemoteEditSidebarItem {
+  static connectionDetail(profile: ConnectionProfile, field: ConnectionDetailField, options?: { quickConnect?: boolean; modified?: boolean; connected?: boolean; proxyProfileLabel?: string; jumpProfileLabel?: string; jumpRoute?: string }): RemoteEditSidebarItem {
     const detail = buildConnectionDetail(profile, field, {
       quickConnect: Boolean(options?.quickConnect),
+      proxyProfileLabel: options?.proxyProfileLabel,
       jumpProfileLabel: options?.jumpProfileLabel,
       jumpRoute: options?.jumpRoute
     });

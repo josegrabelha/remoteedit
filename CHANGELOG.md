@@ -4,11 +4,14 @@
 
 ### Added
 
-* Added **Import Connections** to **Manage Connections**, supporting automatic detection and manual file selection for **OpenSSH, FileZilla, WinSCP, PuTTY, SSH FS, and VS Code SFTP**. Includes a unified review, field-level comparison, and **Import as New** / **Replace** options. PuTTY detection also supports saved sessions on Linux and macOS.
+* Added **Import Connections from Other Applications**, supporting OpenSSH, FileZilla, WinSCP, PuTTY, SSH FS, and VS Code SFTP, with automatic detection, manual selection, connection review, and compatible proxy configurations.
+* Added **Proxy Support** for SOCKS4, SOCKS5, and HTTP CONNECT, with secure credentials and integration across FTP/FTPS/SFTP, SSH Jump Host, Workspace Sync, Multi-Target, Import Connections, Diagnostics, and Backup/Restore.
+* Added full connection editing in **Manage Connections**, including profile, group, authentication, proxy, and connection settings, with synchronization across the Advanced View and Native Sidebar.
 
 ### Changed
 
-* The **Import** button in **Manage Connections** now opens a menu to choose between importing external connections and the existing Remote Edit backup import.
+* Reorganized connection administration, Import/Export, Master Password, and Settings under **Connection & Settings Management**.
+* Updated Native Sidebar **Import** and **Export** actions, with Import supporting both Remote Edit backups and connections from other applications.
 
 ## [1.12.1] - 2026-10-06
 

@@ -6,7 +6,6 @@ import {
   type SourceId
 } from '../connectionImport/ConnectionImportTypes';
 import { RemoteEditOutboundMessageType } from './PanelMessages';
-import { appendDebugLog, appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 export class ConnectionImportController {
   private readonly service: ConnectionImportService;
   private busy = false;
@@ -17,8 +16,7 @@ export class ConnectionImportController {
       type: typeof RemoteEditOutboundMessageType.ConnectionImportState,
       payload: any
     ) => void,
-    private readonly refresh: () => Promise<void>,
-    private readonly output: vscode.OutputChannel
+    private readonly refresh: () => Promise<void>
   ) {
     this.service = new ConnectionImportService(manager);
   }
@@ -29,30 +27,21 @@ export class ConnectionImportController {
   async handle(payload: any): Promise<void> {
     if (this.busy || this.disposed) return;
     this.busy = true;
-    const action = ['close', 'detect', 'choose', 'review', 'unlock', 'skipUnlock', 'apply'].includes(payload?.action)
-      ? payload.action as string : 'unknown';
-    const elapsed = createPerformanceTimer();
-    let outcome = 'completed';
-    appendDebugLog(this.output, 'ConnectionImport', 'Action started.', { Action: action });
     try {
       switch (payload?.action) {
         case 'close':
           this.service.clear();
-          appendDebugLog(this.output, 'ConnectionImport', 'Import session cleared.');
           return;
-        case 'detect': {
-          const sources = await this.service.detect(
-            (vscode.workspace.workspaceFolders || [])
-              .filter((f) => f.uri.scheme === 'file')
-              .map((f) => f.uri.fsPath)
-          );
+        case 'detect':
           this.post('connectionImportState', {
             stage: 'sources',
-            sources
+            sources: await this.service.detect(
+              (vscode.workspace.workspaceFolders || [])
+                .filter((f) => f.uri.scheme === 'file')
+                .map((f) => f.uri.fsPath)
+            )
           });
-          this.logSourceSummary(sources);
           break;
-        }
         case 'choose': {
           const id = payload.source as SourceId;
           if (!Object.hasOwn(sourceNames, id)) throw new Error();
@@ -70,19 +59,15 @@ export class ConnectionImportController {
             filters: filters[id]
           });
           if (!chosen) {
-            outcome = 'cancelled';
             this.post('connectionImportState', { cancelled: true });
             break;
           }
-          const sources = await this.service.load(id, chosen.map((u) => u.fsPath));
           this.post('connectionImportState', {
             stage: 'sources',
-            sources
-          });
-          const source = sources.find((item) => item.id === id);
-          appendDebugLog(this.output, 'ConnectionImport', 'Manual source loading completed.', {
-            Source: id, Files: chosen.length, Candidates: source?.count ?? 0,
-            FileFailures: Boolean(source?.error)
+            sources: await this.service.load(
+              id,
+              chosen.map((u) => u.fsPath)
+            )
           });
           break;
         }
@@ -92,16 +77,9 @@ export class ConnectionImportController {
             payload.sources.some((id: any) => !Object.hasOwn(sourceNames, id))
           )
             throw new Error();
-          const candidates = await this.service.preview(payload.sources);
           this.post('connectionImportState', {
             stage: 'review',
-            candidates
-          });
-          appendDebugLog(this.output, 'ConnectionImport', 'Review prepared.', {
-            Sources: payload.sources.length, Candidates: candidates.length,
-            Conflicts: candidates.filter((item) => item.status === 'Conflict').length,
-            Unsupported: candidates.filter((item) => item.status === 'Unsupported').length,
-            Warnings: candidates.filter((item) => item.status === 'Warning').length
+            candidates: await this.service.preview(payload.sources)
           });
           break;
         }
@@ -111,49 +89,30 @@ export class ConnectionImportController {
             payload.password,
             payload.batch === true
           );
-          this.post('connectionImportState', { unlocked });
-          appendDebugLog(this.output, 'ConnectionImport', 'Protected credentials unlocked.', {
-            Connections: unlocked.length, Batch: payload.batch === true
-          });
+          this.post('connectionImportState', { unlocked, stillLocked: this.service.lockedCredentialIds() });
           break;
         }
         case 'skipUnlock': {
           // Skipping a batch group is only a UI decision; never mutate the
           // protected credential or discard candidates on the backend.
-          const skippedUnlockGroup = this.service.unlockGroupIds(payload.id);
-          this.post('connectionImportState', { skippedUnlockGroup });
-          appendDebugLog(this.output, 'ConnectionImport', 'Credential unlock skipped.', {
-            Connections: skippedUnlockGroup.length
+          this.post('connectionImportState', {
+            skippedUnlockGroup: this.service.unlockGroupIds(payload.id)
           });
           break;
         }
         case 'apply': {
-          appendDebugLog(this.output, 'ConnectionImport', 'Import requested.', {
-            Selected: Array.isArray(payload.decisions) ? payload.decisions.length : 0,
-            ImportAsNew: Array.isArray(payload.decisions) ? payload.decisions.filter((d: any) => d?.action === 'new').length : 0,
-            Replace: Array.isArray(payload.decisions) ? payload.decisions.filter((d: any) => d?.action === 'replace').length : 0
-          });
           const result = await this.service.apply(
             payload.decisions,
             payload.acknowledgeCredentialRisk === true
           );
           await this.refresh();
           this.post('connectionImportState', { stage: 'result', result });
-          appendDebugLog(this.output, 'ConnectionImport', 'Import completed.', {
-            Imported: result.imported, Skipped: result.skipped, Failed: result.failed,
-            WithCredentials: result.credentials, WithWarnings: result.warnings
-          });
           break;
         }
         default:
           throw new Error();
       }
     } catch (error) {
-      outcome = 'failed';
-      // Never log parser/OS errors, paths, profile names, or credential values.
-      // Import errors can contain sensitive source data even when the UI uses
-      // an intentionally authored, safe message.
-      appendDebugLog(this.output, 'ConnectionImport', 'Action failed.', { Action: action });
       // Import service messages are intentionally authored without credentials
       // or source-file content; never display arbitrary parser/OS error values.
       const detail = error instanceof Error ? error.message : '';
@@ -169,19 +128,7 @@ export class ConnectionImportController {
         error: safe ? detail : fallback[payload?.action] || 'Could not process this import request. Check the configuration and try again.'
       });
     } finally {
-      appendPerformanceLog(this.output, 'ConnectionImport', 'Action finished.', {
-        Action: action, Outcome: outcome, Duration: `${elapsed()}ms`
-      });
       this.busy = false;
-    }
-  }
-
-  private logSourceSummary(sources: Awaited<ReturnType<ConnectionImportService['detect']>>): void {
-    for (const source of sources) {
-      appendDebugLog(this.output, 'ConnectionImport', 'Source detection completed.', {
-        Source: source.id, Status: source.status, Files: source.paths.length,
-        Candidates: source.count, FileFailures: Boolean(source.error)
-      });
     }
   }
 }

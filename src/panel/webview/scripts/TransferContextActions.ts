@@ -423,6 +423,12 @@ export function renderTransferContextActions(): string {
       return;
     }
     if (event.key === 'Escape' && manageProfilesDialogOpen) {
+      if (connectionEditorProfile) {
+        event.preventDefault(); event.stopPropagation();
+        if (document.querySelector('.sync-combo-menu[data-for^=edit_]')) window.RemoteEditControls.closeCombo(true);
+        else leaveConnectionEditor(false);
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       if (manageProfilesFilterInput && document.activeElement === manageProfilesFilterInput && manageProfilesFilterInput.value) {
@@ -1041,9 +1047,10 @@ export function renderTransferContextActions(): string {
   if (manageGroupRemoveConnectionsRadio) manageGroupRemoveConnectionsRadio.addEventListener('change', updateManageGroupRemoveDialogState);
   if (manageGroupRemoveCancelButton) manageGroupRemoveCancelButton.addEventListener('click', hideManageGroupRemoveDialog);
   if (manageGroupRemoveConfirmButton) manageGroupRemoveConfirmButton.addEventListener('click', confirmManageGroupRemoveDialog);
-  manageProfilesImportButton.addEventListener('click', toggleConnectionImportMenu);
+  manageProfilesImportButton.addEventListener('click', () => toggleConnectionImportMenu(true));
 
   manageProfilesExportButton.addEventListener('click', () => {
+    closeConnectionManagementMenu(true);
     showExportBackupDialog();
   });
 

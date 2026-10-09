@@ -1,3 +1,5 @@
+import { renderConnectionEditor } from './ConnectionEditor';
+import { renderProxyProfiles } from './ProxyProfiles';
 import { renderConnectionImport } from './ConnectionImport';
 import { renderMasterPassword } from './MasterPassword';
 import { renderStateDialogs } from './StateDialogs';
@@ -47,5 +49,5 @@ export function renderClientScript(options: ClientScriptOptions): string {
     renderDragDropTargets() +
     renderDragDropUpload() +
     renderRemoteDragDropMove() +
-    renderTransfersStatus() + renderMasterPassword() + renderConnectionImport();
+    renderTransfersStatus() + renderMasterPassword() + renderConnectionImport() + renderProxyProfiles() + renderConnectionEditor();
 }

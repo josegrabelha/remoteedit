@@ -6,6 +6,9 @@ export async function tryHandleConnectionMessage(
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<boolean> {
   switch (message.type) {
+    case RemoteEditIncomingMessageType.TrustedSshHosts:
+      await handlers.trustedSshHosts?.(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.ProxyProfiles:
       await handlers.proxyProfiles(message.payload);
       return true;

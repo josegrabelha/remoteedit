@@ -1,12 +1,10 @@
-import { WorkspaceSyncUi } from '../../workspaceSync/ui/WorkspaceSyncUi';
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ConnectionProfile } from '../../connection/ConnectionManager';
-import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
 import type { WorkspaceSyncConnectionSnapshot } from '../../workspaceSync/connection/WorkspaceSyncConnectionSnapshot';
+import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
 import type { WorkspaceSyncSessionFactory } from '../../workspaceSync/connection/WorkspaceSyncSessionManager';
-import { inputUi, loadWithVscode, profile } from '../helpers/ConnectionManagerHarness';
-import { WorkspaceSyncPassphraseRequiredError } from '../../workspaceSync/connection/WorkspaceSyncConnectionErrors';
+import { loadWithVscode, profile } from '../helpers/ConnectionManagerHarness';
+import test from '../helpers/TestHarness';
 
 const { WorkspaceSyncSessionManager } = loadWithVscode(() =>
   require('../../workspaceSync/connection/WorkspaceSyncSessionManager') as typeof import('../../workspaceSync/connection/WorkspaceSyncSessionManager')
@@ -146,19 +144,6 @@ test('WorkspaceSyncSessionManager prevents an older Connect from overwriting a n
   manager.dispose();
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 test('Disconnect releases a pending Connect that never receives a transport callback', { timeout: 1000 }, async () => {
   const config = configSource([profile('prod')]);
   let signal: AbortSignal | undefined;
@@ -178,8 +163,6 @@ test('Disconnect releases a pending Connect that never receives a transport call
   manager.dispose();
 });
 
-
-
 test('simultaneous Connect calls for the same target share one handshake', async () => {
   const config = configSource([profile('prod')]);
   let opened = 0;
@@ -196,5 +179,21 @@ test('simultaneous Connect calls for the same target share one handshake', async
     if (results[0].status === 'fulfilled' && results[1].status === 'fulfilled') {
       assert.equal(results[0].value, results[1].value);
     }
+  } finally { manager.dispose(); }
+});
+
+test('SSH verification failure publishes an error, detaches the private session and ignores old-session notifications', async () => {
+  const opened: ReturnType<typeof fakeSession>[] = [];
+  const manager = new WorkspaceSyncSessionManager(configSource([profile('prod')]).source, output, {
+    connect: async snapshot => { const created = fakeSession(snapshot); opened.push(created); return created.session; }
+  });
+  try {
+    const old = await manager.connect('key', 'prod');
+    old.onSecurityError?.(new Error('SSH host key verification: Changed key.'));
+    assert.equal(manager.getState('key').status, 'error'); assert.equal(manager.getSession('key'), undefined);
+    await settle(); assert.equal(opened[0].disconnects, 1);
+    const current = await manager.connect('key', 'prod');
+    old.onSecurityError?.(new Error('SSH host key verification: Old failure.'));
+    assert.equal(manager.getState('key').status, 'connected'); assert.equal(manager.getSession('key'), current);
   } finally { manager.dispose(); }
 });

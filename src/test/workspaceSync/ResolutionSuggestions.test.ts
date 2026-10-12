@@ -1,7 +1,7 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { suggestConflictResolution } from '../../workspaceSync/compare/ResolutionSuggestions';
 import type { DiffEntry, FileFingerprint } from '../../workspaceSync/types';
+import test from '../helpers/TestHarness';
 
 function file(size: number, mtimeMs: number, hash?: string): FileFingerprint {
   return { kind: 'file', size, mtimeMs, ...(hash ? { hash } : {}) };
@@ -45,9 +45,6 @@ test('resolution suggestions use strong equal hashes and structural safety befor
   }), { remoteTimestampAbsolute: true }), 'skip');
 });
 
-
-
-
 test('resolution suggestions never choose a side from timestamp alone', () => {
   const entry = conflict({
     local: file(10, 9000),
@@ -57,5 +54,3 @@ test('resolution suggestions never choose a side from timestamp alone', () => {
   assert.equal(suggestConflictResolution(entry, { remoteTimestampAbsolute: true, mtimeToleranceMs: 2000 }), undefined);
   assert.equal(suggestConflictResolution(entry, { remoteTimestampAbsolute: false, mtimeToleranceMs: 2000 }), undefined);
 });
-
-

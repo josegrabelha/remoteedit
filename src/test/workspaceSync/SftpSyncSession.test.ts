@@ -1,17 +1,17 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
 import SftpClient from 'ssh2-sftp-client';
-import { SftpSyncSession } from '../../workspaceSync/connection/SftpSyncSession';
-import { SessionLifetime } from '../../workspaceSync/connection/SessionLifetime';
-import { scanRemoteTree } from '../../workspaceSync/scan/RemoteScanner';
-import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import { diffSnapshots } from '../../workspaceSync/compare/DiffEngine';
+import { SessionLifetime } from '../../workspaceSync/connection/SessionLifetime';
+import { SftpSyncSession } from '../../workspaceSync/connection/SftpSyncSession';
 import { buildSyncPlan } from '../../workspaceSync/planning/SyncPlanner';
 import { revalidateSyncPlan } from '../../workspaceSync/planning/SyncRevalidator';
+import { scanRemoteTree } from '../../workspaceSync/scan/RemoteScanner';
+import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import type { WorkspaceSyncMapping, WorkspaceSyncTarget } from '../../workspaceSync/types';
+import test from '../helpers/TestHarness';
 
 type Entry = { type: '-' | 'd' | 'l' | 's'; size: number; mtime: number };
 
@@ -76,10 +76,6 @@ test('SFTP idle deadline closes a stuck transport, settles sibling requests and 
   assert.equal(reconnects, 1);
 });
 
-
-
-
-
 test('SFTP reconnect setup cannot leave the next Watch round waiting forever', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { session } = fixture();
@@ -108,8 +104,6 @@ function mapping(localRoot: string): WorkspaceSyncMapping {
     options: { direction: 'bidirectional', uploadOnSave: false, watchLocalChanges: false, watchRemoteChanges: false, conflictProtection: true, atomicTransfer: true, propagateDeletes: false, ignorePatterns: [] }
   };
 }
-
-
 
 test('SFTP Compare plan revalidates unchanged root and nested files and detects a real change', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-sftp-revalidate-'));
@@ -176,8 +170,3 @@ test('SFTP Disconnect settles a stuck transfer without relying on SSH callbacks'
   await failed;
   assert.ok(destroyed >= 1);
 });
-
-
-
-
-

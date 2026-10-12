@@ -1,14 +1,13 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
-import { scanLocalTree, safeLocalPath } from '../../workspaceSync/scan/LocalScanner';
-import { scanRemoteTree, joinRemotePath } from '../../workspaceSync/scan/RemoteScanner';
-import { remoteParentDirectory } from '../../workspaceSync/execution/SyncPathUtils';
-import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
-import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import { diffSnapshots } from '../../workspaceSync/compare/DiffEngine';
+import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
+import { scanLocalTree } from '../../workspaceSync/scan/LocalScanner';
+import { joinRemotePath, scanRemoteTree } from '../../workspaceSync/scan/RemoteScanner';
+import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
+import test from '../helpers/TestHarness';
 
 function remoteSession(listImpl: WorkspaceSyncRemoteSession['list']): WorkspaceSyncRemoteSession {
   return {
@@ -38,8 +37,6 @@ test('LocalScanner respects ignore rules and records symbolic links without foll
   }
 });
 
-
-
 test('LocalScanner keeps permission failures visible as Unknown with their error code', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-permission-scan-'));
   const restricted = path.join(root, 'restricted.txt');
@@ -64,14 +61,6 @@ test('LocalScanner keeps permission failures visible as Unknown with their error
   }
 });
 
-
-
-
-
-
-
-
-
 test('RemoteScanner fails closed when a directory listing fails', async () => {
   const session = remoteSession(async remotePath => {
     if (remotePath === '/root') return [{ name: 'ok.txt', kind: 'file', size: 1, mtimeMs: 1 }, { name: 'private', kind: 'directory', size: 0, mtimeMs: 1 }];
@@ -84,20 +73,6 @@ test('RemoteScanner fails closed when a directory listing fails', async () => {
   assert.deepEqual(snapshot.incompletePaths, ['private']);
 });
 
-
-
-
-
-
-
-
 test('joinRemotePath rejects traversal outside the mapping root', () => {
   assert.throws(() => joinRemotePath('/var/www', '../etc/passwd'), /escapes the mapping root/i);
 });
-
-
-
-
-
-
-

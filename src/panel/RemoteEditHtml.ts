@@ -1,3 +1,4 @@
+import { renderSshHostKeyDialogMarkup, renderSshHostKeyDialogStyles, renderSshHostKeyDialogScript } from '../webview/SharedConfirmDialog';
 import { renderComboboxControls } from './webview/scripts/ComboboxControls';
 import * as vscode from 'vscode';
 import { renderBody } from './webview/markup/Body';
@@ -19,8 +20,8 @@ export function renderRemoteEditHtml(webview: vscode.Webview, nonce: string, opt
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Remote Edit</title>
   <style>
-${renderStyles()}  </style>
-${renderBody()}  <script nonce="${nonce}">
+${renderStyles()}  ${renderSshHostKeyDialogStyles()}</style>
+${renderBody()}  ${renderSshHostKeyDialogMarkup()}<script nonce="${nonce}">${renderSshHostKeyDialogScript()}
 ${renderComboboxControls('select[data-proxy]')}${renderClientScript(options)}  </script>
 </body>
 </html>`;

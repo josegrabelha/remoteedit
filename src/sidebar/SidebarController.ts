@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { connectionManagementActions, connectionManagementTitle, connectionImportActions, managementQuickPickItems } from '../connection/ConnectionManagementActions';
 import { normalizeProxyProfile } from '../proxy/ProxyProfiles';
 import type { ProxyType } from '../proxy/ProxyTransport';
 import type { AuthType, ConnectionGroup, ConnectionManager, ConnectionProfile, ConnectionProfileInput, PasswordSource } from '../connection/ConnectionManager';
@@ -215,6 +216,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.newConnection', () => this.addConnection()),
       vscode.commands.registerCommand('remoteedit.sidebar.newConnectionGroup', () => this.addConnectionGroup()),
       vscode.commands.registerCommand('remoteedit.sidebar.manageMasterPassword', () => this.manageMasterPasswordFromSidebar()),
+      vscode.commands.registerCommand('remoteedit.sidebar.connectionManagement', () => this.openConnectionManagement()),
       vscode.commands.registerCommand('remoteedit.sidebar.openSettings', () => this.openSettings()),
       vscode.commands.registerCommand('remoteedit.sidebar.exportBackup', () => this.exportBackup()),
       vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importConnections()),
@@ -451,6 +453,24 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
 
+  private async openConnectionManagement(): Promise<void> {
+    const selected = await vscode.window.showQuickPick(managementQuickPickItems(connectionManagementActions), {
+      title: connectionManagementTitle, placeHolder: 'Select an action'
+    });
+    if (!selected) return;
+    switch (selected.id) {
+      case 'connections':
+      case 'trustedSshHosts':
+      case 'proxies':
+        RemoteEditPanel.openManagement(this.context, this.sessions, this.connectionManager, this.output, selected.id);
+        break;
+      case 'masterPassword': await this.manageMasterPasswordFromSidebar(); break;
+      case 'import': await this.importConnections(); break;
+      case 'export': await this.exportBackup(); break;
+      case 'settings': this.openSettings(); break;
+    }
+  }
+
   private openSettings(): void {
     void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:josegrabelha.remoteedit');
   }
@@ -460,17 +480,14 @@ export class RemoteEditSidebarController implements vscode.Disposable {
   }
 
   private async importConnections(): Promise<void> {
-    type ImportItem = vscode.QuickPickItem & { source: 'backup' | 'applications' };
-    const items: ImportItem[] = [
-      { label: 'Import Remote Edit Backup', source: 'backup' },
-      { label: 'Import Connections from Other Applications (Webview)', source: 'applications' }
-    ];
+    const items = managementQuickPickItems(connectionImportActions);
+    type ImportItem = typeof items[number];
     const selected = await this.showQuickPickWithActiveItem<ImportItem>({
       title: 'Import', placeHolder: 'Select import source', items, activeItem: items[0]
     });
-    if (selected?.source === 'backup') {
+    if (selected?.id === 'backup') {
       await this.backupController.importBackup();
-    } else if (selected?.source === 'applications') {
+    } else if (selected?.id === 'applications') {
       RemoteEditPanel.openConnectionImport(this.context, this.sessions, this.connectionManager, this.output);
     }
   }

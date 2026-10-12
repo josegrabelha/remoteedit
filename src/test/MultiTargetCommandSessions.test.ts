@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { beforeEach, test } from 'node:test';
-import { ControlledSftp, SftpSessionManager, TestCancellationSource, deferred, flush, harness, options, resetHarness } from './helpers/SftpSessionHarness';
 import type { ConnectionManager } from '../connection/ConnectionManager';
+import { ControlledSftp, SftpSessionManager, TestCancellationSource, deferred, flush, harness, options, resetHarness } from './helpers/SftpSessionHarness';
+import { beforeEach, test } from './helpers/TestHarness';
 
 const loader = require('node:module');
 const original = loader._load;
@@ -12,14 +12,16 @@ loader._load = (request: string, parent: unknown, isMain: boolean) => request ==
     workspace: { getConfiguration: () => ({ get: (key: string, fallback: unknown) =>
       key === 'diagnostics.debugLogs' || key === 'diagnostics.performanceLogs' ? true : fallback }) } }
   : Reflect.apply(original, loader, [request, parent, isMain]);
-const { CommandSessions } = require('../multiTargetCommands/CommandSessions') as typeof import('../multiTargetCommands/CommandSessions');
-loader._load = original;
+const { CommandSessions } = (() => {
+  try { return require('../multiTargetCommands/CommandSessions') as typeof import('../multiTargetCommands/CommandSessions'); }
+  finally { loader._load = original; }
+})();
 const profiles = {
   listProfiles: async () => [{ id: 'target', name: 'Target', connectionType: 'sftp', username: 'tester', authType: 'password', host: 'test.invalid', port: 22, keepAlive: true }],
   getProfileCredentials: async () => ({ password: 'synthetic' }),
   buildConnectOptions: async () => options()
 } as unknown as ConnectionManager;
-beforeEach(resetHarness);
+beforeEach(() => { resetHarness(); inputToken = undefined; });
 
 test('private command pool joins same-target connects and does not share Files sessions', async () => {
   const files = new SftpSessionManager(); const commands = new SftpSessionManager();
@@ -63,7 +65,6 @@ test('remote transport closure updates target state and reconnect uses a new pri
   await pool.connect('target'); assert.equal(pool.states.get('target'), 'Connected');
   await pool.disconnect('target'); pool.dispose();
 });
-
 
 test('password prompts receive the target cancellation token and cannot reconnect after Stop', async () => {
   const password = deferred<string | undefined>(); harness.prompt = () => password.promise;

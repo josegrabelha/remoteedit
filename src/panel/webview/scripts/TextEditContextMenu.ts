@@ -111,17 +111,17 @@ export function renderTextEditContextMenu(): string {
     return '';
   }
 
-  function positionTextEditContextMenu(clientX, clientY) {
-    if (!textEditContextMenu) return;
-    textEditContextMenu.classList.add('visible');
-    textEditContextMenu.style.left = '0px';
-    textEditContextMenu.style.top = '0px';
+  function positionTextEditContextMenu(clientX, clientY, menu = textEditContextMenu) {
+    if (!menu) return;
+    menu.classList.add('visible');
+    menu.style.left = '0px';
+    menu.style.top = '0px';
     const margin = 6;
-    const rect = textEditContextMenu.getBoundingClientRect();
+    const rect = menu.getBoundingClientRect();
     const left = Math.max(margin, Math.min(clientX, window.innerWidth - rect.width - margin));
     const top = Math.max(margin, Math.min(clientY, window.innerHeight - rect.height - margin));
-    textEditContextMenu.style.left = left + 'px';
-    textEditContextMenu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
   }
 
   function showTextEditContextMenu(element, clientX, clientY) {
@@ -196,6 +196,12 @@ export function renderTextEditContextMenu(): string {
   bindTextEditContextButton(textEditContextSelectAll, 'selectAll');
 
   document.addEventListener('contextmenu', event => {
+    hideTrustedHostsContextMenu();
+    if (event.target instanceof Element && event.target.closest('#trustedHostsDetailsPage')) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      showTrustedHostsContextMenu(event.clientX, event.clientY);
+      return;
+    }
     const editable = getTextEditableTarget(event.target);
     if (editable) {
       event.preventDefault();

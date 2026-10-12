@@ -1,10 +1,10 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
-import { assertLocalPathAncestorsSafe, assertRemotePathAncestorsSafe } from '../../workspaceSync/execution/PathSafety';
 import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
+import { assertLocalPathAncestorsSafe, assertRemotePathAncestorsSafe } from '../../workspaceSync/execution/PathSafety';
+import test from '../helpers/TestHarness';
 
 function sessionWithStat(stat: WorkspaceSyncRemoteSession['stat']): WorkspaceSyncRemoteSession {
   return {

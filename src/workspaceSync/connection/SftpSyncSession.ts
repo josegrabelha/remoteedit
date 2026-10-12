@@ -1,3 +1,5 @@
+import { currentHostKeyPrompt, installHostKeyVerification, withHostKeyApproval, hostKeyApprovalError, sshConnectionTimeout } from '../../ssh/hostKeys/HostKeyRuntime';
+import type { HostKeyPrompt } from '../../ssh/hostKeys/HostKeyTrustService';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -13,6 +15,13 @@ import { adaptSftpPath, inferSftpPathStyle, type WorkspaceSyncSftpPathStyle } fr
 import { redactWorkspaceSyncDiagnosticText, type WorkspaceSyncDiagnostics } from '../WorkspaceSyncDiagnostics';
 
 export class SftpSyncSession implements WorkspaceSyncRemoteSession {
+  private initialHostKeyPrompt?: HostKeyPrompt;
+  private securityBlocked?: Error;
+  onSecurityError?: (error: Error) => void;
+  private blockSecurity(error: Error): void {
+    const first = !this.securityBlocked; this.securityBlocked = error;
+    if (first) this.onSecurityError?.(error);
+  }
   private activeReadCommands = 0;
   private activeWriteCommands = 0;
   readonly connectionType = 'sftp' as const;
@@ -33,7 +42,7 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
   private transportLifetime = new SessionLifetime();
   private readonly transportContext = new AsyncLocalStorage<SessionLifetime>();
   private readonly requestIdleTimeoutMs = 30000;
-  get isDisconnected(): boolean { return this.lifetime.closed; }
+  get isDisconnected(): boolean { return this.lifetime.closed || Boolean(this.securityBlocked); }
   private openingClient: SftpClient | undefined;
   private openingJumpChain: SyncJumpHostChain | undefined;
   private client: SftpClient | undefined;
@@ -49,6 +58,7 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
 
   static async connect(snapshot: WorkspaceSyncConnectionSnapshot, diagnostics?: WorkspaceSyncDiagnostics, signal?: AbortSignal): Promise<SftpSyncSession> {
     const session = new SftpSyncSession(snapshot.profileId, { ...snapshot, jumpChain: snapshot.jumpChain.map(item => ({ ...item })) }, diagnostics);
+    session.initialHostKeyPrompt = currentHostKeyPrompt();
     const abort = (): void => { void session.disconnect(); };
     signal?.addEventListener('abort', abort, { once: true });
     try {
@@ -56,38 +66,44 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
       await session.reconnect();
       return session;
     } finally {
+      session.initialHostKeyPrompt = undefined;
       signal?.removeEventListener('abort', abort);
     }
   }
 
+  private readonly approvalAbort = new AbortController();
   async reconnect(): Promise<void> {
+    if (this.securityBlocked) throw this.securityBlocked;
+    this.lifetime.assertOpen();
+    if (this.reconnectPromise) return this.reconnectPromise;
+    const promise = withHostKeyApproval(() => this.reconnectAttempt(), this.approvalAbort.signal);
+    this.reconnectPromise = promise;
+    try { await promise; } finally { if (this.reconnectPromise === promise) this.reconnectPromise = undefined; }
+  }
+  private async reconnectAttempt(): Promise<void> {
+    if (this.securityBlocked) throw this.securityBlocked;
     this.lifetime.assertOpen();
     this.transportContext.getStore()?.assertOpen();
-    if (this.reconnectPromise) {
-      this.diagnostics?.debug('SFTP', 'Joining in-flight reconnect.');
-      return this.reconnectPromise;
-    }
     const startedAt = Date.now();
     this.diagnostics?.debug('SFTP', 'Reconnect started.');
     const attempt = new SessionLifetime();
-    const setupTimeoutMs = this.requestIdleTimeoutMs * ((this.snapshot.jumpChain?.length || 0) + 2);
+    const setupTimeoutMs = sshConnectionTimeout() * ((this.snapshot.jumpChain?.length || 0) + 2);
     const setupTimer = setTimeout(() => {
       destroySftpClient(this.openingClient);
       this.openingJumpChain?.dispose();
       attempt.close(new Error(`Workspace Sync SFTP connection setup timed out (${setupTimeoutMs} ms).`));
     }, setupTimeoutMs);
     const promise = this.lifetime.run(() => attempt.run(() => this.openFreshConnection(attempt)));
-    this.reconnectPromise = promise;
     try {
       await promise;
       this.diagnostics?.debug('SFTP', 'Reconnect completed.', { PathStyle: this.pathStyle });
     } catch (error) {
+      if (!hostKeyApprovalError(error) && ((error as any)?.code === 'SSH_HOST_KEY_REJECTED' || /SSH host key verification:/.test(String(error)))) { this.blockSecurity(error instanceof Error ? error : new Error(String(error))); await this.disconnect(); }
       this.diagnostics?.debug('SFTP', 'Reconnect failed.', { Error: this.safeDiagnosticError(error) });
       throw error;
     } finally {
       clearTimeout(setupTimer);
       attempt.close();
-      if (this.reconnectPromise === promise) this.reconnectPromise = undefined;
       this.diagnostics?.performance('SFTP', `Reconnect completed in ${Date.now() - startedAt} ms.`);
     }
   }
@@ -209,6 +225,7 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
   }
 
   async disconnect(): Promise<void> {
+    this.approvalAbort.abort();
     const startedAt = Date.now();
     this.diagnostics?.debug('SFTP', 'Disconnect started.');
     // The controller has already allowed active writes to finish. Close a
@@ -246,7 +263,7 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
     this.lifetime.assertOpen();
     attempt.assertOpen();
     const client = new SftpClient();
-    const jumpChain = new SyncJumpHostChain();
+    const jumpChain = new SyncJumpHostChain(this.initialHostKeyPrompt);
     this.openingClient = client;
     this.openingJumpChain = jumpChain;
     try {
@@ -256,7 +273,7 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
         : undefined;
       this.lifetime.assertOpen();
       attempt.assertOpen();
-      await attempt.run(() => client.connect({
+      const config = {
         host: this.snapshot.host,
         port: this.snapshot.port,
         username: this.snapshot.username,
@@ -265,9 +282,11 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
         passphrase: this.snapshot.authType === 'privateKey' ? this.snapshot.passphrase : undefined,
         keepaliveInterval: this.snapshot.keepAlive ? 30000 : 0,
         keepaliveCountMax: this.snapshot.keepAlive ? 3 : 0,
-        readyTimeout: 30000,
+        readyTimeout: sshConnectionTimeout(),
         sock: sock as any
-      } as any));
+      } as any;
+      const hostKeyFailure = installHostKeyVerification(config, (client as any).client, this.snapshot.host, this.snapshot.port, undefined, { background: !this.initialHostKeyPrompt, prompt: this.initialHostKeyPrompt, role: 'Server', onRejected: error => this.blockSecurity(error) });
+      try { await attempt.run(() => client.connect(config)); } catch (error) { throw hostKeyFailure() || error; }
       try {
         const cwd = String(await attempt.run(() => client.cwd()) || '').replace(/\\/g, '/');
         this.pathStyle = inferSftpPathStyle(cwd);
@@ -290,6 +309,7 @@ export class SftpSyncSession implements WorkspaceSyncRemoteSession {
     } catch (error) {
       destroySftpClient(client);
       jumpChain.dispose();
+      if (this.securityBlocked) throw this.securityBlocked;
       if (this.snapshot.authType === 'privateKey' && !this.snapshot.passphrase && looksLikeMissingPassphrase(error)) {
         throw new WorkspaceSyncPassphraseRequiredError(this.snapshot.profileId, this.snapshot.name, false, error);
       }

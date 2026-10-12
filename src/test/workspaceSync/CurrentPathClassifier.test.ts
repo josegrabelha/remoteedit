@@ -3,10 +3,10 @@ import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import test from 'node:test';
-import { baselineRequiresStrongFingerprint, classifyCurrentPath, readAndClassifyCurrentPath } from '../../workspaceSync/compare/CurrentPathClassifier';
+import { readAndClassifyCurrentPath } from '../../workspaceSync/compare/CurrentPathClassifier';
 import type { WorkspaceSyncRemoteEntry, WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
 import type { BaselineEntry } from '../../workspaceSync/types';
+import test from '../helpers/TestHarness';
 
 function sha(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -52,8 +52,6 @@ test('Local-only replacement remains localChanged when Remote still matches a ha
   });
 });
 
-
-
 test('independent Local and Remote replacements remain a real conflict', async () => {
   await withLocalFile('bbb', async localPath => {
     const result = await readAndClassifyCurrentPath(sessionFor('ccc'), {
@@ -62,12 +60,6 @@ test('independent Local and Remote replacements remain a real conflict', async (
     assert.strictEqual(result.diff.status, 'conflict');
   });
 });
-
-
-
-
-
-
 
 test('a completed upload baseline makes the later Remote Watch observation Same', async () => {
   await withLocalFile('bbb', async localPath => {

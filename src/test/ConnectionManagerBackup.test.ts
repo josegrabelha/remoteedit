@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import type { ConnectionBackupImportOptions, RemoteEditBackupFile } from '../connection/ConnectionManager';
-import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
 import { WORKSPACE_SYNC_ACTIVITY_KEY } from '../workspaceSync/ui/WorkspaceSyncActivityStore';
+import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
+import { test } from './helpers/TestHarness';
 
 const exportOptions = { includeSettings: true, includeConnections: true, includeFavorites: true, includeUsernames: true, includeCredentials: false };
 const importOptions: ConnectionBackupImportOptions = { includeSettings: true, includeConnections: true, includeFavorites: true,
@@ -12,8 +12,6 @@ const backup = (connections: RemoteEditBackupFile['connections'], version = 3): 
   settings: { sshReadyTimeout: 40000 }, settingsKeys: ['sshReadyTimeout'],
   connectionGroups: [{ id: 'group', name: 'Group' }], savedCommands: { target: [{ command: 'pwd' }] }
 });
-
-
 
 test('v3 references survive a real export/import roundtrip in reversed array order', async () => {
   const source = createConnectionManagerHarness([profile('outer'), profile('near', { jumpProfileId: 'outer' }), profile('target', { jumpProfileId: 'near' })]);
@@ -25,16 +23,6 @@ test('v3 references survive a real export/import roundtrip in reversed array ord
     ['target', 'near'], ['near', 'outer'], ['outer', undefined]
   ]);
 });
-
-
-
-
-
-
-
-
-
-
 
 test('real scrypt/AES-GCM credentials pair same-name profiles by ID and replace removes old secrets', async () => {
   const source = createConnectionManagerHarness([
@@ -72,8 +60,6 @@ test('real scrypt/AES-GCM credentials pair same-name profiles by ID and replace 
   assert.deepEqual([...subset.secrets.keys()], [secretKey('outer', 'password')]);
 });
 
-
-
 test('merge without restore retains existing secrets; replace without restore removes them', async () => {
   for (const importMode of ['merge', 'replace'] as const) {
     const harness = createConnectionManagerHarness([profile('target')]);
@@ -82,10 +68,6 @@ test('merge without restore retains existing secrets; replace without restore re
     assert.equal(harness.secrets.get(secretKey('target', 'password')), importMode === 'merge' ? 'synthetic-existing' : undefined);
   }
 });
-
-
-
-
 
 test('Workspace Sync configuration survives a backup/restore roundtrip without requiring connections', async () => {
   const source = createConnectionManagerHarness();
@@ -188,10 +170,6 @@ test('Workspace Sync merge rejects a same-name mapping with a different identity
   }), /Workspace Sync mapping 'Production' already exists/);
   assert.deepEqual(harness.writes, []);
 });
-
-
-
-
 
 test('Multi-Target Commands reusable commands and target sets survive backup/restore without runtime state', async () => {
   const source = createConnectionManagerHarness();

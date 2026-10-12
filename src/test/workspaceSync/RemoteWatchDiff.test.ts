@@ -1,7 +1,7 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectRemoteWatchChangedPaths } from '../../workspaceSync/watcher/RemoteWatchDiff';
 import type { SyncSnapshot } from '../../workspaceSync/types';
+import { collectRemoteWatchChangedPaths } from '../../workspaceSync/watcher/RemoteWatchDiff';
+import test from '../helpers/TestHarness';
 
 function snapshot(entries: Array<[string, 'file' | 'directory', number, number]>): SyncSnapshot {
   return {

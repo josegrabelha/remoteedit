@@ -1,3 +1,5 @@
+import { SshHostKeyDialogController } from '../../webview/SshHostKeyDialogController';
+import { withHostKeyUi, disableHostKeyWarning } from '../../ssh/hostKeys/HostKeyRuntime';
 import { renderWorkspaceSyncHtml } from './WorkspaceSyncHtml';
 import { listLocalFolders } from '../ui/LocalFolderBrowser';
 import * as vscode from 'vscode';
@@ -29,6 +31,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   private static currentPanel: WorkspaceSyncPanel | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private panel: vscode.WebviewPanel;
+  private readonly sshHostKeyDialog = new SshHostKeyDialogController(() => !this.disposed && Boolean(this.panel), message => { void this.post(message); });
   private disposed = false;
   private handling = false;
   private detachUi?: () => void;
@@ -84,7 +87,10 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
       loadWorkspaceSyncSvg(this.context.extensionUri, 'question.svg'),
       loadWorkspaceSyncSvg(this.context.extensionUri, 'arrow-swap.svg')
     );
-    this.panel.webview.onDidReceiveMessage(message => void this.handleMessage(message), null, this.disposables);
+    this.panel.webview.onDidReceiveMessage(message => void withHostKeyUi({
+      prompt: Object.assign((request: import('../../ssh/hostKeys/HostKeyTrustService').HostKeyRequest, signal: AbortSignal) => this.sshHostKeyDialog.prompt(request, signal), { managesPresentation: true }),
+      confirmDisable: async () => await this.controller.ui.confirm('Disable SSH Host Key Verification?', ['Disable Verification', 'Cancel'], disableHostKeyWarning) === 'Disable Verification'
+    }, () => this.handleMessage(message)), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.disposables.push(this.controller.sessions.onDidChange(() => void this.postState()));
     this.disposables.push(this.controller.onDidChangeViewState(() => void this.postState()));
@@ -99,6 +105,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.sshHostKeyDialog.cancelPending();
     this.detachUi?.();
     this.activeOperation?.source.cancel();
     for (const maintenance of this.maintenanceOperations.values()) maintenance.source.cancel();
@@ -110,6 +117,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   }
 
   private async handleMessage(message: any): Promise<void> {
+    if (await this.sshHostKeyDialog.handle(message)) return;
     if (message?.type === 'uiResponse') { this.controller.ui.respond(String(message.id), message.value); return; }
     if (message?.type === 'browseLocal') {
       if (!this.controller.ui.isFolderRequest(String(message.id))) return;
@@ -150,6 +158,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
       if (!operation) {
         // A late Cancel click must also repair a stale webview state instead of
         // resurrecting a cancellation label after the operation has finished.
+        this.sshHostKeyDialog.cancelPending();
         this.controller.ui.cancelPending();
         await this.post({ type: 'operationState', active: false, operationId: this.operationSequence });
         return;
@@ -170,6 +179,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
         cancellable: false
       });
       operation.source.cancel();
+      this.sshHostKeyDialog.cancelPending();
       this.controller.ui.cancelPending();
 
       // Connection cleanup may be serialized behind the operation that is being

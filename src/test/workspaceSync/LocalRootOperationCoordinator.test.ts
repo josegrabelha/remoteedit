@@ -1,60 +1,37 @@
-import { TargetOperationQueue } from '../../workspaceSync/execution/TargetOperationQueue';
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
-import { LocalRootOperationCoordinator, localRootsOverlap } from '../../workspaceSync/execution/LocalRootOperationCoordinator';
+import { LocalRootOperationCoordinator } from '../../workspaceSync/execution/LocalRootOperationCoordinator';
+import test, { deferred } from '../helpers/TestHarness';
 
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>(done => { resolve = done; });
-  return { promise, resolve };
-}
 
-test('LocalRootOperationCoordinator serializes the same Local Root', async () => {
+test('LocalRootOperationCoordinator serializes one Local Root while permitting an independent root', async () => {
   const coordinator = new LocalRootOperationCoordinator();
   const gate = deferred();
-  const order: string[] = [];
+  const events: string[] = [];
   const root = path.resolve('/tmp/workspace-sync-same');
-
   const first = coordinator.run(root, async () => {
-    order.push('first-start');
+    events.push('first-start');
     await gate.promise;
-    order.push('first-end');
+    events.push('first-end');
   });
-  const second = coordinator.run(root, async () => { order.push('second'); });
-
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(order, ['first-start']);
-  gate.resolve();
-  await Promise.all([first, second]);
-  assert.deepEqual(order, ['first-start', 'first-end', 'second']);
-});
-
-
-
-test('LocalRootOperationCoordinator allows independent roots to run in parallel', async () => {
-  const coordinator = new LocalRootOperationCoordinator();
-  const gate = deferred();
-  let secondRan = false;
-
-  const first = coordinator.run(path.resolve('/tmp/workspace-sync-independent-a'), async () => {
-    await gate.promise;
-  });
-  const second = coordinator.run(path.resolve('/tmp/workspace-sync-independent-b'), async () => {
-    secondRan = true;
+  const queued = coordinator.run(root, async () => { events.push('second'); });
+  const independent = coordinator.run(path.resolve('/tmp/workspace-sync-independent'), async () => {
+    events.push('independent');
   });
 
-  await second;
-  assert.equal(secondRan, true);
-  gate.resolve();
-  await first;
-});
+  try {
+    await independent;
+    assert.ok(events.includes('first-start'));
+    assert.ok(events.includes('independent'));
+    assert.equal(events.includes('second'), false);
+  } finally {
+    gate.resolve();
+  }
+  await Promise.all([first, queued]);
+  assert.ok(events.indexOf('first-end') < events.indexOf('second'));
+});;
 
-
-
-
-
-
+;
 
 test('Path coordinator admits independent downloads concurrently but serializes writes to the same file', async () => {
   const c = new LocalRootOperationCoordinator();
@@ -73,16 +50,6 @@ test('Path coordinator admits independent downloads concurrently but serializes 
   assert.deepEqual(events, ['a-start', 'b-start', 'a-end', 'same-start']);
 });
 
-
-
-
-
-
-
-
-
-
-
 test('Path coordinator recognizes symlink aliases of the same Local Root', async t => {
   if (process.platform === 'win32') return t.skip('Creating directory junctions requires platform-specific privileges; run Windows integration test separately.');
   const fs = await import('node:fs/promises');
@@ -98,13 +65,15 @@ test('Path coordinator recognizes symlink aliases of the same Local Root', async
     let aliasEntered = false;
     const direct = c.runPaths(real, [{ path: path.join(real, 'file.txt'), mode: 'write' }], async () => { await gate.promise; });
     const indirect = c.runPaths(alias, [{ path: path.join(alias, 'file.txt'), mode: 'write' }], async () => { aliasEntered = true; });
-    await new Promise(resolve => setTimeout(resolve, 10));
-    assert.equal(aliasEntered, false, 'Aliases to one real path must conflict');
-    gate.resolve();
+    // Unrelated path work is an observable barrier: the aliased write must
+    // remain blocked while another independent path can complete.
+    try {
+      await c.runPaths(real, [{ path: path.join(real, 'other.txt'), mode: 'write' }], async () => {});
+      assert.equal(aliasEntered, false, 'Aliases to one real path must conflict');
+    } finally {
+      gate.resolve();
+    }
     await Promise.all([direct, indirect]);
     assert.equal(aliasEntered, true);
   } finally { await fs.rm(scratch, { recursive: true, force: true }); }
 });
-
-
-

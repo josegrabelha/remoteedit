@@ -1,15 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
-import type { ActiveConnection, ConnectOptions } from '../remote/RemoteSessionTypes';
-import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
+import { createConnectionManagerHarness, profile } from './helpers/ConnectionManagerHarness';
 import { createConnectionUiHarness, createJumpWebviewHarness } from './helpers/ConnectionUiHarness';
-
-
-
-
-
-
+import { test } from './helpers/TestHarness';
 
 test('Sidebar Connect Without Saving carries the draft password through to Jump password Esc', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target')]);
@@ -33,10 +26,6 @@ test('Sidebar Connect Without Saving carries the draft password through to Jump 
   assert.equal(ui.sidebar.connectingProfileIds.size, 0);
   assert.ok(!JSON.stringify({ logs: harness.logs, state: [...harness.state], messages: ui.messages }).includes('synthetic-draft-password'));
 });
-
-
-
-
 
 test('Webview network cancellation preserves other connected and client-pending sessions', async () => {
   const profiles = [profile('target')];

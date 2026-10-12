@@ -1,14 +1,14 @@
-import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import {
-  decodeWinScpPassword,
-  parseWinScp
-} from '../connectionImport/sources/WinScpImportSource';
-import {
-  unlockFileZilla,
-  unlockWinScp
+    unlockFileZilla,
+    unlockWinScp
 } from '../connectionImport/ConnectionImportCredentials';
 import { parseFileZilla } from '../connectionImport/sources/FileZillaImportSource';
+import {
+    decodeWinScpPassword,
+    parseWinScp
+} from '../connectionImport/sources/WinScpImportSource';
+import { test } from './helpers/TestHarness';
 
 // Synthetic, non-production credential vectors kept in the tests that use them.
 const FILEZILLA_LEGACY = {
@@ -67,7 +67,6 @@ test('FileZilla crypt unlock checks the external master password against its pub
   );
 });
 
-
 test('FileZilla authenticated AES-GCM credentials unlock with the matching public key, rejecting wrong keys and tampering', () => {
   const vector = FILEZILLA_AUTHENTICATED;
   assert.equal(unlockFileZilla(vector.value, vector.publicKey, 'fixture-auth-master'), 'fixture-authenticated-secret');
@@ -76,7 +75,6 @@ test('FileZilla authenticated AES-GCM credentials unlock with the matching publi
   ciphertext[ciphertext.length - 1] ^= 1;
   assert.throws(() => unlockFileZilla(ciphertext.toString('base64'), vector.publicKey, 'fixture-auth-master'));
 });
-
 
 test('FileZilla unpadded public keys from real Site Manager exports unlock with the external password', () => {
   const vector = FILEZILLA_AUTHENTICATED;

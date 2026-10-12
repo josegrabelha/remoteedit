@@ -1,27 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as ts from 'typescript';
-import { runInNewContext } from 'node:vm';
 import { LocalRootOperationCoordinator } from '../../workspaceSync/execution/LocalRootOperationCoordinator';
+import test, { waitFor } from '../helpers/TestHarness';
+import { workspaceSyncControllerHarness } from '../helpers/WorkspaceSyncControllerHarness';
 
-async function controllerHarness(methods: string[], globals: Record<string, unknown> = {}): Promise<any> {
-  const source = await fs.readFile(path.join(__dirname, '../../../src/workspaceSync/WorkspaceSyncController.ts'), 'utf8');
-  const tree = ts.createSourceFile('WorkspaceSyncController.ts', source, ts.ScriptTarget.ES2022, true);
-  const klass = tree.statements.find((node): node is ts.ClassDeclaration =>
-    ts.isClassDeclaration(node) && node.name?.text === 'WorkspaceSyncController');
-  assert.ok(klass);
-  const members = methods.map(name => {
-    const node = klass.members.find(member => ts.isMethodDeclaration(member) && member.name.getText(tree) === name);
-    assert.ok(node, `Controller.${name} must exist`);
-    return node.getText(tree);
-  });
-  const code = ts.transpileModule(`class Harness { ${members.join('\n')} }\nHarness;`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
-  }).outputText;
-  const Harness = runInNewContext(code, { setTimeout, clearTimeout, Date, Promise, ...globals });
-  return new Harness();
+function controllerHarness(methods: string[], globals: Record<string, unknown> = {}): Record<string, any> {
+  return workspaceSyncControllerHarness({ methods, globals });
 }
 
 function mappingFixture() {
@@ -80,8 +63,6 @@ test('Save prepares every connected target, never auto-connects disconnected/dis
   assert.equal(watcherCount.length, 1);
 });
 
-
-
 test('Automatic Watch publishes completed Changes before the batch ends without accepting failed paths', async () => {
   const h = await controllerHarness(['reconcileWatchRuntimeCore', 'applyCompletedOperationsToRuntime'], {
     initialWatchReconcileDecision: () => ({ local: true, remote: false, conflict: false }),
@@ -134,8 +115,6 @@ test('Automatic Watch publishes completed Changes before the batch ends without 
   assert.deepEqual([...h.runtimeByTarget.get('TST::T1').diffs.map((item: any) => item.status)], ['same', 'localChanged']);
   assert.deepEqual(journal.map(item => item.relativePath), ['a.txt']);
 });
-
-
 
 test('A watcher create/change retry that now finds Local missing is reclassified through the normal delete path', async () => {
   const remote = { kind: 'file', size: 12, mtimeMs: 100 };
@@ -197,10 +176,6 @@ test('A watcher create/change retry that now finds Local missing is reclassified
   assert.ok(refreshed.length >= 1);
 });
 
-
-
-
-
 test('A completed download reclassifies every other connected target sharing the Local Root, regardless of Watch selection', async () => {
   const path = await import('node:path');
   const h = await controllerHarness(['scheduleSharedLocalReclassification', 'localRootChangedAfter'], {
@@ -246,12 +221,10 @@ test('A completed download reclassifies every other connected target sharing the
     });
   });
   await coordinatorLocked;
-  await new Promise(resolve => setTimeout(resolve, 100));
+  await waitFor(() => observed.length >= 2, 'shared Local reclassification');
   assert.equal(h.localRootChangedAfter('/shared-root', 0), true);
   assert.deepEqual(observed.sort(), ['DEV:D1:folder/a.txt', 'DEV:D2:folder/a.txt']);
 });
-
-
 
 test('A shared Local delete preserves delete semantics when routed into the common Watch pipeline', async () => {
   const path = await import('node:path');
@@ -286,14 +259,12 @@ test('A shared Local delete preserves delete semantics when routed into the comm
   h.scheduleSharedLocalReclassification(tst, tst.targets[0], [{
     type: 'deleteLocal', relativePath: 'removed.txt', localRelativePath: 'removed.txt'
   }]);
-  await new Promise(resolve => setTimeout(resolve, 160));
+  await waitFor(() => received.length >= 1, 'watched delete propagation');
 
   assert.equal(received.length, 1);
   assert.equal(received[0].kind, 'delete');
   assert.equal(received[0].relativePath, 'removed.txt');
 });
-
-
 
 test('Deferred Watch directory delete automatically re-evaluates only its subtree and retries after releasing locks', async () => {
   const h = await controllerHarness(['reconcileWatchRuntimeCore'], {
@@ -373,5 +344,3 @@ test('Deferred Watch directory delete automatically re-evaluates only its subtre
   assert.equal(executedPaths[1].includes('unrelated.txt'), false, 'Deferred retry must stay scoped to the affected subtree');
   assert.equal(activity.some(message => /Re-evaluating deferred Watch delete/.test(message)), true);
 });
-
-

@@ -1,21 +1,18 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { TestCancellationSource, TestEventEmitter, deferred, flush, harness } from './helpers/SftpSessionHarness';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import type { RemoteCommandStreamingCallbacks } from '../remote/RemoteSessionTypes';
-import { formatMultiTargetCommandsCompletedStatus, formatMultiTargetConnectionFailureStatus, formatMultiTargetOperationStatus, formatMultiTargetSearchCompletedStatus, formatMultiTargetSkippedStatus, formatMultiTargetUnavailableStatus, renderMultiTargetFeedbackScript } from '../multiTarget/MultiTargetFeedback';
-import { renderMultiTargetHtml } from '../multiTarget/MultiTargetHtml';
-import { renderMultiTargetScript } from '../multiTarget/MultiTargetScript';
-import { multiTargetStyles } from '../multiTarget/MultiTargetStyles';
-import { normalizeSavedMultiTargetSets } from '../multiTarget/MultiTargetStorage';
+import { TestCancellationSource, TestEventEmitter, deferred, flush, harness } from './helpers/SftpSessionHarness';
+import { test } from './helpers/TestHarness';
 
 const loader = require('node:module');
 const original = loader._load;
 loader._load = (request: string, parent: unknown, isMain: boolean) => request === 'vscode'
   ? { CancellationTokenSource: TestCancellationSource }
   : Reflect.apply(original, loader, [request, parent, isMain]);
-const { SearchBatch, DEFAULT_SEARCH_QUERY, formatSearchResults } = require('../multiTargetSearch/SearchBatch') as typeof import('../multiTargetSearch/SearchBatch');
-loader._load = original;
+const { SearchBatch, DEFAULT_SEARCH_QUERY } = (() => {
+  try { return require('../multiTargetSearch/SearchBatch') as typeof import('../multiTargetSearch/SearchBatch'); }
+  finally { loader._load = original; }
+})();
 
 const target = (id: string) => ({ connectionId: id, name: id, workingDirectory: '' });
 function remote(run: (id: string, path: string, command: string, callbacks: RemoteCommandStreamingCallbacks) => Promise<{ code: number }>): RemoteSessionManager {
@@ -49,7 +46,6 @@ test('search uses the existing engine, limits concurrency, streams results, and 
   assert.deepEqual(batch.executions[0].results, [{ path: '/home/one/a.log', type: 'file', line: 12, text: 'found text' }]);
   assert.equal(batch.executions[1].error, 'permission denied');
 });
-
 
 test('search batch prepares each target for sudo and isolates preparation failures', async () => {
   const prepared: string[] = [];

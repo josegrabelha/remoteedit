@@ -1,7 +1,10 @@
+import { SshHostKeyDialogController } from '../webview/SshHostKeyDialogController';
+import { withHostKeyUi, hostKeyTrust, disableHostKeyWarning } from '../ssh/hostKeys/HostKeyRuntime';
 import { ConnectionImportController } from './ConnectionImportController';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { managementWebviewButton, type ManagementWebviewAction } from '../connection/ConnectionManagementActions';
 import { AsyncLocalStorage } from 'async_hooks';
 import { ConnectionManager, type RemoteEditPersistentWebviewStorage } from '../connection/ConnectionManager';
 import { buildRemoteEditUri, preferOpenRemoteEditUri } from '../filesystem/RemoteEditFileSystemProvider';
@@ -84,8 +87,7 @@ export class RemoteEditPanel {
   private readonly remoteSearchResultBatcher: RemoteSearchResultBatcher;
   private readonly remoteCommandController: RemoteCommandController;
   private webviewReady = false;
-  private pendingProxyProfilesOpen = false;
-  private pendingConnectionImportOpen = false;
+  private readonly pendingManagementOpens: ManagementWebviewAction[] = [];
   private runningTransfers = 0;
   private sessionOrder: string[] = [];
 
@@ -95,6 +97,7 @@ export class RemoteEditPanel {
   private readonly directoryListRequestSequences = new Map<string, number>();
   private readonly activeRemoteCommands = new Map<string, ActiveRemoteCommandState>();
   private pendingPermissionsDialogResolve: ((result?: SetPermissionsDialogResult) => void) | undefined;
+  private readonly sshHostKeyDialog = new SshHostKeyDialogController(() => !this.isDisposed && Boolean(this.panel), message => { void this.panel?.webview.postMessage(message); });
   private readonly dialogManager: RemoteEditDialogManager;
   private readonly virtualDocuments = new Map<string, string>();
   private readonly connectionImportController: ConnectionImportController;
@@ -111,26 +114,24 @@ export class RemoteEditPanel {
     RemoteEditPanel.getOrCreate(context, sessions, connectionManager, output);
   }
 
-  static openProxyProfiles(
+  static openManagement(
     context: vscode.ExtensionContext,
     sessions: RemoteSessionManager,
     connectionManager: ConnectionManager,
-    output: vscode.OutputChannel
+    output: vscode.OutputChannel,
+    action: ManagementWebviewAction
   ): void {
     const panel = RemoteEditPanel.getOrCreate(context, sessions, connectionManager, output);
-    if (panel.webviewReady) panel.postMessage(RemoteEditOutboundMessageType.ShowProxyProfiles, {});
-    else panel.pendingProxyProfilesOpen = true;
+    if (panel.webviewReady) panel.postMessage(RemoteEditOutboundMessageType.ShowConnectionManagement, { buttonId: managementWebviewButton(action) });
+    else panel.pendingManagementOpens.push(action);
   }
 
-  static openConnectionImport(
-    context: vscode.ExtensionContext,
-    sessions: RemoteSessionManager,
-    connectionManager: ConnectionManager,
-    output: vscode.OutputChannel
-  ): void {
-    const panel = RemoteEditPanel.getOrCreate(context, sessions, connectionManager, output);
-    if (panel.webviewReady) panel.postMessage(RemoteEditOutboundMessageType.ShowConnectionImport, {});
-    else panel.pendingConnectionImportOpen = true;
+  static openProxyProfiles(context: vscode.ExtensionContext, sessions: RemoteSessionManager, connectionManager: ConnectionManager, output: vscode.OutputChannel): void {
+    RemoteEditPanel.openManagement(context, sessions, connectionManager, output, 'proxies');
+  }
+
+  static openConnectionImport(context: vscode.ExtensionContext, sessions: RemoteSessionManager, connectionManager: ConnectionManager, output: vscode.OutputChannel): void {
+    RemoteEditPanel.openManagement(context, sessions, connectionManager, output, 'applications');
   }
 
   static openConnection(
@@ -642,7 +643,10 @@ export class RemoteEditPanel {
     this.panel.webview.html = this.renderHtml(this.panel.webview);
 
     this.panel.onDidDispose(() => this.handlePanelDisposed(), null, this.panelDisposables);
-    this.panel.webview.onDidReceiveMessage(message => this.handleMessage(message), null, this.panelDisposables);
+    this.panel.webview.onDidReceiveMessage(message => withHostKeyUi({
+      prompt: Object.assign((request: import('../ssh/hostKeys/HostKeyTrustService').HostKeyRequest, signal: AbortSignal) => this.sshHostKeyDialog.prompt(request, signal), { managesPresentation: true }),
+      confirmDisable: () => this.showConfirmDialog({ title: 'Disable SSH Host Key Verification?', message: disableHostKeyWarning, confirmLabel: 'Disable Verification', cancelLabel: 'Cancel', danger: true })
+    }, () => this.handleMessage(message)), null, this.panelDisposables);
   }
 
   private handlePanelDisposed(): void {
@@ -653,6 +657,7 @@ export class RemoteEditPanel {
     this.stopAllRemoteCommands(true);
     this.remoteSearchResultBatcher.clearAll();
     this.resolvePendingPermissionsDialog();
+    this.sshHostKeyDialog.cancelPending();
     this.dialogManager.resolvePendingDialogs();
     this.droppedUploadStaging.cancelAll();
   }
@@ -664,6 +669,7 @@ export class RemoteEditPanel {
   }
 
   private async handleMessage(message: RemoteEditWebviewMessage): Promise<void> {
+    if (await this.sshHostKeyDialog.handle(message)) return;
     try {
       await handleRemoteEditPanelMessage(message, {
         getActiveConnectionId: () => this.state.getActiveConnectionId(),
@@ -679,16 +685,13 @@ export class RemoteEditPanel {
           this.postPersistentStorageSnapshot();
           this.postRemoteClipboardState();
           this.webviewReady = true;
-          if (this.pendingConnectionImportOpen) {
-            this.pendingConnectionImportOpen = false;
-            this.postMessage(RemoteEditOutboundMessageType.ShowConnectionImport, {});
-          }
-          if (this.pendingProxyProfilesOpen) {
-            this.pendingProxyProfilesOpen = false;
-            this.postMessage(RemoteEditOutboundMessageType.ShowProxyProfiles, {});
+          for (const action of this.pendingManagementOpens.splice(0)) {
+            this.postMessage(RemoteEditOutboundMessageType.ShowConnectionManagement, { buttonId: managementWebviewButton(action) });
           }
         },
+        connectionManagementBlocked: () => { void vscode.window.showInformationMessage('Close the current Remote Edit dialog before opening another management action.'); },
         connectionImport: payload => this.connectionImportController.handle(payload),
+        trustedSshHosts: payload => this.manageTrustedSshHosts(payload),
         proxyProfiles: payload => this.manageProxyProfiles(payload),
         masterPassword: payload => this.manageMasterPassword(payload),
         saveConnection: payload => this.saveConnection(payload),
@@ -987,6 +990,31 @@ export class RemoteEditPanel {
 
     for (const connection of connectedSessions) {
       this.serverManagementController.warmUpServerDashboard(connection.id);
+    }
+  }
+
+  private async manageTrustedSshHosts(payload: any): Promise<void> {
+    try {
+      const service = hostKeyTrust();
+      if (payload?.action === 'delete') {
+        const item = (await service.store.list()).find(host => host.id === String(payload.id))
+          || (await service.knownHosts.list()).find(host => host.id === String(payload.id));
+        if (!item || item.publicKey !== payload.publicKey || item.fileDigest !== payload.fileDigest) throw new Error('The selected trusted SSH host changed. Refresh the list before deleting.');
+        if (item.source === 'Remote Edit') {
+          if (await this.showConfirmDialog({ title: 'Delete Trusted SSH Host?', message: `Remove trust for ${item.host}:${item.port}? The next connection will consult OpenSSH known_hosts or require approval.`, details: item.fingerprint, confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true })) await service.store.remove(item.id);
+        } else if (item.source === 'OpenSSH (User)' && item.removable) {
+          const confirmed = await this.showConfirmDialog({ title: 'Remove SSH Host Key?', message: 'Remove the selected host key from your OpenSSH known_hosts file?', details: `${item.host}${item.port ? ':' + item.port : ''}\nFingerprint: ${item.fingerprint}\nSource: ${item.source}\nFile: ${item.filePath}\n\nThis may affect other SSH applications. The server identity will need to be verified again if no other trusted key exists. A backup of the original file will be created before deletion.`, confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+          if (confirmed) {
+            const backup = await service.knownHosts.remove(item);
+            this.logInfo('Removed OpenSSH user host key.', { File: item.filePath, Backup: backup });
+          }
+        } else throw new Error('This OpenSSH record is read-only.');
+      }
+      this.postMessage(RemoteEditOutboundMessageType.TrustedSshHostsState, { hosts: await service.list(), environment: `${process.platform} · ${vscode.env.remoteName || 'Local extension host'}` });
+    } catch (error) {
+      let hosts: unknown[] | undefined;
+      try { hosts = await hostKeyTrust().store.list(); } catch { /* Preserve the original storage/read error. */ }
+      this.postMessage(RemoteEditOutboundMessageType.TrustedSshHostsState, { hosts, error: error instanceof Error ? error.message : 'Could not load trusted SSH hosts.' });
     }
   }
 
@@ -5433,6 +5461,7 @@ export class RemoteEditPanel {
     void this.portForwardManager.dispose();
     this.remoteSearchResultBatcher.clearAll();
     this.resolvePendingPermissionsDialog();
+    this.sshHostKeyDialog.cancelPending();
     this.dialogManager.resolvePendingDialogs();
     this.cancelPendingTransferConflict();
     this.clearAllQueuedTransfers();

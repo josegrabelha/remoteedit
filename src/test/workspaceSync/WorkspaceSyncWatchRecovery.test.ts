@@ -1,13 +1,13 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
-import { loadWithVscode, createConnectionManagerHarness } from '../helpers/ConnectionManagerHarness';
-import type { WorkspaceSyncRemoteSession, WorkspaceSyncRemoteEntry } from '../../workspaceSync/connection/WorkspaceSyncSession';
+import type { WorkspaceSyncRemoteEntry, WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
 import { createWorkspaceMapping } from '../../workspaceSync/mapping/WorkspaceMapping';
 import { WORKSPACE_SYNC_MAPPINGS_KEY } from '../../workspaceSync/mapping/WorkspaceMappingStore';
+import { createConnectionManagerHarness, loadWithVscode } from '../helpers/ConnectionManagerHarness';
+import test from '../helpers/TestHarness';
 
 const { WorkspaceSyncController } = loadWithVscode(() => require('../../workspaceSync/WorkspaceSyncController') as typeof import('../../workspaceSync/WorkspaceSyncController'));
 const { RemoteWorkspaceWatcher } = loadWithVscode(() => require('../../workspaceSync/watcher/RemoteWorkspaceWatcher') as typeof import('../../workspaceSync/watcher/RemoteWorkspaceWatcher'));
@@ -74,6 +74,7 @@ async function fixture(t: import('node:test').TestContext, mappingCount = 1, tar
   t.after(async () => {
     controller.dispose();
     await settle();
+    for (const mapping of mappings) await controller.baselines.clear(mapping.id);
     await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 10 });
   });
   async function seed(relativePath: string, content: string) {
@@ -107,8 +108,6 @@ test('a busy polling target does not stall other targets or later polling rounds
   } finally { watcher.dispose(); release(); await settle(); }
 });
 
-
-
 test('Remote Watch does not interpret a newly ignored file as a remote deletion', async t => {
   const h = await fixture(t);
   await h.seed('keep.txt', 'original');
@@ -120,10 +119,6 @@ test('Remote Watch does not interpret a newly ignored file as a remote deletion'
   await h.internal.pollRemoteChanges(mapping.id, mapping.targets[0].id);
   assert.equal(await fs.readFile(path.join(h.localRoot, 'keep.txt'), 'utf8'), 'original');
 });
-
-
-
-
 
 test('failed Remote Watch download is retried even without another remote edit', async t => {
   const h = await fixture(t);
@@ -190,8 +185,6 @@ test('vanished unbaselined Remote candidate does not poison later create/delete 
     'Remote Watch must keep polling and propagate a later Remote delete'
   );
 });
-
-
 
 test('failed Local upload whose source disappears is retried as a delete and Watch continues', async t => {
   const h = await fixture(t);
@@ -278,5 +271,3 @@ test('Activity rollover does not stop mass deletion or subsequent Local and Remo
   await h.internal.pollRemoteChanges(h.mappings[0].id, h.mappings[0].targets[0].id);
   assert.equal(await fs.readFile(path.join(h.localRoot, 'later.txt'), 'utf8'), 'later remote edit');
 });
-
-

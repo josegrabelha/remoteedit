@@ -1,23 +1,23 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
 import { OperationJournal } from '../../workspaceSync/watcher/OperationJournal';
+import test from '../helpers/TestHarness';
 
-test('OperationJournal suppresses a local mutation for the full operation lifetime and a grace period', async () => {
+test('OperationJournal suppresses a local mutation for the full operation lifetime and a grace period', t => {
+  let now = 1000;
+  t.mock.method(Date, 'now', () => now);
   const journal = new OperationJournal(40);
   const root = path.resolve('/tmp/workspace-sync-journal');
   const origin = { mappingId: 'mapping-a', targetId: 'target-a' };
   const finish = journal.beginLocalMutation(root, origin);
   assert.equal(journal.isLocalMutation(path.join(root, 'child.txt'), origin), true);
-  await new Promise(resolve => setTimeout(resolve, 60));
+  now += 60;
   assert.equal(journal.isLocalMutation(path.join(root, 'child.txt'), origin), true);
   finish();
   assert.equal(journal.isLocalMutation(path.join(root, 'child.txt'), origin), true);
-  await new Promise(resolve => setTimeout(resolve, 60));
+  now += 60;
   assert.equal(journal.isLocalMutation(path.join(root, 'child.txt'), origin), false);
 });
-
-
 
 test('OperationJournal scopes descendant suppression for directory mutations without hiding overlapping mappings', () => {
   const journal = new OperationJournal(1000);

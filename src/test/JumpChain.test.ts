@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import {
-  JumpChainValidationError,
-  resolveJumpProfileChain,
-  type JumpChainValidationErrorCode,
-  type JumpProfileDescriptor
+    JumpChainValidationError,
+    resolveJumpProfileChain,
+    type JumpChainValidationErrorCode,
+    type JumpProfileDescriptor
 } from '../connection/JumpChain';
 import type { RemoteConnectionType } from '../remote/RemoteConnectionTypes';
+import { test } from './helpers/TestHarness';
 
 function profile(
   id: string,
@@ -57,10 +57,6 @@ test('resolves Direct, single-hop, and multi-hop chains in network order', () =>
   );
 });
 
-
-
-
-
 test('rejects cycles that return to the target and cycles wholly inside the Jump graph', () => {
   const targetCycle = expectJumpError(
     () => resolveJumpProfileChain(profile('A', 'B'), [profile('B', 'A')]),
@@ -74,8 +70,6 @@ test('rejects cycles that return to the target and cycles wholly inside the Jump
   );
   assert.deepEqual(internalCycle.pathProfileIds, ['Target', 'B', 'C', 'B']);
 });
-
-
 
 test('rejects missing, FTP, and FTPS Jump references without falling back to Direct', () => {
   const missing = expectJumpError(

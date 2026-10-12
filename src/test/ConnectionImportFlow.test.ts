@@ -1,11 +1,11 @@
-import { test } from 'node:test';
-import * as assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as assert from 'node:assert/strict';
 import * as os from 'os';
+import * as path from 'path';
 import { ConnectionImportService } from '../connectionImport/ConnectionImportService';
-import { renderConnectionImport } from '../panel/webview/scripts/ConnectionImport';
 import { renderConnectionImportMarkup } from '../panel/webview/markup/ConnectionImportMarkup';
+import { renderConnectionImport } from '../panel/webview/scripts/ConnectionImport';
+import { test } from './helpers/TestHarness';
 
 // Synthetic, non-production credential vectors kept in the tests that use them.
 const FILEZILLA_LEGACY = {
@@ -88,7 +88,7 @@ test('PuTTY Unix sessions can be loaded manually and reviewed together', async (
 });
 
 test('preview is secret-free; import uses current APIs and rejects replay', async () =>
-  harness(async (s, profiles, saved) => {
+  harness(async (s, _profiles, saved) => {
     const preview = await s.preview(['sftp']);
     assert.ok(!JSON.stringify(preview).includes('never-show-this'));
     assert.equal(saved.length, 0);
@@ -116,7 +116,7 @@ test('conflicts offer explicit target comparison and changed replacements are re
     );
     assert.equal(saved.length, 0);
   }));
-test('Import as New creates a unique name; Skip has no side effects', async () =>
+test('Import as New creates a unique name', async () =>
   harness(async (s, profiles, saved) => {
     profiles.push({
       id: 'existing',
@@ -131,8 +131,8 @@ test('Import as New creates a unique name; Skip has no side effects', async () =
     assert.equal(result.imported, 1);
     assert.equal(saved[0].name, 'Example (2)');
   }));
-test('tampered decisions and duplicate replacements never reach saveProfile', async () =>
-  harness(async (s, profiles, saved) => {
+test('tampered and duplicate decisions never reach saveProfile', async () =>
+  harness(async (s, _profiles, saved) => {
     const p = await s.preview(['sftp']);
     await assert.rejects(() =>
       s.apply([{ id: p[0].id, action: 'replace', existingId: 'arbitrary' }])
@@ -147,7 +147,7 @@ test('tampered decisions and duplicate replacements never reach saveProfile', as
     assert.equal(saved.length, 0);
   }));
 test('malformed file errors do not leak source credential values', async () =>
-  harness(async (s, profiles, saved, file) => {
+  harness(async (s, _profiles, _saved, file) => {
     await fs.writeFile(file, '{"password":"never-show-this", broken');
     const sources = await s.load('sftp', [file]);
     assert.ok(sources.find((x) => x.id === 'sftp')?.error);
@@ -184,7 +184,6 @@ test('unlocking protected credentials applies once per reviewed source file', as
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
-
 
 test('FileZilla unlock groups by public key, not connection or source file, and preserves other keys', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-fz-key-group-'));
@@ -249,7 +248,6 @@ test('Connection Import webview uses Remote Edit custom controls instead of nati
   assert.ok(!script.includes('Unlock Credentials...'));
   assert.ok(markup.includes('data-tooltip="Hold to Show Password"'));
 });
-
 
 test('batch unlock restores all FileZilla connections sharing a key without repeated consent', async () => {
   const vector = FILEZILLA_AUTHENTICATED;

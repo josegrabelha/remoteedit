@@ -1,11 +1,9 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
 import { WorkspaceSyncDiffTempStore } from '../../workspaceSync/compare/DiffTempStore';
-
-
+import test from '../helpers/TestHarness';
 
 test('DiffTempStore prunes expired files and keeps the newest files within the limit', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-diff-prune-'));

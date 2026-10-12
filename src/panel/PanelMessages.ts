@@ -1,6 +1,8 @@
 export const RemoteEditIncomingMessageType = {
   ConnectionImport: 'connectionImport',
+  TrustedSshHosts: 'trustedSshHosts',
   ProxyProfiles: 'proxyProfiles',
+  ConnectionManagementBlocked: 'connectionManagementBlocked',
   MasterPassword: 'masterPassword',
   Ready: 'ready',
   SaveConnection: 'saveConnection',
@@ -91,8 +93,11 @@ export const RemoteEditIncomingMessageType = {
 
 export const RemoteEditOutboundMessageType = {
   ConnectionImportState: 'connectionImportState',
+  TrustedSshHostsState: 'trustedSshHostsState',
+  CloseConfirmDialog: 'closeConfirmDialog',
   ProxyProfilesState: 'proxyProfilesState',
   ShowProxyProfiles: 'showProxyProfiles',
+  ShowConnectionManagement: 'showConnectionManagement',
   ShowConnectionImport: 'showConnectionImport',
   MasterPasswordState: 'masterPasswordState',
   ProfilesLoaded: 'profilesLoaded',

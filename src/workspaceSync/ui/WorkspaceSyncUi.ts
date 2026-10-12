@@ -123,11 +123,13 @@ export class WorkspaceSyncUi {
     this.log(message, level);
   }
 
-  request(input: Omit<SyncUiRequest, 'id'>): Promise<unknown> {
-    if (!this.sender) return Promise.resolve(undefined);
+  request(input: Omit<SyncUiRequest, 'id'>, signal?: AbortSignal): Promise<unknown> {
+    if (signal?.aborted || !this.sender) return Promise.resolve(undefined);
     const request = { ...input, id: randomUUID() };
     return new Promise(resolve => {
-      this.pending.set(request.id, { request, resolve });
+      const abort = (): void => { this.respond(request.id, undefined); this.sender?.({ type: 'dismissRequest', id: request.id }); };
+      signal?.addEventListener('abort', abort, { once: true });
+      this.pending.set(request.id, { request, resolve: value => { signal?.removeEventListener('abort', abort); resolve(value); } });
       this.sender?.({ type: 'request', request });
     });
   }
@@ -153,8 +155,8 @@ export class WorkspaceSyncUi {
     return typeof result === 'string' ? result : undefined;
   };
 
-  async confirm(title: string, choices: string[], detail?: string): Promise<string | undefined> {
-    const result = await this.request({ kind: 'confirm', title, choices, detail });
+  async confirm(title: string, choices: string[], detail?: string, signal?: AbortSignal): Promise<string | undefined> {
+    const result = await this.request({ kind: 'confirm', title, choices, detail }, signal);
     return typeof result === 'string' ? result : undefined;
   }
 }

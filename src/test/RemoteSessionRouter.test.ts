@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { beforeEach, test } from 'node:test';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import type { ActiveConnection, ConnectOptions } from '../remote/RemoteSessionTypes';
-import { ControlledSftp, RemoteSessionRouter, SftpSessionManager, deferred, flush, harness, options, resetHarness } from './helpers/SftpSessionHarness';
+import { ControlledSftp, RemoteSessionRouter, SftpSessionManager, flush, harness, options, resetHarness } from './helpers/SftpSessionHarness';
+import { beforeEach, test } from './helpers/TestHarness';
 
 beforeEach(resetHarness);
 
@@ -17,8 +17,6 @@ test('Router reports remote SFTP close through its existing UI connection event'
   await flush();
   assert.deepEqual(snapshots, [1, 0]);
 });
-
-
 
 test('Router notifies once on explicit disconnect and ignores old close after reconnect', async () => {
   const first = new ControlledSftp();
@@ -38,8 +36,6 @@ test('Router notifies once on explicit disconnect and ignores old close after re
   await router.disconnectAll();
   assert.deepEqual(changes, [1, 0, 1, 0]);
 });
-
-
 
 test('FTP and FTPS are routed exclusively to the injected FTP manager', async () => {
   const calls: ConnectOptions[] = [];

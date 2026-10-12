@@ -1,7 +1,7 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectWatchedDeletePaths } from '../../workspaceSync/watcher/WatchedDeletePlan';
 import type { FileFingerprint, SyncBaseline } from '../../workspaceSync/types';
+import { collectWatchedDeletePaths } from '../../workspaceSync/watcher/WatchedDeletePlan';
+import test from '../helpers/TestHarness';
 
 const dir: FileFingerprint = { kind: 'directory', size: 0, mtimeMs: 1 };
 const file: FileFingerprint = { kind: 'file', size: 1, mtimeMs: 1 };

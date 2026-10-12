@@ -1,17 +1,13 @@
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
-import { test } from 'node:test';
+import { renderStateDialogs } from '../panel/webview/scripts/StateDialogs';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { createConnectionManagerHarness, loadWithVscode, profile, secretKey } from './helpers/ConnectionManagerHarness';
-import { createConnectionUiHarness, createJumpWebviewHarness } from './helpers/ConnectionUiHarness';
-import { SidebarConnectionDraftStore, QUICK_CONNECT_ID } from '../sidebar/ConnectionDraftStore';
-import { buildSidebarJumpDisplay } from '../sidebar/ItemHelpers';
-import { RemoteEditDialogManager } from '../panel/DialogManager';
-import { renderStateDialogs } from '../panel/webview/scripts/StateDialogs';
-import { renderTransferContextActions } from '../panel/webview/scripts/TransferContextActions';
+import { RemoteEditPanel, createConnectionUiHarness, createJumpWebviewHarness } from './helpers/ConnectionUiHarness';
+import { test } from './helpers/TestHarness';
 
-
-
+const { buildSidebarJumpDisplay } = loadWithVscode(() =>
+  require('../sidebar/ItemHelpers') as typeof import('../sidebar/ItemHelpers'));
 
 test('Webview Direct selection sends an explicit clear through the real save message and host persistence', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
@@ -29,8 +25,6 @@ test('Webview Direct selection sends an explicit clear through the real save mes
   assert.equal(context.jumpProfileId.value, '');
   assert.equal(context.isSelectedSavedConnectionDirty(), false);
 });
-
-
 
 test('both pickers exclude invalid candidates and report an unavailable saved reference', async () => {
   const profiles = [profile('outer'), profile('near', { jumpProfileId: 'outer' }), profile('target', { jumpProfileId: 'missing' }),
@@ -80,14 +74,6 @@ test('Sidebar editing only the cloned port preserves the saved Jump in the draft
   assert.deepEqual(harness.ui.errors, []);
 });
 
-
-
-
-
-
-
-
-
 test('Webview Save As uses the current draft, a new name, and the selected saved profile as the credential source', async () => {
   const profiles = [profile('ubuntu', { name: 'Ubuntu', username: 'admin', groupId: 'group-a' })];
   const { context, messages } = createJumpWebviewHarness(profiles);
@@ -133,7 +119,6 @@ test('Webview Master Password selection persists as a source and never submits t
   assert.equal(context.collectConnectionPayload().password, 'stale-individual');
 });
 
-
 test('Manage Connections editor preserves identity, secure credentials and active sessions and posts a refresh without changing selection', async () => {
   const harness = createConnectionManagerHarness([profile('active'), profile('edited')]);
   harness.secrets.set(secretKey('edited', 'password'), 'existing-password');
@@ -177,7 +162,6 @@ test('Manage Connections editor rejects stale profiles, duplicate names and circ
   assert.deepEqual((await harness.manager.listProfiles()).map(p => [p.id, p.name]), [['first', 'first'], ['second', 'second']]);
 });
 
-
 test('dialog focus restoration cancels pending tooltips and preserves mouse and keyboard tooltips', () => {
   const listeners = new Map<string, (event: any) => void>();
   const timers = new Map<number, () => void>();
@@ -217,4 +201,72 @@ test('dialog focus restoration cancels pending tooltips and preserves mouse and 
     assert.equal(classes.has('visible'), true);
     context.hideWebviewTooltip();
   }
+});
+
+test('Sidebar management follows shared menu ordering, routes native actions, and cancels without navigation', async () => {
+  const { connectionManagementActions, managementQuickPickItems } = require('../connection/ConnectionManagementActions') as typeof import('../connection/ConnectionManagementActions');
+  const { renderConnectionManagementMenu } = require('../panel/webview/markup/ConnectionManagementMenu') as typeof import('../panel/webview/markup/ConnectionManagementMenu');
+  const { vscodeStub } = require('./helpers/ConnectionManagerHarness') as typeof import('./helpers/ConnectionManagerHarness');
+  const h = createConnectionManagerHarness();
+  const ui = createConnectionUiHarness(h, {} as RemoteSessionManager);
+  const routes: string[] = [];
+  for (const [method, route] of [
+    ['manageMasterPasswordFromSidebar', 'masterPassword'], ['importConnections', 'import'],
+    ['exportBackup', 'export'], ['openSettings', 'settings']
+  ]) ui.sidebar[method] = async () => routes.push(route);
+  const originalPick = vscodeStub.window.showQuickPick;
+  const originalOpen = RemoteEditPanel.openManagement;
+  let choice: string | undefined;
+  const markup = renderConnectionManagementMenu();
+  let previous = -1;
+  for (const action of connectionManagementActions) {
+    const position = markup.indexOf('id="' + action.buttonId + '"');
+    assert.ok(position > previous);
+    previous = position;
+  }
+  assert.ok(!markup.includes('(Webview)'));
+  (vscodeStub.window as any).showQuickPick = async (items: any[], options: any) => {
+    assert.equal(options.title, 'Connection & Settings Management');
+    assert.deepEqual(items.map(item => item.label), managementQuickPickItems(connectionManagementActions).map(item => item.label));
+    return items.find(item => item.id === choice);
+  };
+  RemoteEditPanel.openManagement = (_context, _sessions, _manager, _output, action) => { routes.push(action); };
+  try {
+    await ui.sidebar.openConnectionManagement();
+    assert.deepEqual(routes, []);
+    for (const action of connectionManagementActions) {
+      choice = action.id;
+      await ui.sidebar.openConnectionManagement();
+    }
+    assert.deepEqual(routes, connectionManagementActions.map(action => action.id));
+  } finally {
+    vscodeStub.window.showQuickPick = originalPick;
+    RemoteEditPanel.openManagement = originalOpen;
+  }
+});
+
+test('Direct management requests preserve visible dialogs and open the requested existing action when clear', () => {
+  const { renderEventBindings } = require('../panel/webview/scripts/EventBindings') as typeof import('../panel/webview/scripts/EventBindings');
+  const source = renderEventBindings();
+  const script = source.slice(source.indexOf('  function openManagementFromSidebar'), source.indexOf("  window.addEventListener('message'"));
+  const clicks: string[] = [], messages: any[] = [];
+  let dialog: any = null, focused = false;
+  const context: any = {
+    document: {
+      querySelector: () => dialog,
+      getElementById: (id: string) => ({ click: () => clicks.push(id) })
+    },
+    vscode: { postMessage: (message: any) => messages.push(message) }
+  };
+  runInNewContext(script, context);
+  context.openManagementFromSidebar('connectionManagementConnections');
+  assert.deepEqual(clicks, ['connectionManagementConnections']);
+  dialog = { querySelector: () => ({ focus: () => { focused = true; } }) };
+  for (const id of ['connectionManagementConnections', 'manageTrustedSshHostsButton', 'manageProxyProfilesButton', 'connectionImportOpen']) {
+    context.openManagementFromSidebar(id);
+  }
+  assert.equal(focused, true);
+  assert.equal(clicks.length, 1);
+  assert.equal(messages.length, 4);
+  assert.ok(messages.every(message => message.type === 'connectionManagementBlocked'));
 });

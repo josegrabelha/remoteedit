@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
+import { test } from './helpers/TestHarness';
 
 test('real manager resolves each Jump credential by profile identity with no persistence', async () => {
   const harness = createConnectionManagerHarness([
@@ -33,8 +33,6 @@ test('a missing Jump password is prompted before connect, stays temporary, and E
   await assert.rejects(harness.manager.buildConnectOptions({ id: 'target' }), /cancel/i);
   assert.deepEqual(harness.writes, []);
 });
-
-
 
 test('saving a profile writes credentials only to SecretStorage and keeps snapshots clean', async () => {
   const harness = createConnectionManagerHarness([profile('jump')]);
@@ -84,8 +82,6 @@ test('Save As creates an independent profile from current values and carries unc
     /already exists/i
   );
 });
-
-
 
 test('Master Password resolves across protocols and Jump Hosts without exposing or copying the secret', async () => {
   const h = createConnectionManagerHarness([

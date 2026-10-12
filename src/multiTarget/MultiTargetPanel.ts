@@ -1,3 +1,5 @@
+import { SshHostKeyDialogController } from '../webview/SshHostKeyDialogController';
+import { withHostKeyUi, disableHostKeyWarning } from '../ssh/hostKeys/HostKeyRuntime';
 import { SearchBatch, normalizeSearchQuery, formatSearchResults, type SearchQuery, type SearchExecution, type SearchTarget } from '../multiTargetSearch/SearchBatch';
 import { formatMultiTargetSearchCompletedStatus } from './MultiTargetFeedback';
 import * as vscode from 'vscode';
@@ -120,6 +122,7 @@ class MultiTargetPanel implements vscode.Disposable {
   private preferences: Preferences;
   private batch?: CommandBatch;
   private busy = false;
+  private readonly sshHostKeyDialog = new SshHostKeyDialogController(() => !this.disposed && Boolean(this.panel), message => { void this.panel?.webview.postMessage(message); });
   private disposed = false;
   private readonly viewDisposables: vscode.Disposable[] = [];
   private readonly dirty = new Map<string, CommandExecution>();
@@ -186,11 +189,15 @@ class MultiTargetPanel implements vscode.Disposable {
     panel.webview.html = renderMultiTargetHtml(panel.webview);
     this.viewDisposables.push(panel.onDidDispose(() => this.closePanel(panel)),
       panel.webview.onDidReceiveMessage(message => {
-        void this.handle(message).catch(error => this.post({ type: 'error', mode: message?.mode === 'search' ? 'search' : this.preferences.activeTab, message: error instanceof Error ? error.message : String(error) }));
+        void withHostKeyUi({
+          prompt: Object.assign((request: import('../ssh/hostKeys/HostKeyTrustService').HostKeyRequest, signal: AbortSignal) => this.sshHostKeyDialog.prompt(request, signal), { managesPresentation: true }),
+          confirmDisable: () => this.requestConfirmation('Disable SSH Host Key Verification?', disableHostKeyWarning, 'Disable Verification')
+        }, () => this.handle(message)).catch(error => this.post({ type: 'error', mode: message?.mode === 'search' ? 'search' : this.preferences.activeTab, message: error instanceof Error ? error.message : String(error) }));
       }), panel.onDidChangeViewState(event => { if (event.webviewPanel.visible) void this.sendState(true); }));
   }
   private closePanel(panel: vscode.WebviewPanel): void {
     if (this.panel !== panel) return;
+    this.sshHostKeyDialog.cancelPending();
     this.panel = undefined;
     for (const requestId of [...this.inputRequests.keys()]) this.completeInputRequest(requestId, undefined, false);
     while (this.viewDisposables.length) this.viewDisposables.pop()?.dispose();
@@ -203,6 +210,7 @@ class MultiTargetPanel implements vscode.Disposable {
   }
   dispose(): void {
     if (this.disposed) return; this.disposed = true;
+    this.sshHostKeyDialog.cancelPending();
     this.runGeneration++; this.searchGeneration++; this.batch?.stop(); this.searchBatch?.stop(); this.closeListener.dispose(); this.sessions.dispose();
     if (this.searchFlushTimer) clearTimeout(this.searchFlushTimer);
     for (const requestId of [...this.inputRequests.keys()]) this.completeInputRequest(requestId, undefined, false);
@@ -227,6 +235,14 @@ class MultiTargetPanel implements vscode.Disposable {
   private resetFeedback(mode: string): void {
     for (const key of [...this.feedbackMessages.keys()]) if (key.startsWith(mode + ':')) this.feedbackMessages.delete(key);
   }
+  private async requestConfirmation(title: string, prompt: string, confirmLabel: string, signal?: AbortSignal, hideCancel = false): Promise<boolean> {
+    const source = new vscode.CancellationTokenSource();
+    const abort = (): void => source.cancel();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) source.cancel();
+    try { return await this.sessions.input({ title, prompt, placeHolder: confirmLabel, confirmation: true, hideCancel } as vscode.InputBoxOptions, () => this.disposed || Boolean(signal?.aborted), source.token) !== undefined; }
+    finally { signal?.removeEventListener('abort', abort); source.dispose(); }
+  }
   private requestInput(options: vscode.InputBoxOptions, token?: vscode.CancellationToken): Promise<string | undefined> {
     if (this.disposed || !this.panel || token?.isCancellationRequested) return Promise.resolve(undefined);
     const requestId = `input-${++this.inputRequestSerial}`;
@@ -235,7 +251,7 @@ class MultiTargetPanel implements vscode.Disposable {
       this.inputRequests.set(requestId, request);
       if (token) request.cancellation = token.onCancellationRequested(() => this.completeInputRequest(requestId, undefined, true));
       this.post({ type: 'inputPrompt', requestId, title: options.title || 'Multi-Target Commands & Search', prompt: options.prompt || '',
-        placeHolder: options.placeHolder || '', password: Boolean(options.password), value: options.value || '' });
+        confirmation: Boolean((options as any).confirmation), hideCancel: Boolean((options as any).hideCancel), confirmLabel: options.placeHolder || 'OK', placeHolder: options.placeHolder || '', password: Boolean(options.password), value: options.value || '' });
     });
   }
   private completeInputRequest(requestId: string, value: string | undefined, close: boolean): void {
@@ -311,6 +327,7 @@ class MultiTargetPanel implements vscode.Disposable {
     }, 100);
   }
   private async handle(message: any): Promise<void> {
+    if (await this.sshHostKeyDialog.handle(message)) return;
     const mode = message?.mode === 'search' ? 'search' : 'commands';
     if (message?.type === 'activeTab') { this.preferences.activeTab = mode; this.persist(); await this.sendState(true); return; }
     if (message?.type === 'clear') { this.resetFeedback(mode); this.resetFeedback('shared'); }

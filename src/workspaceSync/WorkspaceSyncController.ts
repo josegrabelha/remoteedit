@@ -241,6 +241,11 @@ export class WorkspaceSyncController implements vscode.Disposable {
     this.uiSubscriptions.push(this.sessions.onDidChange(state => {
       for (const mapping of this.mappings.list()) {
         const target = mapping.targets.find(item => this.sessionKey(mapping.id, item.id) === state.sessionKey);
+        if (target && state.status === 'error' && state.message?.includes('SSH host key verification:')) {
+          this.suspendedTargets.add(this.runtimeKey(mapping.id, target.id));
+          this.refreshWatchers();
+          this.viewStateChangedEmitter.fire();
+        }
         if (target) this.ui.log(state.message || `${state.status[0].toUpperCase()}${state.status.slice(1)}.`, state.status === 'error' ? 'error' : state.status === 'connected' ? 'success' : 'info', `${mapping.name} / ${target.name}`);
       }
     }));

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import { createConnectionManagerHarness, profile, secretKey } from './helpers/ConnectionManagerHarness';
-
+import { test } from './helpers/TestHarness';
 
 test('cloning a saved connection creates an independent copy next to the source and copies stored credentials', async () => {
   const harness = createConnectionManagerHarness([
@@ -38,31 +37,11 @@ test('cloning a saved connection creates an independent copy next to the source 
   assert.equal((await harness.manager.getProfile('dependent'))?.jumpProfileId, 'source');
 });
 
-
-
-
-
-const invalidGraphs = [
-  { name: 'self reference', profiles: [profile('target', { jumpProfileId: 'target' })], error: /itself|self/i },
-  { name: 'target cycle', profiles: [profile('target', { jumpProfileId: 'jump' }), profile('jump', { jumpProfileId: 'target' })], error: /cycle/i },
-  { name: 'intermediate cycle', profiles: [profile('target', { jumpProfileId: 'a' }), profile('a', { jumpProfileId: 'b' }), profile('b', { jumpProfileId: 'a' })], error: /cycle/i },
-  { name: 'missing Jump', profiles: [profile('target', { jumpProfileId: 'absent' })], error: /not found/i },
-  ...(['ftp', 'ftps'] as const).map(connectionType => ({ name: `${connectionType} Jump`, profiles: [
-    profile('target', { jumpProfileId: 'jump' }), profile('jump', { connectionType })
-  ], error: /must use SFTP/i }))
-];
-
-
-
 test('a candidate save that closes a previously valid cycle is rejected before writes', async () => {
   const harness = createConnectionManagerHarness([profile('outer'), profile('target', { jumpProfileId: 'outer' })]);
   await assert.rejects(harness.manager.saveProfile({ id: 'outer', jumpProfileId: 'target' }), /cycle/);
   assert.deepEqual(harness.writes, []);
 });
-
-
-
-
 
 test('rename and group moves preserve Jump identity; group-only deletion keeps both connections', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
@@ -78,8 +57,6 @@ test('rename and group moves preserve Jump identity; group-only deletion keeps b
   assert.equal(profiles.find(item => item.id === 'target')?.jumpProfileId, 'jump');
 });
 
-
-
 test('SFTP omission preserves Jump while an explicit empty string clears it for connect and save', async () => {
   const harness = createConnectionManagerHarness([profile('jump'), profile('target', { jumpProfileId: 'jump' })]);
   for (const id of ['jump', 'target']) harness.secrets.set(secretKey(id, 'password'), `synthetic-${id}`);
@@ -90,5 +67,3 @@ test('SFTP omission preserves Jump while an explicit empty string clears it for 
   await harness.manager.deleteProfile('jump');
   assert.deepEqual((await harness.manager.listProfiles()).map(item => item.id), ['target']);
 });
-
-

@@ -1,3 +1,5 @@
+import { installHostKeyVerification, sshConnectionTimeout } from '../../ssh/hostKeys/HostKeyRuntime';
+import type { HostKeyPrompt } from '../../ssh/hostKeys/HostKeyTrustService';
 import { openProxyTunnel } from '../../proxy/ProxyTransport';
 import type { Socket } from 'net';
 import * as fs from 'fs/promises';
@@ -11,6 +13,7 @@ interface ActiveJump {
 }
 
 export class SyncJumpHostChain {
+  constructor(private readonly hostKeyPrompt?: HostKeyPrompt) {}
   private disposed = false;
   private proxySocket?: Socket;
   private readonly abort = new AbortController();
@@ -20,7 +23,7 @@ export class SyncJumpHostChain {
     if (this.disposed) throw new SessionDisconnectedError();
     if (snapshot.proxy) {
       const first = snapshot.jumpChain[0] || snapshot;
-      this.proxySocket = await openProxyTunnel(snapshot.proxy, first.host, first.port, 30000, this.abort.signal);
+      this.proxySocket = await openProxyTunnel(snapshot.proxy, first.host, first.port, sshConnectionTimeout(), this.abort.signal);
       if (this.disposed) { this.proxySocket.destroy(); throw new SessionDisconnectedError(); }
     }
     if (!snapshot.jumpChain.length) {
@@ -38,7 +41,7 @@ export class SyncJumpHostChain {
           // report their failure, while this prevents an uncaught EventEmitter error.
           client.on('error', () => {});
           this.jumps.push({ client });
-        }, () => this.disposed);
+        }, () => this.disposed, this.hostKeyPrompt);
         if (this.disposed) throw new SessionDisconnectedError();
         const next = snapshot.jumpChain[index + 1];
         const targetHost = next?.host || snapshot.host;
@@ -73,7 +76,8 @@ async function connectJump(
   jump: WorkspaceSyncJumpSnapshot,
   sock: NodeJS.ReadWriteStream | undefined,
   track: (client: SshClient) => void,
-  isDisposed: () => boolean
+  isDisposed: () => boolean,
+  hostKeyPrompt?: HostKeyPrompt
 ): Promise<SshClient> {
   const client = new SshClient();
   track(client);
@@ -84,6 +88,7 @@ async function connectJump(
   try {
     if (isDisposed()) throw new SessionDisconnectedError();
     await new Promise<void>((resolve, reject) => {
+      let hostKeyFailure: () => Error | undefined = () => undefined;
       let settled = false;
       const finish = (error?: Error): void => {
         if (settled) return;
@@ -94,13 +99,13 @@ async function connectJump(
         if (error) reject(error); else resolve();
       };
       const onReady = (): void => finish();
-      const onError = (error: Error): void => finish(error);
-      const onClose = (): void => finish(new SessionDisconnectedError());
+      const onError = (error: Error): void => finish(hostKeyFailure() || error);
+      const onClose = (): void => finish(hostKeyFailure() || new SessionDisconnectedError());
       client.once('ready', onReady);
       client.once('error', onError);
       client.once('close', onClose);
       try {
-        client.connect({
+        const config = {
           host: jump.host,
           port: jump.port,
           username: jump.username,
@@ -109,9 +114,11 @@ async function connectJump(
           passphrase: jump.authType === 'privateKey' ? jump.passphrase : undefined,
           keepaliveInterval: jump.keepAlive ? 30000 : 0,
           keepaliveCountMax: jump.keepAlive ? 3 : 0,
-          readyTimeout: 30000,
+          readyTimeout: sshConnectionTimeout(),
           sock: sock as any
-        });
+        };
+        hostKeyFailure = installHostKeyVerification(config, client, jump.host, jump.port, undefined, { background: !hostKeyPrompt, prompt: hostKeyPrompt, role: 'Jump Host' });
+        client.connect(config);
       } catch (error) {
         finish(error instanceof Error ? error : new Error(String(error)));
       }

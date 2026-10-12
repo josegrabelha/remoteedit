@@ -72,7 +72,8 @@ export class WorkspaceSyncSessionManager implements vscode.Disposable {
   }
 
   getSession(sessionKey: string): WorkspaceSyncRemoteSession | undefined {
-    return this.sessions.get(sessionKey);
+    const session = this.sessions.get(sessionKey);
+    return session?.isDisconnected ? undefined : session;
   }
 
   /** Synchronous signal: safe to call before the target operation queue drains. */
@@ -267,6 +268,13 @@ export class WorkspaceSyncSessionManager implements vscode.Disposable {
       }
 
       this.sessions.set(sessionKey, session);
+      const connectedSession = session;
+      session.onSecurityError = error => {
+        if (this.sessions.get(sessionKey) !== connectedSession || !this.isCurrent(sessionKey, generation)) return;
+        this.sessions.delete(sessionKey);
+        this.updateState({ sessionKey, profileId, profileUpdatedAt: snapshot.profileUpdatedAt, status: 'error', message: this.ui.sanitize(error.message) });
+        void safeDisconnect(connectedSession);
+      };
       this.updateState({ sessionKey, profileId, profileUpdatedAt: snapshot.profileUpdatedAt, status: 'connected' });
       appendOutputLog(this.output, 'INFO', `Workspace Sync connected: ${snapshot.name} (${snapshot.connectionType.toUpperCase()}).`);
       this.diagnostics.debug('Session', 'Private session connected.', { SessionKey: sessionKey, Connection: snapshot.name, Protocol: snapshot.connectionType.toUpperCase() });

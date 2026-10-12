@@ -1,6 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { detectLocalCaseSensitivity } from '../../workspaceSync/compare/LocalFilesystemCapabilities';
+import test from '../helpers/TestHarness';
 
 function fakeFs(mode: 'sensitive' | 'insensitive' | 'unavailable'): any {
   return {
@@ -27,5 +27,3 @@ test('LocalFilesystemCapabilities detects case-sensitive and case-insensitive vo
   assert.equal(await detectLocalCaseSensitivity('/mapping', fakeFs('sensitive')), true);
   assert.equal(await detectLocalCaseSensitivity('/mapping', fakeFs('insensitive')), false);
 });
-
-

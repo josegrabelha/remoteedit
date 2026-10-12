@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import { URI } from 'vscode-uri';
 import type { ActiveConnection, RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { createConnectionManagerHarness, loadWithVscode, profile, vscodeStub } from './helpers/ConnectionManagerHarness';
+import { test } from './helpers/TestHarness';
 
 // Use VS Code's URI implementation; only the extension-host services are replaced.
 Object.assign(vscodeStub, { Uri: URI, FileType: { File: 1, Directory: 2, SymbolicLink: 64, Unknown: 0 } });
 Object.assign(vscodeStub.window, { tabGroups: { onDidChangeTabs: () => ({ dispose() {} }) } });
 const { resolveEditorRootSegments } = loadWithVscode(() => require('../filesystem/EditorRootLabel') as typeof import('../filesystem/EditorRootLabel'));
-const { buildRemoteEditUri, parseRemoteEditUri, RemoteEditFileSystemProvider } = loadWithVscode(() =>
+const { buildRemoteEditUri, RemoteEditFileSystemProvider } = loadWithVscode(() =>
   require('../filesystem/RemoteEditFileSystemProvider') as typeof import('../filesystem/RemoteEditFileSystemProvider'));
 
 test('host is the default and does not load saved names', async () => {
@@ -37,12 +37,6 @@ test('connection labels use the latest saved group and name, with session fallba
   assert.deepEqual(harness.reads, []);
   assert.deepEqual(harness.writes, []);
 });
-
-
-
-
-
-
 
 test('directory browsing strips the complete virtual root for writable and readonly files', async () => {
   const requests: Array<{ id: string; path: string }> = [];

@@ -1,7 +1,6 @@
-import { Client as FtpClient } from 'basic-ftp';
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FtpSyncSession } from '../../workspaceSync/connection/FtpSyncSession';
+import test from '../helpers/TestHarness';
 
 function deferred<T = void>() {
   let resolve!: (value?: T | PromiseLike<T>) => void;
@@ -58,12 +57,6 @@ test('FTP Workspace Sync falls back to CWD + LIST when direct absolute-path LIST
   assert.deepEqual(calls, ['list:/remote', 'pwd', 'cd:/remote', 'list:', 'cd:/']);
 });
 
-
-
-
-
-
-
 test('FTP Workspace Sync Keep Alive never overlaps real client commands', async () => {
   const calls: string[] = [];
   const listGate = deferred<void>();
@@ -114,8 +107,6 @@ test('FTP reconnect cannot deadlock with a command queued in the same turn', { t
   assert.deepEqual(calls, ['list', 'reconnect']);
 });
 
-
-
 test('FTP Disconnect settles a stalled transfer even when close gives no callback', { timeout: 1000 }, async () => {
   let closed = false;
   const session = sessionWithClient({
@@ -131,6 +122,3 @@ test('FTP Disconnect settles a stalled transfer even when close gives no callbac
   assert.equal(closed, true);
   await assert.rejects(session.list('/remote'), /disconnected/);
 });
-
-
-

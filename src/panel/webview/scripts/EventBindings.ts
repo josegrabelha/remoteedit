@@ -11,6 +11,18 @@ export function renderEventBindings(): string {
     }
   }
 
+  function openManagementFromSidebar(buttonId) {
+    const currentDialog = document.querySelector('[role="dialog"].visible, [aria-modal="true"].visible');
+    if (currentDialog) {
+      const focus = currentDialog.querySelector('button:not(:disabled), input:not(:disabled), [tabindex="0"]');
+      if (focus) focus.focus();
+      vscode.postMessage({ type: 'connectionManagementBlocked' });
+      return;
+    }
+    const button = document.getElementById(buttonId);
+    if (button) button.click();
+  }
+
   window.addEventListener('message', event => {
     const message = event.data;
     const payload = message.payload || {};
@@ -19,8 +31,9 @@ export function renderEventBindings(): string {
       case 'connectionImportState':
         receiveConnectionImportState(payload);
         break;
-      case 'showConnectionImport': ciOpen(); break;
-      case 'showProxyProfiles': proxyElement('manageProxyProfilesButton').click(); break;
+      case 'showConnectionManagement': openManagementFromSidebar(payload.buttonId); break;
+      case 'showConnectionImport': openManagementFromSidebar('connectionImportOpen'); break;
+      case 'showProxyProfiles': openManagementFromSidebar('manageProxyProfilesButton'); break;
       case 'proxyProfilesState': receiveProxyProfiles(payload); break;
       case 'masterPasswordState':
         receiveMasterPasswordState(payload);
@@ -434,6 +447,8 @@ export function renderEventBindings(): string {
         }
         setStatus(payload.message || 'Unknown error.', true, Boolean(payload.showOutputLink), payload.outputLinkText || 'See details in Output.', payload.connectionId || '');
         break;
+      case 'trustedSshHostsState': receiveTrustedSshHosts(payload); break;
+      case 'closeConfirmDialog': if (confirmDialogRequestId === payload.requestId) closeConfirmDialog(false, true); break;
       case 'showConfirmDialog':
         showConfirmDialog(payload);
         break;

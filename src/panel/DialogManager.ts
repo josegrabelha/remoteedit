@@ -71,19 +71,25 @@ export class RemoteEditDialogManager {
     this.pendingInputDialogs.clear();
   }
 
-  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
-    return this.showConfirmDialogDecision(options).then(decision => decision === 'confirm');
+  showConfirmDialog(options: ConfirmDialogOptions, signal?: AbortSignal): Promise<boolean> {
+    return this.showConfirmDialogDecision(options, signal).then(decision => decision === 'confirm');
   }
 
-  showConfirmDialogDecision(options: ConfirmDialogOptions): Promise<ConfirmDialogDecision> {
-    if (!this.canShowDialog()) {
+  showConfirmDialogDecision(options: ConfirmDialogOptions, signal?: AbortSignal): Promise<ConfirmDialogDecision> {
+    if (signal?.aborted || !this.canShowDialog()) {
       return Promise.resolve('dismiss');
     }
 
     const requestId = `${Date.now()}-${++this.confirmDialogSequence}`;
 
     return new Promise<ConfirmDialogDecision>(resolve => {
-      this.pendingConfirmDialogs.set(requestId, resolve);
+      const abort = (): void => {
+        this.pendingConfirmDialogs.get(requestId)?.('dismiss');
+        this.pendingConfirmDialogs.delete(requestId);
+        this.postMessage(RemoteEditOutboundMessageType.CloseConfirmDialog, { requestId });
+      };
+      signal?.addEventListener('abort', abort, { once: true });
+      this.pendingConfirmDialogs.set(requestId, decision => { signal?.removeEventListener('abort', abort); resolve(decision); });
       this.postMessage(RemoteEditOutboundMessageType.ShowConfirmDialog, {
         requestId,
         title: options.title,

@@ -1,6 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWorkspaceSyncConnectionIdentity } from '../../workspaceSync/connection/ConnectionIdentity';
+import test from '../helpers/TestHarness';
 
 const base = {
   connectionType: 'sftp' as const,

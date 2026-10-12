@@ -1,7 +1,7 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultLocalCaseSensitivity, inferSnapshotCaseSensitivity, protectCaseCollisions } from '../../workspaceSync/compare/PathCollisionDetector';
+import { protectCaseCollisions } from '../../workspaceSync/compare/PathCollisionDetector';
 import type { DiffEntry, SyncSnapshot } from '../../workspaceSync/types';
+import test from '../helpers/TestHarness';
 
 function snapshot(paths: string[]): SyncSnapshot {
   return {
@@ -24,32 +24,24 @@ function diffs(paths: Array<{ path: string; side: 'local' | 'remote' }>): DiffEn
   }));
 }
 
-test('PathCollisionDetector blocks case-only aliases when Remote may be case-insensitive', () => {
+test('PathCollisionDetector blocks unknown Remote case sensitivity but permits proven case-sensitive destinations', () => {
   const local = snapshot(['Readme.md']);
   const remote = snapshot(['README.md']);
-  const result = protectCaseCollisions(
-    diffs([{ path: 'Readme.md', side: 'local' }, { path: 'README.md', side: 'remote' }]),
-    local,
-    remote,
-    { direction: 'localToRemote', localCaseSensitive: true, remoteCaseSensitive: undefined }
-  );
+  const entries = diffs([{ path: 'Readme.md', side: 'local' }, { path: 'README.md', side: 'remote' }]);
 
-  assert.deepEqual(result.map(entry => entry.status), ['conflict', 'conflict']);
-  assert.match(result[0].reason || '', /case sensitivity is unknown/i);
-});
+  const blocked = protectCaseCollisions(entries, local, remote, {
+    direction: 'localToRemote', localCaseSensitive: true, remoteCaseSensitive: undefined
+  });
+  assert.deepEqual(blocked.map(entry => entry.status), ['conflict', 'conflict']);
+  assert.match(blocked[0].reason || '', /case sensitivity is unknown/i);
 
-test('PathCollisionDetector allows case-only names when the destination is proven case-sensitive', () => {
-  const local = snapshot(['Readme.md']);
-  const remote = snapshot(['README.md']);
-  const result = protectCaseCollisions(
-    diffs([{ path: 'Readme.md', side: 'local' }, { path: 'README.md', side: 'remote' }]),
-    local,
-    remote,
-    { direction: 'localToRemote', localCaseSensitive: false, remoteCaseSensitive: true }
-  );
+  const permitted = protectCaseCollisions(entries, local, remote, {
+    direction: 'localToRemote', localCaseSensitive: false, remoteCaseSensitive: true
+  });
+  assert.deepEqual(permitted.map(entry => entry.status), ['localOnly', 'remoteOnly']);
+});;
 
-  assert.deepEqual(result.map(entry => entry.status), ['localOnly', 'remoteOnly']);
-});
+;
 
 test('PathCollisionDetector protects a case-insensitive Local destination from Remote aliases', () => {
   const local = snapshot([]);
@@ -63,7 +55,3 @@ test('PathCollisionDetector protects a case-insensitive Local destination from R
 
   assert.equal(result.every(entry => entry.status === 'conflict'), true);
 });
-
-
-
-

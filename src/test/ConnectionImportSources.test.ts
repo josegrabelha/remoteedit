@@ -1,16 +1,16 @@
-import { test } from 'node:test';
-import * as assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as assert from 'node:assert/strict';
 import * as os from 'os';
-import { parseOpenSsh } from '../connectionImport/sources/OpenSshImportSource';
-import { parseFileZilla } from '../connectionImport/sources/FileZillaImportSource';
-import { parseWinScp } from '../connectionImport/sources/WinScpImportSource';
-import { parsePutty } from '../connectionImport/sources/PuttyImportSource';
+import * as path from 'path';
 import { findPuttyUnixSessions } from '../connectionImport/ConnectionImportDetection';
+import { validateCandidates } from '../connectionImport/ConnectionImportValidation';
+import { parseFileZilla } from '../connectionImport/sources/FileZillaImportSource';
+import { parseOpenSsh } from '../connectionImport/sources/OpenSshImportSource';
+import { parsePutty } from '../connectionImport/sources/PuttyImportSource';
 import { parseSshFs } from '../connectionImport/sources/SshFsImportSource';
 import { parseVsCodeSftp } from '../connectionImport/sources/VsCodeSftpImportSource';
-import { validateCandidates } from '../connectionImport/ConnectionImportValidation';
+import { parseWinScp } from '../connectionImport/sources/WinScpImportSource';
+import { test } from './helpers/TestHarness';
 const parsers = [
   parseOpenSsh,
   parseFileZilla,

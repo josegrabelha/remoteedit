@@ -1,3 +1,4 @@
+import { installHostKeyVerification, withHostKeyApproval, hostKeyApprovalError } from './hostKeys/HostKeyRuntime';
 import { resolveRouteProxy, openProxyWithCancellation } from '../proxy/ProxyRoute';
 import * as vscode from 'vscode';
 import SftpClient from 'ssh2-sftp-client';
@@ -114,7 +115,25 @@ export class SftpSessionManager implements RemoteSessionManager {
   private readonly remoteShells = new Map<string, RemoteShell>();
   private readonly windowsSftpPathStyles = new Map<string, WindowsSftpPathStyle>();
 
+  private readonly approvalConnections = new Map<string, { cancel: () => void }>();
   async connect(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
+    const previous = this.disconnect(options.connectionId);
+    const controller = new AbortController();
+    const source = new vscode.CancellationTokenSource();
+    const cancel = (): void => { controller.abort(); source.cancel(); };
+    const pending = { cancel };
+    this.approvalConnections.set(options.connectionId, pending);
+    const subscription = cancellationToken?.onCancellationRequested(cancel);
+    if (cancellationToken?.isCancellationRequested) cancel();
+    try {
+      await previous;
+      return await withHostKeyApproval(() => this.connectAttempt(options, source.token), controller.signal);
+    } finally {
+      subscription?.dispose(); source.dispose();
+      if (this.approvalConnections.get(options.connectionId) === pending) this.approvalConnections.delete(options.connectionId);
+    }
+  }
+  private async connectAttempt(options: ConnectOptions, cancellationToken?: ConnectionCancellationToken): Promise<ActiveConnection> {
     if (!isSftpConnectionType(options.connectionType)) {
       throw new Error('SftpSessionManager only supports SFTP connections.');
     }
@@ -124,12 +143,12 @@ export class SftpSessionManager implements RemoteSessionManager {
       throw new Error(`Target "${options.name || `${options.username}@${options.host}`}" (${options.host}:${options.port}) has a jump reference but no resolved jump chain.`);
     }
 
-    const previousClose = this.disconnect(connectionId);
+    const previousClose = this.disconnectAttempt(connectionId);
     const source = new vscode.CancellationTokenSource();
     const externalToken = cancellationToken;
     cancellationToken = source.token;
 
-    const readyTimeout = getNumberSetting('sshReadyTimeout', 30000, 1000, 300000);
+    const readyTimeout = getNumberSetting('sshReadyTimeout', 30000, 1000, Number.MAX_SAFE_INTEGER);
     const jumpRuntimeSettings: SshJumpRuntimeSettings = {
       readyTimeout,
       keepAliveInterval: getNumberSetting('sshKeepAliveInterval', 30000, 1000, 300000),
@@ -149,6 +168,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       passphrase: options.passphrase,
       keepAlive: options.keepAlive
     };
+    let hostKeyFailure: () => Error | undefined = () => undefined;
     let proxySocket: import('net').Socket | undefined;
     let jumpChain: SshJumpChain | undefined;
     let cleanupPromise: Promise<void> | undefined;
@@ -217,6 +237,8 @@ export class SftpSessionManager implements RemoteSessionManager {
         ...authentication
       };
 
+      hostKeyFailure = installHostKeyVerification(config, sshClient, options.host, options.port, cancellationToken, { role: 'Server' });
+
       if (options.keepAlive !== false) {
         config.keepaliveInterval = jumpRuntimeSettings.keepAliveInterval;
         config.keepaliveCountMax = jumpRuntimeSettings.keepAliveCountMax;
@@ -264,8 +286,9 @@ export class SftpSessionManager implements RemoteSessionManager {
       try {
         await wait(client.connect(config));
       } catch (error) {
+        const securityError = hostKeyFailure();
+        if (securityError) throw securityError;
         this.throwIfConnectionCancelled(cancellationToken);
-
         if (jumpChain) {
           const message = error instanceof Error ? error.message : String(error || 'Unknown error');
           throw new Error(`Target "${target.name}" (${target.host}:${target.port}) failed while establishing the final SFTP connection: ${message}`);
@@ -328,7 +351,7 @@ export class SftpSessionManager implements RemoteSessionManager {
       this.connections.set(connectionId, connection);
       return connection;
     } catch (error) {
-      const cancelled = cancellationToken.isCancellationRequested || error instanceof RemoteEditOperationCancelledError;
+      const cancelled = !hostKeyApprovalError(error) && (error as any)?.code !== 'SSH_HOST_KEY_REJECTED' && (cancellationToken.isCancellationRequested || error instanceof RemoteEditOperationCancelledError);
       await cleanupAttempt();
 
       if (cancelled) {
@@ -364,6 +387,10 @@ export class SftpSessionManager implements RemoteSessionManager {
 
 
   async disconnect(connectionId: string): Promise<void> {
+    this.approvalConnections.get(connectionId)?.cancel();
+    await this.disconnectAttempt(connectionId);
+  }
+  private async disconnectAttempt(connectionId: string): Promise<void> {
     const attempt = this.attempts.get(connectionId);
     if (attempt) {
       attempt.cancel();
@@ -428,7 +455,7 @@ export class SftpSessionManager implements RemoteSessionManager {
   }
 
   async disconnectAll(): Promise<void> {
-    const ids = new Set([...this.attempts.keys(), ...this.sessionClosers.keys()]);
+    const ids = new Set([...this.approvalConnections.keys(), ...this.attempts.keys(), ...this.sessionClosers.keys()]);
     await Promise.all([...this.closingAttempts, ...[...ids].map(id => this.disconnect(id))]);
   }
 

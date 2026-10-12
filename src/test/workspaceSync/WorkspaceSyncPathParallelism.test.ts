@@ -1,50 +1,25 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as ts from 'typescript';
-import { runInNewContext } from 'node:vm';
 import { LocalRootOperationCoordinator } from '../../workspaceSync/execution/LocalRootOperationCoordinator';
+import test, { deferred } from '../helpers/TestHarness';
+import { workspaceSyncControllerHarness } from '../helpers/WorkspaceSyncControllerHarness';
 
-async function harness(): Promise<any> {
-  const source = await fs.readFile(path.join(__dirname, '../../../src/workspaceSync/WorkspaceSyncController.ts'), 'utf8');
-  const tree = ts.createSourceFile('WorkspaceSyncController.ts', source, ts.ScriptTarget.ES2022, true);
-  const klass = tree.statements.find((node): node is ts.ClassDeclaration =>
-    ts.isClassDeclaration(node) && node.name?.text === 'WorkspaceSyncController');
-  assert.ok(klass);
-  const names = ['runWithPlanLocalRootProtection', 'runWithAutomaticPathProtection'];
-  const members = names.map(name => {
-    const method = klass.members.find(member => ts.isMethodDeclaration(member) && member.name.getText(tree) === name);
-    assert.ok(method, `Controller must define ${name}`);
-    return method.getText(tree);
-  });
-  const fn = tree.statements.find((node): node is ts.FunctionDeclaration =>
-    ts.isFunctionDeclaration(node) && node.name?.text === 'planLocalPathAccesses');
-  assert.ok(fn);
-  const remote = tree.statements.find((node): node is ts.FunctionDeclaration =>
-    ts.isFunctionDeclaration(node) && node.name?.text === 'remoteEndpointLockRoot');
-  assert.ok(remote);
-  const js = ts.transpileModule(
-    `${fn.getText(tree).replace(/^export\s+/, '')}\n${remote.getText(tree)}\nclass Harness { ${members.join('\n')} }\nnew Harness();`,
-    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
-  ).outputText;
-  const h = runInNewContext(js, {
-    path,
-    resolveSyncPaths: (mapping: any, _target: any, relativePath: string, operation: any) => ({
-      localPath: path.resolve(mapping.localRoot, operation.localRelativePath || relativePath)
-    }),
-    Promise
+function harness(): Record<string, any> {
+  const h = workspaceSyncControllerHarness({
+    methods: ['runWithPlanLocalRootProtection', 'runWithAutomaticPathProtection'],
+    functions: ['planLocalPathAccesses', 'remoteEndpointLockRoot'],
+    globals: {
+      path,
+      resolveSyncPaths: (mapping: any, _target: any, relativePath: string, operation: any) => ({
+        localPath: path.resolve(mapping.localRoot, operation.localRelativePath || relativePath)
+      })
+    }
   });
   h.localRootOperations = new LocalRootOperationCoordinator();
   h.remoteEndpointOperations = new LocalRootOperationCoordinator();
   return h;
 }
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>(done => { resolve = done; });
-  return { promise, resolve };
-}
 
 function fixture(root: string) {
   const mapping = { id: 'TST', name: 'TST', localRoot: root };
@@ -94,10 +69,6 @@ test('A stale second plan revalidates only after the conflicting first download 
   assert.deepEqual(events, ['first-validated', 'first-finished', 'second-validating']);
   assert.equal(appliedSecond, false, 'The second target cannot apply a stale plan');
 });
-
-
-
-
 
 test('Watch Local readers and Watch Remote writers use the same path lock', async () => {
   const h = await harness();

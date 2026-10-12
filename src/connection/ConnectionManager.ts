@@ -1,5 +1,6 @@
 import { ProxyProfiles, PROXY_PROFILES_KEY, proxySecretKey, normalizeProxyProfile } from '../proxy/ProxyProfiles';
 import type { ProxyProfile, ProxyConnection } from '../proxy/ProxyTransport';
+import { confirmDisableHostKeyVerification } from '../ssh/hostKeys/HostKeyRuntime';
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { ConnectOptions } from '../remote/RemoteSessionManager';
@@ -216,6 +217,7 @@ interface StoredCredentialMap {
 const CONFIG_SECTION = 'remoteedit';
 const SUPPORTED_BACKUP_VERSION = 3;
 const REMOTE_EDIT_SETTING_DEFAULTS = {
+  'ssh.hostKeyVerification': true,
   editorRootLabel: 'host',
   editorTitleButtonPosition: 'hidden',
   statusBarButtonPosition: 'left',
@@ -1056,6 +1058,15 @@ export class ConnectionManager {
       throw new Error('Select at least one import option.');
     }
 
+    if (options.includeSettings && backup.settings) {
+      const normalized = normalizeImportedSettingValues(backup.settings);
+      const keys = Array.isArray(backup.settingsKeys) ? normalizeImportedSettingKeys(backup.settingsKeys) : undefined;
+      const included = !keys?.length || keys.includes('ssh.hostKeyVerification');
+      if (included && Object.prototype.hasOwnProperty.call(normalized, 'ssh.hostKeyVerification')) {
+        if (typeof normalized['ssh.hostKeyVerification'] !== 'boolean') throw new Error('Invalid SSH host key verification setting in backup.');
+        if (normalized['ssh.hostKeyVerification'] === false && !await confirmDisableHostKeyVerification()) throw new Error('Settings restoration cancelled: SSH host key verification was not disabled.');
+      }
+    }
     const preparedWorkspaceSyncImport = options.includeWorkspaceSync && backup.workspaceSync
       ? prepareWorkspaceSyncBackupImport(this.context, backup.workspaceSync, options.importMode)
       : undefined;
@@ -1343,7 +1354,7 @@ export class ConnectionManager {
     const settings: Record<string, unknown> = {};
 
     for (const key of REMOTE_EDIT_SETTING_KEYS) {
-      settings[key] = getSettingValueWithLegacyFallback(config, String(key));
+      settings[key] = key === 'ssh.hostKeyVerification' ? (config.inspect<boolean>(key)?.globalValue ?? true) : getSettingValueWithLegacyFallback(config, String(key));
     }
 
     return settings;

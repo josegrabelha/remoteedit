@@ -1,7 +1,9 @@
 export interface RemoteEditPanelMessageHandlers {
+  connectionManagementBlocked?(): void;
   getActiveConnectionId(): string | undefined;
   getActivePath(): string;
   connectionImport(payload: any): Promise<void>;
+  trustedSshHosts?(payload: any): Promise<void>;
   proxyProfiles(payload: any): Promise<void>;
   masterPassword(payload: any): Promise<void>;
   onReady(): Promise<void>;

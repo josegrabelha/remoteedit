@@ -1,6 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createConnectionManagerHarness, loadWithVscode, profile, secretKey } from '../helpers/ConnectionManagerHarness';
+import test from '../helpers/TestHarness';
 
 const snapshotModule = loadWithVscode(() => require('../../workspaceSync/connection/WorkspaceSyncConnectionSnapshot') as typeof import('../../workspaceSync/connection/WorkspaceSyncConnectionSnapshot'));
 const { loadWorkspaceSyncConnectionSnapshot, resolveWorkspaceSyncJumpChain } = snapshotModule;
@@ -64,8 +64,3 @@ test('Workspace Sync prompts for an unsaved password without persisting it', asy
   assert.deepEqual(harness.ui.prompts, []);
   assert.deepEqual(harness.writes, []);
 });
-
-
-
-
-

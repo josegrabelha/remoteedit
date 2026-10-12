@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { CommandBatch } from '../multiTargetCommands/CommandBatch';
 import { RemoteCommandService } from '../commands/RemoteCommandService';
-import { buildControlledRemoteCommandScript } from '../ssh/RemoteCommandDisplay';
-import { execFileSync } from 'node:child_process';
+import { CommandBatch } from '../multiTargetCommands/CommandBatch';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
+import { test } from './helpers/TestHarness';
 
 const target = (name: string) => ({ connectionId: name, name, workingDirectory: '/tmp' });
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));

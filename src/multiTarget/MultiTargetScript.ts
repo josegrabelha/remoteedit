@@ -5,6 +5,7 @@ export function renderMultiTargetScript(): string {
   return String.raw`
 (() => {
   const vscode = acquireVsCodeApi();
+  window.addEventListener('sshHostKeyDialogPost', event => vscode.postMessage(event.detail));
   let mode = 'commands';
   const isSearch = () => mode === 'search';
   const $ = id => document.getElementById(isSearch() && (id === 'sudo' || id === 'run') ? 'search-' + id : id);
@@ -779,6 +780,9 @@ ${renderRemoteSearchSnippetFunctions()}
     $('input-title').textContent = message.title || 'Multi-Target Commands & Search';
     $('input-prompt').textContent = message.prompt || '';
     const inputPasswordMode = Boolean(message.password);
+    $('input-value-wrap').hidden = Boolean(message.confirmation);
+    $('input-submit').textContent = message.confirmation ? message.confirmLabel : 'OK';
+    $('input-cancel').hidden = Boolean(message.hideCancel);
     $('input-value').type = inputPasswordMode ? 'password' : 'text';
     $('input-value').placeholder = message.placeHolder || '';
     $('input-value').value = message.value || '';
@@ -786,7 +790,7 @@ ${renderRemoteSearchSnippetFunctions()}
     $('input-value-reveal').disabled = !inputPasswordMode;
     $('input-value-reveal').style.display = inputPasswordMode ? '' : 'none';
     $('input-validation').textContent = '';
-    $('input-dialog').showModal(); $('input-value').focus(); $('input-value').select();
+    $('input-dialog').showModal(); if (message.confirmation) (message.hideCancel ? $('input-submit') : $('input-cancel')).focus(); else { $('input-value').focus(); $('input-value').select(); }
   }
   function submitInputPrompt() {
     if (!activeInputRequestId) return;

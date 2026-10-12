@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { classifyLogLevel, classifyLogRecord, classifyLogRecordWithContext, isLogContinuationLine } from '../logViewer/LogLevelClassifier';
+import { classifyLogLevel, isLogContinuationLine } from '../logViewer/LogLevelClassifier';
+import { test } from './helpers/TestHarness';
 
 test('classifies common Linux and AIX text log levels without message-word false positives', () => {
   assert.equal(classifyLogLevel('2026-09-23 17:00:00 INFO Application started'), 'info');
@@ -41,20 +41,6 @@ test('classifies journald, Pino/Bunyan and OpenTelemetry structured severity', (
   assert.equal(classifyLogLevel('', { severityNumber: 22 }), 'error');
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 test('recognizes common multiline stack-trace continuation shapes', () => {
   assert.equal(isLogContinuationLine('    at com.example.Service.run(Service.java:42)'), true);
   assert.equal(isLogContinuationLine('Caused by: java.io.IOException: failed'), true);
@@ -65,9 +51,6 @@ test('recognizes common multiline stack-trace continuation shapes', () => {
   assert.equal(isLogContinuationLine('Sep 23 17:00:00 host service started'), false);
 });
 
-
-
-
 test('does not scan arbitrary message text for severity words', () => {
   assert.equal(classifyLogLevel('Request completed without error'), '');
   assert.equal(classifyLogLevel('The warning threshold is configured'), '');
@@ -75,5 +58,3 @@ test('does not scan arbitrary message text for severity words', () => {
   assert.equal(classifyLogLevel('success=yes error=0 warning_count=0'), '');
   assert.equal(classifyLogLevel('[error handler] initialized'), '');
 });
-
-

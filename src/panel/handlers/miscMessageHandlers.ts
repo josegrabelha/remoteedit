@@ -6,6 +6,9 @@ export async function tryHandleMiscMessage(
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<boolean> {
   switch (message.type) {
+    case RemoteEditIncomingMessageType.ConnectionManagementBlocked:
+      handlers.connectionManagementBlocked?.();
+      return true;
     case RemoteEditIncomingMessageType.ShowSettings:
       handlers.showSettings();
       return true;

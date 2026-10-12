@@ -23,6 +23,8 @@ export interface WorkspaceSyncRemoteSession {
   readonly capabilities: WorkspaceSyncRemoteCapabilities;
   /** Terminal close: old operations must not retry or mutate Local after Disconnect. */
   readonly isDisconnected?: boolean;
+  /** Notify the owner when SSH identity verification suspends this session. */
+  onSecurityError?: (error: Error) => void;
   list(remotePath: string): Promise<WorkspaceSyncRemoteEntry[]>;
   stat(remotePath: string): Promise<WorkspaceSyncRemoteEntry | undefined>;
   ensureDirectory(remotePath: string): Promise<void>;

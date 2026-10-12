@@ -1,25 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describeSyncOperationFailure } from '../../workspaceSync/execution/OperationFailureDetails';
-import type { SyncOperation } from '../../workspaceSync/types';
-
-function operation(type: SyncOperation['type'], kind?: 'file' | 'directory'): SyncOperation {
-  const fingerprint = kind ? { kind, size: kind === 'file' ? 10 : undefined, mtimeMs: 1 } : undefined;
-  return {
-    id: 'op-1',
-    type,
-    relativePath: 'folder/item.txt',
-    reason: 'test',
-    expectedLocal: type === 'deleteLocal' ? fingerprint : undefined,
-    expectedRemote: type === 'deleteRemote' ? fingerprint : undefined
-  } as SyncOperation;
-}
-
-
-
-
-
-
+import test from '../helpers/TestHarness';
 
 import { formatSyncErrorOutput } from '../../workspaceSync/execution/OperationFailureDetails';
 
@@ -30,5 +10,3 @@ test('Workspace Sync error output preserves safe protocol details without a stac
   assert.match(text, /code=4/);
   assert.doesNotMatch(text, /stack=/i);
 });
-
-

@@ -1,8 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { adaptSftpPath, inferSftpPathStyle } from '../../workspaceSync/connection/SftpPathStyle';
-
-
+import { adaptSftpPath } from '../../workspaceSync/connection/SftpPathStyle';
+import test from '../helpers/TestHarness';
 
 test('SftpPathStyle adapts drive paths to the server preferred representation', () => {
   assert.equal(adaptSftpPath('C:/sites/app/file.txt', 'windowsSlashDrive'), '/C:/sites/app/file.txt');

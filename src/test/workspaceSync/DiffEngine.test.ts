@@ -1,16 +1,14 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import { diffSnapshots } from '../../workspaceSync/compare/DiffEngine';
+import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import type { FileFingerprint, SyncBaseline } from '../../workspaceSync/types';
+import test from '../helpers/TestHarness';
 
 const file = (size: number, mtimeMs: number): FileFingerprint => ({ kind: 'file', size, mtimeMs });
 
 function snapshot(entries: Record<string, FileFingerprint>) {
   return createSyncSnapshot(Object.entries(entries).map(([relativePath, fingerprint]) => ({ relativePath, fingerprint })));
 }
-
-
 
 test('DiffEngine detects both-sides change as conflict', () => {
   const baseline: SyncBaseline = {
@@ -42,9 +40,6 @@ test('DiffEngine fails closed when a scan is incomplete', () => {
   assert.equal(diffSnapshots(local, remote)[0].status, 'unknown');
 });
 
-
-
-
 test('DiffEngine always reports a file/directory mismatch as a structural conflict', () => {
   const local = snapshot({ 'config': { kind: 'directory', size: 0, mtimeMs: 1000 } });
   const remote = snapshot({ 'config': file(10, 1000) });
@@ -52,12 +47,6 @@ test('DiffEngine always reports a file/directory mismatch as a structural confli
   assert.equal(result[0].status, 'conflict');
   assert.match(result[0].reason || '', /structural conflicts/i);
 });
-
-
-
-
-
-
 
 test('DiffEngine treats NFC and NFD spellings as one logical path while preserving side paths', () => {
   const nfc = 'folder/çã-special.txt';
@@ -74,5 +63,3 @@ test('DiffEngine treats NFC and NFD spellings as one logical path while preservi
   assert.equal(diffs[0].remoteRelativePath, nfc);
   assert.equal(diffs[0].status, 'same');
 });
-
-

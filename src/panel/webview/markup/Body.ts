@@ -1,3 +1,5 @@
+import { renderConnectionManagementMenu } from './ConnectionManagementMenu';
+import { renderSharedConfirmDialogMarkup } from '../../../webview/SharedConfirmDialog';
 import { renderConnectionImportMarkup } from './ConnectionImportMarkup';
 export function renderBody(): string {
   return `</head>
@@ -40,20 +42,7 @@ export function renderBody(): string {
               <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-280v-40h560v40H200Zm0-180v-40h560v40H200Zm0-180v-40h560v40H200Z" /></svg>
             </button>
             <div id="connectionManagementMenu" class="profile-dropdown-menu connection-management-menu" role="menu" aria-label="Connection &amp; Settings Management">
-              <button id="connectionManagementConnections" class="profile-dropdown-item" type="button" role="menuitem">Manage Connections</button>
-              <button id="manageProxyProfilesButton" class="profile-dropdown-item" type="button" role="menuitem">Manage Proxies</button>
-              <button id="manageMasterPasswordButton" class="profile-dropdown-item" type="button" role="menuitem">Master Password</button>
-              <div class="profile-dropdown-separator" role="separator"></div>
-              <div id="connectionImportMenuWrap">
-                <button id="manageProfilesImportButton" class="profile-dropdown-item" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="connectionImportMenu"><span>Import</span><svg class="profile-dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 5 9.5 8l-3 3" /></svg></button>
-                <div id="connectionImportMenu" class="profile-dropdown-menu connection-management-menu" role="menu" aria-label="Import">
-                  <button id="connectionImportBackup" class="profile-dropdown-item" type="button" role="menuitem">Import Remote Edit Backup</button>
-                  <button id="connectionImportOpen" class="profile-dropdown-item" type="button" role="menuitem">Import Connections from Other Applications</button>
-                </div>
-              </div>
-              <button id="manageProfilesExportButton" class="profile-dropdown-item" type="button" role="menuitem">Export</button>
-              <div class="profile-dropdown-separator" role="separator"></div>
-              <button id="showSettingsButton" class="profile-dropdown-item" type="button" role="menuitem">Settings</button>
+              ${renderConnectionManagementMenu()}
             </div>
             </div>
           </div>
@@ -555,6 +544,29 @@ export function renderBody(): string {
     </section>
   </div>
 
+  <div id="trustedHostsBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="trustedHostsTitle" aria-hidden="true">
+    <section class="file-properties-dialog proxy-profiles-dialog">
+      <div class="file-properties-header"><h2 id="trustedHostsTitle" class="file-properties-title">Trusted SSH Hosts</h2><div class="file-properties-path">View and manage trusted SSH server identities.</div></div>
+      <div class="file-properties-body">
+        <div id="trustedHostsListPage">
+          <div class="manage-profiles-toolbar trusted-hosts-toolbar">
+            <div class="trusted-hosts-filter-field"><label for="trustedHostsFilter">Filter</label><div class="manage-profiles-filter filter-box"><input id="trustedHostsFilter" class="filter-input" placeholder="Filter hosts or fingerprints..." aria-label="Filter Trusted SSH Hosts" autocomplete="off" /><button id="trustedHostsFilterClear" class="filter-clear-button has-tooltip" type="button" aria-label="Clear Filter" data-tooltip="Clear Filter" disabled><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9"></path></svg></button></div></div>
+            <div class="trusted-hosts-source-field"><label for="trustedHostsSource">Source</label><select id="trustedHostsSource" data-proxy data-filter="false"><option value="">All</option><option>Remote Edit</option><option>OpenSSH (User)</option><option>OpenSSH (System)</option></select></div>
+          </div>
+          <div class="server-overview-detail-table-wrap trusted-hosts-table-wrap">
+            <table id="trustedHostsTable" class="server-overview-detail-table" aria-label="Trusted SSH Hosts"><colgroup><col style="width:45%" /><col style="width:20%" /><col style="width:35%" /></colgroup><thead><tr><th class="sortable" data-sort-key="host" tabindex="0" aria-sort="none"><span class="header-content"><span class="header-label">Host</span><span class="sort-indicator"></span></span></th><th class="sortable" data-sort-key="keyType" tabindex="0" aria-sort="none"><span class="header-content"><span class="header-label">Key Type</span><span class="sort-indicator"></span></span></th><th class="sortable" data-sort-key="source" tabindex="0" aria-sort="none"><span class="header-content"><span class="header-label">Source</span><span class="sort-indicator"></span></span></th></tr></thead><tbody id="trustedHostsList"></tbody></table>
+            <div id="trustedHostsEmpty" class="profile-dropdown-empty" hidden>No trusted SSH hosts found.</div>
+          </div>
+        </div>
+        <div id="trustedHostsDetailsPage" hidden></div>
+      </div>
+      <div class="file-properties-actions connection-import-actions"><div id="trustedHostsFeedback" class="connection-import-footer-status has-tooltip tooltip-above" role="status" aria-live="polite"></div><button id="trustedHostsBack" class="secondary" type="button" hidden>Back</button><button id="trustedHostsCopy" class="secondary" type="button" hidden>Copy</button><button id="trustedHostsClose" type="button">Close</button></div>
+    </section>
+  </div>
+  <div id="trustedHostsContextMenu" class="context-menu text-edit-context-menu" role="menu" aria-label="SSH Host Details">
+    <button id="trustedHostsCopySelected" type="button" role="menuitem">Copy Selected</button>
+    <button id="trustedHostsCopyAll" type="button" role="menuitem">Copy All</button>
+  </div>
   <div id="proxyProfilesBackdrop" class="file-properties-backdrop" role="dialog" aria-modal="true" aria-labelledby="proxyProfilesTitle" aria-hidden="true">
     <section class="file-properties-dialog proxy-profiles-dialog">
       <div class="file-properties-header"><h2 id="proxyProfilesTitle" class="file-properties-title">Proxy Profiles</h2></div>
@@ -899,22 +911,7 @@ export function renderBody(): string {
     <button id="remoteSearchContextCopyResults" type="button" role="menuitem">Copy Results</button>
   </div>
 
-  <div id="confirmDialogBackdrop" class="confirm-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-hidden="true">
-    <section class="confirm-dialog">
-      <div class="confirm-dialog-header">
-        <h2 id="confirmDialogTitle" class="confirm-dialog-title">Confirm action</h2>
-        <div id="confirmDialogMessage" class="confirm-dialog-subtitle"></div>
-      </div>
-      <div id="confirmDialogBody" class="confirm-dialog-body">
-        <pre id="confirmDialogDetails" class="confirm-dialog-details" hidden></pre>
-      </div>
-      <div class="confirm-dialog-actions">
-        <button id="confirmDialogCopyButton" class="secondary" type="button" hidden>Copy</button>
-        <button id="confirmDialogCancelButton" class="secondary" type="button">Cancel</button>
-        <button id="confirmDialogConfirmButton" type="button">Confirm</button>
-      </div>
-    </section>
-  </div>
+  ${renderSharedConfirmDialogMarkup()}
 
   <div id="transferConflictBackdrop" class="transfer-conflict-backdrop" role="dialog" aria-modal="true" aria-labelledby="transferConflictTitle" aria-hidden="true">
     <section class="transfer-conflict-dialog" tabindex="-1">

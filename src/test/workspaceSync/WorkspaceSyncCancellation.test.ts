@@ -1,41 +1,15 @@
-import { FtpSyncSession } from '../../workspaceSync/connection/FtpSyncSession';
-import { SftpSyncSession } from '../../workspaceSync/connection/SftpSyncSession';
+import assert from 'node:assert/strict';
 import { settlesWithin } from '../../workspaceSync/connection/SessionLifetime';
 import { TargetOperationQueue } from '../../workspaceSync/execution/TargetOperationQueue';
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as ts from 'typescript';
-import { runInNewContext } from 'node:vm';
-import { renderWorkspaceSyncClientScript } from '../../workspaceSync/webview/scripts/ClientScript';
+import test from '../helpers/TestHarness';
+import { workspaceSyncControllerHarness } from '../helpers/WorkspaceSyncControllerHarness';
 
-async function controllerWithMethods(names: string[]): Promise<Record<string, any>> {
-  const source = await fs.readFile(path.join(__dirname, '../../../src/workspaceSync/WorkspaceSyncController.ts'), 'utf8');
-  const parsed = ts.createSourceFile('WorkspaceSyncController.ts', source, ts.ScriptTarget.ES2022, true);
-  const controller = parsed.statements.find((node): node is ts.ClassDeclaration =>
-    ts.isClassDeclaration(node) && node.name?.text === 'WorkspaceSyncController');
-  assert.ok(controller, 'WorkspaceSyncController must be present');
-  if (!controller) throw new Error('WorkspaceSyncController not found');
-  const methods = names.map(name => {
-    const method = controller.members.find((member): member is ts.MethodDeclaration =>
-      ts.isMethodDeclaration(member) && member.name.getText(parsed) === name);
-    assert.ok(method, `Controller.${name} must be present`);
-    if (!method) throw new Error(`Controller.${name} not found`);
-    return method.getText(parsed);
+function controllerWithMethods(names: string[]): Record<string, any> {
+  return workspaceSyncControllerHarness({
+    methods: names,
+    preamble: 'const formatDuration = value => String(value);',
+    globals: { settlesWithin }
   });
-  const js = ts.transpileModule(
-    `const formatDuration = value => String(value);\nclass Harness { ${methods.join('\n')} }\nHarness;`,
-    { compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 } }
-  ).outputText;
-  const Harness = runInNewContext(js, { settlesWithin }) as new () => Record<string, any>;
-  return new Harness();
-}
-
-async function protocolInterruptMethod(_fileName: string, className: string): Promise<Record<string, any>> {
-  return className === 'FtpSyncSession'
-    ? Reflect.construct(FtpSyncSession, ['profile', 'ftp', { jumpChain: [] }]) as any
-    : Reflect.construct(SftpSyncSession, ['profile', { jumpChain: [] }]) as any;
 }
 
 test('Disconnect releases a queued target while initial Refresh is blocked in a network read', async () => {
@@ -110,13 +84,6 @@ test('Cancelling initial Refresh keeps established sessions connected and uses s
   assert.deepEqual(disconnections, []);
   assert.equal(activities.at(-1)?.cancellable, false, 'the UI must not offer a second Cancel while stopping');
 });
-
-
-
-
-
-
-
 
 test('a late initial preparation failure cannot erase a replacement session state', async () => {
   const harness = await controllerWithMethods(['failInitialPreparation']);

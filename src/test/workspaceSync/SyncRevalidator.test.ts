@@ -1,23 +1,23 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
-import { revalidateSyncPlan } from '../../workspaceSync/planning/SyncRevalidator';
-import { expandDirectoryDeletePlan } from '../../workspaceSync/planning/DirectoryDeleteExpansion';
+import type {
+    WorkspaceSyncRemoteEntry,
+    WorkspaceSyncRemoteSession
+} from '../../workspaceSync/connection/WorkspaceSyncSession';
 import { executeSyncPlan } from '../../workspaceSync/execution/SyncExecutor';
+import { expandDirectoryDeletePlan } from '../../workspaceSync/planning/DirectoryDeleteExpansion';
+import { revalidateSyncPlan } from '../../workspaceSync/planning/SyncRevalidator';
 import { readLocalFingerprint } from '../../workspaceSync/snapshot/CurrentState';
 import type {
-  FileFingerprint,
-  SyncOperation,
-  SyncPlan,
-  WorkspaceSyncMapping,
-  WorkspaceSyncTarget
+    FileFingerprint,
+    SyncOperation,
+    SyncPlan,
+    WorkspaceSyncMapping,
+    WorkspaceSyncTarget
 } from '../../workspaceSync/types';
-import type {
-  WorkspaceSyncRemoteEntry,
-  WorkspaceSyncRemoteSession
-} from '../../workspaceSync/connection/WorkspaceSyncSession';
+import test from '../helpers/TestHarness';
 
 function mapping(localRoot: string): WorkspaceSyncMapping {
   return {
@@ -100,82 +100,49 @@ function session(remote: FileFingerprint | undefined, options: { reliableMtime?:
   };
 }
 
-test('SyncRevalidator accepts an operation when local and remote state still match the plan', async () => {
+test('SyncRevalidator accepts unchanged Preview, then rejects changed Local and Remote state', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-revalidate-'));
   try {
     const localPath = path.join(root, 'file.txt');
     await fs.writeFile(localPath, 'hello');
-    const local = await readLocalFingerprint(localPath, true);
-    assert.ok(local);
-    const remote: FileFingerprint = { kind: 'file', size: 5, mtimeMs: 2000, hash: 'remote-hash' };
-    const operation: SyncOperation = {
-      id: 'op-1',
-      type: 'upload',
-      relativePath: 'file.txt',
-      reason: 'test',
-      expectedLocal: local,
-      expectedRemote: remote
-    };
-
-    const result = await revalidateSyncPlan(mapping(root), target(), plan(operation), session(remote));
-    assert.equal(result.valid.length, 1);
-    assert.equal(result.stale.length, 0);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
-test('SyncRevalidator blocks an operation when the local file changed after Preview', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-revalidate-local-'));
-  try {
-    const localPath = path.join(root, 'file.txt');
-    await fs.writeFile(localPath, 'before');
     const expectedLocal = await readLocalFingerprint(localPath, true);
     assert.ok(expectedLocal);
+    const expectedRemote: FileFingerprint = { kind: 'file', size: 5, mtimeMs: 2000, hash: 'remote-hash' };
+    const upload: SyncOperation = {
+      id: 'op-upload', type: 'upload', relativePath: 'file.txt', reason: 'test',
+      expectedLocal, expectedRemote
+    };
+
+    const unchanged = await revalidateSyncPlan(mapping(root), target(), plan(upload), session(expectedRemote));
+    assert.equal(unchanged.valid.length, 1);
+    assert.equal(unchanged.stale.length, 0);
+
     await fs.writeFile(localPath, 'after-after');
+    // Preserve the original Local-only Preview case: Remote was absent.
+    const modifiedLocal = await revalidateSyncPlan(mapping(root), target(),
+      plan({ ...upload, expectedRemote: undefined }), session(undefined));
+    assert.equal(modifiedLocal.valid.length, 0);
+    assert.equal(modifiedLocal.stale.length, 1);
+    assert.match(modifiedLocal.stale[0].reason, /Local state changed/);
 
-    const operation: SyncOperation = {
-      id: 'op-1',
-      type: 'upload',
-      relativePath: 'file.txt',
-      reason: 'test',
-      expectedLocal,
-      expectedRemote: undefined
+    await fs.rm(localPath);
+    const download: SyncOperation = {
+      id: 'op-download', type: 'download', relativePath: 'file.txt', reason: 'test',
+      expectedLocal: undefined, expectedRemote: { kind: 'file', size: 5, mtimeMs: 1000 }
     };
-
-    const result = await revalidateSyncPlan(mapping(root), target(), plan(operation), session(undefined));
-    assert.equal(result.valid.length, 0);
-    assert.equal(result.stale.length, 1);
-    assert.match(result.stale[0].reason, /Local state changed/);
+    const modifiedRemote = await revalidateSyncPlan(mapping(root), target(), plan(download),
+      session({ kind: 'file', size: 8, mtimeMs: 2000 }));
+    assert.equal(modifiedRemote.valid.length, 0);
+    assert.equal(modifiedRemote.stale.length, 1);
+    assert.match(modifiedRemote.stale[0].reason, /Remote state changed/);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
-});
+});;
 
-test('SyncRevalidator blocks an operation when the remote file changed after Preview', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-revalidate-remote-'));
-  try {
-    const expectedRemote: FileFingerprint = { kind: 'file', size: 5, mtimeMs: 1000 };
-    const currentRemote: FileFingerprint = { kind: 'file', size: 8, mtimeMs: 2000 };
-    const operation: SyncOperation = {
-      id: 'op-1',
-      type: 'download',
-      relativePath: 'file.txt',
-      reason: 'test',
-      expectedLocal: undefined,
-      expectedRemote
-    };
+;
 
-    const result = await revalidateSyncPlan(mapping(root), target(), plan(operation), session(currentRemote));
-    assert.equal(result.valid.length, 0);
-    assert.equal(result.stale.length, 1);
-    assert.match(result.stale[0].reason, /Remote state changed/);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
-
+;
 
 test('SyncRevalidator cascades a stale child delete to its parent directory delete', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-revalidate-delete-tree-'));
@@ -230,7 +197,6 @@ test('SyncRevalidator cascades a stale child delete to its parent directory dele
     await fs.rm(root, { recursive: true, force: true });
   }
 });
-
 
 test('directory delete expansion removes stable hidden descendants before the parent directory', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-revalidate-hidden-delete-'));

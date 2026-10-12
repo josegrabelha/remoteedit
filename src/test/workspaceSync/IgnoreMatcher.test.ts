@@ -1,6 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IgnoreMatcher } from '../../workspaceSync/ignore/IgnoreMatcher';
+import test from '../helpers/TestHarness';
 
 test('IgnoreMatcher handles directory and wildcard patterns', () => {
   const matcher = new IgnoreMatcher(['node_modules/', '*.log', 'dist/**']);
@@ -15,5 +15,3 @@ test('IgnoreMatcher applies negation in rule order', () => {
   assert.equal(matcher.ignores('dist/a.js', false), true);
   assert.equal(matcher.ignores('dist/keep.txt', false), false);
 });
-
-

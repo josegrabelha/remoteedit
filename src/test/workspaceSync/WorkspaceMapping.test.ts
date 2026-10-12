@@ -1,13 +1,12 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
 import {
-  createWorkspaceMapping,
-  normalizeRemoteRoot,
-  validateUniqueMappingRoutes,
-  validateUniqueTargetDestinations
+    createWorkspaceMapping,
+    validateUniqueMappingRoutes,
+    validateUniqueTargetDestinations
 } from '../../workspaceSync/mapping/WorkspaceMapping';
 import { WorkspaceMappingStore } from '../../workspaceSync/mapping/WorkspaceMappingStore';
+import test from '../helpers/TestHarness';
 
 class FakeMemento {
   private readonly values = new Map<string, unknown>();
@@ -20,10 +19,6 @@ class FakeMemento {
     if (value === undefined) this.values.delete(key);
     else this.values.set(key, value);
   }
-}
-
-function fakeContext(): any {
-  return { globalState: new FakeMemento() };
 }
 
 function mappingInput(name = 'Production') {
@@ -45,17 +40,6 @@ test('WorkspaceMapping rejects duplicate target names case-insensitively', () =>
   }), /Duplicate Workspace Sync target name/);
 });
 
-
-
-
-
-
-
-
-
-
-
-
 test('WorkspaceMappingStore persists mappings globally across extension restarts', async () => {
   const globalState = new FakeMemento();
   const firstContext = { globalState } as any;
@@ -69,9 +53,6 @@ test('WorkspaceMappingStore persists mappings globally across extension restarts
   assert.equal(restartedStore.getActiveTargetId(saved.id), saved.targets[0].id);
 });
 
-
-
-
 test('Workspace Sync rejects duplicate remote destinations on mutation paths after normalization', () => {
   assert.throws(() => validateUniqueTargetDestinations([
     { name: 'T1', connectionId: 'conn-1', remoteRoot: '/var/www/app/' },
@@ -83,11 +64,6 @@ test('Workspace Sync rejects duplicate remote destinations on mutation paths aft
     { name: 'T2', connectionId: 'conn-2', remoteRoot: '/var/www/app' }
   ]));
 });
-
-
-
-
-
 
 test('Workspace Sync rejects duplicate complete routes across different mappings', () => {
   assert.throws(() => validateUniqueMappingRoutes([
@@ -126,5 +102,3 @@ test('Workspace Sync rejects duplicate complete routes across different mappings
     }
   ]));
 });
-
-

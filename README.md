@@ -23,11 +23,13 @@ Remote Edit is available on the [Visual Studio Code Marketplace](https://marketp
 1. Open **Remote Edit (Advanced View)** from the VS Code Activity Bar, or run **Remote Edit: Open** from the Command Palette.
 2. To create a saved connection, choose **Add Connection** in the Native Sidebar and follow the prompts. Alternatively, select **New / Quick Connection** in the Advanced View and enter your server details.
 3. Select **SFTP**, **FTP**, or **FTPS** and configure the host, port, and authentication. Add a Proxy or Jump Host if needed.
-4. Connect to browse and edit remote files. In the Advanced View, use **Save** to keep a new connection profile for later use.
+4. Connect to browse and edit remote files. For an SSH/SFTP server that is not already trusted, verify its displayed SHA-256 host key fingerprint through a trusted channel before choosing **Trust & Connect**.
+5. In the Advanced View, use **Save** to keep a new connection profile for later use.
 
 ## Highlights
 
 - SSH/SFTP, FTP, and FTPS connections with direct remote file editing
+- SSH host key verification with SHA-256 fingerprints, OpenSSH `known_hosts` integration, and Trusted SSH Hosts management
 - Full Remote Edit Webview and Native VS Code Sidebar
 - Workspace Sync with multi-target and automatic synchronization
 - Multi-Target Commands & Search with reusable Target Sets
@@ -70,12 +72,14 @@ Use the Sidebar to access:
 - **Workspace Sync**
 - **Multi-Target Commands & Search**
 - **Log Viewer**
+- **Connection & Settings Management**, a native menu for Connections, Trusted SSH Hosts, Proxies, Master Password, Import, Export, and Settings
 - Saved connections and Quick Connect
 - Open Connections
 - Favorites
 - Transfers
 - SSH Terminal actions
-- Import and Export, including connections from other applications
+
+The management menu marks actions that open the Advanced View with **(Webview)** and opens the existing dialog directly. Other actions use the corresponding native VS Code flow.
 
 ## Remote File Editor Labels
 
@@ -465,7 +469,7 @@ Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 
 Use **Clone** to create an independent copy of a saved connection. Use the **Save** split button and **Save As...** to create a new saved profile from the current values without modifying the original.
 
-In the Advanced View, **Connection & Settings Management** provides access to **Manage Connections**, **Manage Proxies**, **Master Password**, **Import**, **Export**, and **Settings**.
+In the Advanced View, **Connection & Settings Management** provides access to **Connections**, **Trusted SSH Hosts**, **Proxies**, **Master Password**, **Import**, **Export**, and **Settings**.
 
 **Manage Connections** provides group management, Clone, Delete, and full **Edit** of saved connections. Edit includes **Profile** and **Group** above the connection settings, with protocol-specific authentication, credentials, Proxy, Jump Host, and FTPS options. Saving updates the Advanced View and Native Sidebar immediately while preserving unsaved connection drafts and keeping active sessions connected. **Back** confirms before discarding unsaved edits. The Proxy selector also provides **New Proxy** for creating and selecting a profile without leaving the form.
 
@@ -494,7 +498,7 @@ Operational and session-only state is not included in backups. Examples include 
 
 ## Import Connections
 
-In the Advanced View, choose **Connection & Settings Management → Import → Import Connections from Other Applications**. In the Native Sidebar, choose **Import → Import Connections from Other Applications (Webview)** to open the same modal. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details and use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
+In the Advanced View, choose **Connection & Settings Management → Import → Import Connections from Other Applications**. In the Native Sidebar, choose **Connection & Settings Management → Import → Import Connections from Other Applications (Webview)** to open the same modal. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details and use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
 
 Supported sources and compatibility:
 
@@ -519,7 +523,7 @@ Imported connection groups preserve source folder paths as group names where ava
 
 ## Proxy Support
 
-Create reusable **SOCKS4**, **SOCKS5** or **HTTP CONNECT** profiles in **Connection & Settings Management → Manage Proxies**. Select a profile using the **Proxy** field in the Advanced View or Native Sidebar. Existing connections default to **No Proxy**. The Native Sidebar proxy picker keeps **New Proxy** and **Manage Proxies (Webview)** at the top, including while filtering. **New Proxy** uses a native wizard and selects the created profile in the current connection draft; save the connection to persist that association. **Manage Proxies (Webview)** opens the existing Proxy Profiles modal directly. **Add Connection** also offers this picker before Jump Host. Updating proxy profiles preserves unsaved connection drafts.
+Create reusable **SOCKS4**, **SOCKS5** or **HTTP CONNECT** profiles in **Connection & Settings Management → Proxies**. Select a profile using the **Proxy** field in the Advanced View or Native Sidebar. Existing connections default to **No Proxy**. The Native Sidebar proxy picker keeps **New Proxy** and **Manage Proxies (Webview)** at the top, including while filtering. **New Proxy** uses a native wizard and selects the created profile in the current connection draft; save the connection to persist that association. **Manage Proxies (Webview)** opens the existing Proxy Profiles modal directly. **Add Connection** also offers this picker before Jump Host. Updating proxy profiles preserves unsaved connection drafts.
 
 Each proxy has a name, host and port. SOCKS4 accepts an optional User ID and no password. SOCKS5 and HTTP CONNECT support no authentication or username/password authentication; HTTP CONNECT uses Basic. Proxy passwords use VS Code SecretStorage independently of server credentials. SOCKS and plain HTTP proxies do not encrypt proxy authentication traffic; use them on a trusted network. SFTP and FTPS retain their own transport encryption.
 
@@ -542,7 +546,7 @@ Open Remote Edit from:
 - Editor Title Bar Button
 - Status Bar Button
 
-The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, transfers, Import, and Export.
+The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, and transfers. **Connection & Settings Management**, below Log Viewer, opens a native menu with the same actions and order as the Advanced View. **Connections**, **Trusted SSH Hosts**, and **Proxies** are marked **(Webview)** and open their existing dialogs directly, reusing the Advanced View tab. **Master Password**, backup Import/Export, and **Settings** retain their native flows. Close any current Advanced View dialog before opening another management action.
 
 Open Connections uses a breadcrumb path tree by default. Users who prefer a shorter or more expanded layout can use `remoteedit.sidebar.openConnections.pathView`.
 
@@ -582,7 +586,8 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 ### SSH/SFTP
 
-- `remoteedit.sshReadyTimeout`
+- `remoteedit.ssh.hostKeyVerification` — verifies server identities for new SSH/SFTP connections and reconnections. Default: `true`; machine scope, shared across Remote Edit, Native Sidebar, Workspace Sync, Multi-Target, and each Jump Host. Changes apply to subsequent connections without interrupting established sessions.
+- `remoteedit.sshReadyTimeout` — SSH connection timeout in milliseconds. Default: `30000` (30 seconds); independent of the 10-minute SSH host key approval deadline.
 - `remoteedit.sshKeepAliveInterval`
 - `remoteedit.sshKeepAliveCountMax`
 - `remoteedit.sftpResolveOwnerGroupNames`
@@ -614,10 +619,18 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.diagnostics.debugLogs` — enable detailed debug logs for the current VS Code session, including connection and profile operations, Workspace Sync, Multi-Target, FTP/FTPS/SFTP, and proxy tunnel events
 - `remoteedit.diagnostics.performanceLogs` — enable timing logs for the current VS Code session, including Workspace Sync scans, Refresh, reconciliation, transfers, Watch polling, Multi-Target operations, backup Import/Export, and proxy tunnel establishment
 
-Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Proxy diagnostics record fixed failure categories and tunnel durations without credentials. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
+Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Proxy diagnostics record fixed failure categories and tunnel durations without credentials. SSH host key diagnostics report verification status, trust sources, approvals, replacement reviews, cancellations, replacement results, conflicts, revocations, and storage/read errors through the same Output channel. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
 
 ## Security
 
+- SSH/SFTP server identities are verified before authentication by default, including connections through proxies and every Jump Host. Native Sidebar confirmations use VS Code dialogs; Advanced View, Workspace Sync, and Multi-Target use their existing Webview modals.
+- Unknown SSH hosts require explicit fingerprint approval with **Trust & Connect**. The complete public key is pinned locally. For a changed key, **SSH Host Key Changed** shows the previous and new fingerprints and their source. **Review & Replace** allows replacing a single Remote Edit or safely editable OpenSSH (User) record only after a second confirmation that the new fingerprint was verified through an independent trusted channel. Cancellation leaves trust unchanged. OpenSSH user replacement creates a backup and preserves the host token (including hashed entries), other records, comments, line endings, and file permissions. System records, a presented revoked key, shared patterns, and conflicts between multiple records remain blocked with an explanation and resolution guidance. A new key different from a revoked key may be approved when no other restriction applies; the revoked record is preserved. Different host key algorithms are verified individually. Existing and imported connection profiles do not automatically establish trust.
+- OpenSSH `known_hosts` is consulted for verification in the environment running the extension: `~/.ssh/known_hosts` and `/etc/ssh/ssh_known_hosts` on Linux/macOS, or `%USERPROFILE%\.ssh\known_hosts` and `%ProgramData%\ssh\ssh_known_hosts` on Windows. This includes the extension host in Remote-SSH, WSL, and Dev Containers. Hashed hosts, aliases, wildcard/negated patterns, and custom ports are supported. Missing files allow first-use approval; unreadable or invalid files block verification. SSH host certificates and `@cert-authority` validation are not supported.
+- **Connection & Settings Management → Trusted SSH Hosts** shows Remote Edit, OpenSSH (User), and OpenSSH (System) sources, with host/fingerprint and Source filters. **Details** shows the public key, fingerprint, source, available timestamps, and OpenSSH file path. **Delete** requires confirmation and is available for Remote Edit records and individual OpenSSH (User) records on Windows, Linux, and macOS. User-file deletion warns that other SSH applications may be affected, creates a backup beside the original file, and preserves other entries, comments, line endings, and file permissions. Changed files, linked files, shared host patterns, revoked keys, and certificate-authority entries cannot be deleted through this action. OpenSSH (System) remains read-only. Hashed entries retain their hidden host identity.
+- Review and replacement use the existing dialogs in Advanced View, Workspace Sync, and Multi-Target, and native VS Code dialogs in the Native Sidebar. Jump Hosts and SSH connections through proxies use the same verification. Automatic reconnects and background watchers cannot approve or replace keys; they report the block and require an explicit interactive connection. New trust is persisted and revalidated before authentication.
+- Interactive SSH identity verification has a separate **10-minute** deadline, starting when the prompt is shown. **Review & Replace** shares that deadline across both confirmations. The initial SSH attempt is closed before prompting; approval starts a fresh connection that must present the exact approved public key before trust is saved and authentication is allowed. Network and SSH timeouts remain independent and respect the configured SSH timeout. Cancel, expiration, or closing a Webview leaves trust unchanged. Webview dialogs close on expiration; VS Code native dialogs cannot be dismissed programmatically, but any reply after expiration is ignored.
+- Trusted SSH Hosts persist locally and are shared across all Remote Edit modules. Public host keys and fingerprints are excluded from Export/Import and Backup/Restore. The verification setting is included with Settings; restoring it as disabled requires a security confirmation. Disabling verification removes server identity protection for new connections and reconnections.
+- Workspace Sync suspends a connection that requires unavailable approval or fails verification; it does not automatically grant trust or repeatedly reconnect after a security block. Connect explicitly from an available interface after resolving the record.
 - Saved credentials use VS Code Secret Storage
 - Prompted Workspace Sync and Multi-Target connection credentials remain session-only unless already stored with the saved connection
 - FTPS supports certificate validation

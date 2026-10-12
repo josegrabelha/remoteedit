@@ -1,9 +1,9 @@
-import type { RemoteSessionManager } from '../../remote/RemoteSessionManager';
-import { loadWithVscode, vscodeStub, type ConnectionManagerHarness } from './ConnectionManagerHarness';
-import { SidebarConnectionDraftStore } from '../../sidebar/ConnectionDraftStore';
 import { createContext, runInContext } from 'node:vm';
 import * as ts from 'typescript';
 import { renderClientScript } from '../../panel/webview/scripts/ClientScript';
+import type { RemoteSessionManager } from '../../remote/RemoteSessionManager';
+import { SidebarConnectionDraftStore } from '../../sidebar/ConnectionDraftStore';
+import { loadWithVscode, vscodeStub, type ConnectionManagerHarness } from './ConnectionManagerHarness';
 
 Object.assign(vscodeStub, { QuickPickItemKind: { Separator: -1 }, Uri: { file: (fsPath: string) => ({ fsPath }) } });
 

@@ -1,10 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isInitialBidirectionalWatchOperationEnabled, isLocalChangeEnabled, isWatchSourceAuthoritative, mergeLocalChangeSource } from '../../workspaceSync/watcher/WatcherCoalescing';
-
-
-
-
+import { isWatchSourceAuthoritative } from '../../workspaceSync/watcher/WatcherCoalescing';
+import test from '../helpers/TestHarness';
 
 test('one-way watch treats only the configured source side as authoritative', () => {
   assert.equal(isWatchSourceAuthoritative('localToRemote', 'local'), true);
@@ -38,6 +34,3 @@ test('initial Bidirectional Watch reconciles attributable sides once and keeps a
   assert.deepEqual(initialWatchReconcileDecision('bidirectional', 'conflict', both), { local: false, remote: false, conflict: true });
   assert.deepEqual(initialWatchReconcileDecision('bidirectional', 'different', both), { local: false, remote: false, conflict: true });
 });
-
-
-

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { connectionManagementTitle } from '../connection/ConnectionManagementActions';
 import { ConnectionManager, type ConnectionGroup, type ConnectionProfile } from '../connection/ConnectionManager';
 import { RemoteEditPanel } from '../panel/RemoteEditPanel';
 import { RemoteEditSharedState } from '../state/RemoteEditSharedState';
@@ -8,9 +9,7 @@ import { buildSidebarJumpDisplay, getConnectionDetailFields, getParentRemotePath
 import { appendPerformanceLog, createPerformanceTimer } from '../utils/outputLogger';
 
 const COMMAND_OPEN = 'remoteedit.open';
-const COMMAND_OPEN_SETTINGS = 'remoteedit.sidebar.openSettings';
-const COMMAND_EXPORT_BACKUP = 'remoteedit.sidebar.exportBackup';
-const COMMAND_IMPORT_BACKUP = 'remoteedit.sidebar.importBackup';
+
 const COMMAND_OPEN_WORKSPACE_SYNC = 'remoteedit.workspaceSync.open';
 const COMMAND_OPEN_LOG_VIEWER = 'remoteedit.sidebar.openLogViewer';
 
@@ -95,40 +94,16 @@ export class RemoteEditActionsTreeProvider implements vscode.TreeDataProvider<Re
           : 'remoteedit.action.logViewer.disabled'
       }),
       new RemoteEditSidebarItem({
-        label: 'Export',
+        label: connectionManagementTitle,
         kind: 'action',
-        id: 'action:exportBackup',
-        icon: new vscode.ThemeIcon('sign-out'),
-        tooltip: 'Export Remote Edit data.',
-        command: {
-          command: COMMAND_EXPORT_BACKUP,
-          title: 'Export'
-        },
-        contextValue: 'remoteedit.action.exportBackup'
-      }),
-      new RemoteEditSidebarItem({
-        label: 'Import',
-        kind: 'action',
-        id: 'action:importBackup',
-        icon: new vscode.ThemeIcon('sign-in'),
-        tooltip: 'Import Remote Edit data.',
-        command: {
-          command: COMMAND_IMPORT_BACKUP,
-          title: 'Import'
-        },
-        contextValue: 'remoteedit.action.importBackup'
-      }),
-      new RemoteEditSidebarItem({
-        label: 'Settings',
-        kind: 'action',
-        id: 'action:settings',
+        id: 'action:connectionManagement',
         icon: new vscode.ThemeIcon('settings-gear'),
-        tooltip: 'Open Remote Edit settings.',
+        tooltip: 'Manage connections, trusted SSH hosts, proxies, credentials, backups, and settings.',
         command: {
-          command: COMMAND_OPEN_SETTINGS,
-          title: 'Settings'
+          command: 'remoteedit.sidebar.connectionManagement',
+          title: connectionManagementTitle
         },
-        contextValue: 'remoteedit.action.settings'
+        contextValue: 'remoteedit.action.connectionManagement'
       })
     ];
   }

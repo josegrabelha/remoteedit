@@ -1,26 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyLocalStat } from '../../workspaceSync/scan/LocalEntryKind';
-import { classifyFtpEntry } from '../../workspaceSync/connection/FtpEntryKind';
 import { normalizeRemoteEntryKind } from '../../workspaceSync/scan/RemoteScanner';
-
-function fakeStat(type: string) {
-  return {
-    isDirectory: () => type === 'directory',
-    isFile: () => type === 'file',
-    isSymbolicLink: () => type === 'link',
-    isSocket: () => type === 'socket',
-    isFIFO: () => type === 'fifo',
-    isBlockDevice: () => type === 'block',
-    isCharacterDevice: () => type === 'character'
-  };
-}
-
-
-
-
-
-
+import test from '../helpers/TestHarness';
 
 test('SFTP preserves special remote entry types as unknown', () => {
   assert.equal(normalizeRemoteEntryKind('-'), 'file');

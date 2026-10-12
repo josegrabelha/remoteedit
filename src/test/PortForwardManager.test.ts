@@ -1,10 +1,9 @@
-import { EventEmitter } from 'node:events';
-import * as net from 'node:net';
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { EventEmitter } from 'node:events';
 import type { Client } from 'ssh2';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { PortForwardManager, type SavedPortForwardConfig } from '../ssh/PortForwardManager';
+import { test } from './helpers/TestHarness';
 
 class FakeSshClient extends EventEmitter {
   forwardInCalls: Array<{ host: string; port: number }> = [];
@@ -61,86 +60,23 @@ function baseConfig(overrides: Partial<SavedPortForwardConfig>): SavedPortForwar
   };
 }
 
-async function withEchoServer(run: (port: number) => Promise<void>): Promise<void> {
-  const server = net.createServer(socket => socket.pipe(socket));
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  const port = typeof address === 'object' && address ? address.port : 0;
-  try {
-    await run(port);
-  } finally {
-    await new Promise<void>(resolve => server.close(() => resolve()));
-  }
-}
-
-class FakeChannel extends EventEmitter {
-  written: Buffer[] = [];
-  destroyed = false;
-  private onWrite?: (chunk: Buffer) => void;
-
-  write(chunk: Buffer, callback?: () => void): boolean {
-    this.written.push(Buffer.from(chunk));
-    this.onWrite?.(Buffer.from(chunk));
-    callback?.();
-    return true;
-  }
-
-  end(): void {
-    this.destroy();
-  }
-
-  destroy(error?: Error): void {
-    if (this.destroyed) return;
-    this.destroyed = true;
-    if (error) this.emit('error', error);
-    this.emit('close');
-  }
-
-  pipe<T extends NodeJS.WritableStream>(destination: T): T {
-    this.on('data', chunk => destination.write(chunk));
-    return destination;
-  }
-
-  push(chunk: Buffer): void {
-    this.emit('data', chunk);
-  }
-
-  waitForWrite(): Promise<Buffer> {
-    return new Promise(resolve => { this.onWrite = resolve; });
-  }
-}
-
-test('remote forward calls forwardIn with the configured bind address/port', async () => {
+test('remote forward uses the configured bind and releases its listener on stop', async () => {
   const client = new FakeSshClient();
   const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-  const config = baseConfig({ remoteHost: '127.0.0.1', remotePort: 9100 });
+  const config = baseConfig({ remoteHost: '127.0.0.1', remotePort: 9101 });
 
-  const state = await manager.startForward('conn-1', config);
-
-  assert.equal(state.status, 'running');
-  assert.deepEqual(client.forwardInCalls, [{ host: '127.0.0.1', port: 9100 }]);
-
-  await manager.stopForward('conn-1', config.id);
-});
-
-test('stopping a remote forward calls unforwardIn and detaches the tcp connection listener', async () => {
-  const client = new FakeSshClient();
-  const manager = new PortForwardManager(makeSessions(client as unknown as Client));
-  const config = baseConfig({ remotePort: 9101 });
-
-  await manager.startForward('conn-1', config);
+  const running = await manager.startForward('conn-1', config);
+  assert.equal(running.status, 'running');
+  assert.deepEqual(client.forwardInCalls, [{ host: '127.0.0.1', port: 9101 }]);
   assert.equal(client.listenerCount('tcp connection'), 1);
 
   const stopped = await manager.stopForward('conn-1', config.id);
-
   assert.equal(stopped.status, 'stopped');
   assert.deepEqual(client.unforwardInCalls, [{ host: '127.0.0.1', port: 9101 }]);
   assert.equal(client.listenerCount('tcp connection'), 0);
-});
+});;
 
-
-
-
+;
 
 test('two remote forwards on the same connection dispatch independently and only one listener remains after stopping one', async () => {
   const client = new FakeSshClient();
@@ -158,9 +94,6 @@ test('two remote forwards on the same connection dispatch independently and only
   await manager.stopForward('conn-1', configB.id);
   assert.equal(client.listenerCount('tcp connection'), 0);
 });
-
-
-
 
 test('stopping while forwardIn is pending cancels a late remote bind without registering a listener', async () => {
   const client = new FakeSshClient();
@@ -183,12 +116,6 @@ test('stopping while forwardIn is pending cancels a late remote bind without reg
   assert.equal(client.listenerCount('tcp connection'), 0);
   assert.equal(manager.getState('conn-1', config.id).status, 'stopped');
 });
-
-
-
-
-
-
 
 test('unforwardIn failure leaves the forward in error state so cleanup can be retried', async () => {
   const client = new FakeSshClient();

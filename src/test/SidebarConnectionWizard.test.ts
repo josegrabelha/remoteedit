@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
 import { createConnectionManagerHarness, inputUi, profile } from './helpers/ConnectionManagerHarness';
 import { RemoteEditPanel, createConnectionUiHarness } from './helpers/ConnectionUiHarness';
-import { buildSidebarJumpDisplay } from '../sidebar/ItemHelpers';
-
-
+import { test } from './helpers/TestHarness';
 
 test('sidebar Clone Connection creates an independent saved profile beside the source', async () => {
   const source = profile('source', { name: 'Ubuntu', groupId: 'lab', host: 'ubuntu.invalid', port: 2222, username: 'admin' });
@@ -26,7 +23,6 @@ test('sidebar Clone Connection creates an independent saved profile beside the s
   assert.deepEqual(harness.ui.errors, []);
   assert.deepEqual(harness.ui.information, ['Connection cloned as "Ubuntu (copy)".']);
 });
-
 
 test('sidebar credentials can configure and select Master Password without opening the webview', async () => {
   const source = profile('source', { name: 'Source' });
@@ -49,8 +45,6 @@ test('sidebar credentials can configure and select Master Password without openi
   assert.equal(harness.secrets.get('remoteedit.masterPassword'), 'shared-secret');
   assert.equal(harness.secrets.has('remoteedit.connectionSecret.source.password'), false);
 });
-
-
 
 test('sidebar Master Password header action changes and removes the global secret without changing saved profiles', async () => {
   const source = profile('source', { name: 'Source', passwordSource: 'master' });
@@ -80,7 +74,6 @@ test('sidebar Master Password header action changes and removes the global secre
   assert.equal(inputUi.warnings[0].message, 'Remove Master Password?');
   assert.deepEqual(inputUi.warnings[0].items, ['Remove']);
 });
-
 
 test('sidebar proxy picker pins actions, selects the current proxy and preserves selection on cancel', async () => {
   const h = createConnectionManagerHarness([profile('source')]);
@@ -138,7 +131,6 @@ test('Manage Proxies opens the webview without changing the sidebar association'
   }
 });
 
-
 test('sidebar Import dispatches backup and application imports and does nothing on cancel', async () => {
   const h = createConnectionManagerHarness([profile('source')]);
   const ui = createConnectionUiHarness(h, {} as RemoteSessionManager);
@@ -174,18 +166,18 @@ test('application import opens in a ready webview and queues during initializati
   const panelClass = RemoteEditPanel as any;
   const original = panelClass.getOrCreate;
   const messages: string[] = [];
-  const panel = { webviewReady: false, pendingConnectionImportOpen: false, postMessage: (type: string) => messages.push(type) };
+  const panel = { webviewReady: false, pendingManagementOpens: [] as string[], postMessage: (type: string) => messages.push(type) };
   panelClass.getOrCreate = () => panel;
   const h = createConnectionManagerHarness();
   try {
     RemoteEditPanel.openConnectionImport(h.context, {} as RemoteSessionManager, h.manager, h.output);
-    assert.equal(panel.pendingConnectionImportOpen, true);
+    assert.deepEqual(panel.pendingManagementOpens, ['applications']);
     assert.deepEqual(messages, []);
     panel.webviewReady = true;
-    panel.pendingConnectionImportOpen = false;
+    panel.pendingManagementOpens.length = 0;
     RemoteEditPanel.openConnectionImport(h.context, {} as RemoteSessionManager, h.manager, h.output);
-    assert.deepEqual(messages, ['showConnectionImport']);
-    assert.equal(panel.pendingConnectionImportOpen, false);
+    assert.deepEqual(messages, ['showConnectionManagement']);
+    assert.deepEqual(panel.pendingManagementOpens, []);
   } finally {
     panelClass.getOrCreate = original;
   }

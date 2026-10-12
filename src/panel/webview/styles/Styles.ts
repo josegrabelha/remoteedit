@@ -1,9 +1,10 @@
+import { renderSharedConfirmDialogStyles } from '../../../webview/SharedConfirmDialog';
 import { renderReusableProfileListStyles } from './ReusableProfileListStyles';
 import { renderConnectionImportStyles } from './ConnectionImportStyles';
 import { remoteSearchResultStyles } from '../../../search/RemoteSearchResultStyles';
 import { renderProfileDropdownStyles } from './ProfileDropdownStyles';
 export function renderStyles(): string {
-  return renderReusableProfileListStyles() + renderConnectionImportStyles() + `  :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; --remoteedit-connection-header-height: 50px; --remoteedit-session-tab-height: 34px; }
+  return renderSharedConfirmDialogStyles() + renderReusableProfileListStyles() + renderConnectionImportStyles() + `  :root { color-scheme: light dark; --remoteedit-validation-error: #b94a48; --remoteedit-connection-header-height: 50px; --remoteedit-session-tab-height: 34px; }
   * { box-sizing: border-box; }
   * { scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
   *::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -427,6 +428,28 @@ export function renderStyles(): string {
   #proxyProfilesBackdrop .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   #proxyListPage, #proxyEditorPage { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   #proxyList { display: grid; align-content: start; gap: 2px; padding: 3px; background: var(--vscode-editor-background); }
+  #trustedHostsBackdrop [hidden] { display: none !important; }
+  #trustedHostsBackdrop .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #trustedHostsListPage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #trustedHostsBackdrop .trusted-hosts-toolbar { flex: 0 0 auto; flex-wrap: nowrap; align-items: flex-end; }
+  .trusted-hosts-filter-field { flex: 1 1 auto; min-width: 0; }
+  .trusted-hosts-source-field { flex: 0 0 155px; min-width: 155px; }
+  #trustedHostsBackdrop .filter-box { position: relative; width: 100%; }
+  #trustedHostsBackdrop .filter-input { height: 31px; padding-right: 30px; }
+  #trustedHostsBackdrop .trusted-hosts-table-wrap { flex: 1 1 auto; min-height: 0; }
+  #trustedHostsTable { table-layout: fixed; }
+  #trustedHostsTable th { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); }
+  #trustedHostsTable td { overflow: hidden; text-overflow: ellipsis; }
+  #trustedHostsList tr { cursor: pointer; }
+  #trustedHostsList tr:hover, #trustedHostsList tr:focus-visible { background: var(--vscode-list-hoverBackground); }
+  .trusted-host-source-content { display: flex; align-items: center; gap: 6px; }
+  .trusted-host-source-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #trustedHostsList .remote-command-icon-button { margin-left: auto; flex: 0 0 auto; }
+  #trustedHostsDetailsPage { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 10px; }
+  #trustedHostsDetailsPage { user-select: text; -webkit-user-select: text; }
+  #trustedHostsDetailsPage .master-password-field { margin-top: 0; }
+  .trusted-host-value { overflow-wrap: anywhere; user-select: text; }
+  #trustedHostsBackdrop .file-properties-actions { margin-top: 2px; }
   #proxyList .compact { min-height: 23px; height: 23px; padding: 2px 7px; font-size: 12px; }
   #proxyProfilesBackdrop .proxy-address-row { margin-top: 10px; }
   #proxyProfilesBackdrop .proxy-address-row .master-password-field { min-width: 0; margin-top: 0; }
@@ -698,7 +721,7 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
   #serverOverviewDetailsBackdrop .file-properties-title { margin-bottom: 3px; font-size: 16px; }
   #serverOverviewDetailsBackdrop .file-properties-body { padding: 10px 16px 16px; }
   #serverOverviewDetailsBackdrop .file-properties-actions { margin-top: 2px; padding: 4px 16px 12px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
-  #serverOverviewDetailsCopyButton, #confirmDialogCopyButton { width: 58px; min-width: 58px; display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; padding-left: 0; padding-right: 0; }
+  #serverOverviewDetailsCopyButton, #confirmDialogCopyButton, #trustedHostsCopy { width: 58px; min-width: 58px; display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; padding-left: 0; padding-right: 0; }
   #serverOverviewDetailsBackdrop .server-overview-details { gap: 8px; }
   #serverOverviewDetailsBackdrop .server-overview-detail-grid { grid-template-columns: 118px minmax(0, 1fr); }
   #serverOverviewDetailsBackdrop .file-properties-label, #serverOverviewDetailsBackdrop .file-properties-value { padding: 5px 8px; line-height: 1.25; font-size: 11.5px; }
@@ -1009,15 +1032,6 @@ ${remoteSearchResultStyles}
   .transfer-queue-actions button { min-height: 21px; padding: 1px 6px; font-size: 10.5px; }
   .transfer-queue-footer { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
 
-  .confirm-dialog-backdrop { position: fixed; inset: 0; z-index: 240; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
-  .confirm-dialog-backdrop.visible { display: flex; }
-  .confirm-dialog { width: min(520px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }
-  .confirm-dialog-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
-  .confirm-dialog-title { margin: 0 0 5px; font-size: 18px; font-weight: 650; }
-  .confirm-dialog-body { padding: 15px 18px; display: grid; gap: 12px; overflow: auto; }
-  .confirm-dialog-message { margin: 0; line-height: 1.45; }
-  .confirm-dialog-details { margin: 0; padding: 10px 12px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-input-background); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
-  .confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
   .transfer-conflict-backdrop { position: fixed; inset: 0; z-index: 250; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
   .transfer-conflict-backdrop.visible { display: flex; }
   .transfer-conflict-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45); }

@@ -1,3 +1,4 @@
+import { installHostKeyVerification, hostKeyApprovalError } from './hostKeys/HostKeyRuntime';
 import { openProxyWithCancellation } from '../proxy/ProxyRoute';
 import type { Socket } from 'net';
 import * as fs from 'fs/promises';
@@ -108,6 +109,8 @@ function stageError(
   stage: string,
   error: unknown
 ): Error {
+  if (hostKeyApprovalError(error)) return hostKeyApprovalError(error)!;
+  if ((error as any)?.code === 'SSH_HOST_KEY_REJECTED') return error as Error;
   return new Error(`${targetLabel(target)} failed while ${stage}: ${errorMessage(error)}`);
 }
 
@@ -272,6 +275,8 @@ export class SshJumpChain {
           ...(incomingSocket ? { sock: incomingSocket } : {})
         };
 
+        const hostKeyFailure = installHostKeyVerification(config, client, hop.host, hop.port, cancellationToken, { role: `Jump Host ${index + 1}` });
+
         if (hop.keepAlive !== false) {
           config.keepaliveInterval = this.settings.keepAliveInterval;
           config.keepaliveCountMax = this.settings.keepAliveCountMax;
@@ -280,6 +285,7 @@ export class SshJumpChain {
         try {
           await this.connectClient(resource, config, cancellationToken);
         } catch (error) {
+          if (hostKeyFailure()) throw hostKeyFailure();
           throwIfCancelled(cancellationToken);
           throw stageError(hop, 'establishing the SSH connection', error);
         }

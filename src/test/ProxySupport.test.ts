@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import * as net from 'node:net';
-import { openProxyTunnel, type ProxyConnection } from '../proxy/ProxyTransport';
-import { setProxyDiagnostics, type ProxyDiagnostic } from '../proxy/ProxyDiagnostics';
+import { parseFileZilla } from '../connectionImport/sources/FileZillaImportSource';
+import { candidate } from '../connectionImport/sources/ImportParsing';
+import { importProxyCommand } from '../connectionImport/sources/ProxyImport';
 import { parsePutty } from '../connectionImport/sources/PuttyImportSource';
 import { parseSshFs } from '../connectionImport/sources/SshFsImportSource';
 import { parseVsCodeSftp } from '../connectionImport/sources/VsCodeSftpImportSource';
-import { resolveRouteProxy } from '../proxy/ProxyRoute';
-import { createConnectionManagerHarness, profile } from './helpers/ConnectionManagerHarness';
-import { buildWorkspaceSyncConnectionIdentity } from '../workspaceSync/connection/ConnectionIdentity';
 import { parseWinScp } from '../connectionImport/sources/WinScpImportSource';
-import { parseFileZilla } from '../connectionImport/sources/FileZillaImportSource';
-import { importProxyCommand } from '../connectionImport/sources/ProxyImport';
-import { candidate } from '../connectionImport/sources/ImportParsing';
+import { setProxyDiagnostics, type ProxyDiagnostic } from '../proxy/ProxyDiagnostics';
+import { resolveRouteProxy } from '../proxy/ProxyRoute';
+import { openProxyTunnel, type ProxyConnection } from '../proxy/ProxyTransport';
+import { buildWorkspaceSyncConnectionIdentity } from '../workspaceSync/connection/ConnectionIdentity';
+import { createConnectionManagerHarness, profile } from './helpers/ConnectionManagerHarness';
+import { listenLoopback } from './helpers/LoopbackServer';
+import { test } from './helpers/TestHarness';
 const proxy: ProxyConnection = {id:'p',name:'Office',type:'socks5',host:'proxy.invalid',port:1080,authentication:'password',username:'user',password:'proxy-secret-unique'};
 const exportOptions={includeSettings:false,includeConnections:true,includeFavorites:true,includeUsernames:true,includeCredentials:true,credentialPassword:'backup-secret'};
 const importOptions={includeSettings:false,includeConnections:true,includeFavorites:true,includeUsernames:true,restoreCredentials:true,credentialPassword:'backup-secret',importMode:'merge' as const};
@@ -52,14 +53,15 @@ test('route conflicts fail closed and sync baseline identity tracks routes but e
  assert.equal(buildWorkspaceSyncConnectionIdentity({...input,proxy}),buildWorkspaceSyncConnectionIdentity({...input,proxy:{...proxy,password:'changed'}}));
 });
 
-test('HTTP status, timeout, cancellation and fragmented greetings are handled without credentials in errors',async()=>{
+test('HTTP status, timeout, cancellation and fragmented greetings are handled without credentials in errors',async t=>{
  const events: ProxyDiagnostic[] = []; setProxyDiagnostics(event => events.push(event));
  const sockets=new Set<net.Socket>();let mode='reject';
  const server=net.createServer(s=>{sockets.add(s);s.on('error',()=>{});s.on('close',()=>sockets.delete(s));s.once('data',()=>{
  if(mode==='reject')s.end('HTTP/1.1 407 Authentication Required\r\n\r\n');
  else if(mode==='ok'){s.write('HTTP/1.1 200 Con');setImmediate(()=>s.write('nection Established\r\n\r\nWELCOME'));}
  });});
- await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+ const listener = await listenLoopback(server, t);
+ t.after(() => setProxyDiagnostics());
  const options={...proxy,type:'http' as const,host:'127.0.0.1',port:(server.address() as net.AddressInfo).port};
  try{
  await assert.rejects(openProxyTunnel(options,'target.invalid',22,1000),/407/);
@@ -72,7 +74,7 @@ test('HTTP status, timeout, cancellation and fragmented greetings are handled wi
  assert(events.some(e=>e.reason==='cancelled'));
  assert(!JSON.stringify(events).includes(proxy.password!));
  assert(!JSON.stringify(events).includes(proxy.username!));
- }finally{setProxyDiagnostics();for(const s of sockets)s.destroy();await new Promise<void>(r=>server.close(()=>r()));}
+ }finally{setProxyDiagnostics();for(const s of sockets)s.destroy();await listener.close();}
 });
 
 test('import maps supported proxy formats and rejects arbitrary ProxyCommand without executing it',()=>{
@@ -82,7 +84,6 @@ test('import maps supported proxy formats and rejects arbitrary ProxyCommand wit
  const ssh=candidate('openssh','config','Test','target');importProxyCommand(ssh,'nc -X 5 -x proxy:1080 %h %p');assert.equal(ssh.proxy?.type,'socks5');
  importProxyCommand(ssh,'sh -c "nc proxy 1080"');assert.match(ssh.unsupported!,/Unsupported/);
 });
-
 
 test('proxy-only backup enables restore and includes proxy usernames in its summary', async () => {
  const source=createConnectionManagerHarness(); await source.manager.proxyProfiles.save(proxy);
@@ -112,7 +113,6 @@ test('PuTTY, SSH FS and VS Code SFTP import proxies with warnings for unavailabl
   assert(item.warnings.some(w=>/Proxy password is unavailable/.test(w)));
  }
 });
-
 
 test('proxy lists sort naturally without changing stored order, IDs or connection selection', async () => {
  const h=createConnectionManagerHarness([profile('target',{proxyProfileId:'p10'})]);

@@ -2,6 +2,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   const compareIconMarkup = JSON.stringify(compareIconSvg || '<span class=\"compare-icon-fallback\" aria-hidden=\"true\">⇄</span>');
   return `(() => {
   const vscode = acquireVsCodeApi();
+  window.addEventListener('sshHostKeyDialogPost', event => vscode.postMessage(event.detail));
   let state = { connections: [], mappings: [], diffs: [], targetStates: [], targetViews: [] };
   let selected = new Set();
   let filter = 'changes';

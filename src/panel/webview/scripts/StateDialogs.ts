@@ -1,5 +1,6 @@
 export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boolean, openFileListItemsOnNameClick: boolean, permissionsDisplayMode: string): string {
   return `  const vscode = acquireVsCodeApi();
+  window.addEventListener('sshHostKeyDialogPost', event => vscode.postMessage(event.detail));
   let showRemotePathBreadcrumbDirectoryDetails = ${showRemotePathBreadcrumbDirectoryDetails ? 'true' : 'false'};
   let openFileListItemsOnNameClick = ${openFileListItemsOnNameClick ? 'true' : 'false'};
   let permissionsDisplayMode = normalizePermissionsDisplayMode('${permissionsDisplayMode}');

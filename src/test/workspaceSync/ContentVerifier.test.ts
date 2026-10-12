@@ -1,13 +1,13 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
 import { verifyComparisonContent } from '../../workspaceSync/compare/ContentVerifier';
 import { diffSnapshots } from '../../workspaceSync/compare/DiffEngine';
-import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
 import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
+import { createSyncSnapshot } from '../../workspaceSync/snapshot/SyncSnapshot';
+import test from '../helpers/TestHarness';
 
 function hash(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -42,41 +42,28 @@ function fakeSession(remoteContent: Record<string, string>): WorkspaceSyncRemote
   };
 }
 
-test('ContentVerifier prevents unreliable FTP mtimes from treating same-size different content as equal', async () => {
+test('ContentVerifier hashes equal-sized FTP files when mtimes are unreliable, distinguishing equal and different content', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-'));
   try {
-    await fs.writeFile(path.join(root, 'a.txt'), 'local');
     const local = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: { kind: 'file', size: 5, mtimeMs: 1000 } }]);
     const remote = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: { kind: 'file', size: 5, mtimeMs: 0 } }]);
-    const verified = await verifyComparisonContent(root, '/remote', fakeSession({ '/remote/a.txt': 'other' }), local, remote);
-    const diff = diffSnapshots(verified.local, verified.remote, undefined, { remoteMtimeReliable: false });
-    assert.equal(diff[0].status, 'different');
-    assert.notEqual(verified.local.entries['a.txt'].fingerprint.hash, verified.remote.entries['a.txt'].fingerprint.hash);
+    for (const { localText, remoteText, status } of [
+      { localText: 'local', remoteText: 'other', status: 'different' },
+      { localText: 'same!', remoteText: 'same!', status: 'same' }
+    ] as const) {
+      await fs.writeFile(path.join(root, 'a.txt'), localText);
+      const verified = await verifyComparisonContent(root, '/remote', fakeSession({ '/remote/a.txt': remoteText }), local, remote);
+      const diff = diffSnapshots(verified.local, verified.remote, undefined, { remoteMtimeReliable: false });
+      assert.equal(diff[0].status, status, `FTP content ${status}`);
+      const hashesMatch = verified.local.entries['a.txt'].fingerprint.hash === verified.remote.entries['a.txt'].fingerprint.hash;
+      assert.equal(hashesMatch, status === 'same', `FTP hashes ${status}`);
+    }
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
-});
+});;
 
-test('ContentVerifier can prove identical content when the remote timestamp is unreliable', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-'));
-  try {
-    await fs.writeFile(path.join(root, 'a.txt'), 'same!');
-    const local = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: { kind: 'file', size: 5, mtimeMs: 1000 } }]);
-    const remote = createSyncSnapshot([{ relativePath: 'a.txt', fingerprint: { kind: 'file', size: 5, mtimeMs: 0 } }]);
-    const verified = await verifyComparisonContent(root, '/remote', fakeSession({ '/remote/a.txt': 'same!' }), local, remote);
-    const diff = diffSnapshots(verified.local, verified.remote, undefined, { remoteMtimeReliable: false });
-    assert.equal(diff[0].status, 'same');
-    assert.equal(verified.local.entries['a.txt'].fingerprint.hash, verified.remote.entries['a.txt'].fingerprint.hash);
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
-
-
-
-
-
+;
 
 test('ContentVerifier force-hashes a failed-transfer path even when reliable metadata looks equal', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-ws-force-hash-'));

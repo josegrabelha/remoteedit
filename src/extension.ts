@@ -1,4 +1,5 @@
 import { appendDebugLog, appendPerformanceLog } from './utils/outputLogger';
+import { initializeHostKeyTrust } from './ssh/hostKeys/HostKeyRuntime';
 import { setProxyDiagnostics } from './proxy/ProxyDiagnostics';
 import { MultiTargetFeature } from './multiTarget/MultiTargetPanel';
 import * as vscode from 'vscode';
@@ -50,6 +51,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const message = error instanceof Error ? error.message : String(error);
       appendOutputLog(output, 'WARN', `Failed to clean up stale dropped upload staging directories: ${message}`);
     });
+  initializeHostKeyTrust(context, output);
   const sessions: RemoteSessionManager = new RemoteSessionRouter(output);
   const connectionManager = new ConnectionManager(context, output);
   const fileSystemProvider = new RemoteEditFileSystemProvider(sessions, output);

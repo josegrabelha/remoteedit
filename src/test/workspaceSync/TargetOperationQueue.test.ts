@@ -1,41 +1,35 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TargetOperationQueue } from '../../workspaceSync/execution/TargetOperationQueue';
+import test, { deferred } from '../helpers/TestHarness';
 
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>(done => { resolve = done; });
-  return { promise, resolve };
-}
 
-test('TargetOperationQueue serializes operations for the same target', async () => {
+test('TargetOperationQueue serializes the same target while executing unrelated targets independently', async () => {
   const queue = new TargetOperationQueue();
   const gate = deferred();
-  const order: string[] = [];
+  const events: string[] = [];
   const first = queue.run('same', async () => {
-    order.push('first-start');
+    events.push('first-start');
     await gate.promise;
-    order.push('first-end');
+    events.push('first-end');
   });
-  const second = queue.run('same', async () => { order.push('second'); });
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(order, ['first-start']);
-  gate.resolve();
-  await Promise.all([first, second]);
-  assert.deepEqual(order, ['first-start', 'first-end', 'second']);
-});
+  const queued = queue.run('same', async () => { events.push('second'); });
+  const independent = queue.run('unrelated', async () => { events.push('independent'); });
 
-test('TargetOperationQueue allows unrelated targets to run independently', async () => {
-  const queue = new TargetOperationQueue();
-  const gate = deferred();
-  let secondRan = false;
-  const first = queue.run('a', async () => { await gate.promise; });
-  const second = queue.run('b', async () => { secondRan = true; });
-  await second;
-  assert.equal(secondRan, true);
-  gate.resolve();
-  await first;
-});
+  // The independent target completing gives the runner an observable progress
+  // barrier; no fixed sleep is needed to check the still-queued same target.
+  try {
+    await independent;
+    assert.ok(events.includes('first-start'));
+    assert.ok(events.includes('independent'));
+    assert.equal(events.includes('second'), false);
+  } finally {
+    gate.resolve();
+  }
+  await Promise.all([first, queued]);
+  assert.ok(events.indexOf('first-end') < events.indexOf('second'));
+});;
+
+;
 
 test('Disconnect cancels queued work but keeps active work serialized before reconnect', async () => {
   const queue = new TargetOperationQueue();
@@ -54,7 +48,3 @@ test('Disconnect cancels queued work but keeps active work serialized before rec
   await Promise.all([active, reconnect, queue.waitForIdle('target')]);
   assert.deepEqual(calls, ['active', 'reconnect']);
 });
-
-
-
-

@@ -1,4 +1,5 @@
 import { renderConnectionEditor } from './ConnectionEditor';
+import { renderTrustedSshHosts } from './TrustedSshHosts';
 import { renderProxyProfiles } from './ProxyProfiles';
 import { renderConnectionImport } from './ConnectionImport';
 import { renderMasterPassword } from './MasterPassword';
@@ -49,5 +50,5 @@ export function renderClientScript(options: ClientScriptOptions): string {
     renderDragDropTargets() +
     renderDragDropUpload() +
     renderRemoteDragDropMove() +
-    renderTransfersStatus() + renderMasterPassword() + renderConnectionImport() + renderProxyProfiles() + renderConnectionEditor();
+    renderTransfersStatus() + renderMasterPassword() + renderConnectionImport() + renderProxyProfiles() + renderTrustedSshHosts() + renderConnectionEditor();
 }

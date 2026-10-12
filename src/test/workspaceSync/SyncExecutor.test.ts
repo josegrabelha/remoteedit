@@ -1,11 +1,11 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
 import * as fs from 'fs/promises';
+import assert from 'node:assert/strict';
 import * as os from 'os';
 import * as path from 'path';
+import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
 import { executeSyncPlan } from '../../workspaceSync/execution/SyncExecutor';
 import type { SyncOperation, SyncPlan, WorkspaceSyncMapping, WorkspaceSyncTarget } from '../../workspaceSync/types';
-import type { WorkspaceSyncRemoteSession } from '../../workspaceSync/connection/WorkspaceSyncSession';
+import test from '../helpers/TestHarness';
 
 function fixture(localRoot: string): { mapping: WorkspaceSyncMapping; target: WorkspaceSyncTarget } {
   const target: WorkspaceSyncTarget = { id: 't1', name: 'Prod', connectionId: 'p1', remoteRoot: '/remote', enabled: true, createdAt: 1, updatedAt: 1 };
@@ -66,12 +66,6 @@ test('SyncExecutor atomically replaces a local file after download', async () =>
     await fs.rm(root, { recursive: true, force: true });
   }
 });
-
-
-
-
-
-
 
 test('SyncExecutor does not run destructive deletes after an earlier transfer failure', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-exec-'));
@@ -153,8 +147,6 @@ test('SyncExecutor waits for child deletes before removing a parent remote direc
   }
 });
 
-
-
 test('SyncExecutor refuses to upload through a Local symlink ancestor', { skip: process.platform === 'win32' }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-exec-safe-'));
   const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-exec-outside-'));
@@ -177,8 +169,6 @@ test('SyncExecutor refuses to upload through a Local symlink ancestor', { skip: 
     await fs.rm(outside, { recursive: true, force: true });
   }
 });
-
-
 
 test('SyncExecutor reports an orphaned atomic temp when cleanup cannot run after an interrupted upload', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-exec-orphan-'));
@@ -206,9 +196,6 @@ test('SyncExecutor reports an orphaned atomic temp when cleanup cannot run after
     await fs.rm(root, { recursive: true, force: true });
   }
 });
-
-
-
 
 test('SyncExecutor uses the exact Remote Unicode spelling captured during Preview', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remoteedit-exec-unicode-'));

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { beforeEach, test } from 'node:test';
 import { generateKeyPairSync } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ControlledSftp, SftpSessionManager, TestCancellationSource, deferred, flush, harness, options, resetHarness } from './helpers/SftpSessionHarness';
+import { ControlledSftp, SftpSessionManager, deferred, flush, harness, options, resetHarness } from './helpers/SftpSessionHarness';
+import { beforeEach, test } from './helpers/TestHarness';
 
 beforeEach(resetHarness);
 
@@ -46,8 +46,6 @@ test('remote close removes the active connection and emits one identity notifica
   }
 });
 
-
-
 test('immediate disconnect and concurrent same-ID connect respect the latest attempt', async () => {
   const manager = new SftpSessionManager();
   harness.clients.push(new ControlledSftp());
@@ -63,16 +61,12 @@ test('immediate disconnect and concurrent same-ID connect respect the latest att
   await manager.disconnectAll();
 });
 
-
-
 function jumpOptions(id = 'target') {
   return { ...options(id), jumpProfileId: 'shared-jump', jumpChain: [{
     profileId: 'shared-jump', connectionType: 'sftp' as const, name: 'Shared Jump', host: 'jump.invalid', port: 22,
     username: 'jump-user', authType: 'password' as const, password: 'synthetic-jump-password'
   }] };
 }
-
-
 
 test('two targets sharing a Jump profile own separate chains and whitelist active snapshots', async () => {
   const clients = [new ControlledSftp(), new ControlledSftp()];
@@ -95,12 +89,6 @@ test('two targets sharing a Jump profile own separate chains and whitelist activ
   assert.equal(manager.hasConnection('second'), true);
   await manager.disconnectAll();
 });
-
-
-
-
-
-
 
 test('direct password and private-key authentication use the real auth resolver', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'remoteedit-auth-'));
@@ -136,12 +124,6 @@ test('direct password and private-key authentication use the real auth resolver'
   }
 });
 
-
-
-
-
-
-
 test('a delayed final close releases the Jump chain only after final SFTP end', async () => {
   const client = new ControlledSftp();
   const ended = deferred<void>();
@@ -158,7 +140,6 @@ test('a delayed final close releases the Jump chain only after final SFTP end', 
   await closing;
   assert.equal(harness.jumpClients[0].destroyCount, 1);
 });
-
 
 class ControlledExecStream extends EventEmitter {
   readonly stderr = Object.assign(new EventEmitter(), { resume: () => undefined });
@@ -177,14 +158,6 @@ class ControlledExecStream extends EventEmitter {
   }
   destroy(): void { this.destroyCount += 1; }
 }
-
-function streamingMarker(command: string, prefix: string): string {
-  const match = command.match(new RegExp(`${prefix}[A-Za-z0-9]+_`));
-  assert.ok(match, `Expected ${prefix} marker in controlled streaming command`);
-  return match[0];
-}
-
-
 
 test('streaming stop escalates to KILL and closes an unresponsive SSH channel', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });

@@ -113,9 +113,15 @@ loader._load = (request, parent, isMain) => {
   };
   return loaded;
 };
-export const { SftpSessionManager } = require('../../ssh/SftpSessionManager') as typeof import('../../ssh/SftpSessionManager');
-export const { RemoteSessionRouter } = require('../../remote/RemoteSessionRouter') as typeof import('../../remote/RemoteSessionRouter');
-loader._load = originalLoad;
+const loadedManagers = (() => {
+  try {
+    return {
+      ...require('../../ssh/SftpSessionManager') as typeof import('../../ssh/SftpSessionManager'),
+      ...require('../../remote/RemoteSessionRouter') as typeof import('../../remote/RemoteSessionRouter')
+    };
+  } finally { loader._load = originalLoad; }
+})();
+export const { SftpSessionManager, RemoteSessionRouter } = loadedManagers;
 
 export function options(id = 'target'): ConnectOptions {
   return { connectionId: id, connectionType: 'sftp', name: id, host: 'test.invalid', port: 22,

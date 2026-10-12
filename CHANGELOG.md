@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0] - Unreleased
+
+### Added
+
+* Added **SSH Host Key Verification**, enabled by default across SSH/SFTP connections, Jump Hosts, Workspace Sync, and Multi-Target, with SHA-256 fingerprints, OpenSSH known_hosts integration, Trusted SSH Hosts management, and secure review and replacement of changed keys.
+* Added **Connection & Settings Management** to the Native Sidebar, providing a native menu with direct access to existing management actions and Advanced View dialogs.
+
 ## [1.13.0] - 2026-10-09
 
 ### Added

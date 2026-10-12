@@ -1,7 +1,6 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'child_process';
 import { inputUi, loadWithVscode } from '../helpers/ConnectionManagerHarness';
+import test from '../helpers/TestHarness';
 
 const { createWorkspaceSyncDiagnostics } = loadWithVscode(() =>
   require('../../workspaceSync/WorkspaceSyncDiagnosticsFactory') as typeof import('../../workspaceSync/WorkspaceSyncDiagnosticsFactory')
@@ -15,11 +14,6 @@ function outputHarness() {
     output: { appendLine: (line: string) => lines.push(line) } as any
   };
 }
-
-
-
-
-
 
 test('Workspace Sync diagnostics never emit secret-bearing detail fields', () => {
   inputUi.configuration.clear();
@@ -40,7 +34,6 @@ test('Workspace Sync diagnostics never emit secret-bearing detail fields', () =>
   assert.doesNotMatch(lines[0], /never-log-password|never-log-passphrase|never-log-private-key|never-log-token/);
   assert.doesNotMatch(lines[0], /password=|passphrase=|privateKey=|credentialToken=/);
 });
-
 
 test('Workspace Sync diagnostics redact secrets embedded in diagnostic error text', () => {
   const secret = 'super-secret-value';

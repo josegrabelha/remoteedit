@@ -1,23 +1,15 @@
-import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { EventEmitter } from 'node:events';
 import type { Client, ClientChannel, ConnectConfig } from 'ssh2';
-import type {
-  SshJumpChain as SshJumpChainType,
-  SshAuthenticationTarget,
-  SshForwardDestination,
-  SshJumpChainDependencyOverrides,
-  SshJumpRuntimeSettings
-} from '../ssh/SshJumpChain';
 import type { ConnectionCancellationToken, JumpConnectOptions } from '../remote/RemoteSessionTypes';
-
-// Real ssh2 channel close waits for the readable side to drain, unlike an EventEmitter fake.
-const { Channel } = require('ssh2/lib/Channel') as {
-  Channel: new (client: unknown, info: unknown) => ClientChannel;
-};
-const { onCHANNEL_CLOSE } = require('ssh2/lib/utils') as {
-  onCHANNEL_CLOSE(client: unknown, id: number, channel: ClientChannel, error: Error, dead: boolean): void;
-};
+import type {
+    SshAuthenticationTarget,
+    SshForwardDestination,
+    SshJumpChainDependencyOverrides,
+    SshJumpChain as SshJumpChainType,
+    SshJumpRuntimeSettings
+} from '../ssh/SshJumpChain';
+import { test } from './helpers/TestHarness';
 
 interface NodeModuleLoader {
   _load(request: string, parent: unknown, isMain: boolean): unknown;
@@ -28,8 +20,10 @@ const originalModuleLoad = nodeModule._load;
 nodeModule._load = (request, parent, isMain) => request === 'vscode'
   ? {}
   : Reflect.apply(originalModuleLoad, nodeModule, [request, parent, isMain]);
-const { resolveSshAuthentication, SshJumpChain } = require('../ssh/SshJumpChain') as typeof import('../ssh/SshJumpChain');
-nodeModule._load = originalModuleLoad;
+const { resolveSshAuthentication, SshJumpChain } = (() => {
+  try { return require('../ssh/SshJumpChain') as typeof import('../ssh/SshJumpChain'); }
+  finally { nodeModule._load = originalModuleLoad; }
+})();
 
 type ConnectOutcome =
   | 'ready'
@@ -337,10 +331,6 @@ async function waitFor(predicate: () => boolean, message: string): Promise<void>
   assert.fail(message);
 }
 
-
-
-
-
 test('opens three hidden SSH hops in order and disposes streams/clients in reverse once', async () => {
   const harness = createHarness([
     { id: 'D' },
@@ -439,8 +429,6 @@ test('reports an outermost probe failure before creating any SSH client', async 
   assert.equal(harness.probes.length, 1);
 });
 
-
-
 test('transport close settles a pending forward using ssh2 channel cleanup semantics', async () => {
   const harness = createHarness([{ id: 'D', forward: 'pending' }]);
   const open = harness.chain.open([jump('D')], target());
@@ -449,14 +437,6 @@ test('transport close settles a pending forward using ssh2 channel cleanup seman
   await assert.rejects(open, /opening a forward.*No response from server/);
   assert.equal(harness.clients[0].listenerCount('error'), 0);
 });
-
-
-
-
-
-
-
-
 
 test('reports an intermediate SSH connect failure and releases prior resources', async () => {
   const harness = createHarness([
@@ -519,8 +499,6 @@ test('cancels a pending SSH connect and removes cancellation/listener state', as
   assert.equal(harness.clients[0].listenerCount('close'), 0);
   assert.equal(harness.clients[0].listenerCount('error'), 0);
 });
-
-
 
 test('resolves synthetic password/private-key auth and treats a canceled passphrase prompt as cancellation', async () => {
   const passwordTarget: SshAuthenticationTarget = {

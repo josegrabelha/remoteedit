@@ -132,9 +132,11 @@ test('closing/reopening the tab keeps session state; extension restart starts Mu
     dispose() { this.remote.connected = false; }
   }
   const fakeVscode = {
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    workspace: { getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }), onDidChangeConfiguration: () => ({ dispose() {} }) },
     CancellationTokenSource: TestCancellationSource, EventEmitter: TestEventEmitter, ViewColumn: { Active: 1 }, ThemeIcon: class {},
     commands: { registerCommand: (name: string, fn: () => void) => { registrations.set(name, fn); return { dispose() { registrations.delete(name); } }; } },
-    window: { createWebviewPanel: () => {
+    window: { createStatusBarItem: () => ({ show() {}, dispose() {} }), createWebviewPanel: () => {
       const incoming = new TestEventEmitter<any>(), close = new TestEventEmitter<void>();
       const panel = { incoming, messages: [] as any[], reveal() {}, dispose: () => close.fire(),
         onDidDispose: close.event, onDidChangeViewState: () => ({ dispose() {} }),

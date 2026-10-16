@@ -6,6 +6,9 @@ export async function tryHandleConnectionMessage(
   handlers: RemoteEditPanelMessageHandlers
 ): Promise<boolean> {
   switch (message.type) {
+    case RemoteEditIncomingMessageType.SshKeyTools:
+      await handlers.sshKeyTools?.(message.payload);
+      return true;
     case RemoteEditIncomingMessageType.TrustedSshHosts:
       await handlers.trustedSshHosts?.(message.payload);
       return true;
@@ -17,6 +20,12 @@ export async function tryHandleConnectionMessage(
       return true;
     case RemoteEditIncomingMessageType.Ready:
       await handlers.onReady();
+      return true;
+    case RemoteEditIncomingMessageType.TestConnection:
+      await handlers.testConnection?.(message.payload);
+      return true;
+    case RemoteEditIncomingMessageType.CancelConnectionTest:
+      handlers.cancelConnectionTest?.(message.payload);
       return true;
     case RemoteEditIncomingMessageType.SaveConnection:
       await handlers.saveConnection(message.payload);

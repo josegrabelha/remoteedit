@@ -114,7 +114,8 @@ export function renderMasterPassword(): string {
     });
   });
   passwordSourcePicker.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || (event.shiftKey && event.key !== 'Tab')) return;
+    if (event.key === 'Escape' && passwordSourcePicker.classList.contains('open')) {
       closePasswordSourceMenu(); passwordSourceButton.focus(); event.stopPropagation(); event.preventDefault();
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault(); event.stopPropagation();
@@ -136,6 +137,7 @@ export function renderMasterPassword(): string {
   masterElement('masterPasswordSave').addEventListener('click', submitMasterPassword);
   for (const id of ['masterPasswordNew', 'masterPasswordConfirm']) bindTemporaryPasswordReveal(masterElement(id + 'Reveal'), masterElement(id));
   function trapMasterPasswordFocus(event) {
+    if (event.defaultPrevented) return;
     if (!masterPasswordMode || event.key !== 'Tab') return;
     const controls = Array.from(masterPasswordBackdrop.querySelectorAll('button, input'))
       .filter(element => !element.disabled && element.getClientRects().length);

@@ -1,3 +1,7 @@
+import { handleToolNavigation } from '../../webview/ToolNavigation';
+import type { RemoteSessionManager } from '../../remote/RemoteSessionManager';
+import { ConnectionManagementHost } from '../../webview/ConnectionManagementHost';
+import type { ConnectionManager } from '../../connection/ConnectionManager';
 import { SshHostKeyDialogController } from '../../webview/SshHostKeyDialogController';
 import { withHostKeyUi, disableHostKeyWarning } from '../../ssh/hostKeys/HostKeyRuntime';
 import { renderWorkspaceSyncHtml } from './WorkspaceSyncHtml';
@@ -32,6 +36,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private panel: vscode.WebviewPanel;
   private readonly sshHostKeyDialog = new SshHostKeyDialogController(() => !this.disposed && Boolean(this.panel), message => { void this.post(message); });
+  private readonly management: ConnectionManagementHost;
   private disposed = false;
   private handling = false;
   private detachUi?: () => void;
@@ -56,21 +61,25 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   static open(
     context: vscode.ExtensionContext,
     controller: WorkspaceSyncController,
-    output: vscode.OutputChannel
+    output: vscode.OutputChannel,
+    profiles: ConnectionManager,
+    remoteSessions?: RemoteSessionManager
   ): WorkspaceSyncPanel {
     if (WorkspaceSyncPanel.currentPanel && !WorkspaceSyncPanel.currentPanel.disposed) {
       WorkspaceSyncPanel.currentPanel.panel.reveal(vscode.ViewColumn.Active);
       void WorkspaceSyncPanel.currentPanel.postState();
       return WorkspaceSyncPanel.currentPanel;
     }
-    WorkspaceSyncPanel.currentPanel = new WorkspaceSyncPanel(context, controller, output);
+    WorkspaceSyncPanel.currentPanel = new WorkspaceSyncPanel(context, controller, output, profiles, remoteSessions);
     return WorkspaceSyncPanel.currentPanel;
   }
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly controller: WorkspaceSyncController,
-    private readonly output: vscode.OutputChannel
+    private readonly output: vscode.OutputChannel,
+    profiles: ConnectionManager,
+    remoteSessions?: RemoteSessionManager
   ) {
     this.panel = vscode.window.createWebviewPanel(
       'remoteedit.workspaceSync',
@@ -81,6 +90,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
         retainContextWhenHidden: true
       }
     );
+    this.management = new ConnectionManagementHost(context, profiles, output, message => { void this.post(message); }, 'workspaceSync', remoteSessions);
     this.panel.iconPath = new vscode.ThemeIcon('sync');
     this.panel.webview.html = renderWorkspaceSyncHtml(
       this.panel.webview,
@@ -92,6 +102,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
       confirmDisable: async () => await this.controller.ui.confirm('Disable SSH Host Key Verification?', ['Disable Verification', 'Cancel'], disableHostKeyWarning) === 'Disable Verification'
     }, () => this.handleMessage(message)), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    this.disposables.push(RemoteEditSharedState.onProfilesChanged(() => { void this.postState(); }));
     this.disposables.push(this.controller.sessions.onDidChange(() => void this.postState()));
     this.disposables.push(this.controller.onDidChangeViewState(() => void this.postState()));
     this.disposables.push(this.controller.onDidChangeBackgroundActivity(activity => {
@@ -105,6 +116,7 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.management.dispose();
     this.sshHostKeyDialog.cancelPending();
     this.detachUi?.();
     this.activeOperation?.source.cancel();
@@ -117,6 +129,8 @@ export class WorkspaceSyncPanel implements vscode.Disposable {
   }
 
   private async handleMessage(message: any): Promise<void> {
+    if (await handleToolNavigation(message)) return;
+    if (await this.management.handle(message)) return;
     if (await this.sshHostKeyDialog.handle(message)) return;
     if (message?.type === 'uiResponse') { this.controller.ui.respond(String(message.id), message.value); return; }
     if (message?.type === 'browseLocal') {

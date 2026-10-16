@@ -1,9 +1,10 @@
 /** Shared ordering and destinations for Advanced View and Native Sidebar. */
-export const connectionManagementTitle = 'Connection & Settings Management';
+export const connectionManagementTitle = 'Tools & Settings';
 
 export const connectionManagementActions = [
   { id: 'connections', label: 'Connections', buttonId: 'connectionManagementConnections', webview: true },
   { id: 'trustedSshHosts', label: 'Trusted SSH Hosts', buttonId: 'manageTrustedSshHostsButton', webview: true },
+  { id: 'sshKeyTools', label: 'SSH Key Tools', buttonId: 'sshKeyToolsButton', webview: true },
   { id: 'proxies', label: 'Proxies', buttonId: 'manageProxyProfilesButton', webview: true },
   { id: 'masterPassword', label: 'Master Password', buttonId: 'manageMasterPasswordButton', webview: false },
   { id: 'import', label: 'Import', buttonId: 'manageProfilesImportButton', webview: false },

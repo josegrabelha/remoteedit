@@ -27,7 +27,7 @@
     "commands": [
       {
         "command": "remoteedit.sidebar.connectionManagement",
-        "title": "Connection & Settings Management",
+        "title": "Tools & Settings",
         "category": "Remote Edit",
         "icon": "$(settings-gear)"
       },
@@ -625,6 +625,63 @@
             "description": "Controls which comparison viewer opens when the main Compare action is clicked. The compare menu can always open either viewer explicitly.",
             "scope": "window",
             "order": 5
+          }
+        }
+      },
+      {
+        "title": "Remote Edit: Multi-Target UI",
+        "properties": {
+          "remoteedit.multiTarget.editorTitleButtonPosition": {
+            "type": "string",
+            "default": "hidden",
+            "enum": [
+              "right",
+              "hidden"
+            ],
+            "enumDescriptions": [
+              "Show the Multi-Target button in the Editor Title area.",
+              "Hide the Multi-Target Editor Title button."
+            ],
+            "description": "Controls whether the Multi-Target button appears in the editor title area.",
+            "order": 10
+          },
+          "remoteedit.multiTarget.statusBarButtonPosition": {
+            "type": "string",
+            "default": "left",
+            "enum": [
+              "left",
+              "right",
+              "hidden"
+            ],
+            "enumDescriptions": [
+              "Show the Multi-Target button on the left side of the Status Bar.",
+              "Show the Multi-Target button on the right side of the Status Bar.",
+              "Hide the Multi-Target Status Bar button."
+            ],
+            "description": "Controls where the Multi-Target status bar button appears.",
+            "order": 20
+          },
+          "remoteedit.multiTarget.statusBarButtonStyle": {
+            "type": "string",
+            "default": "iconAndText",
+            "enum": [
+              "iconAndText",
+              "iconOnly",
+              "textOnly"
+            ],
+            "enumDescriptions": [
+              "Show both the icon and the Multi-Target text.",
+              "Show only the Multi-Target icon.",
+              "Show only the Multi-Target text."
+            ],
+            "description": "Controls how the Multi-Target status bar button is displayed.",
+            "order": 30
+          },
+          "remoteedit.multiTarget.statusBarButtonPriority": {
+            "type": "number",
+            "default": 998,
+            "description": "Controls the Multi-Target status bar button priority. Higher values appear closer to the left within the selected alignment group.",
+            "order": 40
           }
         }
       },
@@ -2329,6 +2386,11 @@
           "command": "remoteedit.workspaceSync.open",
           "when": "config.remoteedit.workspaceSync.editorTitleButtonPosition == right",
           "group": "navigation@100"
+        },
+        {
+          "command": "remoteedit.multiTarget.open",
+          "when": "config.remoteedit.multiTarget.editorTitleButtonPosition == right",
+          "group": "navigation@101"
         }
       ]
     },

@@ -58,7 +58,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const readOnlyFileSystemProvider = new RemoteEditFileSystemProvider(sessions, output, true);
   let statusBarButton: StatusBarButtonState | undefined;
   const sidebarController = new RemoteEditSidebarController(context, sessions, connectionManager, output);
-  const workspaceSync = new WorkspaceSyncFeature(context, connectionManager, output);
+  const workspaceSync = new WorkspaceSyncFeature(context, connectionManager, output, sessions);
 
   const disposeStatusBarButton = (): void => {
     statusBarButton?.item.dispose();
@@ -102,7 +102,7 @@ export function activate(context: vscode.ExtensionContext): void {
     remoteClipboardService,
     sidebarController,
     workspaceSync,
-    new MultiTargetFeature(context, connectionManager, output),
+    new MultiTargetFeature(context, connectionManager, output, sessions),
     fileSystemProvider,
     readOnlyFileSystemProvider,
     vscode.workspace.registerFileSystemProvider('remoteedit', fileSystemProvider, {

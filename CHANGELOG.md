@@ -1,11 +1,14 @@
-# Changelog
-
 ## [1.14.0] - Unreleased
 
 ### Added
 
 * Added **SSH Host Key Verification**, enabled by default across SSH/SFTP connections, Jump Hosts, Workspace Sync, and Multi-Target, with SHA-256 fingerprints, OpenSSH known_hosts integration, Trusted SSH Hosts management, and secure review and replacement of changed keys.
-* Added **Connection & Settings Management** to the Native Sidebar, providing a native menu with direct access to existing management actions and Advanced View dialogs.
+* Added **SSH Key Tools** to Tools & Settings, providing a unified interface for generating, inspecting, and deploying SSH authentication keys.
+* Added configurable Multi-Target Status Bar and Editor Title buttons, matching the existing Remote Edit and Workspace Sync options.
+
+### Changed
+
+* Expanded and renamed **Connection & Settings Management** to **Tools & Settings**, bringing the complete management menu to Remote Edit, Workspace Sync, Multi-Target, and the Native Sidebar.
 
 ## [1.13.0] - 2026-10-09
 

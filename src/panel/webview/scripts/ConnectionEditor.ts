@@ -8,6 +8,45 @@ export function renderConnectionEditor(): string {
   const connectionEditor = document.getElementById('manageConnectionEditor');
   const connectionListPage = document.getElementById('manageProfilesListPage');
   const connectionEditBack = document.getElementById('manageConnectionBack');
+  let connectionTestRequest = null, connectionTestSnapshot = '';
+  const connectionEditTest = document.getElementById('manageConnectionTest');
+  const connectionTestFeedback = document.getElementById('manageConnectionTestFeedback');
+  const connectionTestDisabledFields = new Map();
+  let connectionTestEditorInert = false;
+  function lockConnectionTestFields() {
+    if (!connectionTestDisabledFields.size) connectionTestEditorInert = connectionEditor.inert;
+    window.RemoteEditControls.closeCombo();
+    connectionEditor.querySelectorAll('input,select,textarea,button').forEach(field => {
+      if (!connectionTestDisabledFields.has(field)) connectionTestDisabledFields.set(field,field.disabled);
+      field.disabled = true;
+    });
+    connectionEditor.inert = true;
+  }
+  function unlockConnectionTestFields() {
+    if (!connectionTestDisabledFields.size) return;
+    connectionTestDisabledFields.forEach((disabled,field) => { field.disabled = disabled; });
+    connectionTestDisabledFields.clear(); connectionEditor.inert = connectionTestEditorInert;
+  }
+  function clearConnectionTest() {
+    connectionTestFeedback.hidden = true; connectionTestFeedback.textContent = ''; connectionTestFeedback.title = '';
+    if (connectionTestRequest) vscode.postMessage({type:'cancelConnectionTest',payload:{requestId:connectionTestRequest}});
+    connectionTestRequest = null; unlockConnectionTestFields();
+    connectionEditTest.disabled = connectionEditorSaving; connectionEditTest.textContent = 'Test Connection';
+  }
+  function resetConnectionTest() {
+    clearConnectionTest(); connectionTestRequest = null;
+    connectionEditTest.disabled = false; connectionEditTest.textContent = 'Test Connection';
+  }
+  function receiveConnectionTestResult(payload) {
+    if (!connectionEditorProfile || payload.requestId !== connectionTestRequest) return;
+    connectionTestRequest = null; unlockConnectionTestFields(); connectionEditTest.disabled = connectionEditorSaving; connectionEditTest.textContent = 'Test Connection';
+    if (payload.cancelled || JSON.stringify(connectionEditorPayload()) !== connectionTestSnapshot) return;
+    connectionTestFeedback.textContent = payload.success ? '✓ Connection successful.' : 'Connection failed: ' + (payload.error || 'Unknown error.');
+    connectionTestFeedback.title = connectionTestFeedback.textContent;
+    connectionTestFeedback.classList.toggle('error',!payload.success); connectionTestFeedback.hidden = false;
+  }
+  connectionEditor.addEventListener('input',clearConnectionTest);
+  connectionEditor.addEventListener('change',clearConnectionTest);
   const connectionEditSave = document.getElementById('manageConnectionSave');
 
   function connectionEditorPayload() {
@@ -23,7 +62,7 @@ export function renderConnectionEditor(): string {
       jumpProfileId: type === 'sftp' ? value('jumpProfileId') : '', authType: auth,
       passwordSource: source, password: source === 'master' ? '' : (value('password') === SAVED_SECRET_MASK ? '' : value('password')),
       rememberPassword: source !== 'master' && checked('rememberPassword'),
-      privateKeyPath: value('privateKeyPath'), passphrase: value('passphrase') === SAVED_SECRET_MASK ? '' : value('passphrase'),
+      freshPrivateKey: editElement('privateKeyPath').dataset.freshKey === 'true', privateKeyPath: value('privateKeyPath'), passphrase: value('passphrase') === SAVED_SECRET_MASK ? '' : value('passphrase'),
       rememberPassphrase: checked('rememberPassphrase'), startPath: value('startPath'),
       ftpsAllowSelfSignedCertificate: checked('ftpsAllowSelfSignedCertificate'),
       ftpsCaCertificatePath: value('ftpsCaCertificatePath')
@@ -32,6 +71,7 @@ export function renderConnectionEditor(): string {
 
   function showConnectionEditor(profile) {
     if (connectionEditorSaving) return;
+    resetConnectionTest();
     connectionEditorProfile = profile;
     connectionEditorKeptDraft = false;
     connectionEditorScroll = manageProfilesList.scrollTop;
@@ -63,6 +103,7 @@ export function renderConnectionEditor(): string {
     const divider = document.createElement('div'); divider.className = 'connection-panel-divider';
     const title = document.createElement('div'); title.className = 'connection-details-title'; title.textContent = 'Connection details';
     connectionEditor.append(feedback,identity,divider,title,grid);
+    delete editElement('privateKeyPath').dataset.freshKey;
     for (const id of ['host','username','privateKeyPath','startPath','ftpsCaCertificatePath']) editElement(id).value = profile[id] || '';
     editElement('name').value = profile.name || '';
     editElement('groupId').value = profile.groupId || '';
@@ -88,7 +129,7 @@ export function renderConnectionEditor(): string {
     proxyProfiles.forEach(item => proxy.add(new Option(item.name,item.id)));
     if (profile.proxyProfileId && !proxyProfiles.some(item => item.id === profile.proxyProfileId)) proxy.add(new Option('Unavailable Proxy',profile.proxyProfileId));
     proxy.value = profile.proxyProfileId || '';
-    const jump = editElement('jumpProfileId'); jump.replaceChildren(new Option('Direct',''));
+    const jump = editElement('jumpProfileId'); jump.replaceChildren(new Option('Direct connection',''));
     profiles.filter(item => analyzeJumpProfileCandidate(item.id,profile.id).valid).forEach(item => jump.add(new Option(item.name,item.id)));
     if (profile.jumpProfileId && ![...jump.options].some(item => item.value === profile.jumpProfileId)) jump.add(new Option('Unavailable Jump Host',profile.jumpProfileId));
     jump.value = profile.jumpProfileId || '';
@@ -115,13 +156,14 @@ export function renderConnectionEditor(): string {
     editElement('masterPasswordSelection').onclick = toggleSource;
     sourcePicker.querySelectorAll('[data-password-source]').forEach(option => {
       option.onclick = () => {
-        sourcePicker.dataset.source = option.dataset.passwordSource; closeSource(); updateConnectionEditorFields();
+        clearConnectionTest(); sourcePicker.dataset.source = option.dataset.passwordSource; closeSource(); updateConnectionEditorFields();
         if (sourcePicker.dataset.source === 'master' && !masterPasswordState.configured) openMasterPasswordDialog();
         else sourceButton.focus();
       };
     });
     sourcePicker.onkeydown = event => {
-      if (event.key === 'Escape') {
+      if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || (event.shiftKey && event.key !== 'Tab')) return;
+      if (event.key === 'Escape' && sourcePicker.classList.contains('open')) {
         closeSource(); sourceButton.focus(); event.stopPropagation(); event.preventDefault();
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault(); event.stopPropagation();
@@ -144,10 +186,11 @@ export function renderConnectionEditor(): string {
         vscode.postMessage({type,payload:{editorProfileId:profile.id}});
       };
     }
+    editElement('generateSshKeyButton').onclick = () => openSshKeyTools('editor','generate');
     editElement('configureMasterPasswordInline').onclick = openMasterPasswordDialog;
     connectionEditor.querySelectorAll('input').forEach(input => input.addEventListener('input', () => input.classList.remove('connection-input-invalid')));
     connectionListPage.hidden = true; connectionEditor.hidden = false;
-    connectionEditBack.hidden = false; connectionEditSave.hidden = false; manageProfilesCloseButton.hidden = true;
+    connectionEditTest.hidden = false; connectionEditBack.hidden = false; connectionEditSave.hidden = false; manageProfilesCloseButton.hidden = true;
     document.getElementById('manageProfilesTitle').textContent = 'Edit Connection';
     manageProfilesBackdrop.querySelector('.file-properties-path').textContent = profile.name || '';
     updateConnectionEditorFields();
@@ -158,6 +201,7 @@ export function renderConnectionEditor(): string {
 
   function updateConnectionEditorFields() {
     if (!connectionEditorProfile) return;
+    clearConnectionTest();
     const type = editElement('connectionType').value;
     const sftp = type === 'sftp', key = sftp && editElement('authType').value === 'privateKey';
     const master = !key && editElement('passwordSourcePicker').dataset.source === 'master';
@@ -181,16 +225,18 @@ export function renderConnectionEditor(): string {
     updateConnectionCredentialRevealButton(editElement('passwordRevealButton'),editElement('password'));
     updateConnectionCredentialRevealButton(editElement('passphraseRevealButton'),editElement('passphrase'));
     window.RemoteEditControls.refresh();
+    if (connectionTestRequest) lockConnectionTestFields();
   }
 
   function receiveConnectionEditorPath(field, payload) {
     if (!payload.editorProfileId) return false;
-    if (connectionEditorProfile?.id === payload.editorProfileId && payload.path) { editElement(field).value = payload.path; editElement(field).classList.remove('connection-input-invalid'); }
+    if (connectionEditorProfile?.id === payload.editorProfileId && payload.path) { clearConnectionTest(); editElement(field).value = payload.path; editElement(field).classList.remove('connection-input-invalid'); }
     return true;
   }
 
   function leaveConnectionEditor(closeDialog) {
     if (!connectionEditorProfile || connectionEditorSaving) return;
+    clearConnectionTest();
     window.RemoteEditControls.closeCombo();
     if (JSON.stringify(connectionEditorPayload()) !== connectionEditorInitial) {
       connectionEditorCloseAfterDiscard = closeDialog;
@@ -201,11 +247,12 @@ export function renderConnectionEditor(): string {
   }
 
   function finishConnectionEditor(closeDialog) {
+    resetConnectionTest();
     window.RemoteEditControls.closeCombo();
     const id = connectionEditorProfile?.id;
     connectionEditorProfile = null; connectionEditorInitial = '';
     connectionEditor.replaceChildren(); connectionEditor.hidden = true; connectionListPage.hidden = false;
-    connectionEditBack.hidden = true; connectionEditSave.hidden = true; manageProfilesCloseButton.hidden = false;
+    connectionEditTest.hidden = true; connectionEditBack.hidden = true; connectionEditSave.hidden = true; manageProfilesCloseButton.hidden = false;
     document.getElementById('manageProfilesTitle').textContent = 'Manage Connections';
     manageProfilesBackdrop.querySelector('.file-properties-path').textContent = 'Clone, edit, reorder, or remove saved connection profiles.';
     renderManageProfilesList(); manageProfilesList.scrollTop = connectionEditorScroll;
@@ -216,6 +263,7 @@ export function renderConnectionEditor(): string {
 
   function receiveConnectionEditResult(payload) {
     if (!connectionEditorProfile || payload.id !== connectionEditorProfile.id) return;
+    connectionEditTest.disabled = false;
     connectionEditorSaving = false; connectionEditBack.disabled = false; connectionEditSave.disabled = false; connectionEditor.inert = false;
     if (payload.saved) {
       finishConnectionEditor(false);
@@ -237,6 +285,29 @@ export function renderConnectionEditor(): string {
     else if (!event.shiftKey && document.activeElement === items.at(-1)) { event.preventDefault(); items[0].focus(); }
   });
 
+  connectionEditTest.onclick = () => {
+    if (!connectionEditorProfile || connectionEditorSaving || connectionTestRequest) return;
+    const fields = {};
+    for (const id of ['host','port','username','connectionType','authType','ftpsAllowSelfSignedCertificate','ftpsCaCertificatePath','privateKeyPath','password']) fields[id] = editElement(id);
+    fields.passwordSource = editElement('passwordSourcePicker').dataset.source;
+    fields.passwordSourceButton = editElement('passwordSourceButton'); fields.jumpProfileDropdownButton = editElement('jumpProfileId');
+    fields.hasPasswordForConnection = () => fields.passwordSource === 'master' ? masterPasswordState.configured : Boolean(editElement('password').value);
+    fields.getJumpProfileSelectionError = () => analyzeJumpProfileCandidate(editElement('jumpProfileId').value,connectionEditorProfile.id).valid ? '' : 'The selected Jump Host is unavailable or creates a circular chain.';
+    const errors = getConnectionValidationErrors('connect',fields);
+    if (editElement('proxyProfileId').value && !proxyProfiles.some(item => item.id === editElement('proxyProfileId').value)) errors.push({field:editElement('proxyProfileId'),message:'Selected proxy profile is unavailable.'});
+    clearConnectionTest();
+    if (errors.length) {
+      connectionTestFeedback.textContent = errors.map(error => error.message).join(' ');
+      connectionTestFeedback.classList.add('error'); connectionTestFeedback.hidden = false;
+      errors.forEach(error => error.field.classList.add('connection-input-invalid'));
+      return;
+    }
+    const profile = connectionEditorPayload(); connectionTestSnapshot = JSON.stringify(profile);
+    connectionTestRequest = 'connection-test:' + Date.now() + ':' + Math.random();
+    connectionEditTest.disabled = true; connectionEditTest.textContent = 'Testing...';
+    lockConnectionTestFields();
+    vscode.postMessage({type:'testConnection',payload:{requestId:connectionTestRequest,profile}});
+  };
   connectionEditBack.onclick = () => leaveConnectionEditor(false);
   connectionEditSave.onclick = () => {
     if (!connectionEditorProfile || connectionEditorSaving) return;
@@ -257,6 +328,7 @@ export function renderConnectionEditor(): string {
       const field = errors[0].field; (field.tagName === 'SELECT' ? field.nextElementSibling?.querySelector('button') : field)?.focus();
       field.parentElement.scrollIntoView({block:'nearest'}); return;
     }
+    clearConnectionTest(); connectionEditTest.disabled = true;
     connectionEditorSaving = true; connectionEditBack.disabled = true; connectionEditSave.disabled = true; connectionEditor.inert = true;
     window.RemoteEditControls.closeCombo();
     vscode.postMessage({type:'saveConnection',payload:{...connectionEditorPayload(),editorSave:true}});

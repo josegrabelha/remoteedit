@@ -187,7 +187,7 @@ export function renderMultiTargetOverlays(searchResults = false): string {
     if (textMenu && !textMenu.contains(event.target)) hideTextEditContextMenu();
     if (outputMenu && !outputMenu.contains(event.target)) hideOutputContextMenu();
   });
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') { hideWebviewTooltip(); hideCustomContextMenus(); } });
+  document.addEventListener('keydown', event => { if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return; if (event.key === 'Escape') { hideWebviewTooltip(); hideCustomContextMenus(); } });
   window.addEventListener('scroll', () => { hideWebviewTooltip(); hideCustomContextMenus(); }, true);
   window.addEventListener('resize', () => { hideWebviewTooltip(); hideCustomContextMenus(); });
 `;

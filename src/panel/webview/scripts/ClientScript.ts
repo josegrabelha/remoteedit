@@ -1,3 +1,4 @@
+import { renderSshKeyTools } from './SshKeyTools';
 import { renderConnectionEditor } from './ConnectionEditor';
 import { renderTrustedSshHosts } from './TrustedSshHosts';
 import { renderProxyProfiles } from './ProxyProfiles';
@@ -50,5 +51,5 @@ export function renderClientScript(options: ClientScriptOptions): string {
     renderDragDropTargets() +
     renderDragDropUpload() +
     renderRemoteDragDropMove() +
-    renderTransfersStatus() + renderMasterPassword() + renderConnectionImport() + renderProxyProfiles() + renderTrustedSshHosts() + renderConnectionEditor();
+    renderTransfersStatus() + renderMasterPassword() + renderConnectionImport() + renderProxyProfiles() + renderTrustedSshHosts() + renderConnectionEditor() + renderSshKeyTools();
 }

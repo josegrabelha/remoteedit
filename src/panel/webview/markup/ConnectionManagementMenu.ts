@@ -1,9 +1,10 @@
+import { toolNavigationActions, type ToolView } from '../../../webview/ToolNavigationActions';
 import { connectionManagementActions, connectionImportActions } from '../../../connection/ConnectionManagementActions';
 
-export function renderConnectionManagementMenu(): string {
+export function renderConnectionManagementMenu(origin: ToolView = 'remoteEdit'): string {
   const button = (action: { buttonId: string; label: string }) =>
     `<button id="${action.buttonId}" class="profile-dropdown-item" type="button" role="menuitem">${action.label}</button>`;
-  return connectionManagementActions.map(action => {
+  return toolNavigationActions(origin).map(button).join('\n') + '<div class="profile-dropdown-separator" role="separator"></div>' + connectionManagementActions.map(action => {
     const separator = action.id === 'import' || action.id === 'settings'
       ? '<div class="profile-dropdown-separator" role="separator"></div>' : '';
     if (action.id !== 'import') return separator + button(action);

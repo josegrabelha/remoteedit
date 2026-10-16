@@ -3,10 +3,13 @@ export interface RemoteEditPanelMessageHandlers {
   getActiveConnectionId(): string | undefined;
   getActivePath(): string;
   connectionImport(payload: any): Promise<void>;
+  sshKeyTools?(payload: any): Promise<void>;
   trustedSshHosts?(payload: any): Promise<void>;
   proxyProfiles(payload: any): Promise<void>;
   masterPassword(payload: any): Promise<void>;
   onReady(): Promise<void>;
+  testConnection?(payload: any): Promise<void>;
+  cancelConnectionTest?(payload: any): void;
   saveConnection(payload: any): Promise<void>;
   saveConnectionAs(payload: any): Promise<void>;
   pickPrivateKeyPath(payload?: any): Promise<void>;

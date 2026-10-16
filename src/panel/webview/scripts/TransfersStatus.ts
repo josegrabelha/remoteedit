@@ -524,6 +524,7 @@ export function renderTransfersStatus(): string {
   }
 
   function setStatus(message, isError = false, showOutputLink = false, outputLinkText = 'See details in Output.', connectionId = '') {
+    const keySetup = document.getElementById('sshKeySetupDiagnostic'); if (keySetup) keySetup.hidden = true;
     const targetConnectionId = String(connectionId || '').trim();
     const statusMessage = !isError && !showOutputLink && isSilentFilesStatusMessage(message) ? '' : message;
     const state = statusMessage

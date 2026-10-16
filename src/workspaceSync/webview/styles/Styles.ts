@@ -768,14 +768,14 @@ input[type=checkbox]:focus-visible { outline: 1px solid var(--vscode-focusBorder
   grid-area: mappingActions;
   margin-left: 4px;
   display: grid;
-  grid-template-columns: 56px 76px;
-  gap: 8px;
-  width: 140px;
-  min-width: 140px;
+  grid-template-columns: minmax(0, 56fr) minmax(0, 76fr) 27px;
+  gap: 6px;
+  width: 150px;
+  min-width: 150px;
 }
 #mappingActions > button { width: 100%; min-width: 0; padding-left: 8px; padding-right: 8px; }
-#connectionAction { grid-area: connectionAction; width: 140px; min-width: 140px; margin-left: 4px; }
-#connectionAction #connect { display: block; width: 140px; min-width: 140px; }
+#connectionAction { grid-area: connectionAction; width: 150px; min-width: 150px; margin-left: 4px; }
+#connectionAction #connect { display: block; width: 150px; min-width: 150px; }
 .metadata-block { grid-area: metadata; }
 #connectionLabel, #localRoot, #remoteRoot { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 900px) {

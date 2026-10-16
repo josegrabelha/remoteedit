@@ -13,6 +13,71 @@ const backup = (connections: RemoteEditBackupFile['connections'], version = 3): 
   connectionGroups: [{ id: 'group', name: 'Group' }], savedCommands: { target: [{ command: 'pwd' }] }
 });
 
+const multiTargetSettings = {
+  'multiTarget.editorTitleButtonPosition': 'right',
+  'multiTarget.statusBarButtonPosition': 'right',
+  'multiTarget.statusBarButtonStyle': 'iconOnly',
+  'multiTarget.statusBarButtonPriority': 750
+};
+
+test('Multi-Target access settings roundtrip independently of reusable MT data and restore defaults', async () => {
+  const source = createConnectionManagerHarness();
+  for (const [key, value] of Object.entries(multiTargetSettings)) source.ui.configuration.set(key, value);
+  const exported = await source.manager.buildBackupFile({ ...exportOptions, includeConnections: false });
+  assert.equal(exported.multiTarget, undefined);
+  for (const [key, value] of Object.entries(multiTargetSettings)) {
+    assert.equal(exported.settings?.[key], value);
+    assert(exported.settingsKeys?.includes(key));
+  }
+  for (const importMode of ['merge', 'replace'] as const) {
+    const destination = createConnectionManagerHarness();
+    await destination.manager.importBackupFile(exported, { ...importOptions, includeConnections: false, importMode });
+    for (const [key, value] of Object.entries(multiTargetSettings)) assert.equal(destination.ui.configuration.get(key), value);
+
+    const defaults = await createConnectionManagerHarness().manager.buildBackupFile({ ...exportOptions, includeConnections: false });
+    for (const [key, value] of Object.entries(multiTargetSettings)) destination.ui.configuration.set(key, value);
+    await destination.manager.importBackupFile(defaults, { ...importOptions, includeConnections: false, importMode });
+    for (const key of Object.keys(multiTargetSettings)) {
+      assert(destination.ui.configurationWrites.some(write => write.key === key && write.value === undefined));
+      assert.equal(destination.ui.configuration.get(key), undefined);
+    }
+  }
+});
+
+test('older backups with or without settingsKeys preserve existing Multi-Target access settings', async () => {
+  for (const importMode of ['merge', 'replace'] as const) {
+    for (const hasSettingsKeys of [true, false]) {
+      const destination = createConnectionManagerHarness();
+      for (const [key, value] of Object.entries(multiTargetSettings)) destination.ui.configuration.set(key, value);
+      const older = backup([]);
+      if (!hasSettingsKeys) delete older.settingsKeys;
+      await destination.manager.importBackupFile(older, { ...importOptions, includeConnections: false, importMode });
+      for (const [key, value] of Object.entries(multiTargetSettings)) {
+        assert.equal(destination.ui.configuration.get(key), value);
+        assert(!destination.ui.configurationWrites.some(write => write.key === key));
+      }
+    }
+  }
+});
+
+test('backup settings cover every declared configuration except explicit session-only diagnostics', async () => {
+  const manifest = require('../../package.json');
+  const groups = Array.isArray(manifest.contributes.configuration) ? manifest.contributes.configuration : [manifest.contributes.configuration];
+  const properties: Record<string, { default: unknown }> = Object.assign({}, ...groups.map((group: { properties: unknown }) => group.properties));
+  const excluded = new Set(['remoteedit.diagnostics.debugLogs', 'remoteedit.diagnostics.performanceLogs']);
+  const harness = createConnectionManagerHarness();
+  // VS Code supplies manifest defaults; the lightweight configuration stub does not.
+  for (const [key, value] of Object.entries(properties)) {
+    if (!excluded.has(key)) harness.ui.configuration.set(key.slice('remoteedit.'.length), value.default);
+  }
+  const exported = await harness.manager.buildBackupFile({ ...exportOptions, includeConnections: false });
+  const expected = Object.keys(properties).filter(key => key.startsWith('remoteedit.') && !excluded.has(key)).map(key => key.slice('remoteedit.'.length));
+  assert.deepEqual([...exported.settingsKeys!].sort(), expected.sort());
+  assert.deepEqual(Object.keys(exported.settings!).sort(), expected.sort());
+  for (const key of expected) assert.deepEqual(exported.settings![key], properties['remoteedit.' + key].default, key);
+  for (const key of excluded) assert(!Object.hasOwn(exported.settings!, key.slice('remoteedit.'.length)));
+});
+
 test('v3 references survive a real export/import roundtrip in reversed array order', async () => {
   const source = createConnectionManagerHarness([profile('outer'), profile('near', { jumpProfileId: 'outer' }), profile('target', { jumpProfileId: 'near' })]);
   const exported = await source.manager.buildBackupFile(exportOptions);

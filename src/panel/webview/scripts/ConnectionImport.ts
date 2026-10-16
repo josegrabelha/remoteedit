@@ -1,3 +1,4 @@
+import { toolNavigationActions } from '../../../webview/ToolNavigationActions';
 export function renderConnectionImport(): string { return `
   const ci = id => document.getElementById('connectionImport' + id);
   let ciStage = 'sources', ciBusy = false, ciSources = [], ciCandidates = [], ciReturnFocus, ciSelectedCandidateId = '';
@@ -57,6 +58,10 @@ export function renderConnectionImport(): string { return `
   function connectionManagementItems() {
     return Array.from(connectionManagementMenu.querySelectorAll('button[role="menuitem"]')).filter(item => !document.getElementById('connectionImportMenu').contains(item));
   }
+  const toolNavigation = ${JSON.stringify(toolNavigationActions('remoteEdit'))};
+  toolNavigation.forEach(action => document.getElementById(action.buttonId).addEventListener('click', () => {
+    closeConnectionManagementMenu(true); vscode.postMessage({type:'toolNavigation',payload:{destination:action.id}});
+  }));
   document.getElementById('connectionManagementConnections').addEventListener('click', () => { closeConnectionManagementMenu(true); showManageProfilesDialog(); });
   manageProfilesButton.addEventListener('keydown', event => {
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); toggleConnectionManagementMenu(event.key); }

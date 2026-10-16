@@ -213,7 +213,7 @@ export function renderStyles(): string {
   .server-quick-tasks-card .server-placeholder { display: grid; gap: 7px; align-content: start; }
   .server-quick-tasks-card .server-placeholder button { justify-self: start; height: 23px; min-height: 23px; padding: 0 7px; font-size: 10.5px; }
   .server-card-link-button { align-self: flex-start; height: 21px; min-height: 21px; margin-top: 5px; padding: 0 0; border: 0; background: transparent; color: var(--vscode-textLink-foreground); font-size: 10.5px; }
-  .server-card-link-button:hover:not(:disabled), .server-card-link-button:focus-visible { background: transparent; color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: underline; outline: none; }
+  .server-card-link-button:hover:not(:disabled), .server-card-link-button:focus-visible { background: transparent; color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: none; outline: none; }
   .server-section-title-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
   .server-section-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
   .server-section-title-separator { width: 1px; height: 18px; flex: 0 0 auto; background: var(--vscode-panel-border); opacity: 0.9; }
@@ -462,6 +462,11 @@ export function renderStyles(): string {
   #masterPasswordSelection, #edit_masterPasswordSelection { padding-right: 34px; text-align: left; }
   #masterPasswordHint { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #masterPasswordHint.hidden { display: none; }
+  .private-key-field-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: 5px; }
+  .private-key-field-heading label { margin: 0; white-space: nowrap; }
+  button.private-key-generate-link { flex: 0 0 auto; margin-left: auto; width: auto; min-width: 0; height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--vscode-descriptionForeground); cursor: pointer; font-family: inherit; font-size: 10px; font-weight: 400; line-height: 16px; white-space: nowrap; text-decoration: none; }
+  button.private-key-generate-link:hover:not(:disabled) { background: transparent; color: var(--vscode-descriptionForeground); text-decoration: none; }
+  button.private-key-generate-link:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   .input-with-button { position: relative; display: flex; align-items: center; }
   .input-with-button input { padding-right: 34px; }
   .input-with-button.reveal-hidden input { padding-right: 8px; }
@@ -733,6 +738,12 @@ ${renderProfileDropdownStyles()}  .dialog-checkbox,
   .file-properties-dialog.proxy-profiles-dialog, .manage-profiles-dialog { resize: none; width: min(640px, calc(100vw - 48px)); height: min(560px, calc(100vh - 48px)); max-height: calc(100vh - 48px); }
   .manage-profiles-dialog .file-properties-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   #manageProfilesListPage[hidden], #manageConnectionEditor[hidden] { display: none; }
+  #manageConnectionTest { width: 120px; min-width: 120px; max-width: 120px; flex: 0 0 120px; white-space: nowrap; padding-left: 0; padding-right: 0; }
+  #manageProfilesBackdrop .file-properties-actions { flex-wrap: nowrap; flex-shrink: 0; align-items: center; }
+  #manageProfilesBackdrop .file-properties-actions button { flex-shrink: 0; }
+  .connection-test-feedback { flex: 1 1 0; min-width: 0; max-height: 26px; align-self: center; margin: 0 auto 0 0; overflow: hidden; overflow-wrap: anywhere; font-size: 10px; line-height: 13px; font-weight: normal; opacity: 0.8; color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .connection-test-feedback.error { color: var(--remoteedit-validation-error); }
+  #manageConnectionTestFeedback[hidden] { display: block !important; visibility: hidden; }
   #manageConnectionEditor { overflow-y: auto; display: block; margin-bottom: 16px; }
   #manageConnectionEditor .connection-panel-divider { margin: 16px 0; }
   #edit_feedback:empty { display: none; }

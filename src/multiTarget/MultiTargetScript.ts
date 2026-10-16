@@ -6,6 +6,7 @@ export function renderMultiTargetScript(): string {
 (() => {
   const vscode = acquireVsCodeApi();
   window.addEventListener('sshHostKeyDialogPost', event => vscode.postMessage(event.detail));
+  window.addEventListener('connectionManagementPost', event => vscode.postMessage(event.detail));
   let mode = 'commands';
   const isSearch = () => mode === 'search';
   const $ = id => document.getElementById(isSearch() && (id === 'sudo' || id === 'run') ? 'search-' + id : id);

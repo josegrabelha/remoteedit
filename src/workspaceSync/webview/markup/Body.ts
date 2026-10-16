@@ -1,9 +1,11 @@
+import { renderManagementButton } from '../../../webview/ConnectionManagementMenu';
+
 export function renderWorkspaceSyncBody(questionIconSvg = ''): string {
   const helpIcon = renderOptionHelpIcon(questionIconSvg);
   return `<main id="workspaceContent">
   <div class="card connection-card">
     <div class="grid">
-      <div id="mappingHeading" class="label">Mapping</div><select aria-label="Mapping" id="mapping"></select><div id="mappingActions" class="toolbar"><button id="newMapping" class="secondary">New</button><button id="manage">Manage</button></div>
+      <div id="mappingHeading" class="label">Mapping</div><select aria-label="Mapping" id="mapping"></select><div id="mappingActions" class="toolbar"><button id="newMapping" class="secondary">New</button><button id="manage" class="secondary">Manage</button>${renderManagementButton()}</div>
       <div id="targetHeading" class="label">Target</div><select aria-label="Target" id="target"></select><div id="connectionAction"><button id="connect">Connect</button></div>
       <div class="metadata-block">
         <div class="metadata-layout">

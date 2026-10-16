@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Remote%20Targets-Linux%20%7C%20Unix%20%7C%20AIX%20%7C%20Windows-6E7681" alt="Remote Targets">
 </p>
 
-**Remote Edit** is a VS Code extension for browsing, editing, transferring, searching, and synchronizing files over SSH/SFTP, FTP, and FTPS. It combines a full visual remote file browser, a native VS Code Sidebar, **Workspace Sync**, **Multi-Target Commands & Search**, and SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
+**Remote Edit** is a VS Code extension for browsing, editing, transferring, searching, and synchronizing files over SSH/SFTP, FTP, and FTPS. It combines a full visual remote file browser, a native VS Code Sidebar, **Workspace Sync**, **Multi-Target Commands & Search**, **SSH Key Tools**, and SSH/SFTP server tools for commands, logs, terminals, port forwarding, and Server View.
 
 Remote Edit supports Linux, Unix, AIX, and Windows OpenSSH targets, with protocol-specific features available depending on the remote server.
 
@@ -29,6 +29,7 @@ Remote Edit is available on the [Visual Studio Code Marketplace](https://marketp
 ## Highlights
 
 - SSH/SFTP, FTP, and FTPS connections with direct remote file editing
+- SSH authentication key generation, inspection, and reviewed public-key deployment, without a separate key inventory
 - SSH host key verification with SHA-256 fingerprints, OpenSSH `known_hosts` integration, and Trusted SSH Hosts management
 - Full Remote Edit Webview and Native VS Code Sidebar
 - Workspace Sync with multi-target and automatic synchronization
@@ -72,7 +73,7 @@ Use the Sidebar to access:
 - **Workspace Sync**
 - **Multi-Target Commands & Search**
 - **Log Viewer**
-- **Connection & Settings Management**, a native menu for Connections, Trusted SSH Hosts, Proxies, Master Password, Import, Export, and Settings
+- **Tools & Settings**, a native menu for Connections, Trusted SSH Hosts, SSH Key Tools, Proxies, Master Password, Import, Export, and Settings
 - Saved connections and Quick Connect
 - Open Connections
 - Favorites
@@ -100,6 +101,8 @@ Changes apply to subsequent file opens. Close and reopen existing editors to use
 | Advanced View and Native Sidebar | ✓ |
 | Workspace Sync | ✓ |
 | Multi-Target Commands & Search | ✓ |
+| SSH Key Tools (Generate, Inspect, Deploy) | ✓ |
+| SSH Host Key Verification and Trusted Hosts | ✓ |
 | Multiple Active Connections | ✓ |
 | Favorites, Saved Connections, and Groups | ✓ |
 | Transfer Queue and Simultaneous Transfers | ✓ |
@@ -469,11 +472,15 @@ Save frequently used SSH/SFTP, FTP, and FTPS connections for quick access.
 
 Use **Clone** to create an independent copy of a saved connection. Use the **Save** split button and **Save As...** to create a new saved profile from the current values without modifying the original.
 
-In the Advanced View, **Connection & Settings Management** provides access to **Connections**, **Trusted SSH Hosts**, **Proxies**, **Master Password**, **Import**, **Export**, and **Settings**.
+In each Webview, the first two **Tools & Settings** items open or reveal the other two tools, preserving the originating tab and its operations.
+
+In the Advanced View, Workspace Sync, and Multi-Target, **Tools & Settings** provides access to **Connections**, **Trusted SSH Hosts**, **SSH Key Tools**, **Proxies**, **Master Password**, **Import**, **Export**, and **Settings**.
 
 **Manage Connections** provides group management, Clone, Delete, and full **Edit** of saved connections. Edit includes **Profile** and **Group** above the connection settings, with protocol-specific authentication, credentials, Proxy, Jump Host, and FTPS options. Saving updates the Advanced View and Native Sidebar immediately while preserving unsaved connection drafts and keeping active sessions connected. **Back** confirms before discarding unsaved edits. The Proxy selector also provides **New Proxy** for creating and selecting a profile without leaving the form.
 
-**Master Password** can be used as a shared password source across Remote Edit and managed from **Connection & Settings Management → Master Password**. It is stored securely in VS Code SecretStorage, and private-key authentication is unchanged.
+Management dialogs open inside the Webview where the menu was selected, including Master Password, Import, and Export. They share the same controls and services while preserving the operational state of Workspace Sync and Multi-Target.
+
+**Master Password** can be used as a shared password source across Remote Edit and managed from **Tools & Settings → Master Password**. It is stored securely in VS Code SecretStorage, and private-key authentication is unchanged.
 
 Backup/Restore preserves the selected password source and can include the Master Password when encrypted credentials are exported. During Merge, an existing different Master Password is kept unless you choose to replace it.
 
@@ -498,7 +505,7 @@ Operational and session-only state is not included in backups. Examples include 
 
 ## Import Connections
 
-In the Advanced View, choose **Connection & Settings Management → Import → Import Connections from Other Applications**. In the Native Sidebar, choose **Connection & Settings Management → Import → Import Connections from Other Applications (Webview)** to open the same modal. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details and use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
+In the Advanced View, choose **Tools & Settings → Import → Import Connections from Other Applications**. In the Native Sidebar, choose **Tools & Settings → Import → Import Connections from Other Applications (Webview)** to open the same modal. Select detected sources or choose source files manually, then review the combined list. Click a row to inspect its details and use its checkbox to include or exclude it. Conflicts default to **Import as New** and can optionally use **Replace**. No connections are saved until you click **Import**.
 
 Supported sources and compatibility:
 
@@ -523,7 +530,7 @@ Imported connection groups preserve source folder paths as group names where ava
 
 ## Proxy Support
 
-Create reusable **SOCKS4**, **SOCKS5** or **HTTP CONNECT** profiles in **Connection & Settings Management → Proxies**. Select a profile using the **Proxy** field in the Advanced View or Native Sidebar. Existing connections default to **No Proxy**. The Native Sidebar proxy picker keeps **New Proxy** and **Manage Proxies (Webview)** at the top, including while filtering. **New Proxy** uses a native wizard and selects the created profile in the current connection draft; save the connection to persist that association. **Manage Proxies (Webview)** opens the existing Proxy Profiles modal directly. **Add Connection** also offers this picker before Jump Host. Updating proxy profiles preserves unsaved connection drafts.
+Create reusable **SOCKS4**, **SOCKS5** or **HTTP CONNECT** profiles in **Tools & Settings → Proxies**. Select a profile using the **Proxy** field in the Advanced View or Native Sidebar. Existing connections default to **No Proxy**. The Native Sidebar proxy picker keeps **New Proxy** and **Manage Proxies (Webview)** at the top, including while filtering. **New Proxy** uses a native wizard and selects the created profile in the current connection draft; save the connection to persist that association. **Manage Proxies (Webview)** opens the existing Proxy Profiles modal directly. **Add Connection** also offers this picker before Jump Host. Updating proxy profiles preserves unsaved connection drafts.
 
 Each proxy has a name, host and port. SOCKS4 accepts an optional User ID and no password. SOCKS5 and HTTP CONNECT support no authentication or username/password authentication; HTTP CONNECT uses Basic. Proxy passwords use VS Code SecretStorage independently of server credentials. SOCKS and plain HTTP proxies do not encrypt proxy authentication traffic; use them on a trusted network. SFTP and FTPS retain their own transport encryption.
 
@@ -546,7 +553,7 @@ Open Remote Edit from:
 - Editor Title Bar Button
 - Status Bar Button
 
-The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, and transfers. **Connection & Settings Management**, below Log Viewer, opens a native menu with the same actions and order as the Advanced View. **Connections**, **Trusted SSH Hosts**, and **Proxies** are marked **(Webview)** and open their existing dialogs directly, reusing the Advanced View tab. **Master Password**, backup Import/Export, and **Settings** retain their native flows. Close any current Advanced View dialog before opening another management action.
+The Sidebar provides direct access to the Advanced View, Workspace Sync, Multi-Target Commands & Search, Log Viewer, saved connections, Quick Connect, Open Connections, favorites, and transfers. **Tools & Settings**, below Log Viewer, opens a native menu with the existing management actions and order, without the Webview navigation shortcuts. **Connections**, **Trusted SSH Hosts**, **SSH Key Tools**, and **Proxies** are marked **(Webview)** and open their existing dialogs directly, reusing the Advanced View tab. **Master Password**, backup Import/Export, and **Settings** retain their native flows. Close any current Advanced View dialog before opening another management action.
 
 Open Connections uses a breadcrumb path tree by default. Users who prefer a shorter or more expanded layout can use `remoteedit.sidebar.openConnections.pathView`.
 
@@ -571,6 +578,14 @@ Work with multiple remote servers at the same time and quickly switch between ac
 - `remoteedit.workspaceSync.statusBarButtonPosition` — controls where the Workspace Sync Status Bar button appears: `left`, `right`, or `hidden`. Default: `left`.
 - `remoteedit.workspaceSync.statusBarButtonStyle` — controls whether the Status Bar button shows the icon and text, icon only, or text only. Default: `iconAndText`.
 - `remoteedit.workspaceSync.statusBarButtonPriority` — controls the button priority within the selected Status Bar alignment group. Default: `999`, immediately after the default Remote Edit priority of `1000` when both are shown on the left.
+
+Multi-Target provides the same configurable access buttons:
+
+- `remoteedit.multiTarget.editorTitleButtonPosition` — `right` or `hidden`. Default: `hidden`.
+- `remoteedit.multiTarget.statusBarButtonPosition` — `left`, `right`, or `hidden`. Default: `left`.
+- `remoteedit.multiTarget.statusBarButtonStyle` — `iconAndText`, `iconOnly`, or `textOnly`. Default: `iconAndText`.
+- `remoteedit.multiTarget.statusBarButtonPriority` — default: `998`, following Remote Edit (`1000`) and Workspace Sync (`999`) on the left.
+
 
 ### Webview
 
@@ -621,12 +636,58 @@ Work with multiple remote servers at the same time and quickly switch between ac
 
 Diagnostic logging automatically turns off when VS Code is restarted or reloaded. Enable it only while troubleshooting, reproduce the issue, and copy the relevant entries from the **Remote Edit** Output channel when opening an issue. Proxy diagnostics record fixed failure categories and tunnel durations without credentials. SSH host key diagnostics report verification status, trust sources, approvals, replacement reviews, cancellations, replacement results, conflicts, revocations, and storage/read errors through the same Output channel. Workspace Sync diagnostic DEBUG/PERF entries are written only to the Output channel; its Activity section remains focused on normal operational events.
 
+## SSH Key Tools
+
+Open **Tools & Settings → SSH Key Tools** in Remote Edit (Advanced View), Workspace Sync, or Multi-Target. From the Native Sidebar, choose **Tools & Settings → SSH Key Tools (Webview)**. The same dialog supports generating, inspecting, and deploying SSH keys, including automatic, assisted, and manual installation.
+
+The dialog uses **Home**, **Back**, and **Escape** navigation. Review and result pages return to the deployment flow without undoing an installed key; generated or inspected details return to their respective pages. **Save Location** is preserved while navigating within an open dialog, but reopening starts with the default. Starting a new **Deploy Public Key** flow from Home clears the previous deployment selection. The tools do not open automatically.
+
+### Generate SSH Key
+
+**Generate SSH Key** creates an OpenSSH-compatible key pair on the VS Code extension host (your local computer when VS Code runs locally). ED25519 is the default; RSA supports 3072/4096 bits and ECDSA supports 256/384/521 bits. The suggested **Save Location** uses a type-specific filename (such as `id_ed25519`), retaining the current directory when the type changes. The public key is saved beside the private key with a `.pub` suffix.
+
+**Comment (Optional)** defaults to `username@hostname` of the VS Code extension host. You can edit or remove it; the comment identifies the public key but does not affect authentication. A passphrase is optional. Existing files are never overwritten, and private keys are protected with POSIX mode `0600` or a protected Windows ACL before secret contents are written. Generated key material is validated before saving; invalid ED25519 output is retried a limited number of times. No local `ssh-keygen` installation is required.
+
+When opened from an SFTP connection draft, **Use This Key** fills the generated private-key path and passphrase in that draft without automatically saving the connection or changing other connection fields. A newly generated public key still needs to be authorized on the server.
+
+### Inspect SSH Key
+
+**Inspect SSH Key** displays the algorithm, size, SHA-256 fingerprint, **Comment**, and available key paths. It can derive the public key from a supported private key when the companion `.pub` file is missing, and checks that an existing companion matches. Comments are read from the public key or supported OpenSSH private-key metadata, when available. Encrypted private keys require their passphrase. The private key's contents are never displayed or copied.
+
+### Deploy Public Key
+
+**Key File (Public or Private)** accepts either kind of file. **Only the public key is installed** on the server: when you select a private key, its public component is extracted locally. The private key is never uploaded.
+
+**Verify SSH Authentication (Optional)** is separate from installation. For a selected `.pub` file, the dialog attempts to detect its matching local private key and lets you specify one explicitly; you can also continue without a test. When the selected source file is already private, **Matching Private Key** is hidden because that key can be used for the test. A private-key passphrase is requested only when needed. No private key means installation can proceed but authentication cannot be verified automatically.
+
+Under **Deployment Target**, choose a saved SFTP **Target Connection**, then select the **Authentication** method and credentials used to access the server **for this deployment only**. Existing saved connection settings are not changed. Password authentication can use an appropriate saved password, Master Password, or temporary password; private-key authentication can use a separate access key and passphrase. These access credentials are distinct from the key being installed. Saved secrets are masked and never displayed as plaintext. Deployment uses an isolated session and the existing SSH host verification, Proxy, and Jump Host services, without disconnecting active tabs.
+
+**Continue** verifies access, identifies the platform, and checks the effective OpenSSH `AuthorizedKeysFile`. The automatic **Review** shows the target, user, destination, fingerprint, permissions, and any key already present. Installation preserves existing authorized keys, avoids duplicates (including entries with restrictions), uses an exclusive deployment lock and atomic replacement, and refuses changes detected since review. Safe existing permissions are retained.
+
+Automatic deployment on POSIX requires Python 3, a readable and evaluable standard `sshd` configuration, and a safe `.ssh` directory owned by the authenticated user. Windows OpenSSH requires PowerShell, a supported service configuration, and sufficient permissions to verify the destination and ACL. Standard user `authorized_keys` and `administrators_authorized_keys` locations are supported where safe. Unsupported configurations, inaccessible ACLs, unsafe paths or links, missing tools, and insufficient privileges lead to manual or assisted alternatives; the tool does not attempt privilege escalation.
+
+### Assisted and Manual Installation
+
+If the effective SSH server configuration cannot be read or queried, **SSH Configuration Unavailable** explains why and may offer **Assisted Installation**. It inspects conventional locations for the authenticated user: `.ssh/authorized_keys` and an existing `.ssh/authorized_keys2`. Safe `authorized_keys` is initially selected; the legacy alternative is optional. Choose one or both with checkboxes. Review identifies missing files or directories that would need to be created.
+
+The final assisted action reads **Install & Test** when a matching private key is available, or **Install** when authentication cannot be tested. No remote files are created before you confirm installation. The selected destinations are revalidated, existing entries are preserved, duplicates are skipped, and results are reported separately for each file. A single key-only authentication test follows **only when a matching private key is available**. A successful test does not identify which destination the server used; revoking a key installed in multiple files may require removing every copy.
+
+Assisted destinations are suggestions, not verified effective `AuthorizedKeysFile` settings. Unsafe ownership, symlinks, permissions, uncertain identity/platform, or a newly readable server configuration cannot be bypassed. On Windows, assistance is limited to destinations with verifiable ACLs and write access; administrative paths require an appropriately privileged existing session. No `sudo` or permission changes are attempted. If a test fails and another safe destination is available, **Install in Additional File** returns to its review without undoing the earlier installation.
+
+**Manual Installation** explains the server-side authorization requirements and displays the complete public key in a read-only text area that fills the remaining dialog space. It cannot be resized manually and scrolls internally when needed. Confirm the server's effective destination and preserve existing entries when installing manually.
+
+The result distinguishes **installation** from **authentication verification**. Testing uses the matching private key without password fallback; Jump Host credentials remain separate. **Use SSH Key** is offered after a successful test and updates the saved target only if explicitly selected. Existing target credentials are then cleared; any new passphrase remains session-only unless saved later in the regular connection editor. Public-only installation reports that authentication was not tested.
+
+A Connecting-style spinner appears for real work such as generation, inspection, remote checks, installation, and authentication testing—not for opening the dialog, choosing files, or editing fields. Cancellation before local key writing leaves no generated files. After a remote installation has been committed, closing the dialog cannot undo it; a lost response may mean installation completed, so verify the server before retrying. Cancelling a subsequent authentication test does not remove an already installed public key.
+
+A contextual **Set Up SSH Key** action is offered only when an authentication diagnostic explicitly indicates that the server requires key authentication and no key is configured. Generic authentication failures retain normal error handling. SSH Key Tools maintains no key inventory or private-key backups; DSA, RSA generation below 3072 bits, hardware/security keys, automatic key rotation, and private-key synchronization are not supported.
+
 ## Security
 
 - SSH/SFTP server identities are verified before authentication by default, including connections through proxies and every Jump Host. Native Sidebar confirmations use VS Code dialogs; Advanced View, Workspace Sync, and Multi-Target use their existing Webview modals.
 - Unknown SSH hosts require explicit fingerprint approval with **Trust & Connect**. The complete public key is pinned locally. For a changed key, **SSH Host Key Changed** shows the previous and new fingerprints and their source. **Review & Replace** allows replacing a single Remote Edit or safely editable OpenSSH (User) record only after a second confirmation that the new fingerprint was verified through an independent trusted channel. Cancellation leaves trust unchanged. OpenSSH user replacement creates a backup and preserves the host token (including hashed entries), other records, comments, line endings, and file permissions. System records, a presented revoked key, shared patterns, and conflicts between multiple records remain blocked with an explanation and resolution guidance. A new key different from a revoked key may be approved when no other restriction applies; the revoked record is preserved. Different host key algorithms are verified individually. Existing and imported connection profiles do not automatically establish trust.
 - OpenSSH `known_hosts` is consulted for verification in the environment running the extension: `~/.ssh/known_hosts` and `/etc/ssh/ssh_known_hosts` on Linux/macOS, or `%USERPROFILE%\.ssh\known_hosts` and `%ProgramData%\ssh\ssh_known_hosts` on Windows. This includes the extension host in Remote-SSH, WSL, and Dev Containers. Hashed hosts, aliases, wildcard/negated patterns, and custom ports are supported. Missing files allow first-use approval; unreadable or invalid files block verification. SSH host certificates and `@cert-authority` validation are not supported.
-- **Connection & Settings Management → Trusted SSH Hosts** shows Remote Edit, OpenSSH (User), and OpenSSH (System) sources, with host/fingerprint and Source filters. **Details** shows the public key, fingerprint, source, available timestamps, and OpenSSH file path. **Delete** requires confirmation and is available for Remote Edit records and individual OpenSSH (User) records on Windows, Linux, and macOS. User-file deletion warns that other SSH applications may be affected, creates a backup beside the original file, and preserves other entries, comments, line endings, and file permissions. Changed files, linked files, shared host patterns, revoked keys, and certificate-authority entries cannot be deleted through this action. OpenSSH (System) remains read-only. Hashed entries retain their hidden host identity.
+- **Tools & Settings → Trusted SSH Hosts** shows Remote Edit, OpenSSH (User), and OpenSSH (System) sources, with host/fingerprint and Source filters. **Details** shows the public key, fingerprint, source, available timestamps, and OpenSSH file path. **Delete** requires confirmation and is available for Remote Edit records and individual OpenSSH (User) records on Windows, Linux, and macOS. User-file deletion warns that other SSH applications may be affected, creates a backup beside the original file, and preserves other entries, comments, line endings, and file permissions. Changed files, linked files, shared host patterns, revoked keys, and certificate-authority entries cannot be deleted through this action. OpenSSH (System) remains read-only. Hashed entries retain their hidden host identity.
 - Review and replacement use the existing dialogs in Advanced View, Workspace Sync, and Multi-Target, and native VS Code dialogs in the Native Sidebar. Jump Hosts and SSH connections through proxies use the same verification. Automatic reconnects and background watchers cannot approve or replace keys; they report the block and require an explicit interactive connection. New trust is persisted and revalidated before authentication.
 - Interactive SSH identity verification has a separate **10-minute** deadline, starting when the prompt is shown. **Review & Replace** shares that deadline across both confirmations. The initial SSH attempt is closed before prompting; approval starts a fresh connection that must present the exact approved public key before trust is saved and authentication is allowed. Network and SSH timeouts remain independent and respect the configured SSH timeout. Cancel, expiration, or closing a Webview leaves trust unchanged. Webview dialogs close on expiration; VS Code native dialogs cannot be dismissed programmatically, but any reply after expiration is ignored.
 - Trusted SSH Hosts persist locally and are shared across all Remote Edit modules. Public host keys and fingerprints are excluded from Export/Import and Backup/Restore. The verification setting is included with Settings; restoring it as disabled requires a security confirmation. Disabling verification removes server identity protection for new connections and reconnections.
@@ -637,6 +698,8 @@ Diagnostic logging automatically turns off when VS Code is restarted or reloaded
 - Sudo passwords are never saved
 - Optional credential export uses password-protected encrypted backup data, including the Master Password when configured
 - SFTP and FTPS are recommended when secure transport is required
+
+
 
 ## Requirements
 

@@ -71,7 +71,7 @@ export function renderComboboxControls(selector = 'select'): string {
     closeCombo(); opened = current;
     current.placement = undefined;
     current.wrapper.classList.add('open'); current.button.setAttribute('aria-expanded', 'true');
-    const host = dialogs.length ? dialogs[dialogs.length - 1].element : document.body;
+    const host = current.select.closest('[aria-modal="true"]') || (dialogs.length ? dialogs[dialogs.length - 1].element : document.body);
     host.append(current.menu);
     if (current.search) {
       current.search.value = '';
@@ -121,7 +121,7 @@ export function renderComboboxControls(selector = 'select'): string {
         pinned.append(action, separator); menu.append(pinned); list.className = 'profile-dropdown-list';
       }
       menu.append(list);
-      const item = { select, wrapper, button, label, menu, searchWrap, search, clearSearch, list, forceDown: Boolean(select.closest('#mappingDialog')), placement: undefined, observer: new MutationObserver(() => refresh()) };
+      const item = { select, wrapper, button, label, menu, searchWrap, search, clearSearch, list, forceDown: select.dataset.placement === 'down' || Boolean(select.closest('#mappingDialog')), placement: undefined, observer: new MutationObserver(() => refresh()) };
       item.observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled','selected'] }); combos.set(select,item);
       button.onclick = () => opened === item ? closeCombo() : openCombo(item);
       button.onkeydown = event => { if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); openCombo(item); const items = [...(action ? [action] : []), ...list.querySelectorAll('button:not(:disabled)')]; (event.key === 'End' || event.key === 'ArrowUp' ? items.at(-1) : items[0])?.focus(); } };
@@ -130,14 +130,15 @@ export function renderComboboxControls(selector = 'select'): string {
         clearSearch.onclick = event => { event.preventDefault(); event.stopPropagation(); clearComboFilter(item); };
       }
       menu.onkeydown = event => {
+        if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
         const items = [...(action ? [action] : []), ...list.querySelectorAll('button:not(:disabled)')]; const index = items.indexOf(document.activeElement);
         if (event.key === 'Escape') {
           event.preventDefault(); event.stopPropagation();
           if (search && search.value) clearComboFilter(item); else closeCombo(true);
         }
-        else if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? (index + 1) % items.length : (index - 1 + items.length) % items.length; items[next]?.focus(); }
+        else if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { if (document.activeElement === search && ['Home','End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? (index + 1) % items.length : (index - 1 + items.length) % items.length; items[next]?.focus(); }
         else if (event.key === 'Enter' && search && document.activeElement === search) { event.preventDefault(); items[0]?.click(); }
-        else if (event.key === 'Tab') closeCombo();
+        else if (event.key === 'Tab') closeCombo(true);
       };
       label.textContent = select.selectedOptions[0]?.text || 'Select…'; button.disabled = select.disabled;
     });
@@ -165,7 +166,18 @@ export function renderComboboxControls(selector = 'select'): string {
   document.addEventListener('pointerdown', event => { if (opened && !opened.menu.contains(event.target) && !opened.wrapper.contains(event.target)) closeCombo(); });
   window.addEventListener('resize', () => closeCombo());
   document.addEventListener('scroll', event => { if (opened && !opened.menu.contains(event.target)) closeCombo(); }, true);
+  // Resolve a popup before the parent modal's capture handlers process Escape.
+  // This also preserves the filter's clear-first behavior in Trusted Hosts.
   document.addEventListener('keydown', event => {
+    if (event.defaultPrevented || !opened || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target.id === 'connectionManagementSurface') return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (opened.search?.value) clearComboFilter(opened); else closeCombo(true);
+    }
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.defaultPrevented || event.target.id === 'connectionManagementSurface') return;
     const active = dialogs.at(-1); if (!active) return;
     if (event.key === 'Escape') { event.preventDefault(); if (opened) closeCombo(true); else if (active.cancel) active.cancel(); else closeDialog(active.element.id); }
     if (event.key === 'Tab') {

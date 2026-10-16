@@ -228,6 +228,10 @@ const REMOTE_EDIT_SETTING_DEFAULTS = {
   'workspaceSync.statusBarButtonPosition': 'left',
   'workspaceSync.statusBarButtonStyle': 'iconAndText',
   'workspaceSync.statusBarButtonPriority': 999,
+  'multiTarget.editorTitleButtonPosition': 'hidden',
+  'multiTarget.statusBarButtonPosition': 'left',
+  'multiTarget.statusBarButtonStyle': 'iconAndText',
+  'multiTarget.statusBarButtonPriority': 998,
   'webview.remotePathBreadcrumb.showDirectoryDetails': true,
   'webview.fileList.openOnNameClick': true,
   'webview.fileList.permissionsDisplay': 'symbolic',
@@ -264,6 +268,8 @@ const SCRYPT_PARAMS = {
 } as const;
 
 export interface ConnectionProfileInput {
+  /** Transient SSH Key Tools draft; never persisted in profiles or backups. */
+  freshPrivateKey?: boolean;
   id?: string;
   name?: string;
   host?: string;
@@ -1679,7 +1685,7 @@ export class ConnectionManager {
     };
   }
 
-  async buildConnectOptions(input: ConnectionProfileInput): Promise<ConnectOptions> {
+  async buildConnectOptions(input: ConnectionProfileInput, cancellationToken?: vscode.CancellationToken): Promise<ConnectOptions> {
     const profiles = await this.listProfiles();
     const profile = input.id ? profiles.find(item => item.id === input.id) : undefined;
 
@@ -1712,7 +1718,7 @@ export class ConnectionManager {
       : '';
     let passphrase = typeof input.passphrase === 'string' ? input.passphrase : '';
 
-    if (!passphrase && profile?.id) {
+    if (!passphrase && profile?.id && !input.freshPrivateKey) {
       passphrase = await this.context.secrets.get(secretKey(profile.id, 'passphrase')) || '';
     }
 
@@ -1738,7 +1744,8 @@ export class ConnectionManager {
       jumpChain = [];
 
       for (const jumpProfile of jumpProfiles) {
-        jumpChain.push(await this.buildJumpConnectOptions(jumpProfile));
+        if (cancellationToken?.isCancellationRequested) throw new RemoteEditOperationCancelledError("Connection cancelled.");
+        jumpChain.push(await this.buildJumpConnectOptions(jumpProfile, cancellationToken));
       }
     }
 
@@ -1768,7 +1775,7 @@ export class ConnectionManager {
   }
 
 
-  private async buildJumpConnectOptions(profile: ConnectionProfile): Promise<JumpConnectOptions> {
+  private async buildJumpConnectOptions(profile: ConnectionProfile, cancellationToken?: vscode.CancellationToken): Promise<JumpConnectOptions> {
     const host = String(profile.host || '').trim();
     const port = normalizePort(profile.port);
     const username = String(profile.username || '').trim();
@@ -1792,7 +1799,7 @@ export class ConnectionManager {
           password: true,
           ignoreFocusOut: true,
           validateInput: value => value ? undefined : 'Password is required.'
-        });
+        }, cancellationToken);
 
         if (promptedPassword === undefined) {
           throw new RemoteEditOperationCancelledError('Connection cancelled.');

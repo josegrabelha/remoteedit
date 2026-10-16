@@ -1,5 +1,8 @@
+import { handleToolNavigation } from '../webview/ToolNavigation';
+import { ConnectionManagementController } from './ConnectionManagementController';
+import { shouldOfferSshKeySetup } from '../ssh/SshKeyDiagnostics';
 import { SshHostKeyDialogController } from '../webview/SshHostKeyDialogController';
-import { withHostKeyUi, hostKeyTrust, disableHostKeyWarning } from '../ssh/hostKeys/HostKeyRuntime';
+import { withHostKeyUi, disableHostKeyWarning } from '../ssh/hostKeys/HostKeyRuntime';
 import { ConnectionImportController } from './ConnectionImportController';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -102,6 +105,7 @@ export class RemoteEditPanel {
   private readonly virtualDocuments = new Map<string, string>();
   private readonly connectionImportController: ConnectionImportController;
   private readonly backupController: PanelBackupController;
+  private readonly management: ConnectionManagementController;
   private readonly droppedUploadStaging: DroppedUploadStagingService;
   private readonly remoteMoveService: RemoteMoveService;
 
@@ -546,17 +550,19 @@ export class RemoteEditPanel {
       logWarn: (message, details) => this.logWarn(message, details),
       logError: (message, details) => this.logError(message, details)
     });
-    this.connectionImportController = new ConnectionImportController(this.connectionManager, (type, payload) => this.postMessage(type, payload), () => this.sendProfiles());
-    this.backupController = new PanelBackupController({
-      context: this.context,
-      connectionManager: this.connectionManager,
+    this.management = new ConnectionManagementController({
+      context: this.context, connectionManager: this.connectionManager, output: this.output,
       postMessage: (type, payload) => this.postMessage(type, payload),
-      sendProfiles: () => this.sendProfiles(),
-      postPersistentStorageSnapshot: () => this.postPersistentStorageSnapshot(),
+      showConfirmDialog: options => this.showConfirmDialog(options),
+      showConfirmDialogDecision: options => this.dialogManager.showConfirmDialogDecision(options),
+      postBusy: (...args) => this.postBusy(...args),
       logInfo: (message, details) => this.logInfo(message, details),
       logError: (message, details) => this.logError(message, details),
-      showConfirmDialogDecision: options => this.dialogManager.showConfirmDialogDecision(options)
+      hasConnection: id => this.sessions.hasConnection(id), disconnect: id => this.disconnect(id),
+      postPersistentStorageSnapshot: () => this.postPersistentStorageSnapshot()
     });
+    this.connectionImportController = this.management.connectionImportController;
+    this.backupController = this.management.backupController;
 
     this.disposables.push(
       vscode.workspace.registerTextDocumentContentProvider('remoteedit-virtual', {
@@ -564,7 +570,7 @@ export class RemoteEditPanel {
       }),
       vscode.commands.registerCommand('remoteedit.cancelTransfer', () => this.cancelActiveTransfer()),
       RemoteEditSharedState.onProfilesChanged(event => {
-        if (event.source === 'webview') {
+        if (event.source === 'webview' && !event.origin) {
           return;
         }
 
@@ -581,7 +587,7 @@ export class RemoteEditPanel {
             });
             return;
           }
-          await this.sendProfiles(event.selectedId);
+          await this.sendProfiles(event.origin ? undefined : event.selectedId, event.origin ? { editedProfileId: event.reason === 'saveProfile' ? event.selectedId : undefined, preserveSelection: true } : undefined);
           this.postPersistentStorageSnapshot();
           appendPerformanceLog(this.output, 'Panel', `Sent profiles snapshot after profiles changed in ${timer()}ms`, {
             Source: event.source || 'unknown',
@@ -650,6 +656,7 @@ export class RemoteEditPanel {
   }
 
   private handlePanelDisposed(): void {
+    this.management.cancelConnectionTest();
     this.isDisposed = true;
     this.panel = undefined;
     this.disposePanelDisposables();
@@ -669,6 +676,7 @@ export class RemoteEditPanel {
   }
 
   private async handleMessage(message: RemoteEditWebviewMessage): Promise<void> {
+    if (await handleToolNavigation(message)) return;
     if (await this.sshHostKeyDialog.handle(message)) return;
     try {
       await handleRemoteEditPanelMessage(message, {
@@ -691,9 +699,12 @@ export class RemoteEditPanel {
         },
         connectionManagementBlocked: () => { void vscode.window.showInformationMessage('Close the current Remote Edit dialog before opening another management action.'); },
         connectionImport: payload => this.connectionImportController.handle(payload),
+        sshKeyTools: payload => this.manageSshKeyTools(payload),
         trustedSshHosts: payload => this.manageTrustedSshHosts(payload),
         proxyProfiles: payload => this.manageProxyProfiles(payload),
         masterPassword: payload => this.manageMasterPassword(payload),
+        testConnection: payload => this.management.testConnection(payload),
+        cancelConnectionTest: payload => this.management.cancelConnectionTest(payload),
         saveConnection: payload => this.saveConnection(payload),
         saveConnectionAs: payload => this.saveConnectionAs(payload),
         pickPrivateKeyPath: payload => this.pickPrivateKeyPath(payload),
@@ -993,94 +1004,24 @@ export class RemoteEditPanel {
     }
   }
 
+  private async manageSshKeyTools(payload: any): Promise<void> {
+    await this.management.manageSshKeyTools(payload);
+  }
+
   private async manageTrustedSshHosts(payload: any): Promise<void> {
-    try {
-      const service = hostKeyTrust();
-      if (payload?.action === 'delete') {
-        const item = (await service.store.list()).find(host => host.id === String(payload.id))
-          || (await service.knownHosts.list()).find(host => host.id === String(payload.id));
-        if (!item || item.publicKey !== payload.publicKey || item.fileDigest !== payload.fileDigest) throw new Error('The selected trusted SSH host changed. Refresh the list before deleting.');
-        if (item.source === 'Remote Edit') {
-          if (await this.showConfirmDialog({ title: 'Delete Trusted SSH Host?', message: `Remove trust for ${item.host}:${item.port}? The next connection will consult OpenSSH known_hosts or require approval.`, details: item.fingerprint, confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true })) await service.store.remove(item.id);
-        } else if (item.source === 'OpenSSH (User)' && item.removable) {
-          const confirmed = await this.showConfirmDialog({ title: 'Remove SSH Host Key?', message: 'Remove the selected host key from your OpenSSH known_hosts file?', details: `${item.host}${item.port ? ':' + item.port : ''}\nFingerprint: ${item.fingerprint}\nSource: ${item.source}\nFile: ${item.filePath}\n\nThis may affect other SSH applications. The server identity will need to be verified again if no other trusted key exists. A backup of the original file will be created before deletion.`, confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
-          if (confirmed) {
-            const backup = await service.knownHosts.remove(item);
-            this.logInfo('Removed OpenSSH user host key.', { File: item.filePath, Backup: backup });
-          }
-        } else throw new Error('This OpenSSH record is read-only.');
-      }
-      this.postMessage(RemoteEditOutboundMessageType.TrustedSshHostsState, { hosts: await service.list(), environment: `${process.platform} · ${vscode.env.remoteName || 'Local extension host'}` });
-    } catch (error) {
-      let hosts: unknown[] | undefined;
-      try { hosts = await hostKeyTrust().store.list(); } catch { /* Preserve the original storage/read error. */ }
-      this.postMessage(RemoteEditOutboundMessageType.TrustedSshHostsState, { hosts, error: error instanceof Error ? error.message : 'Could not load trusted SSH hosts.' });
-    }
+    await this.management.manageTrustedSshHosts(payload);
   }
 
   private async manageProxyProfiles(payload: any): Promise<void> {
-    try {
-      let savedProfileId: string | undefined;
-      if (payload?.action === 'save') savedProfileId = (await this.connectionManager.proxyProfiles.save(payload.profile)).id;
-      else if (payload?.action === 'delete') {
-        const id = String(payload.id);
-        const proxy = (await this.connectionManager.proxyProfiles.list()).find(profile => profile.id === id);
-        if (!proxy) throw new Error('The selected proxy profile no longer exists.');
-        const confirmed = await this.showConfirmDialog({
-          title: 'Delete proxy profile?',
-          message: `Delete proxy profile "${proxy.name}"? Stored credentials for this proxy will also be removed.`,
-          confirmLabel: 'Delete',
-          cancelLabel: 'Cancel',
-          danger: true
-        });
-        if (confirmed) await this.connectionManager.proxyProfiles.delete(id, await this.connectionManager.listProfiles());
-      }
-      this.postMessage(RemoteEditOutboundMessageType.ProxyProfilesState, { profiles: await this.connectionManager.proxyProfiles.list(), savedProfileId, completed: payload?.action === 'save' || payload?.action === 'delete' });
-      if (payload?.action === 'save' || payload?.action === 'delete') {
-        RemoteEditSharedState.fireProfilesChanged(undefined, 'webview', 'proxyProfilesChanged');
-      }
-    } catch (error) {
-      this.postMessage(RemoteEditOutboundMessageType.ProxyProfilesState, { error: error instanceof Error ? error.message : 'Unable to update proxy profiles.' });
-    }
+    await this.management.manageProxyProfiles(payload);
   }
 
   private async manageMasterPassword(payload: any): Promise<void> {
-    try {
-      if (payload?.action === 'save') {
-        await this.connectionManager.setMasterPassword(payload.password, payload.confirmation);
-      } else if (payload?.action === 'remove') {
-        await this.connectionManager.removeMasterPassword();
-      }
-      this.postMessage(RemoteEditOutboundMessageType.MasterPasswordState, {
-        ...await this.connectionManager.getMasterPasswordState(),
-        completed: payload?.action === 'save' || payload?.action === 'remove'
-      });
-    } catch (error) {
-      this.postMessage(RemoteEditOutboundMessageType.MasterPasswordState, {
-        error: error instanceof Error ? error.message : 'Unable to update Master Password.'
-      });
-    }
+    await this.management.manageMasterPassword(payload);
   }
 
-  private async sendProfiles(selectedId?: string, options?: { renameProfileId?: string; editedProfileId?: string }): Promise<void> {
-    const timer = createPerformanceTimer();
-    const profiles = await this.connectionManager.listProfiles();
-    const connectionGroups = await this.connectionManager.listGroups();
-    this.postMessage(RemoteEditOutboundMessageType.ProfilesLoaded, {
-      profiles,
-      proxyProfiles: await this.connectionManager.proxyProfiles.list(),
-      masterPasswordState: await this.connectionManager.getMasterPasswordState(),
-      connectionGroups,
-      selectedId,
-      renameProfileId: options?.renameProfileId,
-      editorRefresh: Boolean(options?.editedProfileId),
-      editedProfileId: options?.editedProfileId
-    });
-    appendPerformanceLog(this.output, 'Panel', `Posted profiles snapshot in ${timer()}ms`, {
-      Profiles: profiles.length,
-      Groups: connectionGroups.length,
-      SelectedId: selectedId || ''
-    });
+  private async sendProfiles(selectedId?: string, options?: { renameProfileId?: string; editedProfileId?: string; preserveSelection?: boolean }): Promise<void> {
+    await this.management.sendProfiles(selectedId, options);
   }
 
   private buildPendingConnectionSnapshot(connectionId: string): PendingConnectionSnapshot | undefined {
@@ -1237,209 +1178,48 @@ export class RemoteEditPanel {
   }
 
   private async saveConnection(payload: any): Promise<void> {
-    const statusConnectionId = this.getOperationStatusConnectionId(payload);
-    const profilePayload = { ...(payload || {}) };
-    const editorSave = Boolean(profilePayload.editorSave);
-    delete profilePayload.editorSave;
-    const newGroupName = String(profilePayload.newGroupName || '').trim();
-    delete profilePayload.statusConnectionId;
-    delete profilePayload.newGroupName;
-
-    this.postBusy(true, 'Saving connection...', false, undefined, statusConnectionId);
-
-    try {
-      if (editorSave && !(await this.connectionManager.getProfile(String(profilePayload.id || '')))) {
-        throw new Error('This saved connection no longer exists.');
-      }
-      if (editorSave) {
-        const all = await this.connectionManager.listProfiles();
-        if (all.some(p => p.id !== profilePayload.id && p.name.trim().toLowerCase() === String(profilePayload.name || '').trim().toLowerCase())) throw new Error('A connection with this name already exists.');
-      }
-      if (newGroupName) {
-        const group = await this.connectionManager.createGroup(newGroupName);
-        profilePayload.groupId = group.id;
-      }
-      const profile = await this.connectionManager.saveProfile(profilePayload);
-      await this.sendProfiles(editorSave ? undefined : profile.id, editorSave ? { editedProfileId: profile.id } : undefined);
-      RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'saveProfile');
-      if (editorSave) this.postMessage(RemoteEditOutboundMessageType.ConnectionEditResult, { id: profile.id, saved: true });
-      this.postBusy(false, 'Connection saved.', false, undefined, statusConnectionId);
-      this.logInfo('Saved connection.', { Name: profile.name, Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}` });
-    } catch (error) {
-      this.postBusy(false, 'Connection save failed.', false, undefined, statusConnectionId);
-      if (editorSave) {
-        this.postMessage(RemoteEditOutboundMessageType.ConnectionEditResult, { id: profilePayload.id, error: error instanceof Error ? error.message : String(error) });
-        return;
-      }
-      throw error;
-    }
+    await this.management.saveConnection(payload);
   }
 
   private async saveConnectionAs(payload: any): Promise<void> {
-    const statusConnectionId = this.getOperationStatusConnectionId(payload);
-    const profilePayload = { ...(payload || {}) };
-    const sourceProfileId = String(profilePayload.sourceProfileId || '').trim();
-    const newGroupName = String(profilePayload.newGroupName || '').trim();
-    delete profilePayload.statusConnectionId;
-    delete profilePayload.sourceProfileId;
-    delete profilePayload.newGroupName;
-    delete profilePayload.id;
-
-    this.postBusy(true, 'Saving connection as...', false, undefined, statusConnectionId);
-
-    try {
-      if (newGroupName) {
-        const group = await this.connectionManager.createGroup(newGroupName);
-        profilePayload.groupId = group.id;
-      }
-      const profile = await this.connectionManager.saveProfileAs(sourceProfileId, profilePayload);
-      await this.sendProfiles(profile.id);
-      RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'saveProfileAs');
-      this.postBusy(false, 'Connection saved.', false, undefined, statusConnectionId);
-      this.logInfo('Saved connection as a new profile.', {
-        Name: profile.name,
-        ProfileId: profile.id,
-        SourceProfileId: sourceProfileId,
-        Target: `${profile.username ? profile.username + '@' : ''}${profile.host}:${profile.port}`
-      });
-    } catch (error) {
-      this.postBusy(false, 'Connection save failed.', false, undefined, statusConnectionId);
-      throw error;
-    }
+    await this.management.saveConnectionAs(payload);
   }
 
   private getOperationStatusConnectionId(payload: any): string | undefined {
-    const statusConnectionId = String(payload?.statusConnectionId || '').trim();
-    return statusConnectionId || undefined;
+    return this.management.getOperationStatusConnectionId(payload);
   }
 
   private async pickPrivateKeyPath(payload?: any): Promise<void> {
-    const selected = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      openLabel: 'Select',
-      title: 'Select private key file'
-    });
-
-    const selectedPath = selected?.[0]?.fsPath;
-    if (selectedPath || payload?.editorProfileId) {
-      this.postMessage(RemoteEditOutboundMessageType.PrivateKeyPathSelected, { path: selectedPath, editorProfileId: payload?.editorProfileId });
-    }
+    await this.management.pickPrivateKeyPath(payload);
   }
 
   private async pickCaCertificatePath(payload?: any): Promise<void> {
-    const selected = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      openLabel: 'Select',
-      title: 'Select FTPS CA certificate file',
-      filters: { 'PEM certificates': ['pem', 'crt', 'cer'], 'All files': ['*'] }
-    });
-
-    const selectedPath = selected?.[0]?.fsPath;
-    if (selectedPath || payload?.editorProfileId) {
-      this.postMessage(RemoteEditOutboundMessageType.CaCertificatePathSelected, { path: selectedPath, editorProfileId: payload?.editorProfileId });
-    }
+    await this.management.pickCaCertificatePath(payload);
   }
 
-
-
   private async cloneConnection(payload: any): Promise<void> {
-    const profileId = String(payload?.id || '').trim();
-
-    this.postBusy(true, 'Cloning connection...');
-    const profile = await this.connectionManager.cloneProfile(profileId);
-    await this.sendProfiles(profile.id, { renameProfileId: profile.id });
-    this.postBusy(false, 'Connection cloned.');
-    RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'cloneProfile');
-    this.logInfo('Cloned saved connection.', { Name: profile.name, ProfileId: profile.id, SourceProfileId: profileId });
+    await this.management.cloneConnection(payload);
   }
 
   private async renameConnection(payload: any): Promise<void> {
-    const profileId = String(payload?.id || '').trim();
-    const name = String(payload?.name || '').trim();
-
-    this.postBusy(true, 'Renaming connection...');
-    const profile = await this.connectionManager.renameProfile(profileId, name);
-    await this.sendProfiles(profile.id);
-    RemoteEditSharedState.fireProfilesChanged(profile.id, 'webview', 'saveProfile');
-    this.postBusy(false, 'Connection renamed.');
-    this.logInfo('Renamed saved connection.', { Name: profile.name, ProfileId: profileId });
+    await this.management.renameConnection(payload);
   }
 
   private async reorderConnections(payload: any): Promise<void> {
-    const profileIds = Array.isArray(payload?.profileIds)
-      ? payload.profileIds.map((profileId: unknown) => String(profileId || '').trim()).filter(Boolean)
-      : [];
-    const groupsByProfileId = payload?.groupsByProfileId && typeof payload.groupsByProfileId === 'object' && !Array.isArray(payload.groupsByProfileId)
-      ? payload.groupsByProfileId as Record<string, string | undefined>
-      : undefined;
-
-    await this.connectionManager.reorderProfiles(profileIds, groupsByProfileId);
-    await this.sendProfiles(String(payload?.selectedId || ''));
-    RemoteEditSharedState.fireProfilesChanged(String(payload?.selectedId || '') || undefined, 'webview', 'profileListChanged');
-    this.logInfo('Reordered saved connections.', { Count: String(profileIds.length) });
+    await this.management.reorderConnections(payload);
   }
 
   private async createConnectionGroup(payload: any): Promise<void> {
-    const name = String(payload?.name || '').trim();
-
-    this.postBusy(true, 'Creating connection group...');
-    const group = await this.connectionManager.createGroup(name);
-    await this.sendProfiles(String(payload?.selectedId || ''));
-    this.postBusy(false, 'Connection group created.');
-    RemoteEditSharedState.fireProfilesChanged(String(payload?.selectedId || '') || undefined, 'webview', 'profileListChanged');
-    this.logInfo('Created connection group.', { Name: group.name, GroupId: group.id });
+    await this.management.createConnectionGroup(payload);
   }
 
   private async renameConnectionGroup(payload: any): Promise<void> {
-    const groupId = String(payload?.id || '').trim();
-    const name = String(payload?.name || '').trim();
-
-    this.postBusy(true, 'Renaming connection group...');
-    const group = await this.connectionManager.renameGroup(groupId, name);
-    await this.sendProfiles(String(payload?.selectedId || ''));
-    this.postBusy(false, 'Connection group renamed.');
-    RemoteEditSharedState.fireProfilesChanged(String(payload?.selectedId || '') || undefined, 'webview', 'profileListChanged');
-    this.logInfo('Renamed connection group.', { Name: group.name, GroupId: group.id });
+    await this.management.renameConnectionGroup(payload);
   }
 
   private async deleteConnectionGroup(payload: any): Promise<void> {
-    const groupId = String(payload?.id || '').trim();
-    const name = String(payload?.name || '').trim() || 'connection group';
-    const deleteConnections = Boolean(payload?.deleteConnections);
-    const selectedId = String(payload?.selectedId || '');
-    const profiles = await this.connectionManager.listProfiles();
-    const profileIdsInGroup = profiles
-      .filter(profile => profile.groupId === groupId)
-      .map(profile => profile.id)
-      .filter(Boolean);
-
-    this.postBusy(true, deleteConnections ? 'Deleting connection group and connections...' : 'Deleting connection group...');
-
-    if (deleteConnections) {
-      for (const profileId of profileIdsInGroup) {
-        if (this.sessions.hasConnection(profileId)) {
-          await this.disconnect(profileId);
-        }
-      }
-    }
-
-    const removedProfileIds = await this.connectionManager.deleteGroup(groupId, deleteConnections);
-    const nextSelectedId = deleteConnections && removedProfileIds.includes(selectedId) ? '' : selectedId;
-    await this.sendProfiles(nextSelectedId);
-    RemoteEditSharedState.fireProfilesChanged(nextSelectedId || undefined, 'webview', 'deleteGroup');
-
-    if (!nextSelectedId && deleteConnections && selectedId) {
-      this.postMessage(RemoteEditOutboundMessageType.ConnectionFormCleared, {});
-    }
-
-    this.postBusy(false, deleteConnections ? 'Connection group and connections deleted.' : 'Connection group deleted.');
-    this.logInfo('Deleted connection group.', { Name: name, GroupId: groupId, ConnectionsDeleted: String(deleteConnections ? removedProfileIds.length : 0) });
+    await this.management.deleteConnectionGroup(payload);
   }
-
 
   private async syncPersistentStorage(payload: any): Promise<void> {
     const snapshot = this.normalizePersistentStoragePayload(payload);
@@ -1488,43 +1268,7 @@ export class RemoteEditPanel {
   }
 
   private async deleteConnection(payload: any): Promise<void> {
-    const profileId = String(payload?.id || '').trim();
-
-    if (!profileId) {
-      throw new Error('Select a saved connection to remove.');
-    }
-
-    const profile = await this.connectionManager.getProfile(profileId);
-
-    if (!profile) {
-      await this.sendProfiles();
-      throw new Error('The selected saved connection no longer exists.');
-    }
-
-    const confirmed = await this.showConfirmDialog({
-      title: 'Remove saved connection?',
-      message: `Remove saved connection "${profile.name}"? Stored secrets for this profile will also be removed.`,
-      confirmLabel: 'Remove',
-      cancelLabel: 'Cancel',
-      danger: true
-    });
-
-    if (!confirmed) {
-      return;
-    }
-
-    this.postBusy(true, 'Removing connection...');
-
-    if (this.sessions.hasConnection(profileId)) {
-      await this.disconnect(profileId);
-    }
-
-    await this.connectionManager.deleteProfile(profileId);
-    await this.sendProfiles('');
-    RemoteEditSharedState.fireProfilesChanged(undefined, 'webview', 'importBackup');
-    this.postMessage(RemoteEditOutboundMessageType.ConnectionFormCleared, {});
-    this.postBusy(false, 'Connection removed.');
-    this.logInfo('Removed saved connection.', { Name: profile.name, ProfileId: profileId });
+    await this.management.deleteConnection(payload);
   }
 
   private async connect(payload: any): Promise<void> {
@@ -1601,7 +1345,7 @@ export class RemoteEditPanel {
           OriginalError: originalMessage
         });
         this.postBusy(false, 'Connection failed.', false, undefined, connectionId);
-        this.postError(statusMessage || 'Connection failed.', { connectionId, showOutputLink: true });
+        this.postError(statusMessage || 'Connection failed.', { connectionId, showOutputLink: true, sshKeySetup: shouldOfferSshKeySetup(options.connectionType, options.privateKeyPath, originalMessage || message) });
       }
 
       return;
@@ -5408,11 +5152,12 @@ export class RemoteEditPanel {
     this.postError(message, { showOutputLink: true });
   }
 
-  private postError(message: string, options?: { showOutputLink?: boolean; connectionId?: string }): void {
+  private postError(message: string, options?: { showOutputLink?: boolean; connectionId?: string; sshKeySetup?: boolean }): void {
     this.postMessage(RemoteEditOutboundMessageType.Error, {
       message,
       showOutputLink: Boolean(options?.showOutputLink),
       outputLinkText: 'See details in Output.',
+      sshKeySetup: Boolean(options?.sshKeySetup),
       connectionId: options?.connectionId ?? this.state.getActiveConnectionId() ?? ''
     });
   }
@@ -5453,7 +5198,7 @@ export class RemoteEditPanel {
   }
 
   dispose(): void {
-    this.connectionImportController.dispose();
+    this.management.dispose();
     this.isDisposed = true;
     RemoteEditPanel.currentPanel = undefined;
 

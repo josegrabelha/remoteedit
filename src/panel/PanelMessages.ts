@@ -1,10 +1,14 @@
 export const RemoteEditIncomingMessageType = {
+  ToolNavigation: 'toolNavigation',
   ConnectionImport: 'connectionImport',
+  SshKeyTools: 'sshKeyTools',
   TrustedSshHosts: 'trustedSshHosts',
   ProxyProfiles: 'proxyProfiles',
   ConnectionManagementBlocked: 'connectionManagementBlocked',
   MasterPassword: 'masterPassword',
   Ready: 'ready',
+  TestConnection: 'testConnection',
+  CancelConnectionTest: 'cancelConnectionTest',
   SaveConnection: 'saveConnection',
   SaveConnectionAs: 'saveConnectionAs',
   PickPrivateKeyPath: 'pickPrivateKeyPath',
@@ -93,6 +97,7 @@ export const RemoteEditIncomingMessageType = {
 
 export const RemoteEditOutboundMessageType = {
   ConnectionImportState: 'connectionImportState',
+  SshKeyToolsState: 'sshKeyToolsState',
   TrustedSshHostsState: 'trustedSshHostsState',
   CloseConfirmDialog: 'closeConfirmDialog',
   ProxyProfilesState: 'proxyProfilesState',
@@ -101,6 +106,7 @@ export const RemoteEditOutboundMessageType = {
   ShowConnectionImport: 'showConnectionImport',
   MasterPasswordState: 'masterPasswordState',
   ProfilesLoaded: 'profilesLoaded',
+  ConnectionTestResult: 'connectionTestResult',
   ConnectionEditResult: 'connectionEditResult',
   PrivateKeyPathSelected: 'privateKeyPathSelected',
   CaCertificatePathSelected: 'caCertificatePathSelected',

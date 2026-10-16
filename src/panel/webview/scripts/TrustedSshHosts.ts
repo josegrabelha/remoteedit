@@ -1,6 +1,7 @@
 export function renderTrustedSshHosts(): string { return `
   let trustedHosts = [], trustedHostsBusy = false, trustedHostsDetails = false, trustedHostsEnvironment = '';
   let trustedHostsSort = { key: 'host', direction: null }, trustedHostsCopyText = '', trustedHostsCopyTimer;
+  let trustedHostsInitialFocusPending = false;
   const trustElement = id => document.getElementById(id);
   function showTrustedHostsList() {
     hideTrustedHostsContextMenu();
@@ -26,6 +27,10 @@ export function renderTrustedSshHosts(): string { return `
     trustElement('trustedHostsFeedback').classList.toggle('error', Boolean(payload.error));
     trustElement('trustedHostsFeedback').setAttribute('data-tooltip', payload.error || trustedHostsEnvironment);
     renderTrustedHostsList();
+    if (trustedHostsInitialFocusPending) {
+      trustedHostsInitialFocusPending = false;
+      if (trustElement('trustedHostsBackdrop').classList.contains('visible') && !trustedHostsDetails) trustElement('trustedHostsFilter').focus();
+    }
   }
   function renderTrustedHostsList() {
     const list = trustElement('trustedHostsList'); list.replaceChildren();
@@ -95,7 +100,8 @@ export function renderTrustedSshHosts(): string { return `
   trustElement('manageTrustedSshHostsButton').onclick = () => {
     closeConnectionManagementMenu(true); hideWebviewTooltip(); showTrustedHostsList();
     trustElement('trustedHostsBackdrop').classList.add('visible'); trustElement('trustedHostsBackdrop').setAttribute('aria-hidden','false');
-    trustElement('trustedHostsFilter').focus(); setTrustedHostsBusy(true);
+    // Loading makes the list inert, so focus the filter once it is enabled.
+    trustedHostsInitialFocusPending = true; setTrustedHostsBusy(true);
     vscode.postMessage({type:'trustedSshHosts',payload:{action:'list'}});
   };
   for (const header of trustElement('trustedHostsTable').querySelectorAll('th.sortable')) {

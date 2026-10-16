@@ -1002,6 +1002,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   }
 
   function trapInputPromptFocus(event) {
+    if (event.defaultPrevented) return;
     if (!inputPromptOpen || event.key !== 'Tab') return;
     const focusable = [inputPromptInput, inputPromptRevealButton, inputPromptCancelButton, inputPromptConfirmButton]
       .filter(element => element && !element.hidden && element.style.display !== 'none' && !element.disabled);
@@ -1267,6 +1268,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   }
 
   function trapTransferConflictFocus(event) {
+    if (event.defaultPrevented) return;
     if (!transferConflictDialogOpen || event.key !== 'Tab') return;
 
     const focusable = Array.from(transferConflictBackdrop.querySelectorAll('button, [tabindex]:not([tabindex="-1"])')).filter(element => !element.disabled);
@@ -1285,6 +1287,7 @@ export function renderStateDialogs(showRemotePathBreadcrumbDirectoryDetails: boo
   }
 
   function trapConfirmDialogFocus(event) {
+    if (event.defaultPrevented) return;
     if (!confirmDialogOpen || event.key !== 'Tab') return;
 
     const focusable = [confirmDialogCopyButton, confirmDialogCancelButton, confirmDialogConfirmButton].filter(element => element && !element.hidden && element.style.display !== 'none' && !element.disabled);

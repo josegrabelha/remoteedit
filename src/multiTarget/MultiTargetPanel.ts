@@ -1,3 +1,7 @@
+import { ToolStatusBarButton } from '../webview/ToolStatusBarButton';
+import { handleToolNavigation } from '../webview/ToolNavigation';
+import type { RemoteSessionManager } from '../remote/RemoteSessionManager';
+import { ConnectionManagementHost } from '../webview/ConnectionManagementHost';
 import { SshHostKeyDialogController } from '../webview/SshHostKeyDialogController';
 import { withHostKeyUi, disableHostKeyWarning } from '../ssh/hostKeys/HostKeyRuntime';
 import { SearchBatch, normalizeSearchQuery, formatSearchResults, type SearchQuery, type SearchExecution, type SearchTarget } from '../multiTargetSearch/SearchBatch';
@@ -37,16 +41,23 @@ interface InputRequest { options: vscode.InputBoxOptions; resolve: (value: strin
 export class MultiTargetFeature implements vscode.Disposable {
   private runtime: MultiTargetPanel | undefined;
   private readonly registration: vscode.Disposable;
+  private readonly statusBarButton: ToolStatusBarButton;
+  private readonly configurationChanged: vscode.Disposable;
   private readonly multiTargetChangedSubscription: vscode.Disposable;
-  constructor(context: vscode.ExtensionContext, profiles: ConnectionManager, output: vscode.OutputChannel) {
+  constructor(context: vscode.ExtensionContext, profiles: ConnectionManager, output: vscode.OutputChannel, remoteSessions?: RemoteSessionManager) {
     // Runtime UI state is intentionally session-only. Remove the pre-release
     // persisted snapshot if it exists so drafts, loaded sets, results settings,
     // and section state never survive an extension/VS Code restart.
     if (context.globalState.get<unknown>(LEGACY_RUNTIME_STORAGE_KEY) !== undefined) {
       void context.globalState.update(LEGACY_RUNTIME_STORAGE_KEY, undefined);
     }
+    this.statusBarButton = new ToolStatusBarButton('remoteedit.multiTarget', COMMAND_OPEN_MULTI_TARGET, 'Multi-Target', 'terminal', 998);
+    this.statusBarButton.update();
+    this.configurationChanged = vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('remoteedit.multiTarget')) this.statusBarButton.update();
+    });
     this.registration = vscode.commands.registerCommand(COMMAND_OPEN_MULTI_TARGET, () => {
-      if (!this.runtime) this.runtime = new MultiTargetPanel(context, profiles, output);
+      if (!this.runtime) this.runtime = new MultiTargetPanel(context, profiles, output, remoteSessions);
       this.runtime.reveal();
     });
     this.multiTargetChangedSubscription = RemoteEditSharedState.onMultiTargetChanged(() => {
@@ -54,6 +65,8 @@ export class MultiTargetFeature implements vscode.Disposable {
     });
   }
   dispose(): void {
+    this.statusBarButton.dispose();
+    this.configurationChanged.dispose();
     this.registration.dispose();
     this.multiTargetChangedSubscription.dispose();
     this.runtime?.dispose();
@@ -62,6 +75,7 @@ export class MultiTargetFeature implements vscode.Disposable {
 }
 
 class MultiTargetPanel implements vscode.Disposable {
+  private management?: ConnectionManagementHost;
   private searchBatch?: SearchBatch;
   private searchBusy = false;
   private searchGeneration = 0;
@@ -70,6 +84,7 @@ class MultiTargetPanel implements vscode.Disposable {
   private readonly sentResults = new Map<string, number>();
   private searchFlushTimer?: NodeJS.Timeout;
   private readonly closeListener: vscode.Disposable;
+  private readonly profileChanges: vscode.Disposable;
   private readonly targetOperations = new Map<string, Promise<unknown>>();
   private readonly feedbackMessages = new Map<string, any>();
   private get anyBusy(): boolean { return this.busy || this.searchBusy; }
@@ -137,7 +152,7 @@ class MultiTargetPanel implements vscode.Disposable {
   private loadedTargetSetSnapshot: SavedMultiTargetSet | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly profiles: ConnectionManager,
-    private readonly output: vscode.OutputChannel) {
+    private readonly output: vscode.OutputChannel, private readonly remoteSessions?: RemoteSessionManager) {
     this.preferences = {
       activeTab: 'commands',
       targetSetId: '',
@@ -154,6 +169,7 @@ class MultiTargetPanel implements vscode.Disposable {
     const remote = new SftpSessionManager(output);
     this.sessions = new CommandSessions(remote, profiles, () => { void this.sendState(); }, (options, token) => this.requestInput(options, token), output);
     this.service = new RemoteCommandService(remote);
+    this.profileChanges = RemoteEditSharedState.onProfilesChanged(() => { void this.sendState(); });
     this.closeListener = remote.onDidCloseConnection(id => this.searchBatch?.connectionClosed(id));
     this.openPanel();
   }
@@ -185,6 +201,7 @@ class MultiTargetPanel implements vscode.Disposable {
     const panel = vscode.window.createWebviewPanel('remoteeditMultiTarget', 'Remote Edit · Multi-Target Commands & Search', vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
     this.panel = panel;
+    this.management = new ConnectionManagementHost(this.context, this.profiles, this.output, message => this.post(message), 'multiTarget', this.remoteSessions);
     panel.iconPath = new vscode.ThemeIcon('terminal');
     panel.webview.html = renderMultiTargetHtml(panel.webview);
     this.viewDisposables.push(panel.onDidDispose(() => this.closePanel(panel)),
@@ -197,6 +214,7 @@ class MultiTargetPanel implements vscode.Disposable {
   }
   private closePanel(panel: vscode.WebviewPanel): void {
     if (this.panel !== panel) return;
+    this.management?.dispose(); this.management = undefined;
     this.sshHostKeyDialog.cancelPending();
     this.panel = undefined;
     for (const requestId of [...this.inputRequests.keys()]) this.completeInputRequest(requestId, undefined, false);
@@ -210,8 +228,9 @@ class MultiTargetPanel implements vscode.Disposable {
   }
   dispose(): void {
     if (this.disposed) return; this.disposed = true;
+    this.management?.dispose(); this.management = undefined;
     this.sshHostKeyDialog.cancelPending();
-    this.runGeneration++; this.searchGeneration++; this.batch?.stop(); this.searchBatch?.stop(); this.closeListener.dispose(); this.sessions.dispose();
+    this.runGeneration++; this.searchGeneration++; this.batch?.stop(); this.searchBatch?.stop(); this.closeListener.dispose(); this.profileChanges.dispose(); this.sessions.dispose();
     if (this.searchFlushTimer) clearTimeout(this.searchFlushTimer);
     for (const requestId of [...this.inputRequests.keys()]) this.completeInputRequest(requestId, undefined, false);
     if (this.flushTimer) clearTimeout(this.flushTimer);
@@ -327,6 +346,8 @@ class MultiTargetPanel implements vscode.Disposable {
     }, 100);
   }
   private async handle(message: any): Promise<void> {
+    if (await handleToolNavigation(message)) return;
+    if (await this.management?.handle(message)) return;
     if (await this.sshHostKeyDialog.handle(message)) return;
     const mode = message?.mode === 'search' ? 'search' : 'commands';
     if (message?.type === 'activeTab') { this.preferences.activeTab = mode; this.persist(); await this.sendState(true); return; }

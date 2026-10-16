@@ -217,6 +217,7 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       vscode.commands.registerCommand('remoteedit.sidebar.newConnectionGroup', () => this.addConnectionGroup()),
       vscode.commands.registerCommand('remoteedit.sidebar.manageMasterPassword', () => this.manageMasterPasswordFromSidebar()),
       vscode.commands.registerCommand('remoteedit.sidebar.connectionManagement', () => this.openConnectionManagement()),
+      vscode.commands.registerCommand('remoteedit.connectionManagementAction', (action: string) => this.runConnectionManagementAction(action)),
       vscode.commands.registerCommand('remoteedit.sidebar.openSettings', () => this.openSettings()),
       vscode.commands.registerCommand('remoteedit.sidebar.exportBackup', () => this.exportBackup()),
       vscode.commands.registerCommand('remoteedit.sidebar.importBackup', () => this.importConnections()),
@@ -458,11 +459,20 @@ export class RemoteEditSidebarController implements vscode.Disposable {
       title: connectionManagementTitle, placeHolder: 'Select an action'
     });
     if (!selected) return;
-    switch (selected.id) {
+    await this.runConnectionManagementAction(selected.id);
+  }
+
+  private async runConnectionManagementAction(action: string): Promise<void> {
+    switch (action) {
+      case 'applications':
+        RemoteEditPanel.openConnectionImport(this.context, this.sessions, this.connectionManager, this.output);
+        break;
+      case 'backup': await this.backupController.importBackup(); break;
       case 'connections':
       case 'trustedSshHosts':
+      case 'sshKeyTools':
       case 'proxies':
-        RemoteEditPanel.openManagement(this.context, this.sessions, this.connectionManager, this.output, selected.id);
+        RemoteEditPanel.openManagement(this.context, this.sessions, this.connectionManager, this.output, action);
         break;
       case 'masterPassword': await this.manageMasterPasswordFromSidebar(); break;
       case 'import': await this.importConnections(); break;

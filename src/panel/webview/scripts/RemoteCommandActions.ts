@@ -1425,6 +1425,7 @@ export function renderRemoteCommandActions(): string {
     updatePasswordSourceUI();
     password.value = profile.hasSavedPassword ? SAVED_SECRET_MASK : '';
     rememberPassword.checked = Boolean(profile.hasSavedPassword);
+    delete privateKeyPath.dataset.freshKey;
     privateKeyPath.value = profile.privateKeyPath || '';
     passphrase.value = profile.hasSavedPassphrase ? SAVED_SECRET_MASK : '';
     rememberPassphrase.checked = Boolean(profile.hasSavedPassphrase);
@@ -1457,6 +1458,7 @@ export function renderRemoteCommandActions(): string {
     password.value = '';
     rememberPassword.checked = false;
     password.placeholder = '';
+    delete privateKeyPath.dataset.freshKey;
     privateKeyPath.value = '';
     passphrase.value = '';
     rememberPassphrase.checked = false;

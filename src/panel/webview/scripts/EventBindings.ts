@@ -28,6 +28,7 @@ export function renderEventBindings(): string {
     const payload = message.payload || {};
 
     switch (message.type) {
+      case 'sshKeyToolsState': receiveSshKeyTools(payload); break;
       case 'connectionImportState':
         receiveConnectionImportState(payload);
         break;
@@ -38,6 +39,7 @@ export function renderEventBindings(): string {
       case 'masterPasswordState':
         receiveMasterPasswordState(payload);
         break;
+      case 'connectionTestResult': receiveConnectionTestResult(payload); break;
       case 'connectionEditResult': receiveConnectionEditResult(payload); break;
       case 'profilesLoaded':
         const preserveEditorMainForm = Boolean(payload.editorRefresh) && (payload.editedProfileId !== selectedProfileId || isSelectedSavedConnectionDirty() || !selectedProfileId);
@@ -446,6 +448,7 @@ export function renderEventBindings(): string {
           break;
         }
         setStatus(payload.message || 'Unknown error.', true, Boolean(payload.showOutputLink), payload.outputLinkText || 'See details in Output.', payload.connectionId || '');
+        document.getElementById('sshKeySetupDiagnostic').hidden = !payload.sshKeySetup;
         break;
       case 'trustedSshHostsState': receiveTrustedSshHosts(payload); break;
       case 'closeConfirmDialog': if (confirmDialogRequestId === payload.requestId) closeConfirmDialog(false, true); break;

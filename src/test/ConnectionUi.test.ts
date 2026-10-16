@@ -170,7 +170,7 @@ test('dialog focus restoration cancels pending tooltips and preserves mouse and 
   const target: any = {
     disabled: false, classList: { contains: () => false },
     closest: () => target, contains: (value: any) => value === target,
-    hasAttribute: () => false, getAttribute: () => 'Connection & Settings Management',
+    hasAttribute: () => false, getAttribute: () => 'Tools & Settings',
     getBoundingClientRect: () => ({ left: 10, top: 10, width: 30, height: 20, bottom: 30 }),
     focus: () => { focused = true; listeners.get('focusin')!({ target }); }
   };
@@ -226,7 +226,7 @@ test('Sidebar management follows shared menu ordering, routes native actions, an
   }
   assert.ok(!markup.includes('(Webview)'));
   (vscodeStub.window as any).showQuickPick = async (items: any[], options: any) => {
-    assert.equal(options.title, 'Connection & Settings Management');
+    assert.equal(options.title, 'Tools & Settings');
     assert.deepEqual(items.map(item => item.label), managementQuickPickItems(connectionManagementActions).map(item => item.label));
     return items.find(item => item.id === choice);
   };

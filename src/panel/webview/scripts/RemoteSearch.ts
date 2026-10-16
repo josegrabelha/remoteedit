@@ -645,6 +645,7 @@ export function renderRemoteSearch(): string {
       passwordSource: authType.value === 'password' ? passwordSource : 'connection',
       password: passwordSource === 'master' || password.value === SAVED_SECRET_MASK ? '' : password.value,
       rememberPassword: passwordSource !== 'master' && rememberPassword.checked,
+      freshPrivateKey: privateKeyPath.dataset.freshKey === 'true',
       privateKeyPath: privateKeyPath.value,
       passphrase: passphrase.value === SAVED_SECRET_MASK ? '' : passphrase.value,
       rememberPassphrase: rememberPassphrase.checked,

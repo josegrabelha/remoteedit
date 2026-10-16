@@ -3,6 +3,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   return `(() => {
   const vscode = acquireVsCodeApi();
   window.addEventListener('sshHostKeyDialogPost', event => vscode.postMessage(event.detail));
+  window.addEventListener('connectionManagementPost', event => vscode.postMessage(event.detail));
   let state = { connections: [], mappings: [], diffs: [], targetStates: [], targetViews: [] };
   let selected = new Set();
   let filter = 'changes';
@@ -166,11 +167,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   }
 
   document.addEventListener('mouseover', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     const target = getTooltipTarget(event.target);
     if (!target || target === activeTooltipTarget) return;
     showWebviewTooltip(target);
   });
   document.addEventListener('mouseout', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     const target = getTooltipTarget(event.target);
     if (!target || target !== activeTooltipTarget) return;
     const related = event.relatedTarget;
@@ -178,10 +181,12 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     hideWebviewTooltip();
   });
   document.addEventListener('focusin', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     const target = getTooltipTarget(event.target);
     if (target && !target.hasAttribute('data-tooltip-hover-only')) showWebviewTooltip(target);
   });
   document.addEventListener('focusout', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     const target = getTooltipTarget(event.target);
     if (target && target === activeTooltipTarget) hideWebviewTooltip();
   });
@@ -2627,6 +2632,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   };
 
   document.addEventListener('contextmenu', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     const editable = getTextEditableTarget(event.target);
     if (editable) {
       event.preventDefault();
@@ -2662,6 +2668,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   }, true);
 
   document.addEventListener('pointerdown', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     const textMenu = $('textEditContextMenu');
     const changesContextMenu = $('changesContextMenu');
     const activityContextMenu = $('activityContextMenu');
@@ -2673,6 +2680,7 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
   });
 
   document.addEventListener('keydown', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     if (event.key !== 'Escape') return;
     const textVisible = $('textEditContextMenu')?.classList.contains('visible');
     const changesVisible = $('changesContextMenu')?.classList.contains('visible');
@@ -2703,11 +2711,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     closeCompareMenu();
   });
   document.addEventListener('pointerdown', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     if ($('changesMenu').hidden) return;
     if ($('changesMenu').contains(event.target) || $('changesMore').contains(event.target)) return;
     closeChangesMenu();
   });
   document.addEventListener('keydown', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     if (event.key !== 'Escape' || $('changesMenu').hidden) return;
     event.preventDefault();
     event.stopPropagation();
@@ -2723,11 +2733,13 @@ export function renderWorkspaceSyncClientScript(compareIconSvg = ''): string {
     });
   });
   document.addEventListener('pointerdown', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     if ($('optionHelpPopover').hidden) return;
     if ($('optionHelpPopover').contains(event.target) || optionHelpAnchor?.contains(event.target)) return;
     closeOptionHelp();
   });
   document.addEventListener('keydown', event => {
+    if (event.composedPath().some(node => node.id === 'connectionManagementSurface')) return;
     if (event.key !== 'Escape' || $('optionHelpPopover').hidden) return;
     event.preventDefault();
     event.stopPropagation();

@@ -26,6 +26,18 @@ export function createConnectionUiHarness(harness: ConnectionManagerHarness, ses
     postRemoteClipboardState() {}, postServerStatus() {}, updatePanelTitle() {},
     listDirectoryForConnection: async () => undefined
   });
+  const { ConnectionManagementController } = loadWithVscode(() => require('../../panel/ConnectionManagementController'));
+  panel.management = new ConnectionManagementController({
+    context: harness.context, connectionManager: harness.manager, output: harness.output,
+    postMessage: (type: any, payload: any) => panel.postMessage(type, payload),
+    showConfirmDialog: (options: any) => panel.showConfirmDialog(options),
+    showConfirmDialogDecision: (options: any) => panel.dialogManager.showConfirmDialogDecision(options),
+    postBusy: (...args: any[]) => panel.postBusy(...args),
+    logInfo: (message: string, details: any) => panel.logInfo(message, details),
+    logError: (message: string, details: any) => panel.logError(message, details),
+    hasConnection: (id: string) => sessions.hasConnection(id), disconnect: (id: string) => panel.disconnect(id),
+    postPersistentStorageSnapshot: () => panel.postPersistentStorageSnapshot()
+  });
   const sidebar: any = Object.create(RemoteEditSidebarController.prototype);
   let refreshes = 0;
   const pickRequests: any[] = [];

@@ -38,10 +38,10 @@ export function renderBody(): string {
               <select id="profileSelect" class="profile-select-native" aria-hidden="true" tabindex="-1"><option value="">New / Quick Connection</option></select>
               <input id="profileName" type="hidden" autocomplete="off" />
             </div>
-            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Connection &amp; Settings Management" data-tooltip="Connection &amp; Settings Management" aria-haspopup="menu" aria-expanded="false" aria-controls="connectionManagementMenu">
+            <button id="manageProfilesButton" type="button" class="secondary manage-profiles-button has-tooltip" aria-label="Tools &amp; Settings" data-tooltip="Tools &amp; Settings" aria-haspopup="menu" aria-expanded="false" aria-controls="connectionManagementMenu">
               <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-280v-40h560v40H200Zm0-180v-40h560v40H200Zm0-180v-40h560v40H200Z" /></svg>
             </button>
-            <div id="connectionManagementMenu" class="profile-dropdown-menu connection-management-menu" role="menu" aria-label="Connection &amp; Settings Management">
+            <div id="connectionManagementMenu" class="profile-dropdown-menu connection-management-menu" role="menu" aria-label="Tools &amp; Settings">
               ${renderConnectionManagementMenu()}
             </div>
             </div>
@@ -151,7 +151,7 @@ export function renderBody(): string {
               <div id="passwordSecretState" class="credential-state not-saved">Password not saved.</div>
             </div>
             <div id="privateKeyBlock" class="full auth-block">
-              <label for="privateKeyPath">Private key path</label>
+              <div class="private-key-field-heading"><label for="privateKeyPath">Private key path</label><button id="generateSshKeyButton" class="private-key-generate-link" type="button">Generate SSH Key...</button></div>
               <div class="input-with-button">
                 <input id="privateKeyPath" placeholder="~/.ssh/id_rsa" autocomplete="off" />
                 <button id="privateKeyBrowseButton" class="input-icon-button has-tooltip" type="button" aria-label="Select Private Key File" data-tooltip="Select Private Key File">
@@ -335,7 +335,7 @@ export function renderBody(): string {
               <tbody id="entriesBody"><tr><td colspan="7"><div class="empty-state">Connect to a host to list remote files.</div></td></tr></tbody>
             </table>
           </div>
-          <div id="status" class="statusbar"><div class="status-main"><div id="statusText" class="status-text">Ready.</div><button id="statusOutputLink" class="status-output-link" type="button" hidden>See details in Output.</button><div class="spinner" aria-hidden="true"></div></div><div class="status-actions"><button id="statusCancelButton" class="status-action-button status-cancel-button has-tooltip tooltip-above" type="button" aria-label="Cancel Current Operation" data-tooltip="Cancel Current Operation" hidden>Cancel</button><div class="status-copy-wrap"><button id="statusCopyButton" class="status-action-button status-copy-button has-tooltip tooltip-above" type="button" aria-label="Copy Status" data-tooltip="Copy Status"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg></button><div id="statusCopyFeedback" class="status-copy-feedback" role="status" aria-live="polite">Copied</div></div></div></div>
+          <div id="status" class="statusbar"><div class="status-main"><div id="statusText" class="status-text">Ready.</div><button id="sshKeySetupDiagnostic" class="secondary" type="button" hidden>Set Up SSH Key</button><button id="statusOutputLink" class="status-output-link" type="button" hidden>See details in Output.</button><div class="spinner" aria-hidden="true"></div></div><div class="status-actions"><button id="statusCancelButton" class="status-action-button status-cancel-button has-tooltip tooltip-above" type="button" aria-label="Cancel Current Operation" data-tooltip="Cancel Current Operation" hidden>Cancel</button><div class="status-copy-wrap"><button id="statusCopyButton" class="status-action-button status-copy-button has-tooltip tooltip-above" type="button" aria-label="Copy Status" data-tooltip="Copy Status"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg></button><div id="statusCopyFeedback" class="status-copy-feedback" role="status" aria-live="polite">Copied</div></div></div></div>
           </div>
           <div id="serverView" class="connection-view server-view hidden" aria-label="Server dashboard">
             <div id="serverViewContent" class="server-dashboard"></div>
@@ -623,6 +623,8 @@ export function renderBody(): string {
       </div>
       <div id="manageConnectionEditor" class="file-properties-body" hidden></div>
       <div class="file-properties-actions">
+        <button id="manageConnectionTest" class="secondary" type="button" hidden>Test Connection</button>
+        <div id="manageConnectionTestFeedback" class="connection-test-feedback" role="status" aria-live="polite" hidden></div>
         <button id="manageConnectionBack" class="secondary" type="button" hidden>Back</button>
         <button id="manageConnectionSave" type="button" hidden>Save</button>
         <button id="manageProfilesCloseButton" type="button">Close</button>

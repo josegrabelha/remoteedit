@@ -56,6 +56,12 @@ const raw = edKey(), changed = edKey();
 const rsaPrivate = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' });
 const rsa = utils.parseKey(rsaPrivate); if (rsa instanceof Error || Array.isArray(rsa)) throw new Error('Invalid test RSA key');
 const rsaRaw = rsa.getPublicSSH();
+// A distinct same-algorithm host key reused across independent fixtures.
+// Five extra RSA-2048 key generations added latency but no additional behavior.
+const alternateRsaPrivate = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' });
+const alternateRsaKey = utils.parseKey(alternateRsaPrivate);
+if (alternateRsaKey instanceof Error || Array.isArray(alternateRsaKey)) throw new Error('Invalid alternate RSA key');
+const alternateRsaRaw = alternateRsaKey.getPublicSSH();
 const key = identifyHostKey(raw), other = identifyHostKey(changed);
 const userFile = { filePath: '/user/.ssh/known_hosts', source: 'OpenSSH (User)' as const };
 async function fixture(t?: TestContext) {
@@ -154,6 +160,11 @@ test('simultaneous modules share approval, isolate cancellation and reject concu
     const first = f.service.verify('host', 22, raw, prompt, abort.signal); const firstRejected = assert.rejects(first, /cancelled/);
     await ready;
     const second = f.service.verify('host', 22, raw, prompt);
+    // Verify that both connections are actually sharing the pending approval
+    // before cancelling the first. Otherwise filesystem scheduling can let the
+    // first cancellation race ahead of the second waiter on a loaded runner.
+    await waitFor(() => ((f.service as any).pending.get('host:22:ssh-ed25519')?.waiters.size ?? 0) === 2,
+      'both connections to join the shared host-key approval');
     await assert.rejects(f.service.verify('host', 22, changed, prompt), /Different server keys/);
     abort.abort(); await firstRejected; resolve(true); await second;
     assert.equal(prompts, 1); assert.equal((await f.store.list()).length, 1);
@@ -315,9 +326,8 @@ test('real Jump chains and private Sync Jump chains verify each hop and final ta
     session = await SftpSyncSession.connect(syncSnapshot); assert.equal(requests.length, 2); await session.disconnect(); session = undefined;
     const trustedJump = (await hostKeyTrust().store.list()).find(item => item.port === jump.port)!;
     await hostKeyTrust().store.remove(trustedJump.id);
-    const replacement = utils.parseKey(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' }));
-    if (replacement instanceof Error || Array.isArray(replacement)) throw new Error('Invalid key');
-    await hostKeyTrust().store.trust('127.0.0.1', jump.port, identifyHostKey(replacement.getPublicSSH()));
+    const replacement = alternateRsaRaw;
+    await hostKeyTrust().store.trust('127.0.0.1', jump.port, identifyHostKey(replacement));
     const before = target.authRequests(); await assert.rejects(SftpSyncSession.connect(syncSnapshot), /Changed or conflicting/); assert.equal(target.authRequests(), before);
   } finally { await session?.disconnect(); await chain?.dispose(); await target.close(); await jump.close(); await runtime.cleanup(); }
 });
@@ -348,9 +358,8 @@ test('separate Advanced View and Multi-Target SFTP managers share trust and pres
     assert.equal(prompts, 1);
     await advanced.disconnectAll(); await multiTarget.disconnectAll();
     const item = (await hostKeyTrust().store.list())[0]; await hostKeyTrust().store.remove(item.id);
-    const other = utils.parseKey(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' }));
-    if (other instanceof Error || Array.isArray(other)) throw new Error('Invalid key');
-    await hostKeyTrust().store.trust('127.0.0.1', server.port, identifyHostKey(other.getPublicSSH()));
+    const other = alternateRsaRaw;
+    await hostKeyTrust().store.trust('127.0.0.1', server.port, identifyHostKey(other));
     const count = server.authRequests();
     await assert.rejects(withHostKeyUi({ prompt: async () => false, confirmDisable: async () => false }, () => advanced.connect(options)), /cancelled or rejected/); assert.equal(server.authRequests(), count);
     assert.equal(advanced.getConnection('advanced'), undefined);
@@ -377,9 +386,8 @@ test('real HTTP CONNECT route verifies the SSH destination and cannot bypass cha
     assert.equal(prompts, 1); assert.equal((await hostKeyTrust().store.list())[0].port, target.port);
     await session.disconnect(); session = undefined;
     const trusted = (await hostKeyTrust().store.list())[0]; await hostKeyTrust().store.remove(trusted.id);
-    const other = utils.parseKey(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' }));
-    if (other instanceof Error || Array.isArray(other)) throw new Error('Invalid key');
-    await hostKeyTrust().store.trust('127.0.0.1', target.port, identifyHostKey(other.getPublicSSH()));
+    const other = alternateRsaRaw;
+    await hostKeyTrust().store.trust('127.0.0.1', target.port, identifyHostKey(other));
     const count = target.authRequests(); await assert.rejects(SftpSyncSession.connect(value), /Changed or conflicting/); assert.equal(target.authRequests(), count);
   } finally { await session?.disconnect(); for (const socket of sockets) socket.destroy(); await proxyListener.close(); await target.close(); await runtime.cleanup(); }
 });
@@ -664,9 +672,8 @@ test('OpenSSH replacement rolls back an interrupted write and rejects a stale fi
 test('Native Sidebar uses two native confirmations before the real SSH handshake accepts a changed key', async t => {
   const runtime = await runtimeFixture(true, t), server = await sshServer(t);
   try {
-    const wrong = utils.parseKey(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' }));
-    if (wrong instanceof Error || Array.isArray(wrong)) throw new Error('Invalid key');
-    await hostKeyTrust().store.trust('127.0.0.1', server.port, identifyHostKey(wrong.getPublicSSH()));
+    const wrong = alternateRsaRaw;
+    await hostKeyTrust().store.trust('127.0.0.1', server.port, identifyHostKey(wrong));
     const count = server.authRequests();
     await assert.rejects(guardedConnect(server.port), /Connect interactively/); assert.equal(server.authRequests(), count);
     await runtime.native(() => guardedConnect(server.port, false));
@@ -681,11 +688,10 @@ test('Advanced View, Multi-Target and Workspace Sync interactive transports pers
   const runtime = await runtimeFixture(false, t), server = await sshServer(t);
   const advanced = new SftpSessionManager(), multi = new SftpSessionManager(); let sync: SftpSyncSessionType | undefined;
   try {
-    const wrong = utils.parseKey(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ format: 'pem', type: 'pkcs1' }));
-    if (wrong instanceof Error || Array.isArray(wrong)) throw new Error('Invalid key');
+    const wrong = alternateRsaRaw;
     for (const origin of ['RE', 'MT', 'WS']) {
       for (const entry of await hostKeyTrust().store.list()) await hostKeyTrust().store.remove(entry.id);
-      await hostKeyTrust().store.trust('127.0.0.1', server.port, identifyHostKey(wrong.getPublicSSH()));
+      await hostKeyTrust().store.trust('127.0.0.1', server.port, identifyHostKey(wrong));
       const before = server.authRequests(), phases: string[] = [];
       const ui = { prompt: async (request: import('../ssh/hostKeys/HostKeyTrustService').HostKeyRequest) => {
         assert.equal(server.authRequests(), before); phases.push(request.phase!); return true;

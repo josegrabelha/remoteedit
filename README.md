@@ -65,7 +65,7 @@ The Webview and Native Sidebar can be used independently or together.
 
 Remote Edit also includes a native VS Code Sidebar for compact day-to-day access to connections and tools.
 
-![Remote Edit Sidebar](images/remoteedit-sidebar.png)
+<img src="images/remoteedit-sidebar.png" alt="Remote Edit Sidebar" width="350">
 
 Use the Sidebar to access:
 

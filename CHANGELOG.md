@@ -1,3 +1,9 @@
+## [1.14.1] - 2026-11-24
+
+### Added
+
+* Added a **Tracked On** badge to the README.
+
 ## [1.14.0] - 2026-10-19
 
 ### Added

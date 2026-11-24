@@ -1,3 +1,9 @@
+## [1.14.2] - 2026-11-24
+
+### Changed
+
+* Updated `basic-ftp` to 6.2.6 and `fast-xml-parser` to 5.12.1, along with their transitive dependencies, to address known security advisories.
+
 ## [1.14.1] - 2026-11-24
 
 ### Added

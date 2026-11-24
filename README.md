@@ -1,6 +1,7 @@
 # Remote Edit
 
 <p align="center">
+  <a href="https://vsxatlas.com/extension/josegrabelha.remoteedit"><img alt="Tracked on VSXAtlas" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fvsxatlas.com%2Fapi%2Fbadge%3Fid%3Djosegrabelha.remoteedit%26metric%3Dmetrics"></a>
   <a href="https://marketplace.visualstudio.com/items?itemName=josegrabelha.remoteedit"><img src="https://img.shields.io/badge/VS%20Code-Remote%20Edit-007ACC" alt="VS Code"></a>
   <a href="https://open-vsx.org/extension/josegrabelha/remoteedit"><img src="https://img.shields.io/badge/Open%20VSX-Remote%20Edit-C160EF" alt="Open VSX"></a>
   <img src="https://img.shields.io/badge/VS%20Code-1.90.0%2B-5C2D91?logo=visualstudiocode&logoColor=white" alt="VS Code 1.90.0+">
